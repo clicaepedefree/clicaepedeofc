@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Next.js: dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bun dev"
+    },
+    {
+      "name": "Next.js: browser",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "preLaunchTask": "Wait for 3000 port"
+    },
+  ],
+  "compounds": [
+    {
+      "name": "NextJS Full Stack: dev + browser",
+      "configurations": [
+        "Next.js: dev", 
+        "Next.js: browser"
+      ],
+      "stopAll": true,
+      "presentation": {
+        "group": "1",
+        "order": 1
+      }
+    }
+  ]
+}
