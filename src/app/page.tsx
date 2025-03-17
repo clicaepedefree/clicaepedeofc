@@ -1,6 +1,5 @@
 'use client'
 
-import { Button } from '@/shared/button'
 import { UploadButton } from '@/shared/file-upload'
 
 export default function Home() {
