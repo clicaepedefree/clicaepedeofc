@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </SignUpButton>
             </SignedOut>
             <SignedIn>
-              <UserButton />
+              <UserButton appearance={{ elements: { userButtonPopoverFooter: { display: 'none' } } }} />
             </SignedIn>
           </header>
           <PostHogProvider>
