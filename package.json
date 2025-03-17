@@ -11,6 +11,8 @@
     "push-migrations": "drizzle-kit push"
   },
   "dependencies": {
+    "@clerk/localizations": "^3.12.0",
+    "@clerk/nextjs": "^6.12.5",
     "@radix-ui/react-slot": "^1.1.2",
     "@tanstack/react-form": "^1.1.0",
     "@uploadthing/react": "^7.3.0",

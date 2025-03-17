@@ -5,7 +5,7 @@ import { UploadButton } from '@/shared/file-upload'
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
+    <>
       <UploadButton
         onClientUploadComplete={res => {
           console.log('Files: ', res)
@@ -14,6 +14,6 @@ export default function Home() {
           console.error(`ERROR! ${error.message}`)
         }}
       />
-    </main>
+    </>
   )
 }
