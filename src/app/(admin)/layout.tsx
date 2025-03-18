@@ -16,6 +16,7 @@ import {
 } from '@/shared/breadcrumb'
 import { Separator } from '@/shared/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar'
+import { cn } from '@/lib/utils'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -28,7 +29,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <ClerkProvider localization={ptBR} afterSignOutUrl={'/login'}>
       <html lang="en">
-        <body className={inter.className}>
+        <body className={cn(inter.className, 'h-dvh')}>
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
@@ -62,11 +63,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </SignedIn>
                 </div>
               </header>
+              <PostHogProvider>
+                <div className="p-4">{children}</div>
+              </PostHogProvider>
             </SidebarInset>
           </SidebarProvider>
-          <PostHogProvider>
-            <main className="flex min-h-screen flex-col items-center justify-between p-24">{children}</main>
-          </PostHogProvider>
         </body>
       </html>
     </ClerkProvider>
