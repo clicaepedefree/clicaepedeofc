@@ -1,4 +1,4 @@
-import './globals.css'
+import '@/app/globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
@@ -24,9 +24,9 @@ export const metadata: Metadata = {
   description: 'Solução completa de vendas e gestão',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider localization={ptBR}>
+    <ClerkProvider localization={ptBR} afterSignOutUrl={'/login'}>
       <html lang="en">
         <body className={inter.className}>
           <SidebarProvider>
