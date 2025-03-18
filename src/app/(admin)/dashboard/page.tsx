@@ -1,15 +1,3 @@
-import { AppSidebar } from '@/shared/app-sidebar'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/shared/breadcrumb'
-import { Separator } from '@/shared/separator'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar'
-
 export default function Page() {
   return (
     <>
