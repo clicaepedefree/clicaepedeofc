@@ -6,17 +6,11 @@ import { ptBR } from '@clerk/localizations'
 import { Button } from '@/shared/button'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { AppSidebar } from '@/shared/app-sidebar'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/shared/breadcrumb'
+import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/shared/breadcrumb'
 import { Separator } from '@/shared/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar'
 import { cn } from '@/lib/utils'
+import { StoreSelector } from '@/features/store/components/store-selector'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -40,7 +34,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <Breadcrumb>
                     <BreadcrumbList>
                       <BreadcrumbItem className="hidden md:block">
-                        <BreadcrumbLink href="#">Administrador de lojas</BreadcrumbLink>
+                        <StoreSelector />
                       </BreadcrumbItem>
                       <BreadcrumbSeparator className="hidden md:block" />
                       <BreadcrumbItem>
