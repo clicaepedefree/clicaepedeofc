@@ -15,6 +15,13 @@
       "when": 1742354259500,
       "tag": "0001_Update defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1742395530483,
+      "tag": "0002_add configurations and store configurations tables",
+      "breakpoints": true
     }
   ]
 }
