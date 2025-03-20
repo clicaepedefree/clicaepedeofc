@@ -8,7 +8,6 @@ import { useAtom } from 'jotai'
 export const useAvailableStores = () => {
   const result = useQuery({ queryKey: ['stores'], queryFn: getAvailableStores })
   const [selectedStoreId, setSelectedStoreId] = useAtom(selectedStoreIdAtom)
-  console.log('result', result.data)
 
   useEffect(() => {
     if (selectedStoreId) return
@@ -16,8 +15,8 @@ export const useAvailableStores = () => {
     const firstStore = result.data?.[0]
     if (!firstStore) return
 
-    setSelectedStoreId(String(firstStore.id))
-  }, [result.data])
+    setSelectedStoreId(firstStore.id)
+  }, [result.data, selectedStoreId, setSelectedStoreId])
 
   return {
     stores: result.data,

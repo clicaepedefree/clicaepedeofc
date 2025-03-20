@@ -13,14 +13,21 @@ export const StoreSelector = () => {
     value: String(store.id),
     label: store.name,
   }))
+
+  const onChangeStore = (storeId: string) => {
+    setSelectedStoreId(Number(storeId))
+  }
+
+  const selectedStoreIdAsString = selectedStoreId ? String(selectedStoreId) : ''
+
   return (
     <>
       {isLoading && <div>Carregando...</div>}
       {!isLoading && storesOptions?.length && (
         <Combobox
           options={storesOptions}
-          value={selectedStoreId ?? ''}
-          onChange={setSelectedStoreId}
+          value={selectedStoreIdAsString}
+          onChange={onChangeStore}
           placeholder="Selecione uma loja"
           searchPlaceholder="Buscar loja"
           noResultMessage="Nenhuma loja encontrada"

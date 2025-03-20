@@ -8,7 +8,7 @@ import { eq, and } from 'drizzle-orm'
 
 export const getAvailableStores = async () => await db.select().from(storesTable)
 
-export const getStoreConfigurations = async (storeId: string) => {
+export const getStoreConfigurations = async (storeId: number) => {
   const result = await db
     .select({
       id: configurationsTable.id,
@@ -24,7 +24,7 @@ export const getStoreConfigurations = async (storeId: string) => {
       storeConfigurationsTable,
       and(
         eq(configurationsTable.id, storeConfigurationsTable.configurationId),
-        eq(storeConfigurationsTable.storeId, Number(storeId))
+        eq(storeConfigurationsTable.storeId, storeId)
       )
     )
   return result
