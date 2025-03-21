@@ -34,21 +34,22 @@ export const Combobox = ({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="w-[200px] justify-between">
+        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
           {value ? options.find(option => option.value === value)?.label : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0">
+      <PopoverContent className="w-full p-0">
         <Command
           loop
+          className="w-full"
           filter={(_, search, keywords = []) => {
             const searchLower = search.toLowerCase()
             const keywordsLowerCase = keywords.map(keyword => keyword.toLowerCase()).join(' ')
             return Number(keywordsLowerCase.includes(searchLower))
           }}
         >
-          <CommandInput placeholder={searchPlaceholder} disabled={disabled} />
+          <CommandInput placeholder={searchPlaceholder} disabled={disabled} className="w-full" />
           <CommandList>
             <CommandEmpty>{noResultMessage}</CommandEmpty>
             <CommandGroup>

@@ -5,7 +5,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarRail,
   SidebarSeparator,
@@ -13,7 +12,7 @@ import {
 import { AppSidebarItem } from './app-sidebar-item'
 import { MenuItem, MenuSection } from './types'
 import { AppSidebarSection } from './app-sidebar-section'
-import { UserProfile } from '@/features/user/components/userProfile'
+import { AppSidebarHeader } from './app-sidebar-header'
 
 type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
   menuItems: (MenuItem | MenuSection)[]
@@ -22,12 +21,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 export function AppSidebar({ menuItems, ...props }: AppSidebarProps) {
   return (
     <Sidebar {...props}>
-      <SidebarHeader>
-        <SidebarMenu>
-          <img src="/clica-pedidos.png" className="object-cover self-center" width="50%" alt="Clica Pedidos Logo" />
-          <UserProfile />
-        </SidebarMenu>
-      </SidebarHeader>
+      <AppSidebarHeader />
       <SidebarSeparator className="mt-2" />
       <SidebarContent>
         <SidebarGroup>
