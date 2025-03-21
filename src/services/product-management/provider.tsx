@@ -7,9 +7,11 @@ import { usePostHog } from 'posthog-js/react'
 
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
+import { useAuth, useUser } from '@clerk/nextjs'
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
+    if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY as string, {
       api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
       person_profiles: 'identified_only', // or 'always' to create profiles for anonymous users as well
@@ -30,6 +32,9 @@ function PostHogPageView() {
   const searchParams = useSearchParams()
   const posthog = usePostHog()
 
+  const { isSignedIn, userId } = useAuth()
+  const { user } = useUser()
+
   // Track pageviews
   useEffect(() => {
     if (pathname && posthog) {
@@ -41,6 +46,17 @@ function PostHogPageView() {
       posthog.capture('$pageview', { $current_url: url })
     }
   }, [pathname, searchParams, posthog])
+
+  // Identify the user for posthog
+  useEffect(() => {
+    if (isSignedIn && userId && user && !posthog._isIdentified()) {
+      posthog.identify(userId, {
+        email: user.primaryEmailAddress?.emailAddress,
+        username: user.username,
+        name: user.fullName,
+      })
+    }
+  }, [posthog, isSignedIn, userId, user])
 
   return null
 }
