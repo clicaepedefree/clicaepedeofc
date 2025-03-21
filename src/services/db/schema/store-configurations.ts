@@ -18,3 +18,6 @@ export const storeConfigurationsTable = pgTable(
   },
   table => [primaryKey({ columns: [table.storeId, table.configurationId] })]
 )
+
+export type InsertStoreConfiguration = typeof storeConfigurationsTable.$inferInsert
+export type SelectStoreConfiguration = typeof storeConfigurationsTable.$inferSelect

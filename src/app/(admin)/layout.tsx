@@ -44,7 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <ClerkProvider localization={ptBR} afterSignOutUrl={'/login'}>
       <html lang="pt-BR">
-        <body className={cn(inter.className, 'h-dvh')}>
+        <body className={cn(inter.className, 'h-dvh text-foreground')}>
           <SidebarProvider>
             <AppSidebar menuItems={adminMenuItems} collapsible="icon" />
             <SidebarInset>

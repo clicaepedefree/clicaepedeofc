@@ -1,13 +1,15 @@
+'use client'
+import { useStoreConfigurations } from '@/features/store/hooks/use-store-configurations'
+import { ConfigurationCategory } from '@/features/store/components/store-configuration-category'
+
 export default function Page() {
+  const { configurationsByCategory } = useStoreConfigurations()
+
   return (
-    <>
-      <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-        settings
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-      </div>
-      <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
-    </>
+    <div className="grid auto-rows-min gap-x-4 gap-y-10  md:grid-cols-3">
+      {configurationsByCategory.map(({ category, configurations }) => (
+        <ConfigurationCategory key={category} category={category} configurations={configurations} />
+      ))}
+    </div>
   )
 }
