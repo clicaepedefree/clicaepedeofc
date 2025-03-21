@@ -11,7 +11,7 @@ import { Separator } from '@/shared/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar/base-sidebar'
 import { cn } from '@/lib/utils'
 import { StoreSelector } from '@/features/store/components/store-selector'
-import { Settings } from 'lucide-react'
+
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {

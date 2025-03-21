@@ -4,9 +4,11 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarRail,
+  SidebarSeparator,
 } from '@/shared/sidebar/base-sidebar'
 import { AppSidebarItem } from './app-sidebar-item'
 import { MenuItem, MenuSection } from './types'
@@ -26,8 +28,10 @@ export function AppSidebar({ menuItems, ...props }: AppSidebarProps) {
           <UserProfile />
         </SidebarMenu>
       </SidebarHeader>
+      <SidebarSeparator className="mt-2" />
       <SidebarContent>
         <SidebarGroup>
+          <SidebarGroupLabel>Páginas</SidebarGroupLabel>
           <SidebarMenu>
             {menuItems.map(item => (
               <React.Fragment key={item.title}>
