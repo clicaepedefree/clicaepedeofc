@@ -8,6 +8,7 @@ import groupBy from 'lodash/groupBy'
 import toPairs from 'lodash/toPairs'
 import { StoreConfiguration } from '../types'
 import { useMemo } from 'react'
+import { isServer } from '@/lib/utils'
 
 type StoreConfigurationsByCategory = {
   category: string
@@ -17,9 +18,12 @@ export const useStoreConfigurations = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
   const result = useQuery({
+    enabled: !!selectedStoreId && !isServer,
     queryKey: ['stores', 'configurations', selectedStoreId],
-    enabled: !!selectedStoreId,
-    queryFn: selectedStoreId ? () => getStoreConfigurations(selectedStoreId) : undefined,
+    queryFn: async () => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return getStoreConfigurations(selectedStoreId)
+    },
   })
 
   const configurations = result.data

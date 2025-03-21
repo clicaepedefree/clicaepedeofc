@@ -19,5 +19,5 @@ export const ConfigurationSwitch = ({ configuration }: { configuration: StoreCon
 }
 
 const configNameToLabelMapping = {
-  first_config: 'First Config',
+  enable_pos: 'Habilitar balcão',
 }
