@@ -5,13 +5,13 @@ import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserBut
 import { ptBR } from '@clerk/localizations'
 import { Button } from '@/shared/button'
 import { PostHogProvider } from '@/services/product-management/provider'
-import { AppSidebar } from '@/shared/app-sidebar'
+import { AppSidebar } from '@/shared/sidebar/app-sidebar'
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/shared/breadcrumb'
 import { Separator } from '@/shared/separator'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar/base-sidebar'
 import { cn } from '@/lib/utils'
 import { StoreSelector } from '@/features/store/components/store-selector'
-
+import { Settings } from 'lucide-react'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
@@ -19,13 +19,33 @@ export const metadata: Metadata = {
   description: 'Solução completa de vendas e gestão',
 }
 
+const adminMenuItems = [
+  {
+    title: 'Dashboard',
+    url: '/dashboard',
+    icon: 'chart-pie' as const,
+  },
+  {
+    type: 'section' as const,
+    title: 'Loja',
+    icon: 'shopping-cart' as const,
+    items: [
+      {
+        title: 'Configurações',
+        url: '/settings',
+        icon: 'settings' as const,
+      },
+    ],
+  },
+]
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider localization={ptBR} afterSignOutUrl={'/login'}>
-      <html lang="en">
+      <html lang="pt-BR">
         <body className={cn(inter.className, 'h-dvh')}>
           <SidebarProvider>
-            <AppSidebar />
+            <AppSidebar menuItems={adminMenuItems} collapsible="icon" />
             <SidebarInset>
               <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
                 <div className="flex items-center gap-2">

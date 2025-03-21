@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider localization={ptBR}>
-      <html lang="en">
+      <html lang="pt-BR">
         <body className={inter.className}>
           <header className="flex justify-end items-center p-4 gap-4 h-16">
             <SignedOut>

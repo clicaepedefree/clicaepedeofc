@@ -29,6 +29,6 @@
       "request": "launch",
       "url": "http://localhost:3000",
       "preLaunchTask": "Wait for 3000 port"
-    },
+    }
   ]
 }
