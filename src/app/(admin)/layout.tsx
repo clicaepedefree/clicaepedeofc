@@ -11,6 +11,7 @@ import { Separator } from '@/shared/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar/base-sidebar'
 import { cn } from '@/lib/utils'
 import { StoreSelector } from '@/features/store/components/store-selector'
+import { UserProfile } from '@/features/user/components/userProfile'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -72,9 +73,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <Button>Criar conta</Button>
                     </SignUpButton>
                   </SignedOut>
-                  <SignedIn>
-                    <UserButton appearance={{ elements: { userButtonPopoverFooter: { display: 'none' } } }} />
-                  </SignedIn>
+                  <UserProfile />
                 </div>
               </header>
               <PostHogProvider>

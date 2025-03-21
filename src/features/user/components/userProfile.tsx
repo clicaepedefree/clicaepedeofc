@@ -9,7 +9,6 @@ type UserProfileProps = {
 }
 
 export const UserProfile = ({ showName, className = {} }: UserProfileProps) => {
-  console.log('className', className)
   return (
     <SignedIn>
       <UserButton
