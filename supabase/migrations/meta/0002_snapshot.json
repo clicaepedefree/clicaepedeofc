@@ -66,8 +66,8 @@
       "name": "store_configurations",
       "schema": "",
       "columns": {
-        "user_id": {
-          "name": "user_id",
+        "store_id": {
+          "name": "store_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -101,12 +101,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "store_configurations_user_id_stores_id_fk": {
-          "name": "store_configurations_user_id_stores_id_fk",
+        "store_configurations_store_id_stores_id_fk": {
+          "name": "store_configurations_store_id_stores_id_fk",
           "tableFrom": "store_configurations",
           "tableTo": "stores",
           "columnsFrom": [
-            "user_id"
+            "store_id"
           ],
           "columnsTo": [
             "id"
@@ -129,10 +129,10 @@
         }
       },
       "compositePrimaryKeys": {
-        "store_configurations_user_id_configuration_id_pk": {
-          "name": "store_configurations_user_id_configuration_id_pk",
+        "store_configurations_store_id_configuration_id_pk": {
+          "name": "store_configurations_store_id_configuration_id_pk",
           "columns": [
-            "user_id",
+            "store_id",
             "configuration_id"
           ]
         }

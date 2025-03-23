@@ -5,3 +5,9 @@ import { SelectStoreConfiguration } from '@/services/db/schema/store-configurati
 export type Store = SelectStore
 export type StoreConfiguration = Omit<SelectConfiguration, 'default' | 'createdAt' | 'updatedAt'> &
   WithNullableFields<Pick<SelectStoreConfiguration, 'value' | 'createdAt' | 'updatedAt'>, 'createdAt' | 'updatedAt'>
+
+export type StoreConfigurationInputProps = {
+  configuration: StoreConfiguration
+  onChange?(value: string): void
+  isUpdating?: boolean
+}

@@ -27,3 +27,13 @@ export const getStoreConfigurations = async (storeId: number) =>
         eq(storeConfigurationsTable.storeId, storeId)
       )
     )
+
+export const updateStoreConfiguration = async (storeId: number, configurationId: number, value: string) => {
+  await db
+    .insert(storeConfigurationsTable)
+    .values({ storeId, configurationId, value })
+    .onConflictDoUpdate({
+      target: [storeConfigurationsTable.storeId, storeConfigurationsTable.configurationId],
+      set: { value },
+    })
+}
