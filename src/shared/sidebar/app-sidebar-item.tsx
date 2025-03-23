@@ -2,14 +2,14 @@
 
 import Link from 'next/link'
 import { SidebarMenuButton, SidebarMenuItem, SidebarMenuSubButton, SidebarMenuSubItem } from './base-sidebar'
-import { usePathname } from 'next/navigation'
 import { MenuItem } from './types'
 import { DynamicIcon } from 'lucide-react/dynamic'
+import { useCurrentAdminPage } from '@/app/(admin)/use-current-admin-page'
 
 export const AppSidebarItem = ({ item }: { item: MenuItem }) => {
-  const pathname = usePathname()
+  const { isCurrentPage } = useCurrentAdminPage()
 
-  const isActive = item.url === pathname
+  const isActive = isCurrentPage(item.url)
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isActive}>
@@ -23,9 +23,9 @@ export const AppSidebarItem = ({ item }: { item: MenuItem }) => {
 }
 
 export const AppSidebarSubItem = ({ item }: { item: MenuItem }) => {
-  const pathname = usePathname()
+  const { isCurrentPage } = useCurrentAdminPage()
 
-  const isActive = item.url === pathname
+  const isActive = isCurrentPage(item.url)
   return (
     <SidebarMenuSubItem key={item.title}>
       <SidebarMenuSubButton asChild isActive={isActive}>

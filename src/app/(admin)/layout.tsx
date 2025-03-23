@@ -12,6 +12,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/shared/sidebar/
 import { cn } from '@/lib/utils'
 import { StoreSelector } from '@/features/store/components/store-selector'
 import { UserProfile } from '@/features/user/components/userProfile'
+import { AdminPageTitle } from './admin-page-title'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -59,7 +60,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       </BreadcrumbItem>
                       <BreadcrumbSeparator className="hidden md:block" />
                       <BreadcrumbItem>
-                        <BreadcrumbPage>Dashboard</BreadcrumbPage>
+                        <BreadcrumbPage>
+                          <AdminPageTitle />
+                        </BreadcrumbPage>
                       </BreadcrumbItem>
                     </BreadcrumbList>
                   </Breadcrumb>
