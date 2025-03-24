@@ -8,7 +8,7 @@ export type StoreConfiguration = Omit<SelectConfiguration, 'default' | 'createdA
 
 export type StoreConfigurationInputProps = {
   label?: string
-  configuration: StoreConfiguration
+  value: string | null
   onChange?(value: string): void
-  isUpdating?: boolean
+  disabled?: boolean
 }
