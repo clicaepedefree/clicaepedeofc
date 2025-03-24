@@ -20,7 +20,7 @@ export const StoreConfigurationSwitch = ({ configuration, onChange, isUpdating }
         disabled={isUpdating}
       />
       <span className={cn('flex items-center gap-1', isUpdating && 'opacity-50')}>
-        {isUpdating && <LoadingSpinner />}
+        {isUpdating && <LoadingSpinner size={20} />}
         {configLabel}
       </span>
     </Label>
