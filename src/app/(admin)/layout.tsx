@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { StoreSelector } from '@/features/store/components/store-selector'
 import { UserProfile } from '@/features/user/components/userProfile'
 import { AdminPageTitle } from './admin-page-title'
+import { Toaster } from '@/shared/sonner'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -81,6 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </header>
               <PostHogProvider>
                 <div className="p-4">{children}</div>
+                <Toaster />
               </PostHogProvider>
             </SidebarInset>
           </SidebarProvider>
