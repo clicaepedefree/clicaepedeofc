@@ -5,10 +5,12 @@ import { Label } from '@/shared/label'
 import { LoadingSpinner } from '@/shared/spinner'
 import { cn } from '@/lib/utils'
 
-export const StoreConfigurationSwitch = ({ configuration, onChange, isUpdating }: StoreConfigurationInputProps) => {
-  const configLabel =
-    configNameToLabelMapping[configuration.name as keyof typeof configNameToLabelMapping] ?? configuration.name
-
+export const StoreConfigurationSwitch = ({
+  configuration,
+  onChange,
+  isUpdating,
+  label,
+}: StoreConfigurationInputProps) => {
   return (
     <Label>
       <Switch
@@ -21,12 +23,8 @@ export const StoreConfigurationSwitch = ({ configuration, onChange, isUpdating }
       />
       <span className={cn('flex items-center gap-1', isUpdating && 'opacity-50')}>
         {isUpdating && <LoadingSpinner size={20} />}
-        {configLabel}
+        {label}
       </span>
     </Label>
   )
-}
-
-const configNameToLabelMapping = {
-  enable_pos: 'Habilitar balcão',
 }

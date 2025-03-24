@@ -7,6 +7,7 @@ export type StoreConfiguration = Omit<SelectConfiguration, 'default' | 'createdA
   WithNullableFields<Pick<SelectStoreConfiguration, 'value' | 'createdAt' | 'updatedAt'>, 'createdAt' | 'updatedAt'>
 
 export type StoreConfigurationInputProps = {
+  label?: string
   configuration: StoreConfiguration
   onChange?(value: string): void
   isUpdating?: boolean
