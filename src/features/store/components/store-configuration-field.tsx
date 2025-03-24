@@ -18,6 +18,7 @@ const configNameToLabelMapping = {
 
 export const StoreConfigurationField = ({ configuration }: { configuration: StoreConfiguration }) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+
   // Used to force a re-render when the configuration fails to update
   const [renderVersion, setRenderVersion] = useState(0)
 
