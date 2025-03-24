@@ -2,11 +2,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { getAvailableStores } from '../api'
 import { useEffect } from 'react'
+import { storesCacheKey } from '../cache-keys'
 import { selectedStoreIdAtom } from '../state'
 import { useAtom } from 'jotai'
 
 export const useAvailableStores = () => {
-  const result = useQuery({ queryKey: ['stores'], queryFn: getAvailableStores })
+  const result = useQuery({ queryKey: storesCacheKey(), queryFn: getAvailableStores })
   const [selectedStoreId, setSelectedStoreId] = useAtom(selectedStoreIdAtom)
 
   useEffect(() => {

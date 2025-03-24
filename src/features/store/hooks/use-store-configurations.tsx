@@ -9,6 +9,7 @@ import toPairs from 'lodash/toPairs'
 import { StoreConfiguration } from '../types'
 import { useMemo } from 'react'
 import { isServer } from '@/lib/utils'
+import { storeConfigurationsCacheKey } from '../cache-keys'
 
 type StoreConfigurationsByCategory = {
   category: string
@@ -19,7 +20,7 @@ export const useStoreConfigurations = () => {
 
   const result = useQuery({
     enabled: !!selectedStoreId && !isServer,
-    queryKey: ['stores', 'configurations', selectedStoreId],
+    queryKey: storeConfigurationsCacheKey(selectedStoreId),
     queryFn: async () => {
       if (!selectedStoreId) throw new Error('No store selected')
       return getStoreConfigurations(selectedStoreId)
