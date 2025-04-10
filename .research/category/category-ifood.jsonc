@@ -1,0 +1,14 @@
+// Category - iFood
+{
+  "id": "a8533d43-aec8-467c-adf6-8a24791829a0",
+  "index": 0,
+  "name": "Lanches",
+  "externalCode": "string",
+  "status": "AVAILABLE", // AVAILABLE | UNAVAILABLE
+  "sequence": 0, // No clue what this is used for, as index seems to be related to ordering
+  "template": "DEFAULT", // DEFAULT | PIZZA
+  // [Optional]
+  "items": [],
+  // [Optional]
+  "pizza": {},
+}
