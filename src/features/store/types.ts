@@ -1,5 +1,5 @@
 import { SelectConfiguration } from '@/services/db/schema/configurations'
-import { SelectStore } from '@/services/db/schema/store'
+import { SelectStore } from '@/services/db/schema/stores'
 import { SelectStoreConfiguration } from '@/services/db/schema/store-configurations'
 
 export type Store = SelectStore

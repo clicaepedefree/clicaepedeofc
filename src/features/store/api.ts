@@ -1,7 +1,7 @@
 'use server'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
-import { storesTable } from '@/services/db/schema/store'
+import { storesTable } from '@/services/db/schema/stores'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
 import { coalesce } from '@/services/db/utils'
 import { eq, and } from 'drizzle-orm'

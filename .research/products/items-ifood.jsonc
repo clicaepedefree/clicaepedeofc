@@ -1,0 +1,278 @@
+// Items - iFood
+{
+  "item": {
+    "id": "af983271-3981-46fa-94eb-46cb81c439e2",
+    "type": "DEFAULT", // DEFAULT | PIZZA | COMBO_V2
+    "categoryId": "ea2c31a9-472f-443b-ae8f-72331153915c",
+    "status": "AVAILABLE",
+    "price": {
+      "value": 11,
+      "originalValue": 12.5,
+    },
+    "externalCode": "public_item_code",
+    "index": 0,
+    "productId": "f40ac7e7-da05-4800-90b2-2ee85f486d75",
+    "shifts": [
+      {
+        "startTime": "00:00",
+        "endTime": "23:59",
+        "monday": true,
+        "tuesday": true,
+        "wednesday": true,
+        "thursday": true,
+        "friday": true,
+        "saturday": true,
+        "sunday": true,
+      },
+    ],
+    "contextModifiers": [
+      {
+        "catalogContext": "WHITELABEL",
+        "externalCode": "item_code_for_whitelabel",
+        "price": {
+          "value": 13,
+          "originalValue": 16,
+        },
+        "status": "AVAILABLE",
+        "itemContextId": "12798f58-ce7b-4195-b719-7ae49d1b2f34",
+      },
+      {
+        "catalogContext": "DEFAULT",
+        "status": "AVAILABLE",
+        "itemContextId": "78a6faea-1628-4f66-896b-627bc91251bc",
+      },
+    ],
+  },
+  "optionGroups": [
+    {
+      "id": "d65789c8-cc81-47bc-b741-6847d0390fc6",
+      "name": "Option Group Name",
+      "status": "AVAILABLE",
+      "optionGroupType": "DEFAULT",
+      "optionIds": ["0e1a8e32-0a49-4c15-8b96-d8b7c5c4dc78", "b7da158f-4e05-4e2c-9e22-e042baea2a49"],
+    },
+    {
+      "id": "d7955b3a-3cc8-4cd3-983c-31954cee8cff",
+      "name": "Option Group Name3",
+      "status": "AVAILABLE",
+      "optionGroupType": "DEFAULT",
+      "optionIds": ["d8957077-36d0-476f-8766-81bac38a69cc"],
+    },
+    {
+      "id": "17532d15-2a2e-4e19-8fc7-3c7cec8bc30c",
+      "name": "Option Group Name 2",
+      "status": "AVAILABLE",
+      "optionGroupType": "DEFAULT",
+      "optionIds": ["abecc2d8-f91a-4cc7-b66f-59d406748ffb", "4034fa88-8804-46c9-8dec-92c8244ec932"],
+    },
+  ],
+  "options": [
+    {
+      "id": "0e1a8e32-0a49-4c15-8b96-d8b7c5c4dc78",
+      "status": "AVAILABLE",
+      "index": 0,
+      "productId": "220f1d53-3eef-44b1-9f6d-ba2e48d26fd4",
+      "price": {
+        "value": 4,
+        "originalValue": 7,
+      },
+      "externalCode": "option_code",
+      "contextModifiers": [
+        {
+          "catalogContext": "WHITELABEL",
+          "externalCode": "option_code_for_whitelabel",
+          "price": {
+            "value": 5,
+            "originalValue": 6,
+          },
+          "status": "AVAILABLE",
+        },
+        {
+          "catalogContext": "DEFAULT",
+          "status": "AVAILABLE",
+        },
+      ],
+    },
+    {
+      "id": "b7da158f-4e05-4e2c-9e22-e042baea2a49",
+      "status": "AVAILABLE",
+      "index": 0,
+      "productId": "abed1844-7220-40b2-abda-fbf86e331209",
+      "price": {
+        "value": 4,
+        "originalValue": 7,
+      },
+      "externalCode": "option_code2",
+      "contextModifiers": [
+        {
+          "catalogContext": "WHITELABEL",
+          "externalCode": "option_code_for_whitelabel2",
+          "price": {
+            "value": 5,
+            "originalValue": 6,
+          },
+          "status": "AVAILABLE",
+        },
+        {
+          "catalogContext": "DEFAULT",
+          "status": "AVAILABLE",
+        },
+      ],
+    },
+    {
+      "id": "d8957077-36d0-476f-8766-81bac38a69cc",
+      "status": "AVAILABLE",
+      "index": 0,
+      "productId": "eec65205-110d-43aa-9729-e4ebcf9f8106",
+      "price": {
+        "value": 4,
+        "originalValue": 7,
+      },
+      "externalCode": "option_code5",
+      "contextModifiers": [
+        {
+          "catalogContext": "WHITELABEL",
+          "externalCode": "option_code_for_whitelabel5",
+          "price": {
+            "value": 5,
+            "originalValue": 6,
+          },
+          "status": "AVAILABLE",
+        },
+        {
+          "catalogContext": "DEFAULT",
+          "status": "AVAILABLE",
+        },
+      ],
+    },
+    {
+      "id": "abecc2d8-f91a-4cc7-b66f-59d406748ffb",
+      "status": "AVAILABLE",
+      "index": 0,
+      "productId": "2b9da9a4-e4f4-46cb-8d29-687fbd3a7f6f",
+      "price": {
+        "value": 4,
+        "originalValue": 7,
+      },
+      "externalCode": "option_code3",
+      "contextModifiers": [
+        {
+          "catalogContext": "WHITELABEL",
+          "externalCode": "option_code_for_whitelabel3",
+          "price": {
+            "value": 5,
+            "originalValue": 6,
+          },
+          "status": "AVAILABLE",
+        },
+        {
+          "catalogContext": "DEFAULT",
+          "status": "AVAILABLE",
+        },
+      ],
+    },
+    {
+      "id": "4034fa88-8804-46c9-8dec-92c8244ec932",
+      "status": "AVAILABLE",
+      "index": 0,
+      "productId": "7c878419-e240-417d-a322-5c32f06f47c6",
+      "price": {
+        "value": 4,
+        "originalValue": 7,
+      },
+      "externalCode": "option_code4",
+      "contextModifiers": [
+        {
+          "catalogContext": "WHITELABEL",
+          "externalCode": "option_code_for_whitelabel4",
+          "price": {
+            "value": 5,
+            "originalValue": 6,
+          },
+          "status": "AVAILABLE",
+        },
+        {
+          "catalogContext": "DEFAULT",
+          "status": "AVAILABLE",
+        },
+      ],
+    },
+  ],
+  "products": [
+    {
+      "id": "f40ac7e7-da05-4800-90b2-2ee85f486d75",
+      "name": "Default name",
+      "description": "Default description",
+      "ean": "EAN112233414",
+      "serving": "SERVES_2",
+      "dietaryRestrictions": [],
+      "optionGroups": [
+        {
+          "id": "d65789c8-cc81-47bc-b741-6847d0390fc6",
+          "min": 0,
+          "max": 1,
+        },
+        {
+          "id": "d7955b3a-3cc8-4cd3-983c-31954cee8cff",
+          "min": 1,
+          "max": 1,
+        },
+        {
+          "id": "17532d15-2a2e-4e19-8fc7-3c7cec8bc30c",
+          "min": 0,
+          "max": 1,
+        },
+      ],
+    },
+    {
+      "id": "220f1d53-3eef-44b1-9f6d-ba2e48d26fd4",
+      "name": "Option name",
+      "externalCode": "option_product_code",
+      "description": "Default description",
+      "ean": "EAN112253553344",
+      "serving": "SERVES_1",
+      "dietaryRestrictions": [],
+      "optionGroups": [],
+    },
+    {
+      "id": "abed1844-7220-40b2-abda-fbf86e331209",
+      "name": "Option name2",
+      "externalCode": "option_product_code2",
+      "description": "Default description",
+      "ean": "EAN112253553344",
+      "serving": "SERVES_1",
+      "dietaryRestrictions": [],
+      "optionGroups": [],
+    },
+    {
+      "id": "eec65205-110d-43aa-9729-e4ebcf9f8106",
+      "name": "Option name5",
+      "externalCode": "option_product_code5",
+      "description": "Default description",
+      "ean": "EAN112253553344",
+      "serving": "SERVES_1",
+      "dietaryRestrictions": [],
+      "optionGroups": [],
+    },
+    {
+      "id": "2b9da9a4-e4f4-46cb-8d29-687fbd3a7f6f",
+      "name": "Option name3",
+      "externalCode": "option_product_code3",
+      "description": "Default description",
+      "ean": "EAN112253553344",
+      "serving": "SERVES_1",
+      "dietaryRestrictions": [],
+      "optionGroups": [],
+    },
+    {
+      "id": "7c878419-e240-417d-a322-5c32f06f47c6",
+      "name": "Option name4",
+      "externalCode": "option_product_code4",
+      "description": "Default description",
+      "ean": "EAN112253553344",
+      "serving": "SERVES_1",
+      "dietaryRestrictions": [],
+      "optionGroups": [],
+    },
+  ],
+}

@@ -1,5 +1,5 @@
 import { pgTable, integer, text, primaryKey } from 'drizzle-orm/pg-core'
-import { storesTable } from './store'
+import { storesTable } from './stores'
 import { configurationsTable } from './configurations'
 import { createdAt, updatedAt } from './utils'
 

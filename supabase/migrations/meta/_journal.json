@@ -26,8 +26,15 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1742736285369,
-      "tag": "0003_fix updatedAt columns",
+      "when": 1745117879313,
+      "tag": "0003_add product and category-products tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1745120132782,
+      "tag": "0004_add catalog and overwrite tables",
       "breakpoints": true
     }
   ]
