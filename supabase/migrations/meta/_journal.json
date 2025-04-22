@@ -36,6 +36,13 @@
       "when": 1745120132782,
       "tag": "0004_add catalog and overwrite tables",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1745326698502,
+      "tag": "0005_populate base catalogs",
+      "breakpoints": true
     }
   ]
 }
