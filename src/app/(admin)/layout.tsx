@@ -1,7 +1,7 @@
 import '@/app/globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { ClerkProvider, SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs'
+import { ClerkProvider, SignInButton, SignUpButton, SignedOut } from '@clerk/nextjs'
 import { ptBR } from '@clerk/localizations'
 import { Button } from '@/shared/button'
 import { PostHogProvider } from '@/services/product-management/provider'
@@ -33,6 +33,11 @@ const adminMenuItems = [
     title: 'Loja',
     icon: 'shopping-cart' as const,
     items: [
+      {
+        title: 'Cardápio / produtos',
+        url: '/menu',
+        icon: 'salad' as const,
+      },
       {
         title: 'Configurações',
         url: '/settings',
