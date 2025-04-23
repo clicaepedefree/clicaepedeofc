@@ -16,5 +16,5 @@ export const categoriesTable = pgTable('categories', {
   updatedAt,
 })
 
-export type InsertCategory = typeof categoriesTable.$inferInsert
+export type InsertCategory = Omit<typeof categoriesTable.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>
 export type SelectCategory = typeof categoriesTable.$inferSelect
