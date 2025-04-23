@@ -63,7 +63,9 @@ export const CreateCategoryForm = () => {
           console.error(`ERROR! ${error.message}`)
         }}
       />
-      <img src={form.state.values.imagePath} alt="Imagem da categoria" className="w-20 h-20" />
+      {form.state.values.imagePath && (
+        <img src={form.state.values.imagePath} alt="Imagem da categoria" className="w-20 h-20" />
+      )}
       <form.Field name="imagePath">
         {field => (
           <label>
