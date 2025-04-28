@@ -5,7 +5,8 @@ import { categoriesTable } from '@/services/db/schema/categories'
 import { InsertCategory } from '@/services/db/schema/categories'
 
 export const createCategoryOnDb = async (newCategory: InsertCategory) => {
-  return await db.insert(categoriesTable).values(newCategory).returning()
+  const [createdCategory] = await db.insert(categoriesTable).values(newCategory).returning()
+  return createdCategory
 }
 
 export const getNextCategoryIndex = async (storeId: number) => {
