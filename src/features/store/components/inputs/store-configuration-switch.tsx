@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 export const StoreConfigurationSwitch = ({ value, onChange, disabled, label }: StoreConfigurationInputProps) => {
   return (
-    <Label>
+    <Label variant="inline" size="sm">
       <Switch
         defaultChecked={value === 'true'}
         onCheckedChange={(updatedValue: boolean) => {
