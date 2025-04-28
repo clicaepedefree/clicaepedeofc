@@ -36,7 +36,7 @@ const adminMenuItems = [
       {
         title: 'Cardápio / produtos',
         url: '/menu',
-        icon: 'salad' as const,
+        icon: 'utensils' as const,
       },
       {
         title: 'Configurações',
