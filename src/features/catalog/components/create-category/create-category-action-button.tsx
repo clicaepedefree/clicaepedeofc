@@ -3,7 +3,6 @@
 import { Button } from '@/shared/button'
 import {
   Sheet,
-  SheetClose,
   SheetContent,
   SheetDescription,
   SheetFooter,
@@ -21,19 +20,17 @@ export const CreateCategoryActionButton = () => {
           Adicionar categoria
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-11/12 sm:max-w-full">
+      <SheetContent
+        className="w-11/12 sm:max-w-5xl max-h-dvh h-fit rounded-l-2xl"
+        onPointerDownOutside={() => {}}
+        onInteractOutside={() => {}}
+        onFocusOutside={() => {}}
+      >
         <SheetHeader>
-          <SheetTitle>Criar categoria</SheetTitle>
-          <SheetDescription>Crie uma nova categoria para o seu cardápio.</SheetDescription>
+          <SheetTitle>Nova categoria</SheetTitle>
+          <SheetDescription>Preencha as informações da nova categoria.</SheetDescription>
         </SheetHeader>
-        <CreateCategoryForm />
-        <SheetFooter className="sm:justify-start">
-          <SheetClose asChild>
-            <Button type="button" variant="secondary">
-              Close
-            </Button>
-          </SheetClose>
-        </SheetFooter>
+        <CreateCategoryForm className="px-4 overflow-y-auto relative" FooterContainerComponent={SheetFooter} />
       </SheetContent>
     </Sheet>
   )

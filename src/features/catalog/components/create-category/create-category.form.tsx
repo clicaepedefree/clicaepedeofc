@@ -1,31 +1,45 @@
 'use client'
 
 import { z } from 'zod'
-import { useForm } from '@tanstack/react-form'
+import { useForm, useStore } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { createCategory } from '../../api'
-import { useState } from 'react'
-import { FormFieldError } from '@/shared/form/form-field-error'
-import { UploadButton } from '@/shared/file-upload'
+import { SingleFileUploader } from '@/shared/file-upload'
+import { Input } from '@/shared/input'
+import { Label } from '@/shared/label'
+import { Button } from '@/shared/button'
+import { Textarea } from '@/shared/textarea'
+import { Category } from '../../types'
+import { cn } from '@/lib/utils'
+
+type CreateCategoryFormProps = {
+  className?: string
+  onSuccess?(newCategory: Category): void
+  FooterContainerComponent?: ComponentWithChildren
+}
 
 const createCategorySchema = z.object({
-  name: z.string().min(3, 'Nome da categoria é obrigatório'),
-  description: z.string(),
+  name: z
+    .string()
+    .nonempty('Nome da categoria é obrigatório')
+    .min(3, 'Nome da categoria deve ter pelo menos 3 caracteres'),
+  description: z.union([z.string(), z.null()]),
   isAvailable: z.boolean(),
-  imagePath: z.string(),
+  imagePath: z.union([z.string(), z.null()]),
 })
 
-export const CreateCategoryForm = () => {
-  const [success, setSuccess] = useState(false)
+const defaultValues: z.input<typeof createCategorySchema> = {
+  name: '',
+  description: '',
+  isAvailable: true,
+  imagePath: '',
+}
+
+export const CreateCategoryForm = ({ className, onSuccess, FooterContainerComponent }: CreateCategoryFormProps) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const form = useForm({
-    defaultValues: {
-      name: '',
-      description: '',
-      isAvailable: true,
-      imagePath: '',
-    },
+    defaultValues,
     validators: {
       onChange: createCategorySchema,
     },
@@ -34,109 +48,86 @@ export const CreateCategoryForm = () => {
         alert('Selecione uma loja antes de criar uma categoria.')
         return
       }
-      await createCategory({
+      const newCategory = await createCategory({
         storeId: selectedStoreId,
         name: value.name,
         description: value.description,
         isAvailable: value.isAvailable,
         imagePath: value.imagePath,
       })
-      setSuccess(true)
+      console.log('newCategory', newCategory)
       form.reset()
+      onSuccess?.(newCategory)
     },
   })
-  return (
-    <form
-      onSubmit={e => {
-        e.preventDefault()
-        e.stopPropagation()
-        form.handleSubmit()
-      }}
-      className="grid grid-cols-2 gap-3 bg-white p-4 rounded shadow w-full"
-    >
-      <UploadButton
-        onClientUploadComplete={res => {
-          console.log('Files: ', res)
-          form.setFieldValue('imagePath', res[0].url)
-        }}
-        onUploadError={(error: Error) => {
-          console.error(`ERROR! ${error.message}`)
-        }}
-      />
-      {form.state.values.imagePath && (
-        <img src={form.state.values.imagePath} alt="Imagem da categoria" className="w-20 h-20" />
+
+  const imagePath = useStore(form.store, state => state.values.imagePath)
+
+  const footerActions = (
+    <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
+      {([canSubmit, isSubmitting]) => (
+        <div className={cn('grid grid-cols-2 gap-2 justify-around', { 'mt-8': !FooterContainerComponent })}>
+          <Button variant="secondary" type="reset" onClick={() => form.reset()}>
+            Limpar
+          </Button>
+          <Button type="submit" disabled={!canSubmit}>
+            {isSubmitting ? 'Criando...' : 'Criar Categoria'}
+          </Button>
+        </div>
       )}
-      <form.Field name="imagePath">
-        {field => (
-          <label>
-            Caminho da Imagem
-            <input
-              type="text"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={e => field.handleChange(e.target.value)}
-              className="border p-2 rounded w-full"
-            />
-            <FormFieldError field={field} />
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="name">
-        {field => (
-          <label>
-            Nome
-            <input
-              type="text"
-              value={field.state.value}
-              onBlur={field.handleBlur}
-              onChange={e => field.handleChange(e.target.value)}
-              required
-              className="border p-2 rounded w-full"
-            />
-            <FormFieldError field={field} />
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="description">
-        {field => (
-          <label>
-            Descrição
-            <input
-              type="text"
-              value={field.state.value ?? ''}
-              onBlur={field.handleBlur}
-              onChange={e => field.handleChange(e.target.value)}
-              className="border p-2 rounded w-full"
-            />
-            <FormFieldError field={field} />
-          </label>
-        )}
-      </form.Field>
-      <form.Field name="isAvailable">
-        {field => (
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={field.state.value} onChange={e => field.handleChange(e.target.checked)} />
-            Disponível
-          </label>
-        )}
-      </form.Field>
-      <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
-        {([canSubmit, isSubmitting]) => (
-          <>
-            <button
-              type="submit"
-              className="bg-blue-600 text-white py-2 rounded hover:bg-blue-700 mt-2"
-              disabled={!canSubmit}
-            >
-              {isSubmitting ? 'Criando...' : 'Criar Categoria'}
-            </button>
-            <button type="reset" className="ml-2 border px-4 py-2 rounded" onClick={() => form.reset()}>
-              Limpar
-            </button>
-          </>
-        )}
-      </form.Subscribe>
-      {success && <div className="text-green-600 mt-2">Categoria criada com sucesso!</div>}
-    </form>
+    </form.Subscribe>
+  )
+
+  return (
+    <>
+      <form
+        onSubmit={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          form.handleSubmit()
+        }}
+        className={cn('grid grid-cols-1 md:grid-cols-2 gap-4 rounded w-full self-start', className)}
+      >
+        <SingleFileUploader
+          fileUrl={imagePath}
+          onFileUploaded={file => form.setFieldValue('imagePath', file.ufsUrl)}
+          onFileDeleted={() => form.setFieldValue('imagePath', null)}
+          className={cn('row-span-full')}
+        />
+        <div className="space-y-4">
+          <form.Field name="name">
+            {field => (
+              <Label>
+                Nome
+                <Input
+                  type="text"
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={e => field.handleChange(e.target.value)}
+                  required
+                  error={field.state.meta.errors[0]?.message}
+                />
+              </Label>
+            )}
+          </form.Field>
+          <form.Field name="description">
+            {field => (
+              <Label>
+                Descrição
+                <Textarea
+                  rows={2}
+                  value={field.state.value ?? ''}
+                  onBlur={field.handleBlur}
+                  onChange={e => field.handleChange(e.target.value)}
+                  error={field.state.meta.errors[0]?.message}
+                />
+              </Label>
+            )}
+          </form.Field>
+          {!FooterContainerComponent && footerActions}
+        </div>
+      </form>
+      {FooterContainerComponent && <FooterContainerComponent>{footerActions}</FooterContainerComponent>}
+    </>
   )
 }
