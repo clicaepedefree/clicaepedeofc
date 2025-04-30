@@ -8,8 +8,9 @@
       "command": "bun dev",
       "serverReadyAction": {
         "pattern": "Ready in",
-        "uriFormat": "http://localhost:3000",
+        "uriFormat": "http://localhost:3000/menu",
         "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}",
         "killOnServerStop": true
       },
       "presentation": {
