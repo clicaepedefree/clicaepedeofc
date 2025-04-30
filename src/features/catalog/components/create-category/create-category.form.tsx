@@ -78,6 +78,8 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
     </form.Subscribe>
   )
 
+  if (!selectedStoreId) return null
+
   return (
     <>
       <form
@@ -89,6 +91,7 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
         className={cn('grid grid-cols-1 md:grid-cols-2 gap-4 rounded w-full self-start', className)}
       >
         <SingleFileUploader
+          storeId={selectedStoreId}
           fileUrl={imagePath}
           onFileUploaded={file => form.setFieldValue('imagePath', file.ufsUrl)}
           onFileDeleted={() => form.setFieldValue('imagePath', null)}

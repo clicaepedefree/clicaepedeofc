@@ -28,11 +28,12 @@ interface SingleFileUploadedProps<Target extends UploadTarget> {
 
 export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'>({
   target = 'imageUploader' as Target,
+  storeId,
   fileUrl,
   onFileUploaded,
   onFileDeleted,
   className,
-}: SingleFileUploadedProps<Target>) => {
+}: SingleFileUploadedProps<Target> & { storeId: number }) => {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isImageLoaded, setIsImageLoaded] = useState(false)
 
@@ -54,11 +55,15 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
   })
 
   const { getRootProps, getInputProps } = useDropzone({
-    // @ts-ignore
-    onDrop: startUpload,
+    onDrop: files => {
+      console.log('files', files)
+      // @ts-ignore
+      startUpload(files, { storeId })
+    },
     accept: generateClientDropzoneAccept(generatePermittedFileTypes(routeConfig).fileTypes),
     multiple: false,
   })
+  console.log('getInputProps', getInputProps)
 
   useEffect(() => {
     setIsImageLoaded(false)
