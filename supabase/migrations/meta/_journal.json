@@ -43,6 +43,20 @@
       "when": 1745326698502,
       "tag": "0005_populate base catalogs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1746190900572,
+      "tag": "0006_add store files and relate it to category image",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1746191125828,
+      "tag": "0007_rename image column",
+      "breakpoints": true
     }
   ]
 }

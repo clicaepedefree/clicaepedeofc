@@ -1,6 +1,7 @@
 import { pgTable, serial, text, integer, boolean } from 'drizzle-orm/pg-core'
 import { createdAt, updatedAt } from './utils'
 import { storesTable } from './stores'
+import { storeFilesTable } from './store-files'
 
 export const categoriesTable = pgTable('categories', {
   id: serial('id').primaryKey(),
@@ -11,7 +12,7 @@ export const categoriesTable = pgTable('categories', {
   description: text('description'),
   index: integer('index').notNull(),
   isAvailable: boolean('is_available').notNull().default(true),
-  imagePath: text('image_path'),
+  imageId: integer('image_id').references(() => storeFilesTable.id),
   createdAt,
   updatedAt,
 })
