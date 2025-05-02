@@ -1,6 +1,6 @@
 import { createUploadthing, UTFiles, type FileRouter } from 'uploadthing/next'
 import { fileAuthMiddleware } from './auth-middleware'
-import { z } from 'zod'
+import { baseFileInputForUpload } from './base-file-input'
 
 const f = createUploadthing()
 
@@ -11,15 +11,8 @@ export const filesManagerRouterService = {
       maxFileCount: 1,
     },
   })
-    .input(z.object({ storeId: z.number() }))
-    .middleware(async ({ files, input }) => {
-      const middlewareOutput = await fileAuthMiddleware()
-      const parsedFiles = files.map(file => ({
-        ...file,
-        customId: `${input.storeId}_category_${Date.now()}`,
-      }))
-      return { ...middlewareOutput, storeId: input.storeId, [UTFiles]: parsedFiles }
-    })
+    .input(baseFileInputForUpload)
+    .middleware(({ input }) => fileAuthMiddleware({ input }))
     .onUploadComplete(async ({ metadata, file }) => {
       return { uploadedBy: metadata.userId, url: file.ufsUrl }
     }),
