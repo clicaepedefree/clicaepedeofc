@@ -12,6 +12,7 @@ import { Button } from '@/shared/button'
 import { Textarea } from '@/shared/textarea'
 import { Category } from '../../types'
 import { cn } from '@/lib/utils'
+import { fileSchema } from '@/features/store/form-validation/file-schema'
 
 type CreateCategoryFormProps = {
   className?: string
@@ -26,14 +27,14 @@ const createCategorySchema = z.object({
     .min(3, 'Nome da categoria deve ter pelo menos 3 caracteres'),
   description: z.union([z.string(), z.null()]),
   isAvailable: z.boolean(),
-  imagePath: z.union([z.string(), z.null()]),
+  image: z.union([fileSchema, z.null()]),
 })
 
 const defaultValues: z.input<typeof createCategorySchema> = {
   name: '',
-  description: '',
+  description: null,
   isAvailable: true,
-  imagePath: '',
+  image: null,
 }
 
 export const CreateCategoryForm = ({ className, onSuccess, FooterContainerComponent }: CreateCategoryFormProps) => {
@@ -45,7 +46,7 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
     },
     onSubmit: async ({ value }) => {
       if (!selectedStoreId) {
-        alert('Selecione uma loja antes de criar uma categoria.')
+        console.error('Selecione uma loja antes de criar uma categoria.')
         return
       }
       const newCategory = await createCategory({
@@ -53,15 +54,14 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
         name: value.name,
         description: value.description,
         isAvailable: value.isAvailable,
-        imagePath: value.imagePath,
+        imageId: value.image?.id,
       })
-      console.log('newCategory', newCategory)
       form.reset()
       onSuccess?.(newCategory)
     },
   })
 
-  const imagePath = useStore(form.store, state => state.values.imagePath)
+  const image = useStore(form.store, state => state.values.image)
 
   const footerActions = (
     <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
@@ -70,7 +70,7 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
           <Button variant="secondary" type="reset" onClick={() => form.reset()}>
             Limpar
           </Button>
-          <Button type="submit" disabled={!canSubmit}>
+          <Button type="submit" disabled={!canSubmit} onClick={form.handleSubmit}>
             {isSubmitting ? 'Criando...' : 'Criar Categoria'}
           </Button>
         </div>
@@ -92,9 +92,9 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
       >
         <SingleFileUploader
           storeId={selectedStoreId}
-          fileUrl={imagePath}
-          onFileUploaded={file => form.setFieldValue('imagePath', file.ufsUrl)}
-          onFileDeleted={() => form.setFieldValue('imagePath', null)}
+          fileUrl={image?.url}
+          onFileUploaded={file => form.setFieldValue('image', { id: file.serverData.id, url: file.serverData.url })}
+          onFileDeleted={() => form.setFieldValue('image', null)}
           className={cn('row-span-full')}
         />
         <div className="space-y-4">
