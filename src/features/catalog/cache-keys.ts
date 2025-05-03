@@ -1,1 +1,1 @@
-export const categoriesCacheKey = () => ['categories']
+export const categoriesCacheKey = (storeId: number | null) => ['categories', storeId]

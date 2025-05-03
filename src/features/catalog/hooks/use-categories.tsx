@@ -7,9 +7,10 @@ import { categoriesCacheKey } from '../cache-keys'
 
 export const useCategories = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+
   const result = useQuery({
     enabled: !!selectedStoreId,
-    queryKey: categoriesCacheKey(),
+    queryKey: categoriesCacheKey(selectedStoreId),
     queryFn: async () => {
       if (!selectedStoreId) throw new Error('No store selected')
       return listCategories(selectedStoreId)
