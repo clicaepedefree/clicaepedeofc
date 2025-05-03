@@ -3,6 +3,7 @@
 import { UserProfile } from '@/features/user/components/userProfile'
 import { SidebarHeader, SidebarMenu, useSidebar } from './base-sidebar'
 import { StoreSelector } from '@/features/store/components/store-selector'
+import Image from 'next/image'
 
 export const AppSidebarHeader = () => {
   const { open, openMobile, isMobile } = useSidebar()
@@ -11,7 +12,9 @@ export const AppSidebarHeader = () => {
     <SidebarHeader>
       <SidebarMenu>
         {isOpen && (
-          <img src="/clica-pedidos.png" className="object-cover self-center" width="50%" alt="Clica Pedidos Logo" />
+          <div className="w-full h-11 relative">
+            <Image src="/clica-pedidos.png" className="object-contain self-center" alt="Clica Pedidos Logo" fill />
+          </div>
         )}
         {isOpen && <UserProfile showName />}
         {!isOpen && <UserProfile className={{ alignSelf: 'center', marginTop: '0.7rem' }} />}
