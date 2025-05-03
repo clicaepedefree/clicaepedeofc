@@ -16,7 +16,6 @@ export const useCategories = () => {
       return listCategories(selectedStoreId)
     },
   })
-  console.log('result', result)
 
   return {
     categories: result.data,

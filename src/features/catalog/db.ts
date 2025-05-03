@@ -36,5 +36,6 @@ export const listCategories = async (storeId: number) => {
     .from(categoriesTable)
     .leftJoin(storeFilesTable, eq(categoriesTable.imageId, storeFilesTable.id))
     .where(eq(categoriesTable.storeId, storeId))
+    .orderBy(categoriesTable.index)
   return categories
 }

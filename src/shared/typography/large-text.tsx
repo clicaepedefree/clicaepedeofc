@@ -4,8 +4,9 @@ import { cn } from '@/lib/utils'
 const largeTextVariants = cva('text-lg font-semibold', {
   variants: {
     variant: {
-      default: 'leading-6 text-lg font-semibold',
+      default: 'leading-6 text-lg',
       sm: 'text-sm',
+      md: 'text-base font-medium',
       lg: 'text-xl',
     },
     hoverBehavior: {
