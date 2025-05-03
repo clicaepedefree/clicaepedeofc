@@ -5,7 +5,7 @@ import { MoveDown, MoveUp, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/shared/button'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
-import { Category } from '../../types'
+import { CategoryWithImage } from '../../types'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
 
@@ -14,7 +14,7 @@ export const CategoryBlock = ({
   isFirst = false,
   isLast = false,
 }: {
-  category: Category
+  category: CategoryWithImage
   isFirst?: boolean
   isLast?: boolean
 }) => {

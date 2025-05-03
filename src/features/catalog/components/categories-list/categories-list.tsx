@@ -2,10 +2,10 @@
 
 import { Accordion } from '@/shared/accordion'
 import { CategoryBlock } from './category-block'
-import { Category } from '../../types'
+import { CategoryWithImage } from '../../types'
 
 type CategoriesListProps = {
-  categories: Category[]
+  categories: CategoryWithImage[]
 }
 
 export const CategoriesList = ({ categories }: CategoriesListProps) => {
