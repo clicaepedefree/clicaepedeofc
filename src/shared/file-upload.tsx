@@ -8,7 +8,7 @@ import { ClientUploadedFileData, inferEndpointOutput } from 'uploadthing/types'
 import { LargeText } from './typography/large-text'
 import { SmallDescription } from './typography/small-description'
 import { Button } from './button'
-import { ImageUp, Trash2 } from 'lucide-react'
+import { ImageOff, ImageUp, Trash2 } from 'lucide-react'
 import { Progress } from './progress'
 
 export const { useUploadThing } = generateReactHelpers<FilesManagerRouterService>({ url: '/api/files' })
@@ -21,43 +21,44 @@ export type UploadedFile<Target extends UploadTarget = 'imageUploader'> = Client
 interface SingleFileUploadedProps<Target extends UploadTarget> {
   target?: Target
   fileUrl?: string | null
+  fileTag?: string
   onFileUploaded(file: UploadedFile<Target>): void
+  onUploadError?(error: Error): void
   onFileDeleted?(): void
+  onUploadBegin?(files?: File[]): void
   className?: string
+  error?: string
 }
 
 export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'>({
   target = 'imageUploader' as Target,
   storeId,
   fileUrl,
+  fileTag,
   onFileUploaded,
+  onUploadError,
   onFileDeleted,
+  onUploadBegin,
   className,
+  error,
 }: SingleFileUploadedProps<Target> & { storeId: number }) => {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isImageLoaded, setIsImageLoaded] = useState(false)
 
   const { startUpload, routeConfig, isUploading } = useUploadThing(target, {
-    onClientUploadComplete: files => {
-      const [uploadedFile] = files
-      onFileUploaded(uploadedFile)
+    onBeforeUploadBegin: files => {
+      onUploadBegin?.()
+      return files
     },
-    onUploadError: error => {
-      console.log('error occurred while uploading', error)
-    },
-    onUploadBegin: file => {
-      console.log('upload has begun', file)
-    },
-    onUploadProgress: progress => {
-      console.log('upload progress', progress)
-      setUploadProgress(progress)
-    },
+    onUploadProgress: setUploadProgress,
+    onUploadError,
+    onClientUploadComplete: ([updatedFile]) => onFileUploaded(updatedFile),
   })
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop: files => {
       // @ts-ignore
-      startUpload(files, { storeId })
+      startUpload(files, { storeId, tag: fileTag })
     },
     accept: generateClientDropzoneAccept(generatePermittedFileTypes(routeConfig).fileTypes),
     multiple: false,
@@ -67,29 +68,39 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
     setIsImageLoaded(false)
   }, [fileUrl])
 
+  const isDisplayPlaceholderLayout = !fileUrl || isUploading
+
   return (
     <div
       {...getRootProps()}
       className={cn(
-        'flex flex-col items-center justify-center gap-4 m-2 border-dashed border border-gray-900/25 rounded-lg min-h-56 max-h-72',
+        'flex flex-col items-center justify-center gap-4 m-2 border-dashed border border-gray-900/25 rounded-lg min-h-56 max-h-72 relative',
         className,
-        { 'px-6 py-10': !fileUrl, 'group cursor-pointer': !isUploading }
+        { 'px-6 py-10': isDisplayPlaceholderLayout, 'group cursor-pointer': !isUploading }
       )}
     >
-      <input {...getInputProps()} disabled={isUploading} />
       {fileUrl && (
-        <div className="relative">
+        <>
           <img
             src={fileUrl}
             alt="Arquivo"
-            className="w-full h-auto object-contain rounded-lg"
+            className={cn('w-full h-auto max-h-[inherit] object-contain rounded-lg', {
+              hidden: isUploading,
+            })}
             onLoad={() => setIsImageLoaded(true)}
           />
+          {error && (
+            <span className="flex items-center justify-center gap-2 absolute bottom-2 right-1/2 translate-x-1/2 translate-y-1/2 text-destructive text-xs px-4 py-2 bg-white border border-destructive/10 rounded">
+              <ImageOff size={16} /> {error}
+            </span>
+          )}
           {isImageLoaded && (
             <Button
               variant="destructive"
               size="icon"
-              className="absolute -top-2 -right-2"
+              className={cn('absolute -top-2 -right-2', {
+                hidden: isUploading,
+              })}
               onClick={event => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -99,9 +110,9 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
               <Trash2 />
             </Button>
           )}
-        </div>
+        </>
       )}
-      {!fileUrl && (
+      {isDisplayPlaceholderLayout && (
         <>
           <ImageUp size={32} className="transition-all group-hover:text-primary/80 group-hover:scale-105" />
           <div className="flex flex-col items-center mt-2">
@@ -116,8 +127,14 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
             </Button>
           )}
           {isUploading && <Progress value={uploadProgress} />}
+          {error && (
+            <span className="flex items-center justify-center gap-2 text-destructive text-xs">
+              <ImageOff size={16} /> {error}
+            </span>
+          )}
         </>
       )}
+      <input {...getInputProps()} disabled={isUploading} />
     </div>
   )
 }

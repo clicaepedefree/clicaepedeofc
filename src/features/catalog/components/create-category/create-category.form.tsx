@@ -90,13 +90,27 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
         }}
         className={cn('grid grid-cols-1 md:grid-cols-2 gap-4 rounded w-full self-start', className)}
       >
-        <SingleFileUploader
-          storeId={selectedStoreId}
-          fileUrl={image?.url}
-          onFileUploaded={file => form.setFieldValue('image', { id: file.serverData.id, url: file.serverData.url })}
-          onFileDeleted={() => form.setFieldValue('image', null)}
-          className={cn('row-span-full')}
-        />
+        <form.Field name="image">
+          {field => (
+            <SingleFileUploader
+              storeId={selectedStoreId}
+              fileUrl={image?.url}
+              fileTag="category"
+              onFileUploaded={file => field.setValue({ id: file.serverData.id, url: file.serverData.url })}
+              onFileDeleted={() => field.setValue(null)}
+              onUploadBegin={() => {
+                field.setErrorMap({ onChange: [] })
+              }}
+              onUploadError={error => {
+                field.setErrorMap({
+                  onChange: [error],
+                })
+              }}
+              className={cn('row-span-full')}
+              error={field.state.meta.errors[0]?.message}
+            />
+          )}
+        </form.Field>
         <div className="space-y-4">
           <form.Field name="name">
             {field => (

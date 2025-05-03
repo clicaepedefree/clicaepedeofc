@@ -3,7 +3,16 @@ import { fileAuthMiddleware } from './auth-middleware'
 import { baseFileInputForUpload } from './base-file-input'
 import { addStoreFile } from '@/features/store/api'
 
-const f = createUploadthing()
+const f = createUploadthing({
+  errorFormatter: error => {
+    const errorMessage = error.message.includes('FileSizeMismatch')
+      ? 'Arquivo muito grande'
+      : 'Erro ao fazer upload to arquivo'
+    return {
+      message: errorMessage,
+    }
+  },
+})
 
 export const filesManagerRouterService = {
   imageUploader: f({
@@ -21,6 +30,7 @@ export const filesManagerRouterService = {
         provider: 'uploadthing',
         type: uploadedFile.type,
         url: uploadedFile.ufsUrl,
+        tag: metadata.tag,
       })
       return createdFile
     }),

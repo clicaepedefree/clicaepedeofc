@@ -8,5 +8,5 @@ export const fileAuthMiddleware = async ({ input }: { input: z.infer<typeof base
 
   if (!user) throw new UploadThingError('Unauthorized')
 
-  return { userId: user.id, storeId: input.storeId }
+  return { userId: user.id, storeId: input.storeId, tag: input.tag }
 }
