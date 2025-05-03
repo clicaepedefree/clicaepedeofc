@@ -56,14 +56,12 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop: files => {
-      console.log('files', files)
       // @ts-ignore
       startUpload(files, { storeId })
     },
     accept: generateClientDropzoneAccept(generatePermittedFileTypes(routeConfig).fileTypes),
     multiple: false,
   })
-  console.log('getInputProps', getInputProps)
 
   useEffect(() => {
     setIsImageLoaded(false)

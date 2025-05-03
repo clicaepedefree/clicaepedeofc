@@ -3,8 +3,9 @@ import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storesTable } from '@/services/db/schema/stores'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
-import { coalesce } from '@/services/db/utils'
+import { coalesce, getTableColumnsWithExclusions } from '@/services/db/utils'
 import { eq, and } from 'drizzle-orm'
+import { InsertStoreFile, storeFilesTable } from '@/services/db/schema/store-files'
 
 export const getAvailableStores = async () => await db.select().from(storesTable)
 
@@ -36,4 +37,17 @@ export const updateStoreConfiguration = async (storeId: number, configurationId:
       target: [storeConfigurationsTable.storeId, storeConfigurationsTable.configurationId],
       set: { value },
     })
+}
+
+export const addStoreFile = async (values: InsertStoreFile) => {
+  const storeFilesColumns = getTableColumnsWithExclusions(storeFilesTable, [
+    storeFilesTable.createdAt,
+    storeFilesTable.updatedAt,
+  ])
+
+  const [createdFile] = await db
+    .insert(storeFilesTable)
+    .values(values)
+    .returning({ ...storeFilesColumns })
+  return createdFile
 }
