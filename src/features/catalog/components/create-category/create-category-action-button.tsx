@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/shared/button'
 import {
   Sheet,
@@ -13,8 +14,9 @@ import {
 import { CreateCategoryForm } from './create-category.form'
 
 export const CreateCategoryActionButton = () => {
+  const [open, setOpen] = useState(false)
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button variant="default" size="sm">
           Adicionar categoria
@@ -30,7 +32,11 @@ export const CreateCategoryActionButton = () => {
           <SheetTitle>Nova categoria</SheetTitle>
           <SheetDescription>Preencha as informações da nova categoria.</SheetDescription>
         </SheetHeader>
-        <CreateCategoryForm className="px-4 overflow-y-auto relative" FooterContainerComponent={SheetFooter} />
+        <CreateCategoryForm
+          className="px-4 overflow-y-auto relative"
+          FooterContainerComponent={SheetFooter}
+          onSuccess={() => setOpen(false)}
+        />
       </SheetContent>
     </Sheet>
   )
