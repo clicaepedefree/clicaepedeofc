@@ -19,7 +19,7 @@ export const CategoryBlock = ({
   isLast?: boolean
 }) => {
   return (
-    <AccordionItem key={category.id} value={`item-${category.id}`} className="border px-4 rounded-lg mb-4 bg-slate-50">
+    <AccordionItem key={category.id} value={`item-${category.id}`} className="border px-4 rounded-lg bg-slate-50">
       <div className="flex items-center justify-between">
         <AccordionTrigger
           className="hover:no-underline py-0 items-center"
