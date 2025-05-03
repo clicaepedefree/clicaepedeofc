@@ -1,0 +1,31 @@
+import { cva, type VariantProps } from 'class-variance-authority'
+import { twMerge } from 'tailwind-merge'
+
+const bodyVariants = cva('tracking-normal', {
+  variants: {
+    variant: {
+      100: 'text-base',
+      200: 'text-sm tracking-[0.28px]',
+      300: 'text-xs',
+      400: 'text-xxs leading-[14px]',
+    },
+    fontWeight: {
+      semibold: 'font-semibold',
+      medium: 'font-medium',
+      regular: 'font-normal',
+    },
+  },
+  defaultVariants: {
+    variant: 300,
+    fontWeight: 'medium',
+  },
+})
+
+type BodyProps = VariantProps<typeof bodyVariants> & {
+  children: React.ReactNode
+  className?: string
+}
+
+export const Body = ({ variant, fontWeight, className, children }: BodyProps) => {
+  return <div className={twMerge(bodyVariants({ variant, fontWeight }), className)}>{children}</div>
+}

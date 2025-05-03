@@ -2,6 +2,7 @@
 import { H2 } from '@/shared/typography/h2'
 import { StoreConfiguration } from '@/features/store/types'
 import { StoreConfigurationField } from './store-configuration-field'
+import { Headline } from '@/shared/typography/headline'
 
 export const StoreConfigurationCategory = ({
   category,
@@ -12,7 +13,7 @@ export const StoreConfigurationCategory = ({
 }) => {
   return (
     <div className="space-y-2">
-      <H2>{category}</H2>
+      <Headline variant={300}>{category}</Headline>
       <div className="flex flex-col gap-2">
         {configurations.map(configuration => (
           <StoreConfigurationField key={configuration.id} configuration={configuration} />

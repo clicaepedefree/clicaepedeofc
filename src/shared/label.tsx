@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 
 const labelVariants = cva(
-  'flex gap-1 leading-none select-none group-data-[disabled=true]:pointer-events-none group-data-\
+  'flex gap-2 leading-none select-none group-data-[disabled=true]:pointer-events-none group-data-\
   [disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 text-foreground',
   {
     variants: {
