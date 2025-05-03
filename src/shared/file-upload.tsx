@@ -84,7 +84,7 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
           <img
             src={fileUrl}
             alt="Arquivo"
-            className={cn('w-full h-auto max-h-[inherit] object-contain rounded-lg', {
+            className={cn('w-full h-auto overflow-y-hidden max-h-[inherit] object-contain rounded-lg', {
               hidden: isUploading,
             })}
             onLoad={() => setIsImageLoaded(true)}
