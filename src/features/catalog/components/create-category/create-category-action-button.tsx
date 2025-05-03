@@ -12,9 +12,18 @@ import {
   SheetTrigger,
 } from '@/shared/sheet'
 import { CreateCategoryForm } from './create-category.form'
+import { Category } from '../../types'
 
-export const CreateCategoryActionButton = () => {
+type CreateCategoryActionButtonProps = {
+  onSuccess?: (newCategory: Category) => void
+}
+export const CreateCategoryActionButton = ({ onSuccess }: CreateCategoryActionButtonProps) => {
   const [open, setOpen] = useState(false)
+
+  const onNewCategoryCreated = (newCategory: Category) => {
+    onSuccess?.(newCategory)
+    setOpen(false)
+  }
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
@@ -35,7 +44,7 @@ export const CreateCategoryActionButton = () => {
         <CreateCategoryForm
           className="px-4 overflow-y-auto relative"
           FooterContainerComponent={SheetFooter}
-          onSuccess={() => setOpen(false)}
+          onSuccess={onNewCategoryCreated}
         />
       </SheetContent>
     </Sheet>
