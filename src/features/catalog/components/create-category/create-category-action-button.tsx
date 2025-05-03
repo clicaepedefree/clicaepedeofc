@@ -25,7 +25,7 @@ export const CreateCategoryActionButton = () => {
       <SheetContent
         className="w-11/12 sm:max-w-5xl max-h-dvh h-fit rounded-l-2xl"
         onPointerDownOutside={() => {}}
-        onInteractOutside={() => {}}
+        onInteractOutside={event => event.preventDefault()}
         onFocusOutside={() => {}}
       >
         <SheetHeader>
