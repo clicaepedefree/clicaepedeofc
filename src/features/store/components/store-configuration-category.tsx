@@ -1,5 +1,4 @@
 'use client'
-import { H2 } from '@/shared/typography/h2'
 import { StoreConfiguration } from '@/features/store/types'
 import { StoreConfigurationField } from './store-configuration-field'
 import { Headline } from '@/shared/typography/headline'
