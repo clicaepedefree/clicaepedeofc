@@ -1,6 +1,6 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
-import { listCategories } from '../db'
+import { listCategories } from '../api'
 import { useAtom } from 'jotai'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { categoriesCacheKey } from '../cache-keys'
