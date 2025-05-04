@@ -1,10 +1,8 @@
 'use server'
 
-import { InsertCategory } from '@/services/db/schema/categories'
-import { createCategoryOnDb } from '@/features/catalog/db'
-import { getNextCategoryIndex } from '@/features/catalog/db'
+import { createCategoryOnDb, getNextCategoryIndex } from '@/features/catalog/db'
 import { db } from '@/services/db'
-import { categoriesTable } from '@/services/db/schema/categories'
+import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
 import { storeFilesTable } from '@/services/db/schema/store-files'
 import { eq, getTableColumns } from 'drizzle-orm'
 

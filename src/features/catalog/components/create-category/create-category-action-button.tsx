@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { Button } from '@/shared/button'
 import {
   Sheet,
@@ -11,8 +10,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/shared/sheet'
-import { CreateCategoryForm } from './create-category.form'
+import { Plus } from 'lucide-react'
+import { useState } from 'react'
 import { Category } from '../../types'
+import { CreateCategoryForm } from './create-category.form'
 
 type CreateCategoryActionButtonProps = {
   onSuccess?: (newCategory: Category) => void
@@ -27,8 +28,8 @@ export const CreateCategoryActionButton = ({ onSuccess }: CreateCategoryActionBu
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="default" size="sm">
-          Adicionar categoria
+        <Button variant="default" className="font-semibold">
+          <Plus size={24} strokeWidth={3} /> Categoria
         </Button>
       </SheetTrigger>
       <SheetContent

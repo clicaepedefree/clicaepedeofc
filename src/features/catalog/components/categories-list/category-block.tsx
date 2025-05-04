@@ -1,14 +1,15 @@
 'use client'
 
-import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
-import { MoveDown, MoveUp, Image as ImageIcon, MoreHorizontal, Edit, Plus, Trash2 } from 'lucide-react'
-import { Button } from '@/shared/button'
-import Image from 'next/image'
 import { cn } from '@/lib/utils'
-import { CategoryWithImage } from '../../types'
+import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
+import { Button } from '@/shared/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
+import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import { useCategory } from '../../hooks/use-category'
+import { CategoryWithImage } from '../../types'
 
 export const CategoryBlock = ({
   category,
@@ -19,6 +20,7 @@ export const CategoryBlock = ({
   isFirst?: boolean
   isLast?: boolean
 }) => {
+  const { deleteCategory, isDeleting } = useCategory()
   return (
     <AccordionItem key={category.id} value={`item-${category.id}`} className="border px-4 rounded-lg bg-white">
       <div className="flex items-center justify-between">
@@ -77,23 +79,26 @@ export const CategoryBlock = ({
           >
             <MoveDown className="h-4 w-4" />
           </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem variant="destructive">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {isDeleting && <Trash2 className="h-4 w-4 text-destructive animate-bounce" />}
+          {!isDeleting && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem disabled>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={() => deleteCategory(category.id)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </AccordionItem>
