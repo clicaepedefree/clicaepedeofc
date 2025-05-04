@@ -1,11 +1,11 @@
 'use client'
 
-import * as React from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
+import * as React from 'react'
 
-import { cn } from '@/lib/utils'
 import { Button } from '@/shared/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/shared/command'
+import { cn } from '@/shared/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/popover'
 
 type ComboboxProps = {

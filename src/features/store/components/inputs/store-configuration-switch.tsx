@@ -1,9 +1,9 @@
 'use client'
-import { Switch } from '@/shared/switch'
 import { StoreConfigurationInputProps } from '@/features/store/types'
 import { Label } from '@/shared/label'
+import { cn } from '@/shared/lib/utils'
 import { LoadingSpinner } from '@/shared/spinner'
-import { cn } from '@/lib/utils'
+import { Switch } from '@/shared/switch'
 
 export const StoreConfigurationSwitch = ({ value, onChange, disabled, label }: StoreConfigurationInputProps) => {
   return (

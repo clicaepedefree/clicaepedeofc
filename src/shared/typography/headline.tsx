@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/shared/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 
 const headlineVariants = cva("font-['TT Commons'] tracking-normal", {

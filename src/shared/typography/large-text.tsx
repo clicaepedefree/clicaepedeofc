@@ -1,5 +1,5 @@
+import { cn } from '@/shared/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { cn } from '@/lib/utils'
 
 const largeTextVariants = cva('text-lg font-semibold', {
   variants: {

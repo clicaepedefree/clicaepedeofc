@@ -1,14 +1,14 @@
 'use client'
 
-import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { VariantProps, cva } from 'class-variance-authority'
 import { PanelLeftIcon } from 'lucide-react'
+import * as React from 'react'
 
-import { useIsMobile } from '@/hooks/use-mobile'
-import { cn } from '@/lib/utils'
 import { Button } from '@/shared/button'
+import { useIsMobile } from '@/shared/hooks/use-mobile'
 import { Input } from '@/shared/input'
+import { cn } from '@/shared/lib/utils'
 import { Separator } from '@/shared/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/shared/sheet'
 import { Skeleton } from '@/shared/skeleton'

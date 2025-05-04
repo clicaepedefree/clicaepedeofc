@@ -1,9 +1,9 @@
 'use client'
 
-import { cn } from '@/lib/utils'
 import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
 import { Button } from '@/shared/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
+import { cn } from '@/shared/lib/utils'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
 import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } from 'lucide-react'

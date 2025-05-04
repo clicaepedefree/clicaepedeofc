@@ -1,18 +1,18 @@
 'use client'
 
-import { z } from 'zod'
-import { useForm, useStore } from '@tanstack/react-form'
-import { useAtom } from 'jotai'
+import { fileSchema } from '@/features/store/form-validation/file-schema'
 import { selectedStoreIdAtom } from '@/features/store/state'
-import { createCategory } from '../../api'
+import { Button } from '@/shared/button'
 import { SingleFileUploader } from '@/shared/file-upload'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
-import { Button } from '@/shared/button'
+import { cn } from '@/shared/lib/utils'
 import { Textarea } from '@/shared/textarea'
+import { useForm, useStore } from '@tanstack/react-form'
+import { useAtom } from 'jotai'
+import { z } from 'zod'
+import { createCategory } from '../../api'
 import { Category } from '../../types'
-import { cn } from '@/lib/utils'
-import { fileSchema } from '@/features/store/form-validation/file-schema'
 
 type CreateCategoryFormProps = {
   className?: string

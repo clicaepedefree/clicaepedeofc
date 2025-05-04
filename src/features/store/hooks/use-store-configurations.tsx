@@ -2,14 +2,14 @@
 
 import { getStoreConfigurations } from '@/features/store/api'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { isServer } from '@/shared/lib/utils'
 import { useQuery } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import groupBy from 'lodash/groupBy'
 import toPairs from 'lodash/toPairs'
-import { StoreConfiguration } from '../types'
 import { useMemo } from 'react'
-import { isServer } from '@/lib/utils'
 import { storeConfigurationsCacheKey } from '../cache-keys'
+import { StoreConfiguration } from '../types'
 
 type StoreConfigurationsByCategory = {
   category: string
