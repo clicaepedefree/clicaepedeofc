@@ -10,6 +10,7 @@ import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } fr
 import Image from 'next/image'
 import { useCategory } from '../../hooks/use-category'
 import { CategoryWithImage } from '../../types'
+import { DeleteCategoryConfirmation } from './delete-category-confirmation'
 
 export const CategoryBlock = ({
   category,
@@ -92,10 +93,12 @@ export const CategoryBlock = ({
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" onClick={() => deleteCategory(category.id)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
+                <DeleteCategoryConfirmation asChild onConfirm={() => deleteCategory(category.id)}>
+                  <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DeleteCategoryConfirmation>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
