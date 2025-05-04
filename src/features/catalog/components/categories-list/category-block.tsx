@@ -1,13 +1,14 @@
 'use client'
 
 import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
-import { MoveDown, MoveUp, Image as ImageIcon } from 'lucide-react'
+import { MoveDown, MoveUp, Image as ImageIcon, MoreHorizontal, Edit, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/button'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { CategoryWithImage } from '../../types'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
 
 export const CategoryBlock = ({
   category,
@@ -76,6 +77,23 @@ export const CategoryBlock = ({
           >
             <MoveDown className="h-4 w-4" />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive">
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </AccordionItem>
