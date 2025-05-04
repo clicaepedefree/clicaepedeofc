@@ -23,19 +23,3 @@ export const getNextCategoryIndex = async (storeId: number) => {
   const nextIndex = currentMaximumIndex + 1
   return nextIndex
 }
-
-export const listCategories = async (storeId: number) => {
-  const categories = await db
-    .select({
-      ...getTableColumns(categoriesTable),
-      image: {
-        id: storeFilesTable.id,
-        url: storeFilesTable.url,
-      },
-    })
-    .from(categoriesTable)
-    .leftJoin(storeFilesTable, eq(categoriesTable.imageId, storeFilesTable.id))
-    .where(eq(categoriesTable.storeId, storeId))
-    .orderBy(categoriesTable.index)
-  return categories
-}
