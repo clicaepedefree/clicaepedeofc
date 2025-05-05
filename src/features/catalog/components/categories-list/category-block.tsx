@@ -111,6 +111,7 @@ export const CategoryBlock = ({
                     deleteCategory(category)
                     setIsActionsMenuOpen(false)
                   }}
+                  asChild
                 />
               </DropdownMenuContent>
             </DropdownMenu>
