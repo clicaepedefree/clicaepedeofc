@@ -1,16 +1,19 @@
 'use client'
 
+import { DeleteCategoryConfirmation } from '@/features/catalog/components/categories-list/delete-category-confirmation'
 import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
 import { Button } from '@/shared/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
+import { BaseSideBarActionForm } from '@/shared/form/base-side-bar-action-form'
 import { cn } from '@/shared/lib/utils'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
-import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } from 'lucide-react'
+import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Plus, Trash2 } from 'lucide-react'
 import Image from 'next/image'
+import { useState } from 'react'
 import { useCategory } from '../../hooks/use-category'
 import { CategoryWithImage } from '../../types'
-import { DeleteCategoryConfirmation } from '@/features/catalog/components/categories-list/delete-category-confirmation'
+import { CreateOrUpdateCategoryForm } from '../create-or-update-category/create-or-update-category.form'
 
 export const CategoryBlock = ({
   category,
@@ -21,7 +24,8 @@ export const CategoryBlock = ({
   isFirst?: boolean
   isLast?: boolean
 }) => {
-  const { deleteCategory, isDeleting } = useCategory()
+  const { deleteCategory, isDeleting, onUpdateCategory } = useCategory()
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false)
   return (
     <AccordionItem key={category.id} value={`item-${category.id}`} className="border px-4 rounded-lg bg-white">
       <div className="flex items-center justify-between">
@@ -78,21 +82,44 @@ export const CategoryBlock = ({
           </Button>
           {isDeleting && <Trash2 className="h-4 w-4 text-destructive animate-bounce" />}
           {!isDeleting && (
-            <DropdownMenu>
+            <DropdownMenu open={isActionsMenuOpen} onOpenChange={setIsActionsMenuOpen}>
               <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
                 <Button variant="ghost" size="icon" className="h-8 w-8">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Editar
-                </DropdownMenuItem>
+                <BaseSideBarActionForm
+                  title="Editar categoria"
+                  description="Altere os dados da categoria."
+                  trigger={
+                    <DropdownMenuItem onSelect={e => e.preventDefault()}>
+                      <Edit className="mr-2 h-4 w-4" />
+                      Editar
+                    </DropdownMenuItem>
+                  }
+                >
+                  {({ FooterContainer, closeSidebar }) => (
+                    <CreateOrUpdateCategoryForm
+                      className="px-4 overflow-y-auto relative"
+                      category={category}
+                      onSuccess={category => {
+                        console.log('updated category', category)
+                        closeSidebar?.()
+                        setIsActionsMenuOpen(false)
+                        onUpdateCategory(category)
+                      }}
+                      FooterContainerComponent={FooterContainer}
+                    />
+                  )}
+                </BaseSideBarActionForm>
                 <DeleteCategoryConfirmation
                   categoryName={category.name}
                   asChild
-                  onConfirm={() => deleteCategory(category)}
+                  onConfirm={() => {
+                    deleteCategory(category)
+                    setIsActionsMenuOpen(false)
+                  }}
                 >
                   <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
                     <Trash2 className="mr-2 h-4 w-4" />
