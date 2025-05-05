@@ -1,7 +1,7 @@
-import { pgTable, serial, integer, boolean, text } from 'drizzle-orm/pg-core'
-import { createdAt, updatedAt } from './utils'
-import { catalogsTable } from './catalogs'
-import { categoriesTable } from './categories'
+import { catalogsTable } from '@/services/db/schema/catalogs'
+import { categoriesTable } from '@/services/db/schema/categories'
+import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import { boolean, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
 export const catalogCategoriesTable = pgTable('catalog_categories', {
   id: serial('id').primaryKey(),

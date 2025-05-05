@@ -1,7 +1,7 @@
+import { catalogsTable } from '@/services/db/schema/catalogs'
+import { storeCatalogsTable } from '@/services/db/schema/store-catalogs'
+import { storesTable } from '@/services/db/schema/stores'
 import { relations } from 'drizzle-orm'
-import { storeCatalogsTable } from './store-catalogs'
-import { storesTable } from './stores'
-import { catalogsTable } from './catalogs'
 
 export const storeCatalogsRelations = relations(storeCatalogsTable, ({ one }) => ({
   store: one(storesTable, {

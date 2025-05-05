@@ -1,7 +1,7 @@
-import { pgTable, integer, text, primaryKey } from 'drizzle-orm/pg-core'
-import { storesTable } from './stores'
-import { configurationsTable } from './configurations'
-import { createdAt, updatedAt } from './utils'
+import { configurationsTable } from '@/services/db/schema/configurations'
+import { storesTable } from '@/services/db/schema/stores'
+import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import { integer, pgTable, primaryKey, text } from 'drizzle-orm/pg-core'
 
 export const storeConfigurationsTable = pgTable(
   'store_configurations',

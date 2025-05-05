@@ -1,7 +1,7 @@
-import { createUploadthing, type FileRouter } from 'uploadthing/next'
-import { fileAuthMiddleware } from './auth-middleware'
-import { baseFileInputForUpload } from './base-file-input'
 import { addStoreFile } from '@/features/store/api'
+import { fileAuthMiddleware } from '@/services/files-manager/auth-middleware'
+import { baseFileInputForUpload } from '@/services/files-manager/base-file-input'
+import { createUploadthing, type FileRouter } from 'uploadthing/next'
 
 const f = createUploadthing({
   errorFormatter: error => {

@@ -1,8 +1,8 @@
 'use client'
 
+import { CategoryBlock } from '@/features/catalog/components/categories-list/category-block'
+import { CategoryWithImage } from '@/features/catalog/types'
 import { Accordion } from '@/shared/accordion'
-import { CategoryBlock } from './category-block'
-import { CategoryWithImage } from '../../types'
 
 type CategoriesListProps = {
   categories: CategoryWithImage[]

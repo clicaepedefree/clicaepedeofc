@@ -1,8 +1,8 @@
 'use client'
 
-import { UserProfile } from '@/features/user/components/userProfile'
-import { SidebarHeader, SidebarMenu, useSidebar } from './base-sidebar'
 import { StoreSelector } from '@/features/store/components/store-selector'
+import { UserProfile } from '@/features/user/components/userProfile'
+import { SidebarHeader, SidebarMenu, useSidebar } from '@/shared/sidebar/base-sidebar'
 import Image from 'next/image'
 
 export const AppSidebarHeader = () => {

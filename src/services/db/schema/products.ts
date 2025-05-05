@@ -1,6 +1,6 @@
-import { pgTable, serial, text, integer } from 'drizzle-orm/pg-core'
-import { createdAt, updatedAt } from './utils'
-import { storesTable } from './stores'
+import { storesTable } from '@/services/db/schema/stores'
+import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import { integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
 export const productsTable = pgTable('products', {
   id: serial('id').primaryKey(),

@@ -2,9 +2,9 @@ import { Minus, Plus } from 'lucide-react'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/collapsible'
 import { SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/shared/sidebar/base-sidebar'
-import { MenuSection } from './types'
-import { AppSidebarSubItem } from './app-sidebar-item'
 import { DynamicIcon } from 'lucide-react/dynamic'
+import { AppSidebarSubItem } from '@/shared/sidebar/app-sidebar-item'
+import { MenuSection } from '@/shared/sidebar/types'
 
 type AppSidebarSectionProps = {
   section: MenuSection

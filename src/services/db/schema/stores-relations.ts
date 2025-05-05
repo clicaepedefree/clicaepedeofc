@@ -1,9 +1,9 @@
+import { categoriesTable } from '@/services/db/schema/categories'
+import { storeCatalogsTable } from '@/services/db/schema/store-catalogs'
+import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
+import { storeFilesTable } from '@/services/db/schema/store-files'
+import { storesTable } from '@/services/db/schema/stores'
 import { relations } from 'drizzle-orm'
-import { storesTable } from './stores'
-import { storeCatalogsTable } from './store-catalogs'
-import { storeConfigurationsTable } from './store-configurations'
-import { categoriesTable } from './categories'
-import { storeFilesTable } from './store-files'
 
 export const storeRelations = relations(storesTable, ({ many }) => ({
   catalogs: many(storeCatalogsTable),

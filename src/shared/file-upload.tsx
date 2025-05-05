@@ -1,16 +1,16 @@
 'use client'
 import { FilesManagerRouterService } from '@/services/files-manager'
+import { Button } from '@/shared/button'
 import { cn } from '@/shared/lib/utils'
+import { Progress } from '@/shared/progress'
+import { LargeText } from '@/shared/typography/large-text'
+import { SmallDescription } from '@/shared/typography/small-description'
 import { generateReactHelpers, useDropzone } from '@uploadthing/react'
 import { ImageOff, ImageUp, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { generateClientDropzoneAccept, generatePermittedFileTypes } from 'uploadthing/client'
 import { ClientUploadedFileData, inferEndpointOutput } from 'uploadthing/types'
-import { Button } from './button'
-import { Progress } from './progress'
-import { LargeText } from './typography/large-text'
-import { SmallDescription } from './typography/small-description'
 
 export const { useUploadThing } = generateReactHelpers<FilesManagerRouterService>({ url: '/api/files' })
 

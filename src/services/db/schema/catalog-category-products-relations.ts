@@ -1,7 +1,7 @@
+import { catalogCategoryProductsTable } from '@/services/db/schema/catalog-category-products'
+import { catalogsTable } from '@/services/db/schema/catalogs'
+import { categoryProductsTable } from '@/services/db/schema/category-products'
 import { relations } from 'drizzle-orm'
-import { catalogCategoryProductsTable } from './catalog-category-products'
-import { catalogsTable } from './catalogs'
-import { categoryProductsTable } from './category-products'
 
 export const catalogCategoryProductsRelations = relations(catalogCategoryProductsTable, ({ one }) => ({
   catalog: one(catalogsTable, {

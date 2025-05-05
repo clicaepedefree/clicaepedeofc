@@ -10,7 +10,7 @@ import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } fr
 import Image from 'next/image'
 import { useCategory } from '../../hooks/use-category'
 import { CategoryWithImage } from '../../types'
-import { DeleteCategoryConfirmation } from './delete-category-confirmation'
+import { DeleteCategoryConfirmation } from '@/features/catalog/components/categories-list/delete-category-confirmation'
 
 export const CategoryBlock = ({
   category,

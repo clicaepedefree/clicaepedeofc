@@ -1,7 +1,7 @@
-import { pgTable, integer, boolean } from 'drizzle-orm/pg-core'
-import { storesTable } from './stores'
-import { catalogsTable } from './catalogs'
-import { createdAt, updatedAt } from './utils'
+import { catalogsTable } from '@/services/db/schema/catalogs'
+import { storesTable } from '@/services/db/schema/stores'
+import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import { boolean, integer, pgTable } from 'drizzle-orm/pg-core'
 
 export const storeCatalogsTable = pgTable('store_catalogs', {
   storeId: integer('store_id')

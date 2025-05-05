@@ -1,10 +1,15 @@
 'use client'
 
-import Link from 'next/link'
-import { SidebarMenuButton, SidebarMenuItem, SidebarMenuSubButton, SidebarMenuSubItem } from './base-sidebar'
-import { MenuItem } from './types'
-import { DynamicIcon } from 'lucide-react/dynamic'
 import { useCurrentAdminPage } from '@/app/(admin)/use-current-admin-page'
+import {
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from '@/shared/sidebar/base-sidebar'
+import { MenuItem } from '@/shared/sidebar/types'
+import { DynamicIcon } from 'lucide-react/dynamic'
+import Link from 'next/link'
 
 export const AppSidebarItem = ({ item }: { item: MenuItem }) => {
   const { isCurrentPage } = useCurrentAdminPage()

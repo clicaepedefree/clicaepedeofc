@@ -5,7 +5,7 @@ import { dispatchToast } from '@/shared/lib/toast'
 import { useAtom } from 'jotai'
 import { useState } from 'react'
 import { useUpdateStoreConfiguration } from '../hooks/use-update-store-configuration'
-import { StoreConfigurationSwitch } from './inputs/store-configuration-switch'
+import { StoreConfigurationSwitch } from '@/features/store/components/inputs/store-configuration-switch'
 
 const configurationTypeToComponentMapping: Record<string, (props: StoreConfigurationInputProps) => React.JSX.Element> =
   {

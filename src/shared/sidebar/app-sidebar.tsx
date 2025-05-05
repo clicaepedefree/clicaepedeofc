@@ -9,10 +9,10 @@ import {
   SidebarRail,
   SidebarSeparator,
 } from '@/shared/sidebar/base-sidebar'
-import { AppSidebarItem } from './app-sidebar-item'
-import { MenuItem, MenuSection } from './types'
-import { AppSidebarSection } from './app-sidebar-section'
-import { AppSidebarHeader } from './app-sidebar-header'
+import { AppSidebarHeader } from '@/shared/sidebar/app-sidebar-header'
+import { AppSidebarItem } from '@/shared/sidebar/app-sidebar-item'
+import { AppSidebarSection } from '@/shared/sidebar/app-sidebar-section'
+import { MenuItem, MenuSection } from '@/shared/sidebar/types'
 
 type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
   menuItems: (MenuItem | MenuSection)[]
