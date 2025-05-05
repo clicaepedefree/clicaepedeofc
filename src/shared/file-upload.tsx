@@ -3,6 +3,7 @@ import { FilesManagerRouterService } from '@/services/files-manager'
 import { cn } from '@/shared/lib/utils'
 import { generateReactHelpers, useDropzone } from '@uploadthing/react'
 import { ImageOff, ImageUp, Trash2 } from 'lucide-react'
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import { generateClientDropzoneAccept, generatePermittedFileTypes } from 'uploadthing/client'
 import { ClientUploadedFileData, inferEndpointOutput } from 'uploadthing/types'
@@ -81,9 +82,10 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
     >
       {fileUrl && (
         <>
-          <img
+          <Image
             src={fileUrl}
             alt="Arquivo"
+            fill
             className={cn('w-full h-auto overflow-y-hidden max-h-[inherit] object-contain rounded-lg', {
               hidden: isUploading,
             })}
