@@ -93,7 +93,7 @@ export const CategoryBlock = ({
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
                 </DropdownMenuItem>
-                <DeleteCategoryConfirmation asChild onConfirm={() => deleteCategory(category.id)}>
+                <DeleteCategoryConfirmation asChild onConfirm={() => deleteCategory(category)}>
                   <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete

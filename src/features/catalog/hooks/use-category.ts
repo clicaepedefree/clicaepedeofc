@@ -1,4 +1,5 @@
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import { deleteCategory } from '../api'
@@ -10,25 +11,31 @@ export const useCategory = () => {
   const queryClient = useQueryClient()
 
   const deleteCategoryMutation = useMutation({
-    mutationFn: async (categoryId: number) => deleteCategory(categoryId),
-    onMutate: async (categoryIdToDelete: number) => {
+    mutationFn: async (category: CategoryWithImage) => deleteCategory(category.id),
+    onMutate: async (categoryToDelete: CategoryWithImage) => {
       await queryClient.cancelQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
-      const previousCategories = queryClient.getQueryData(categoriesCacheKey(selectedStoreId))
+      const previousCategories: CategoryWithImage[] | undefined = queryClient.getQueryData(
+        categoriesCacheKey(selectedStoreId)
+      )
 
       queryClient.setQueryData(
         categoriesCacheKey(selectedStoreId),
         (prevCategories: CategoryWithImage[] | undefined) => {
-          return prevCategories?.filter(category => category.id !== categoryIdToDelete)
+          return prevCategories?.filter(category => category.id !== categoryToDelete.id)
         }
       )
 
       return { previousCategories }
     },
-    onError: (_, __, context) => {
+    onError: (_, categoryToDelete, context) => {
+      console.log('categoryToDelete', categoryToDelete)
       queryClient.setQueryData(categoriesCacheKey(selectedStoreId), context?.previousCategories)
+      dispatchToast({ message: `Erro ao remover categoria '${categoryToDelete.name}'`, type: 'error' })
     },
-    onSuccess: () => {
+    onSuccess: (_, categoryToDelete) => {
+      console.log('categoryToDelete', categoryToDelete)
       queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+      dispatchToast({ message: `Categoria '${categoryToDelete.name}' removida`, type: 'success' })
     },
   })
 
@@ -36,6 +43,5 @@ export const useCategory = () => {
     deleteCategory: deleteCategoryMutation.mutate,
     deleteCategoryAsync: deleteCategoryMutation.mutateAsync,
     isDeleting: deleteCategoryMutation.isPending,
-    deleteError: deleteCategoryMutation.isError,
   }
 }

@@ -1,11 +1,11 @@
 'use client'
-import { StoreConfiguration, StoreConfigurationInputProps } from '@/features/store/types'
-import { StoreConfigurationSwitch } from './inputs/store-configuration-switch'
-import { useAtom } from 'jotai'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { StoreConfiguration, StoreConfigurationInputProps } from '@/features/store/types'
+import { dispatchToast } from '@/shared/lib/toast'
+import { useAtom } from 'jotai'
 import { useState } from 'react'
-import { toast } from 'sonner'
 import { useUpdateStoreConfiguration } from '../hooks/use-update-store-configuration'
+import { StoreConfigurationSwitch } from './inputs/store-configuration-switch'
 
 const configurationTypeToComponentMapping: Record<string, (props: StoreConfigurationInputProps) => React.JSX.Element> =
   {
@@ -36,11 +36,7 @@ export const StoreConfigurationField = ({ configuration }: { configuration: Stor
       { storeId: selectedStoreId, configurationId: configuration.id, value },
       {
         onError: () => {
-          toast.error(`Erro ao atualizar configuração '${configurationLabel}'`, {
-            richColors: true,
-            position: 'top-center',
-            dismissible: true,
-          })
+          dispatchToast({ message: `Erro ao atualizar configuração '${configurationLabel}'`, type: 'error' })
           setRenderVersion(prev => prev + 1)
         },
       }
