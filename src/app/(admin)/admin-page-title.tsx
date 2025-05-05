@@ -1,6 +1,6 @@
 'use client'
 
-import { useCurrentAdminPage } from './use-current-admin-page'
+import { useCurrentAdminPage } from '@/app/(admin)/use-current-admin-page'
 
 export const AdminPageTitle = () => {
   const { currentPageInfo } = useCurrentAdminPage()

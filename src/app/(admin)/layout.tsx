@@ -1,3 +1,4 @@
+import { AdminPageTitle } from '@/app/(admin)/admin-page-title'
 import '@/app/globals.css'
 import { StoreSelector } from '@/features/store/components/store-selector'
 import { UserProfile } from '@/features/user/components/userProfile'
@@ -13,7 +14,6 @@ import { ptBR } from '@clerk/localizations'
 import { ClerkProvider, SignInButton, SignUpButton, SignedOut } from '@clerk/nextjs'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { AdminPageTitle } from './admin-page-title'
 
 const inter = Inter({ subsets: ['latin'] })
 

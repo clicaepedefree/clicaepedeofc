@@ -1,14 +1,22 @@
 'use server'
-import { eq, desc, getTableColumns } from 'drizzle-orm'
 import { db } from '@/services/db'
-import { categoriesTable } from '@/services/db/schema/categories'
-import { InsertCategory } from '@/services/db/schema/categories'
-import { storeFilesTable } from '@/services/db/schema/store-files'
+import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
+import { desc, eq } from 'drizzle-orm'
 
 export const createCategoryOnDb = async (newCategory: InsertCategory) => {
   const [createdCategory] = await db.insert(categoriesTable).values(newCategory).returning()
 
   return createdCategory
+}
+
+export const updateCategoryOnDb = async (id: number, updatedCategoryData: InsertCategory) => {
+  const [updatedCategory] = await db
+    .update(categoriesTable)
+    .set(updatedCategoryData)
+    .where(eq(categoriesTable.id, id))
+    .returning()
+
+  return updatedCategory
 }
 
 export const getNextCategoryIndex = async (storeId: number) => {

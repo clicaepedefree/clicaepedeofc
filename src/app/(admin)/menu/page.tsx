@@ -1,9 +1,9 @@
 'use client'
 
-import { Headline } from '@/shared/typography/headline'
-import { CreateCategoryActionButton } from '@/features/catalog/components/create-category/create-category-action-button'
-import { useCategories } from '@/features/catalog/hooks/use-categories'
 import { CategoriesList } from '@/features/catalog/components/categories-list/categories-list'
+import { CreateCategoryActionButton } from '@/features/catalog/components/create-or-update-category/create-category-action-button'
+import { useCategories } from '@/features/catalog/hooks/use-categories'
+import { Headline } from '@/shared/typography/headline'
 
 export default function Page() {
   const { categories, refetch: refetchCategories } = useCategories()

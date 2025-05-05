@@ -1,5 +1,8 @@
 'use client'
 
+import { CreateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-category.form'
+// import { CreateOrUpdateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-or-update-category.form'
+import { Category } from '@/features/catalog/types'
 import { Button } from '@/shared/button'
 import {
   Sheet,
@@ -12,8 +15,6 @@ import {
 } from '@/shared/sheet'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Category } from '../../types'
-import { CreateCategoryForm } from './create-category.form'
 
 type CreateCategoryActionButtonProps = {
   onSuccess?: (newCategory: Category) => void
@@ -42,6 +43,11 @@ export const CreateCategoryActionButton = ({ onSuccess }: CreateCategoryActionBu
           <SheetTitle>Nova categoria</SheetTitle>
           <SheetDescription>Preencha as informações da nova categoria.</SheetDescription>
         </SheetHeader>
+        {/* <CreateOrUpdateCategoryForm
+          className="px-4 overflow-y-auto relative"
+          FooterContainerComponent={SheetFooter}
+          onSuccess={onNewCategoryCreated}
+        /> */}
         <CreateCategoryForm
           className="px-4 overflow-y-auto relative"
           FooterContainerComponent={SheetFooter}

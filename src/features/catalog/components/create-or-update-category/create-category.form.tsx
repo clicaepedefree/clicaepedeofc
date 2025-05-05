@@ -1,6 +1,8 @@
 'use client'
 
-import { fileSchema } from '@/features/store/form-validation/file-schema'
+import { createCategory } from '@/features/catalog/api'
+import { createCategorySchema } from '@/features/catalog/form-validation/category-schema'
+import { Category } from '@/features/catalog/types'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { SingleFileUploader } from '@/shared/file-upload'
@@ -11,24 +13,12 @@ import { Textarea } from '@/shared/textarea'
 import { useForm, useStore } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { z } from 'zod'
-import { createCategory } from '../../api'
-import { Category } from '../../types'
 
 type CreateCategoryFormProps = {
   className?: string
   onSuccess?(newCategory: Category): void
   FooterContainerComponent?: ComponentWithChildren
 }
-
-const createCategorySchema = z.object({
-  name: z
-    .string()
-    .nonempty('Nome da categoria é obrigatório')
-    .min(3, 'Nome da categoria deve ter pelo menos 3 caracteres'),
-  description: z.union([z.string(), z.null()]),
-  isAvailable: z.boolean(),
-  image: z.union([fileSchema, z.null()]),
-})
 
 const defaultValues: z.input<typeof createCategorySchema> = {
   name: '',

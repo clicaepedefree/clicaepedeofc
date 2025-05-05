@@ -1,7 +1,7 @@
-import { pgTable, serial, text, integer, boolean } from 'drizzle-orm/pg-core'
-import { createdAt, updatedAt } from './utils'
-import { storesTable } from './stores'
+import { boolean, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 import { storeFilesTable } from './store-files'
+import { storesTable } from './stores'
+import { createdAt, updatedAt } from './utils'
 
 export const categoriesTable = pgTable('categories', {
   id: serial('id').primaryKey(),
@@ -17,5 +17,5 @@ export const categoriesTable = pgTable('categories', {
   updatedAt,
 })
 
-export type InsertCategory = Omit<typeof categoriesTable.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>
+export type InsertCategory = Omit<typeof categoriesTable.$inferInsert, 'createdAt' | 'updatedAt'>
 export type SelectCategory = typeof categoriesTable.$inferSelect
