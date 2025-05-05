@@ -12,19 +12,25 @@ import { Button } from '@/shared/button'
 
 type DeleteCategoryConfirmationProps = {
   children: React.ReactNode
+  categoryName: string
   onConfirm?(): void
   asChild?: boolean
 }
 
-export const DeleteCategoryConfirmation = ({ children, onConfirm, asChild }: DeleteCategoryConfirmationProps) => {
+export const DeleteCategoryConfirmation = ({
+  children,
+  categoryName,
+  onConfirm,
+  asChild,
+}: DeleteCategoryConfirmationProps) => {
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild={asChild}>{children}</AlertDialogTrigger>
       <AlertDialogContent onOpenAutoFocus={e => e.preventDefault()}>
         <AlertDialogHeader>
-          <AlertDialogTitle>Deletar categoria</AlertDialogTitle>
+          <AlertDialogTitle>Remover categoria</AlertDialogTitle>
           <AlertDialogDescription>
-            Esta categoria será permanentemente excluída. <br />
+            A categoria <b className="text-destructive">{categoryName}</b> será permanentemente excluída. <br />
             Esta ação não pode ser desfeita.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -33,7 +39,7 @@ export const DeleteCategoryConfirmation = ({ children, onConfirm, asChild }: Del
             <Button variant="outline">Cancelar</Button>
           </AlertDialogCancel>
           <Button variant="destructive" onClick={onConfirm}>
-            Deletar
+            Remover
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

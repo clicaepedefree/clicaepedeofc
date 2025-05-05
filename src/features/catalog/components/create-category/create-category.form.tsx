@@ -123,6 +123,7 @@ export const CreateCategoryForm = ({ className, onSuccess, FooterContainerCompon
                   onChange={e => field.handleChange(e.target.value)}
                   required
                   error={field.state.meta.errors[0]?.message}
+                  autoFocus
                 />
               </Label>
             )}

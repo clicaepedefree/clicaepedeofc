@@ -107,7 +107,7 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
                 onFileDeleted?.()
               }}
             >
-              <Trash2 />
+              <Trash2 className="h-4 w-4" />
             </Button>
           )}
         </>

@@ -31,11 +31,7 @@ export const CategoryBlock = ({
           collapsibleClassName="hidden"
         >
           <>
-            <div
-              className={cn('h-14 w-14 rounded-md overflow-hidden my-3 bg-slate-100', {
-                'border border-slate-200': !category.image,
-              })}
-            >
+            <div className={cn('h-14 w-14 rounded-md overflow-hidden my-3 bg-slate-100 border border-slate-200')}>
               {category.image ? (
                 <Image src={category.image.url} alt={category.name} width={56} height={56} className="w-full h-full" />
               ) : (
@@ -91,12 +87,16 @@ export const CategoryBlock = ({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled>
                   <Edit className="mr-2 h-4 w-4" />
-                  Edit
+                  Editar
                 </DropdownMenuItem>
-                <DeleteCategoryConfirmation asChild onConfirm={() => deleteCategory(category)}>
+                <DeleteCategoryConfirmation
+                  categoryName={category.name}
+                  asChild
+                  onConfirm={() => deleteCategory(category)}
+                >
                   <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
                     <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
+                    Remover
                   </DropdownMenuItem>
                 </DeleteCategoryConfirmation>
               </DropdownMenuContent>
