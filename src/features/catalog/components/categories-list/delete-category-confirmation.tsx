@@ -11,21 +11,21 @@ import {
 import { Button } from '@/shared/button'
 
 type DeleteCategoryConfirmationProps = {
-  children: React.ReactNode
+  trigger: React.ReactNode
   categoryName: string
   onConfirm?(): void
   asChild?: boolean
 }
 
 export const DeleteCategoryConfirmation = ({
-  children,
+  trigger,
   categoryName,
   onConfirm,
   asChild,
 }: DeleteCategoryConfirmationProps) => {
   return (
     <AlertDialog>
-      <AlertDialogTrigger asChild={asChild}>{children}</AlertDialogTrigger>
+      <AlertDialogTrigger asChild={asChild}>{trigger}</AlertDialogTrigger>
       <AlertDialogContent onOpenAutoFocus={e => e.preventDefault()}>
         <AlertDialogHeader>
           <AlertDialogTitle>Remover categoria</AlertDialogTitle>

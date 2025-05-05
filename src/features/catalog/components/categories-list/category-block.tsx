@@ -4,16 +4,15 @@ import { DeleteCategoryConfirmation } from '@/features/catalog/components/catego
 import { AccordionItem, AccordionTrigger } from '@/shared/accordion'
 import { Button } from '@/shared/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
-import { BaseSideBarActionForm } from '@/shared/form/base-side-bar-action-form'
 import { cn } from '@/shared/lib/utils'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
-import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Plus, Trash2 } from 'lucide-react'
+import { Edit, Image as ImageIcon, MoreHorizontal, MoveDown, MoveUp, Trash2 } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
 import { useCategory } from '../../hooks/use-category'
 import { CategoryWithImage } from '../../types'
-import { CreateOrUpdateCategoryForm } from '../create-or-update-category/create-or-update-category.form'
+import { UpdateCategoryAction } from '../create-or-update-category/update-category-action'
 
 export const CategoryBlock = ({
   category,
@@ -62,7 +61,6 @@ export const CategoryBlock = ({
             className="h-8 w-8"
             onClick={e => {
               e.stopPropagation()
-              console.log('moveCategory up', category.id)
             }}
             disabled={isFirst}
           >
@@ -74,7 +72,6 @@ export const CategoryBlock = ({
             className="h-8 w-8"
             onClick={e => {
               e.stopPropagation()
-              console.log('moveCategory down', category.id)
             }}
             disabled={isLast}
           >
@@ -89,43 +86,32 @@ export const CategoryBlock = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <BaseSideBarActionForm
-                  title="Editar categoria"
-                  description="Altere os dados da categoria."
+                <UpdateCategoryAction
+                  category={category}
                   trigger={
                     <DropdownMenuItem onSelect={e => e.preventDefault()}>
                       <Edit className="mr-2 h-4 w-4" />
                       Editar
                     </DropdownMenuItem>
                   }
-                >
-                  {({ FooterContainer, closeSidebar }) => (
-                    <CreateOrUpdateCategoryForm
-                      className="px-4 overflow-y-auto relative"
-                      category={category}
-                      onSuccess={category => {
-                        console.log('updated category', category)
-                        closeSidebar?.()
-                        setIsActionsMenuOpen(false)
-                        onUpdateCategory(category)
-                      }}
-                      FooterContainerComponent={FooterContainer}
-                    />
-                  )}
-                </BaseSideBarActionForm>
+                  onSuccess={category => {
+                    setIsActionsMenuOpen(false)
+                    onUpdateCategory(category)
+                  }}
+                />
                 <DeleteCategoryConfirmation
+                  trigger={
+                    <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remover
+                    </DropdownMenuItem>
+                  }
                   categoryName={category.name}
-                  asChild
                   onConfirm={() => {
                     deleteCategory(category)
                     setIsActionsMenuOpen(false)
                   }}
-                >
-                  <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remover
-                  </DropdownMenuItem>
-                </DeleteCategoryConfirmation>
+                />
               </DropdownMenuContent>
             </DropdownMenu>
           )}
