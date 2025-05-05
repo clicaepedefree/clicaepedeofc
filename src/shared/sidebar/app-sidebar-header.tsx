@@ -13,7 +13,13 @@ export const AppSidebarHeader = () => {
       <SidebarMenu>
         {isOpen && (
           <div className="w-full h-11 relative">
-            <Image src="/clica-pedidos.png" className="object-contain self-center" alt="Clica Pedidos Logo" fill />
+            <Image
+              src="/clica-pedidos.png"
+              className="object-contain self-center"
+              alt="Clica Pedidos Logo"
+              sizes="(max-width: 768px) 271px, 239px"
+              fill
+            />
           </div>
         )}
         {isOpen && <UserProfile showName />}
