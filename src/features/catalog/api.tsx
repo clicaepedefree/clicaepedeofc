@@ -1,7 +1,14 @@
 'use server'
 
-import { createCategoryOnDb, getNextCategoryIndex, updateCategoryOnDb } from '@/features/catalog/db'
-import { NewCategory } from '@/features/catalog/types'
+import {
+  createCategoryOnDb,
+  createCategoryProductOnDb,
+  createProductOnDb,
+  getNextCategoryIndex,
+  getNextCategoryProductIndex,
+  updateCategoryOnDb,
+} from '@/features/catalog/db'
+import { NewCategory, NewProduct } from '@/features/catalog/types'
 import { db } from '@/services/db'
 import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
 import { storeFilesTable } from '@/services/db/schema/store-files'
@@ -35,4 +42,19 @@ export const listCategories = async (storeId: number) => {
 
 export const deleteCategory = async (categoryId: number) => {
   await db.delete(categoriesTable).where(eq(categoriesTable.id, categoryId))
+}
+
+export const createProduct = async (newProduct: NewProduct) => {
+  return await db.transaction(async tx => {
+    const product = await createProductOnDb({ newProduct, dbSession: tx })
+
+    for (const categoryProduct of newProduct.categories) {
+      const categoryProductIndex = await getNextCategoryProductIndex(categoryProduct.categoryId)
+      await createCategoryProductOnDb({
+        newCategoryProduct: { ...categoryProduct, productId: product.id, index: categoryProductIndex },
+        dbSession: tx,
+      })
+    }
+    return product
+  })
 }
