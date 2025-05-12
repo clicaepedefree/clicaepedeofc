@@ -57,6 +57,13 @@
       "when": 1746191125828,
       "tag": "0007_rename image column",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1747015107558,
+      "tag": "0008_Add image relationship for products",
+      "breakpoints": true
     }
   ]
 }

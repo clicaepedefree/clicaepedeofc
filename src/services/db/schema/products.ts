@@ -1,6 +1,7 @@
 import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
 import { integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
+import { storeFilesTable } from './store-files'
 
 export const productsTable = pgTable('products', {
   id: serial('id').primaryKey(),
@@ -9,7 +10,7 @@ export const productsTable = pgTable('products', {
     .references(() => storesTable.id),
   name: text('name').notNull(),
   description: text('description'),
-  imagePath: text('image_path'),
+  imageId: integer('image_id').references(() => storeFilesTable.id),
   ean: text('ean'),
   externalCode: text('external_code'),
   unit: text('unit'),
