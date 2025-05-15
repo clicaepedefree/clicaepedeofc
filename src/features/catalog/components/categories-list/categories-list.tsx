@@ -9,8 +9,10 @@ type CategoriesListProps = {
 }
 
 export const CategoriesList = ({ categories }: CategoriesListProps) => {
+  const categoriesIds = categories?.map(category => category.id.toString())
+
   return (
-    <Accordion type="single" collapsible asChild>
+    <Accordion type="multiple" asChild defaultValue={categoriesIds} onValueChange={console.log}>
       <div className="flex flex-col w-full gap-2">
         {categories?.map((category, index) => (
           <CategoryBlock

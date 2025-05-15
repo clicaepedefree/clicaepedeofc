@@ -1,6 +1,6 @@
 'use client'
 
-import { CreateOrUpdateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-or-update-category.form'
+import { CreateOrUpdateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-or-update-category-form'
 import { Category, CategoryWithImage } from '@/features/catalog/types'
 import { BaseSideBarActionForm } from '@/shared/form/base-side-bar-action-form'
 

@@ -10,3 +10,11 @@ type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
 type RequiredBy<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>
 
 type ComponentWithChildren = React.FC<{ children: React.ReactNode }>
+
+type DeepPartial<T> = T extends any[]
+  ? T
+  : T extends Record<string, any>
+    ? {
+        [P in keyof T]?: DeepPartial<T[P]>
+      }
+    : T

@@ -1,6 +1,6 @@
 'use client'
 
-import { CreateOrUpdateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-or-update-category.form'
+import { CreateOrUpdateCategoryForm } from '@/features/catalog/components/create-or-update-category/create-or-update-category-form'
 import { Category } from '@/features/catalog/types'
 import { Button } from '@/shared/button'
 import { BaseSideBarActionForm } from '@/shared/form/base-side-bar-action-form'
@@ -16,7 +16,7 @@ export const CreateCategoryActionButton = ({ onSuccess }: CreateCategoryActionBu
       description="Preencha as informações da nova categoria."
       trigger={
         <Button variant="default" className="font-semibold">
-          <Plus size={24} strokeWidth={3} /> Categoria
+          <Plus size={20} strokeWidth={3} /> Categoria
         </Button>
       }
     >
