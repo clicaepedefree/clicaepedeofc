@@ -6,9 +6,10 @@ import { Accordion } from '@/shared/accordion'
 
 type CategoriesListProps = {
   categories: CategoryWithImage[]
+  onCategoryUpdated?(): void
 }
 
-export const CategoriesList = ({ categories }: CategoriesListProps) => {
+export const CategoriesList = ({ categories, onCategoryUpdated }: CategoriesListProps) => {
   const categoriesIds = categories?.map(category => category.id.toString())
 
   return (
@@ -20,6 +21,7 @@ export const CategoriesList = ({ categories }: CategoriesListProps) => {
             category={category}
             isFirst={index === 0}
             isLast={index === categories.length - 1}
+            onCategoryUpdated={onCategoryUpdated}
           />
         ))}
       </div>

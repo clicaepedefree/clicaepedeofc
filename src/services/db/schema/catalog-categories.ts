@@ -17,5 +17,5 @@ export const catalogCategoriesTable = pgTable('catalog_categories', {
   updatedAt,
 })
 
-export type InsertCatalogCategoryProduct = typeof catalogCategoriesTable.$inferInsert
-export type SelectCatalogCategoryProduct = typeof catalogCategoriesTable.$inferSelect
+export type InsertCatalogCategory = typeof catalogCategoriesTable.$inferInsert
+export type SelectCatalogCategory = typeof catalogCategoriesTable.$inferSelect

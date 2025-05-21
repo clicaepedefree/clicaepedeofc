@@ -13,7 +13,7 @@ export const useCategories = () => {
     queryKey: categoriesCacheKey(selectedStoreId),
     queryFn: async () => {
       if (!selectedStoreId) throw new Error('No store selected')
-      return listCategories(selectedStoreId)
+      return listCategories({ storeId: selectedStoreId, includeProducts: true })
     },
   })
 

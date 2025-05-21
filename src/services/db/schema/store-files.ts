@@ -18,3 +18,10 @@ export const storeFilesTable = pgTable('store_files', {
 
 export type InsertStoreFile = typeof storeFilesTable.$inferInsert
 export type SelectStoreFile = typeof storeFilesTable.$inferSelect
+
+export const baseStoreFileRelationalQuery = {
+  columns: {
+    id: true,
+    url: true,
+  },
+} as const

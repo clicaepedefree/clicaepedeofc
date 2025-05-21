@@ -1,5 +1,5 @@
 import { InsertCategory, SelectCategory } from '@/services/db/schema/categories'
-import { InsertCategoryProduct } from '@/services/db/schema/category-products'
+import { InsertCategoryProduct, SelectCategoryProduct } from '@/services/db/schema/category-products'
 import { InsertProduct, SelectProduct } from '@/services/db/schema/products'
 import { SelectStoreFile } from '@/services/db/schema/store-files'
 
@@ -13,6 +13,7 @@ export type Category = SelectCategory
 
 export type CategoryWithImage = Omit<SelectCategory, 'imageId'> & {
   image: BaseStoreFile | null
+  products?: ProductWithImageAndCategory[]
 }
 
 export type NewCategoryProduct = Omit<PartialBy<InsertCategoryProduct, 'index'>, 'id'>
@@ -24,3 +25,5 @@ export type Product = SelectProduct
 export type ProductWithImage = Omit<SelectProduct, 'imageId'> & {
   image: BaseStoreFile | null
 }
+export type ProductWithImageAndCategory = ProductWithImage &
+  Omit<SelectCategoryProduct, 'id' | 'categoryId' | 'productId' | 'createdAt' | 'updatedAt'>

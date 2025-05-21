@@ -19,14 +19,17 @@ export const CategoryBlock = ({
   category,
   isFirst = false,
   isLast = false,
+  onCategoryUpdated,
 }: {
   category: CategoryWithImage
   isFirst?: boolean
   isLast?: boolean
+  onCategoryUpdated?(): void
 }) => {
   const { deleteCategory, isDeleting, onUpdateCategory } = useCategory()
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false)
 
+  const categoryProducts = category.products ?? []
   return (
     <AccordionItem key={category.id} value={category.id.toString()} className="border rounded-lg bg-white">
       <div className="flex items-center justify-between px-4 ">
@@ -117,9 +120,10 @@ export const CategoryBlock = ({
         </div>
       </div>
       <AccordionContent asChild className="px-4 py-0">
-        <div className="flex flex-col items-center justify-center pb-2">
+        <div className="flex flex-col items-center justify-center pb-2 gap-2">
           <CreateProductActionButton
             category={category}
+            onSuccess={onCategoryUpdated}
             trigger={
               <Button
                 variant="outline"
@@ -131,6 +135,9 @@ export const CategoryBlock = ({
               </Button>
             }
           />
+          {categoryProducts.map(product => (
+            <div key={product.id}>{JSON.stringify(product)}</div>
+          ))}
         </div>
       </AccordionContent>
     </AccordionItem>

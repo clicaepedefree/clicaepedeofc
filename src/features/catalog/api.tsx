@@ -11,8 +11,9 @@ import {
 import { NewCategory, NewProduct } from '@/features/catalog/types'
 import { db } from '@/services/db'
 import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
-import { storeFilesTable } from '@/services/db/schema/store-files'
-import { eq, getTableColumns } from 'drizzle-orm'
+import { categoryProductsTable } from '@/services/db/schema/category-products'
+import { baseStoreFileRelationalQuery } from '@/services/db/schema/store-files'
+import { eq } from 'drizzle-orm'
 
 export const createCategory = async (newCategory: NewCategory) => {
   const categoryIndex = newCategory.index ?? (await getNextCategoryIndex(newCategory.storeId))
@@ -24,20 +25,54 @@ export const updateCategory = async (updatedCategory: RequiredBy<InsertCategory,
   return await updateCategoryOnDb(updatedCategory.id, updatedCategory)
 }
 
-export const listCategories = async (storeId: number) => {
-  const categories = await db
-    .select({
-      ...getTableColumns(categoriesTable),
-      image: {
-        id: storeFilesTable.id,
-        url: storeFilesTable.url,
+export const listCategories = async ({
+  storeId,
+  includeProducts = false,
+}: {
+  storeId: number
+  includeProducts?: boolean
+}) => {
+  const categoriesWithProducts = await db.query.categoriesTable.findMany({
+    columns: {
+      imageId: false,
+    },
+    with: {
+      image: baseStoreFileRelationalQuery,
+      categoryProducts: {
+        columns: {
+          id: false,
+          categoryId: false,
+          productId: false,
+          createdAt: false,
+          updatedAt: false,
+        },
+        with: {
+          product: {
+            columns: { imageId: false },
+            with: { image: baseStoreFileRelationalQuery },
+          },
+        },
       },
-    })
-    .from(categoriesTable)
-    .leftJoin(storeFilesTable, eq(categoriesTable.imageId, storeFilesTable.id))
-    .where(eq(categoriesTable.storeId, storeId))
-    .orderBy(categoriesTable.index)
-  return categories
+    },
+    where: eq(categoriesTable.storeId, storeId),
+    orderBy: [categoriesTable.index, categoryProductsTable.index],
+  })
+
+  const categoriesWithProductsFinal = categoriesWithProducts.map(({ categoryProducts, ...category }) => {
+    if (!includeProducts) return category
+
+    const products = categoryProducts.map(({ product, ...categoryProduct }) => ({
+      ...product,
+      ...categoryProduct,
+    }))
+
+    return {
+      ...category,
+      products,
+    }
+  })
+
+  return categoriesWithProductsFinal
 }
 
 export const deleteCategory = async (categoryId: number) => {
