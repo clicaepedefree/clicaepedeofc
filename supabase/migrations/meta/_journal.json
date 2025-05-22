@@ -64,6 +64,13 @@
       "when": 1747015107558,
       "tag": "0008_Add image relationship for products",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1747938429410,
+      "tag": "0009_Update price columns types for decimal",
+      "breakpoints": true
     }
   ]
 }
