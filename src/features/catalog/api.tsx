@@ -12,6 +12,7 @@ import { NewCategory, NewProduct } from '@/features/catalog/types'
 import { db } from '@/services/db'
 import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
 import { categoryProductsTable } from '@/services/db/schema/category-products'
+import { productsTable } from '@/services/db/schema/products'
 import { baseStoreFileRelationalQuery } from '@/services/db/schema/store-files'
 import { eq } from 'drizzle-orm'
 
@@ -92,4 +93,8 @@ export const createProduct = async (newProduct: NewProduct) => {
     }
     return product
   })
+}
+
+export const deleteProduct = async (productId: number) => {
+  await db.delete(productsTable).where(eq(productsTable.id, productId))
 }
