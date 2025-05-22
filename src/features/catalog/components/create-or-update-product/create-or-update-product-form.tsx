@@ -16,6 +16,7 @@ import { cn } from '@/shared/lib/utils'
 import { Textarea } from '@/shared/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { useForm, useStore } from '@tanstack/react-form'
+import { Decimal } from 'decimal.js'
 import { useAtom } from 'jotai'
 import { BadgeX, Tag } from 'lucide-react'
 import { useState } from 'react'
@@ -72,28 +73,14 @@ export const CreateOrUpdateProductForm = ({
         return
       }
 
-      // if (!isCreatingProduct) {
-      //   const updatedProduct = await updateProduct({
-      //     id: product.id,
-      //     index: product.index,
-      //     storeId: product.storeId,
-      //     name: value.name,
-      //     description: value.description,
-      //     isAvailable: value.isAvailable,
-      //     imageId: value.image?.id,
-      //   })
-      //   form.reset()
-      //   onSuccess?.(updatedCategory)
-      //   return
-      // }
       const newProduct = await createProduct({
         storeId: selectedStoreId,
         name: value.name,
         description: value.description,
         categories: value.categories.map(productCategory => ({
           categoryId: productCategory.category?.id ?? 0,
-          price: productCategory.price ? parseInt(productCategory.price) : 0,
-          originalPrice: productCategory.originalPrice ? parseInt(productCategory.originalPrice) : 0,
+          price: new Decimal(productCategory.price).toString(),
+          originalPrice: productCategory.originalPrice ? new Decimal(productCategory.originalPrice).toString() : null,
         })),
         imageId: value.image?.id ?? null,
       })
@@ -203,7 +190,7 @@ export const CreateOrUpdateProductForm = ({
                           const price = fieldApi.form.getFieldValue(`categories[${index}].price`)
                           if (!value || !price) return
 
-                          if (parseInt(value) <= parseInt(price)) {
+                          if (new Decimal(value).lessThanOrEqualTo(new Decimal(price))) {
                             return { message: 'Preço antigo deve ser maior que o atual' }
                           }
                           return undefined
@@ -213,8 +200,8 @@ export const CreateOrUpdateProductForm = ({
                       {subField => (
                         <CurrencyInput
                           label="Preço antigo"
-                          value={subField.state.value ?? undefined}
-                          onValueChange={value => subField.handleChange(value ?? null)}
+                          defaultValue={subField.state.value ?? undefined}
+                          onValueChange={(_, __, values) => subField.handleChange(values?.float?.toString() ?? '')}
                           error={subField.state.meta.errors[0]?.message}
                           autoFocus
                           prefixElement={
@@ -243,8 +230,8 @@ export const CreateOrUpdateProductForm = ({
                     {subField => (
                       <CurrencyInput
                         label="Preço"
-                        value={subField.state.value ?? ''}
-                        onValueChange={value => subField.handleChange(value ?? '')}
+                        defaultValue={subField.state.value ?? ''}
+                        onValueChange={(_, __, values) => subField.handleChange(values?.float?.toString() ?? '')}
                         className={cn('col-span-2', { 'col-span-1': applyDiscount })}
                         error={subField.state.meta.errors[0]?.message}
                         prefixElement={

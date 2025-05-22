@@ -14,7 +14,7 @@ export const CategoriesList = ({ categories, onCategoryUpdated }: CategoriesList
 
   return (
     <Accordion type="multiple" asChild defaultValue={categoriesIds} onValueChange={console.log}>
-      <div className="flex flex-col w-full gap-2">
+      <div className="flex flex-col w-full gap-4 mb-10">
         {categories?.map((category, index) => (
           <CategoryBlock
             key={category.id}
