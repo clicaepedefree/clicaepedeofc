@@ -12,23 +12,11 @@ export const useCategory = () => {
 
   const deleteCategoryMutation = useMutation({
     mutationFn: async (category: CategoryWithImage) => deleteCategory(category.id),
-    onMutate: async (categoryToDelete: CategoryWithImage) => {
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
-      const previousCategories: CategoryWithImage[] | undefined = queryClient.getQueryData(
-        categoriesCacheKey(selectedStoreId)
-      )
-
-      queryClient.setQueryData(
-        categoriesCacheKey(selectedStoreId),
-        (prevCategories: CategoryWithImage[] | undefined) => {
-          return prevCategories?.filter(category => category.id !== categoryToDelete.id)
-        }
-      )
-
-      return { previousCategories }
     },
-    onError: (_, categoryToDelete, context) => {
-      queryClient.setQueryData(categoriesCacheKey(selectedStoreId), context?.previousCategories)
+    onError: (_, categoryToDelete) => {
+      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
       dispatchToast({ message: `Erro ao remover categoria '${categoryToDelete.name}'`, type: 'error' })
     },
     onSuccess: (_, categoryToDelete) => {
