@@ -11,8 +11,8 @@ export default function Page() {
       <Headline variant={300}>Cardápio / produtos</Headline>
       <CategoriesList
         categories={categories}
-        onCategoryCreated={() => refetchCategories()}
-        onCategoryUpdated={() => refetchCategories()}
+        onCategoryCreated={refetchCategories}
+        onCategoryUpdated={refetchCategories}
       />
     </div>
   )
