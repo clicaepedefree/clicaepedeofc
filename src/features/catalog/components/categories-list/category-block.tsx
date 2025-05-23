@@ -40,7 +40,7 @@ export const CategoryBlock = ({
   return (
     <AccordionItem key={category.id} value={category.id.toString()} className="border rounded-lg bg-white">
       <div className="flex items-center justify-between px-4 ">
-        <AccordionTrigger className="hover:no-underline py-0 items-center" containerClassName="flex-1 grow">
+        <AccordionTrigger className="hover:no-underline py-2 items-center" containerClassName="flex-1 grow">
           <>
             <ImageWithPlaceholder image={category.image} alt={category.name} className="my-3" />
             <div className="flex flex-col items-start justify-center grow">
@@ -150,17 +150,10 @@ const CategoryProductsTable = ({
   categoryProducts: ProductWithImageAndCategory[]
   firstRowAction?: React.ReactNode
 }) => {
+  const hasProducts = categoryProducts.length > 0
   return (
     <Table className="table-auto overflow-x-scroll">
       <TableHeader>
-        <TableRow>
-          <TableHead className="text-center">Item</TableHead>
-          <TableHead className="text-center">Preço</TableHead>
-          <TableHead className="text-center">Status de venda</TableHead>
-          <TableHead className="text-center">Ações</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
         {firstRowAction && (
           <TableRow className="hover:bg-unset">
             <TableCell className="px-0 m-0" colSpan={50}>
@@ -168,6 +161,16 @@ const CategoryProductsTable = ({
             </TableCell>
           </TableRow>
         )}
+        {hasProducts && (
+          <TableRow>
+            <TableHead className="text-center">Item</TableHead>
+            <TableHead className="text-center">Preço</TableHead>
+            <TableHead className="text-center">Status de venda</TableHead>
+            <TableHead className="text-center">Ações</TableHead>
+          </TableRow>
+        )}
+      </TableHeader>
+      <TableBody>
         {categoryProducts.map(product => (
           <CategoryProductRow key={product.id} product={product} />
         ))}
