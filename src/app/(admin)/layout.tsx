@@ -86,7 +86,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 </div>
               </header>
               <PostHogProvider>
-                <div className="p-4 bg-slate-50 h-full">{children}</div>
+                <div className="p-4 bg-slate-50 h-full overflow-y-scroll">{children}</div>
                 <Toaster />
               </PostHogProvider>
             </SidebarInset>

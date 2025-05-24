@@ -3,19 +3,23 @@
 import { CategoryBlock } from '@/features/catalog/components/categories-list/category-block'
 import { CategoryWithImage } from '@/features/catalog/types'
 import { Accordion } from '@/shared/accordion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CreateCategoryActionButton } from '../create-or-update-category/create-category-action-button'
 
 type CategoriesListProps = {
-  categories: CategoryWithImage[]
+  categories?: CategoryWithImage[]
   onCategoryCreated?(): void
   onCategoryUpdated?(): void
 }
 
 export const CategoriesList = ({ categories, onCategoryCreated, onCategoryUpdated }: CategoriesListProps) => {
-  const [openedCategoryIds, setOpenedCategoryIds] = useState<Set<string>>(
-    new Set(categories.map(category => category.id.toString()))
-  )
+  const [openedCategoryIds, setOpenedCategoryIds] = useState<Set<string> | null>(null)
+
+  useEffect(() => {
+    if (openedCategoryIds || !categories) return
+
+    setOpenedCategoryIds(new Set(categories.map(category => category.id.toString())))
+  }, [categories])
 
   const onCategoryOpenedStateChange = (isOpen: boolean, categoryId: string) => {
     const updatedOpenedCategories = new Set(openedCategoryIds)
@@ -40,7 +44,7 @@ export const CategoriesList = ({ categories, onCategoryCreated, onCategoryUpdate
         <Accordion
           type="multiple"
           asChild
-          value={[...openedCategoryIds]}
+          value={Array.from(openedCategoryIds ?? [])}
           onValueChange={updatedCategoryIds => setOpenedCategoryIds(new Set(updatedCategoryIds))}
         >
           <div className="flex flex-col w-full gap-4 mb-10">

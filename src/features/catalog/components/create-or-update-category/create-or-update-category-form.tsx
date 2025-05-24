@@ -82,7 +82,14 @@ export const CreateOrUpdateCategoryForm = ({
     <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
       {([canSubmit, isSubmitting]) => (
         <div className={cn('grid grid-cols-2 gap-2 justify-around', { 'mt-8': !FooterContainerComponent })}>
-          <Button variant="secondary" type="reset" onClick={() => form.reset()}>
+          <Button
+            variant="secondary"
+            type="reset"
+            onClick={event => {
+              event.preventDefault()
+              form.reset()
+            }}
+          >
             {isCreatingCategory ? 'Limpar' : 'Desfazer alterações'}
           </Button>
           <Button type="submit" disabled={!canSubmit} onClick={form.handleSubmit}>

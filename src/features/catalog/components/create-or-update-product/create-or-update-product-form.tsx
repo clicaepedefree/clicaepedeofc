@@ -1,43 +1,65 @@
 'use client'
 
+import { createProduct, updateProduct } from '@/features/catalog/api'
 import {
   createProductSchema,
   productCategorySchema,
+  productCategorySchemaWithIndex,
   updateProductSchema,
 } from '@/features/catalog/form-validation/product-schema'
-import { BaseCategory, Product, ProductWithImage } from '@/features/catalog/types'
+import { BaseCategory, CategoryProductWithImage, Product } from '@/features/catalog/types'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { SingleFileUploader } from '@/shared/file-upload'
+import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
 import { Textarea } from '@/shared/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { useForm, useStore } from '@tanstack/react-form'
-import { Decimal } from 'decimal.js'
 import { useAtom } from 'jotai'
 import { BadgeX, Tag } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
-import { createProduct } from '../../api'
 
 type CreateOrUpdateProductFormProps = {
-  product?: ProductWithImage
+  product?: CategoryProductWithImage
   category?: BaseCategory
   className?: string
   onSuccess?(product: Product): void
   FooterContainerComponent?: ComponentWithChildren
 }
 
-const getDefaultValues = (product?: ProductWithImage, category?: BaseCategory) => {
+const getDefaultValues = (product?: CategoryProductWithImage, category?: BaseCategory) => {
   const defaultCategory = category ?? { id: 0, name: '' }
+
+  if (product) {
+    const productCategory: z.input<typeof productCategorySchemaWithIndex> = {
+      category: defaultCategory,
+      price: product.price,
+      originalPrice: product.originalPrice,
+      index: product.index,
+    }
+
+    return {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      isAvailable: product.isAvailable,
+      image: product.image,
+      categories: [productCategory],
+    } as z.input<typeof updateProductSchema>
+  }
+
   const defaultProductCategory: z.input<typeof productCategorySchema> = {
     category: defaultCategory,
     price: '',
     originalPrice: null,
+    index: null,
   }
+
   const defaultValues: z.input<typeof createProductSchema> = {
     name: '',
     description: '',
@@ -46,7 +68,7 @@ const getDefaultValues = (product?: ProductWithImage, category?: BaseCategory) =
     categories: [defaultProductCategory],
   }
 
-  if (!product) return defaultValues
+  return defaultValues
 }
 
 export const CreateOrUpdateProductForm = ({
@@ -61,7 +83,8 @@ export const CreateOrUpdateProductForm = ({
   const productFormSchema = isCreatingProduct ? createProductSchema : updateProductSchema
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
-  const [applyDiscount, setApplyDiscount] = useState(false)
+  const [applyDiscount, setApplyDiscount] = useState(!!product?.originalPrice)
+
   const form = useForm({
     defaultValues: getDefaultValues(product, category),
     validators: {
@@ -73,14 +96,37 @@ export const CreateOrUpdateProductForm = ({
         return
       }
 
+      if (!isCreatingProduct) {
+        const updatedProduct = await updateProduct({
+          storeId: selectedStoreId,
+          id: product.id,
+          name: value.name,
+          description: value.description,
+          categories: value.categories.map(productCategory => ({
+            categoryId: productCategory.category.id,
+            price: formatValueToCurrency({ value: productCategory.price }),
+            originalPrice: productCategory.originalPrice
+              ? formatValueToCurrency({ value: productCategory.originalPrice })
+              : null,
+            index: productCategory.index ?? undefined,
+          })),
+          imageId: value.image?.id ?? null,
+        })
+        form.reset()
+        onSuccess?.(updatedProduct)
+        return
+      }
+
       const newProduct = await createProduct({
         storeId: selectedStoreId,
         name: value.name,
         description: value.description,
         categories: value.categories.map(productCategory => ({
-          categoryId: productCategory.category?.id ?? 0,
-          price: new Decimal(productCategory.price).toString(),
-          originalPrice: productCategory.originalPrice ? new Decimal(productCategory.originalPrice).toString() : null,
+          categoryId: productCategory.category.id,
+          price: formatValueToCurrency({ value: productCategory.price }),
+          originalPrice: productCategory.originalPrice
+            ? formatValueToCurrency({ value: productCategory.originalPrice })
+            : null,
         })),
         imageId: value.image?.id ?? null,
       })
@@ -97,7 +143,14 @@ export const CreateOrUpdateProductForm = ({
     <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
       {([canSubmit, isSubmitting]) => (
         <div className={cn('grid grid-cols-2 gap-2 justify-around', { 'mt-8': !FooterContainerComponent })}>
-          <Button variant="secondary" type="reset" onClick={() => form.reset()}>
+          <Button
+            variant="secondary"
+            type="reset"
+            onClick={event => {
+              event.preventDefault()
+              form.reset()
+            }}
+          >
             {isCreatingProduct ? 'Limpar' : 'Desfazer alterações'}
           </Button>
           <Button type="submit" disabled={!canSubmit} onClick={form.handleSubmit}>
@@ -190,7 +243,7 @@ export const CreateOrUpdateProductForm = ({
                           const price = fieldApi.form.getFieldValue(`categories[${index}].price`)
                           if (!value || !price) return
 
-                          if (new Decimal(value).lessThanOrEqualTo(new Decimal(price))) {
+                          if (getValueFromCurrencyString(value) <= getValueFromCurrencyString(price)) {
                             return { message: 'Preço antigo deve ser maior que o atual' }
                           }
                           return undefined
@@ -200,8 +253,8 @@ export const CreateOrUpdateProductForm = ({
                       {subField => (
                         <CurrencyInput
                           label="Preço antigo"
-                          defaultValue={subField.state.value ?? undefined}
-                          onValueChange={(_, __, values) => subField.handleChange(values?.float?.toString() ?? '')}
+                          value={subField.state.value ?? undefined}
+                          onValueChange={value => subField.handleChange(value ?? '')}
                           error={subField.state.meta.errors[0]?.message}
                           autoFocus
                           prefixElement={
@@ -230,8 +283,8 @@ export const CreateOrUpdateProductForm = ({
                     {subField => (
                       <CurrencyInput
                         label="Preço"
-                        defaultValue={subField.state.value ?? ''}
-                        onValueChange={(_, __, values) => subField.handleChange(values?.float?.toString() ?? '')}
+                        value={subField.state.value ?? ''}
+                        onValueChange={value => subField.handleChange(value ?? '')}
                         className={cn('col-span-2', { 'col-span-1': applyDiscount })}
                         error={subField.state.meta.errors[0]?.message}
                         prefixElement={

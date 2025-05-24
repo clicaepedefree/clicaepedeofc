@@ -10,7 +10,10 @@ export const productCategorySchema = z.object({
   category: baseCategorySchema,
   price: z.string().nonempty('Preço é obrigatório'),
   originalPrice: z.union([z.string().nonempty('Preço original é obrigatório'), z.null()]),
+  index: z.number().nullable(),
 })
+
+export const productCategorySchemaWithIndex = productCategorySchema.extend({ index: z.number() })
 
 export const createProductSchema = z.object({
   name: z.string().nonempty('Nome do produto é obrigatório').min(3, 'Nome do produto deve ter pelo menos 3 caracteres'),
@@ -20,4 +23,9 @@ export const createProductSchema = z.object({
   categories: z.array(productCategorySchema).nonempty('É necessário adicionar o preço para pelo menos uma categoria'),
 })
 
-export const updateProductSchema = createProductSchema.extend({ id: z.number() })
+export const updateProductSchema = createProductSchema.extend({
+  id: z.number(),
+  categories: z
+    .array(productCategorySchemaWithIndex)
+    .nonempty('É necessário adicionar o preço para pelo menos uma categoria'),
+})

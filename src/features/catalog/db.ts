@@ -35,8 +35,14 @@ export const getNextCategoryIndex = async (storeId: number) => {
   return nextIndex
 }
 
-export const getNextCategoryProductIndex = async (categoryId: number) => {
-  const result = await db
+export const getNextCategoryProductIndex = async ({
+  categoryId,
+  dbSession,
+}: {
+  categoryId: number
+  dbSession: DbSession
+}) => {
+  const result = await dbSession
     .select({ index: categoryProductsTable.index })
     .from(categoryProductsTable)
     .where(eq(categoryProductsTable.categoryId, categoryId))
@@ -70,4 +76,21 @@ export const createCategoryProductOnDb = async ({
   const [createdCategoryProduct] = await dbSession.insert(categoryProductsTable).values(newCategoryProduct).returning()
 
   return createdCategoryProduct
+}
+
+export const updateProductOnDb = async ({
+  updatedProduct,
+  dbSession,
+}: {
+  updatedProduct: RequiredBy<InsertProduct, 'id'>
+  dbSession: DbSession
+}) => {
+  const { id, ...updatedProductColumns } = updatedProduct
+  const [product] = await dbSession
+    .update(productsTable)
+    .set(updatedProductColumns)
+    .where(eq(productsTable.id, id))
+    .returning()
+
+  return product
 }

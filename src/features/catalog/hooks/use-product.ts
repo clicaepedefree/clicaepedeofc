@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import { deleteProduct } from '../api'
 import { categoriesCacheKey } from '../cache-keys'
-import { CategoryWithImage, ProductWithImage } from '../types'
+import { Product, ProductWithImage } from '../types'
 
 export const useProduct = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
@@ -26,9 +26,14 @@ export const useProduct = () => {
     },
   })
 
+  const onUpdateProduct = (product: Product) => {
+    queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+    dispatchToast({ message: `Produto '${product.name}' atualizado`, type: 'success' })
+  }
+
   return {
-    deleteProduct: deleteProductMutation.mutate,
-    deleteProductAsync: deleteProductMutation.mutateAsync,
+    deleteProduct: deleteProductMutation.mutateAsync,
     isDeleting: deleteProductMutation.isPending,
+    onUpdateProduct,
   }
 }

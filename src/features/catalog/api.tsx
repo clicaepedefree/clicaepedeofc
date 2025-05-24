@@ -7,14 +7,16 @@ import {
   getNextCategoryIndex,
   getNextCategoryProductIndex,
   updateCategoryOnDb,
+  updateProductOnDb,
 } from '@/features/catalog/db'
 import { NewCategory, NewProduct } from '@/features/catalog/types'
 import { db } from '@/services/db'
 import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
-import { categoryProductsTable } from '@/services/db/schema/category-products'
-import { productsTable } from '@/services/db/schema/products'
+import { categoryProductsTable, InsertCategoryProduct } from '@/services/db/schema/category-products'
+import { InsertProduct, productsTable } from '@/services/db/schema/products'
 import { baseStoreFileRelationalQuery } from '@/services/db/schema/store-files'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { difference } from 'lodash'
 
 export const createCategory = async (newCategory: NewCategory) => {
   const categoryIndex = newCategory.index ?? (await getNextCategoryIndex(newCategory.storeId))
@@ -85,13 +87,72 @@ export const createProduct = async (newProduct: NewProduct) => {
     const product = await createProductOnDb({ newProduct, dbSession: tx })
 
     for (const categoryProduct of newProduct.categories) {
-      const categoryProductIndex = await getNextCategoryProductIndex(categoryProduct.categoryId)
+      const categoryProductIndex = await getNextCategoryProductIndex({
+        categoryId: categoryProduct.categoryId,
+        dbSession: tx,
+      })
       await createCategoryProductOnDb({
         newCategoryProduct: { ...categoryProduct, productId: product.id, index: categoryProductIndex },
         dbSession: tx,
       })
     }
     return product
+  })
+}
+
+export const updateProduct = async (
+  updatedProduct: RequiredBy<InsertProduct, 'id'> & {
+    categories: Array<Omit<PartialBy<InsertCategoryProduct, 'index'>, 'id' | 'productId'>>
+  }
+) => {
+  return await db.transaction(async tx => {
+    const currentCategoryProducts = await tx.query.categoryProductsTable.findMany({
+      where: eq(categoryProductsTable.productId, updatedProduct.id),
+    })
+
+    const currentCategoriesIds = currentCategoryProducts.map(categoryProduct => categoryProduct.categoryId)
+
+    const updatedProductRow = await updateProductOnDb({ updatedProduct, dbSession: tx })
+
+    for (const categoryProduct of updatedProduct.categories) {
+      const isNewCategoryProduct = !currentCategoriesIds.includes(categoryProduct.categoryId)
+
+      if (isNewCategoryProduct) {
+        const categoryProductIndex = await getNextCategoryProductIndex({
+          categoryId: categoryProduct.categoryId,
+          dbSession: tx,
+        })
+        await createCategoryProductOnDb({
+          newCategoryProduct: { ...categoryProduct, productId: updatedProduct.id, index: categoryProductIndex },
+          dbSession: tx,
+        })
+
+        continue
+      }
+
+      await tx
+        .update(categoryProductsTable)
+        .set({ ...categoryProduct, productId: updatedProduct.id })
+        .where(
+          and(
+            eq(categoryProductsTable.categoryId, categoryProduct.categoryId),
+            eq(categoryProductsTable.productId, updatedProduct.id)
+          )
+        )
+    }
+
+    const updatedProductCategoriesIds = updatedProduct.categories.map(categoryProduct => categoryProduct.categoryId)
+    const currentCategoriesIdsToDelete = difference(currentCategoriesIds, updatedProductCategoriesIds)
+
+    for (const categoryId of currentCategoriesIdsToDelete) {
+      await tx
+        .delete(categoryProductsTable)
+        .where(
+          and(eq(categoryProductsTable.productId, updatedProduct.id), eq(categoryProductsTable.categoryId, categoryId))
+        )
+    }
+
+    return updatedProductRow
   })
 }
 

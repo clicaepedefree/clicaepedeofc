@@ -2,7 +2,7 @@
 
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
-import { formatNumberToCurrency } from '@/shared/formatters/currency'
+import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { ImageWithPlaceholder } from '@/shared/image-with-placeholder'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
@@ -10,18 +10,24 @@ import { Switch } from '@/shared/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
-import { Trash2 } from 'lucide-react'
+import { Edit, Trash2 } from 'lucide-react'
 import { useProduct } from '../../hooks/use-product'
-import { ProductWithImageAndCategory } from '../../types'
+import { BaseCategory, CategoryProductWithImage } from '../../types'
+import { UpdateProductAction } from '../create-or-update-product/update-product-action'
 
 export const CategoryProductsTable = ({
+  category,
   categoryProducts,
   firstRowAction,
+  onProductUpdated,
 }: {
-  categoryProducts: ProductWithImageAndCategory[]
+  category: BaseCategory
+  categoryProducts: CategoryProductWithImage[]
   firstRowAction?: React.ReactNode
+  onProductUpdated?(): void
 }) => {
   const hasProducts = categoryProducts.length > 0
+
   return (
     <Table className="table-auto overflow-x-scroll">
       <TableHeader>
@@ -43,15 +49,28 @@ export const CategoryProductsTable = ({
       </TableHeader>
       <TableBody>
         {categoryProducts.map(product => (
-          <CategoryProductRow key={product.id} product={product} />
+          <CategoryProductRow
+            key={product.id}
+            product={product}
+            category={category}
+            onProductUpdated={onProductUpdated}
+          />
         ))}
       </TableBody>
     </Table>
   )
 }
 
-const CategoryProductRow = ({ product }: { product: ProductWithImageAndCategory }) => {
-  const { deleteProduct, isDeleting } = useProduct()
+const CategoryProductRow = ({
+  product,
+  category,
+  onProductUpdated,
+}: {
+  product: CategoryProductWithImage
+  category: BaseCategory
+  onProductUpdated?(): void
+}) => {
+  const { deleteProduct, isDeleting, onUpdateProduct } = useProduct()
 
   return (
     <TableRow>
@@ -61,7 +80,9 @@ const CategoryProductRow = ({ product }: { product: ProductWithImageAndCategory 
       </TableCell>
       <TableCell className="max-w-24 w-fit place-items-center space-y-2">
         {product.originalPrice && (
-          <SmallText className="line-through text-xs">{formatNumberToCurrency(product.originalPrice)}</SmallText>
+          <SmallText className="line-through text-xs">
+            {formatValueToCurrency({ value: product.originalPrice, includeCurrencySymbol: true })}
+          </SmallText>
         )}
         <CurrencyInput
           className="w-fit"
@@ -79,11 +100,27 @@ const CategoryProductRow = ({ product }: { product: ProductWithImageAndCategory 
         </Label>
       </TableCell>
       <TableCell>
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center gap-2">
+          <UpdateProductAction
+            category={category}
+            product={product}
+            trigger={
+              <Button variant="ghost" size="icon" className="group/edit" disabled={isDeleting}>
+                <Edit size={16} className={cn('group-hover/edit:text-primary', isDeleting && 'animate-bounce')} />
+              </Button>
+            }
+            onSuccess={product => {
+              onUpdateProduct(product)
+              onProductUpdated?.()
+            }}
+          />
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => deleteProduct(product)}
+            onClick={async () => {
+              await deleteProduct(product)
+              onProductUpdated?.()
+            }}
             className="group/delete"
             disabled={isDeleting}
           >

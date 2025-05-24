@@ -42,6 +42,11 @@ export const CurrencyInput = ({
           decimalsLimit={2}
           decimalScale={2}
           customInput={Input}
+          disableAbbreviations
+          prefix={''}
+          intlConfig={{
+            locale: 'pt-BR',
+          }}
           {...props}
         />
       </div>

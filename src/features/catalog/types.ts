@@ -13,7 +13,7 @@ export type Category = SelectCategory
 
 export type CategoryWithImage = Omit<SelectCategory, 'imageId'> & {
   image: BaseStoreFile | null
-  products?: ProductWithImageAndCategory[]
+  products?: CategoryProductWithImage[]
 }
 
 export type NewCategoryProduct = Omit<PartialBy<InsertCategoryProduct, 'index'>, 'id'>
@@ -25,5 +25,5 @@ export type Product = SelectProduct
 export type ProductWithImage = Omit<SelectProduct, 'imageId'> & {
   image: BaseStoreFile | null
 }
-export type ProductWithImageAndCategory = ProductWithImage &
+export type CategoryProductWithImage = ProductWithImage &
   Omit<SelectCategoryProduct, 'id' | 'categoryId' | 'productId' | 'createdAt' | 'updatedAt'>

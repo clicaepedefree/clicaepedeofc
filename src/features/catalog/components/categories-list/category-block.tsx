@@ -26,13 +26,12 @@ export const CategoryBlock = ({
   onCategoryUpdated?(): void
   onUpdateOpenedState?(isOpen: boolean): void
 }) => {
-  const { deleteCategoryAsync, isDeleting, onUpdateCategory } = useCategory()
+  const { deleteCategory, isDeleting, onUpdateCategory } = useCategory()
 
   const categoryProducts = category.products ?? []
 
   return (
     <AccordionItem
-      key={category.id}
       value={category.id.toString()}
       className={cn(
         'border rounded-lg bg-white',
@@ -93,7 +92,7 @@ export const CategoryBlock = ({
             }}
             onDelete={async () => {
               onUpdateOpenedState?.(false)
-              await deleteCategoryAsync(category)
+              await deleteCategory(category)
               onUpdateOpenedState?.(true)
             }}
             isDeleting={isDeleting}
@@ -102,6 +101,7 @@ export const CategoryBlock = ({
       </div>
       <AccordionContent asChild className="px-4 pt-0 pb-2">
         <CategoryProductsTable
+          category={category}
           categoryProducts={categoryProducts}
           firstRowAction={
             <CreateProductActionButton
@@ -110,7 +110,6 @@ export const CategoryBlock = ({
               trigger={
                 <Button
                   variant="outline"
-                  onClick={() => console.log(category.id)}
                   className="text-primary w-full h-10 hover:bg-primary/5 hover:text-primary hover:border-2 hover:border-primary hover:border-dashed"
                 >
                   <Plus className="mr-1 h-4 w-4" />
