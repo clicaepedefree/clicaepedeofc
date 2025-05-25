@@ -4,6 +4,8 @@ import { usePathname } from 'next/navigation'
 const pathNameToPageInfoMapping: Record<string, { title: string }> = {
   '/dashboard': { title: 'Dashboard' },
   '/settings': { title: 'Configurações' },
+  '/menu': { title: 'Cardápio / produtos' },
+  '/pos': { title: 'Ponto de Venda' },
 }
 
 export const useCurrentAdminPage = () => {

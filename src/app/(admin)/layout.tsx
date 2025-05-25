@@ -45,6 +45,18 @@ const adminMenuItems = [
       },
     ],
   },
+  {
+    type: 'section' as const,
+    title: 'Vendas / Pedidos',
+    icon: 'dollar-sign' as const,
+    items: [
+      {
+        title: 'Ponto de Venda',
+        url: '/pos',
+        icon: 'monitor' as const,
+      },
+    ],
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
