@@ -9,6 +9,7 @@ import {
   AlertDialogTrigger,
 } from '@/shared/alert-dialog'
 import { Button } from '@/shared/button'
+import { LoadingSpinner } from '../spinner'
 
 type Resource = 'categoria' | 'produto'
 
@@ -18,6 +19,7 @@ type DeleteResourceConfirmationProps = {
   resourceName: string
   onConfirm?(): void
   asChild?: boolean
+  isDeleting?: boolean
 }
 
 export const DeleteResourceConfirmationModal = ({
@@ -26,6 +28,7 @@ export const DeleteResourceConfirmationModal = ({
   resourceName,
   onConfirm,
   asChild = true,
+  isDeleting = false,
 }: DeleteResourceConfirmationProps) => {
   const resourceGenderArticle = resource.slice(-1) === 'a' ? 'A' : 'O'
   const excludedForResource = resourceGenderArticle === 'A' ? 'excluída' : 'excluído'
@@ -36,7 +39,7 @@ export const DeleteResourceConfirmationModal = ({
         <AlertDialogHeader>
           <AlertDialogTitle>Remover {resource}</AlertDialogTitle>
           <AlertDialogDescription>
-            {resourceGenderArticle} {resource} <b className="text-destructive">{resourceName}</b> será permanentemente
+            {resourceGenderArticle} {resource} <b className="text-destructive">{resourceName}</b> será permanentemente{' '}
             {excludedForResource}. <br />
             Esta ação não pode ser desfeita.
           </AlertDialogDescription>
@@ -45,8 +48,8 @@ export const DeleteResourceConfirmationModal = ({
           <AlertDialogCancel asChild>
             <Button variant="outline">Cancelar</Button>
           </AlertDialogCancel>
-          <Button variant="destructive" onClick={onConfirm}>
-            Remover
+          <Button variant="destructive" onClick={onConfirm} disabled={isDeleting} className="min-w-24">
+            {isDeleting ? <LoadingSpinner className="text-white" size={20} /> : 'Remover'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

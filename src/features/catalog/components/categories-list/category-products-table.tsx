@@ -6,6 +6,7 @@ import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { ImageWithPlaceholder } from '@/shared/image-with-placeholder'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
+import { DeleteResourceConfirmationModal } from '@/shared/modals/delete-resource-confirmation-modal'
 import { Switch } from '@/shared/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
 import { LargeText } from '@/shared/typography/large-text'
@@ -106,7 +107,7 @@ const CategoryProductRow = ({
             product={product}
             trigger={
               <Button variant="ghost" size="icon" className="group/edit" disabled={isDeleting}>
-                <Edit size={16} className={cn('group-hover/edit:text-primary', isDeleting && 'animate-bounce')} />
+                <Edit size={16} className={cn('group-hover/edit:text-primary')} />
               </Button>
             }
             onSuccess={product => {
@@ -114,18 +115,20 @@ const CategoryProductRow = ({
               onProductUpdated?.()
             }}
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={async () => {
+          <DeleteResourceConfirmationModal
+            trigger={
+              <Button variant="ghost" size="icon" className="group/delete" disabled={isDeleting}>
+                <Trash2 size={16} className={cn('group-hover/delete:text-destructive')} />
+              </Button>
+            }
+            resource="produto"
+            resourceName={product.name}
+            isDeleting={isDeleting}
+            onConfirm={async () => {
               await deleteProduct(product)
               onProductUpdated?.()
             }}
-            className="group/delete"
-            disabled={isDeleting}
-          >
-            <Trash2 size={16} className={cn('group-hover/delete:text-destructive', isDeleting && 'animate-bounce')} />
-          </Button>
+          />
         </div>
       </TableCell>
     </TableRow>
