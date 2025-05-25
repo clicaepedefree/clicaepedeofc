@@ -1,6 +1,6 @@
 'use client'
-import { StoreConfiguration } from '@/features/store/types'
 import { StoreConfigurationField } from '@/features/store/components/store-configuration-field'
+import { StoreConfiguration } from '@/features/store/types'
 import { Headline } from '@/shared/typography/headline'
 
 export const StoreConfigurationCategory = ({
@@ -12,7 +12,7 @@ export const StoreConfigurationCategory = ({
 }) => {
   return (
     <div className="space-y-2">
-      <Headline variant={300}>{category}</Headline>
+      <Headline variant={400}>{category}</Headline>
       <div className="flex flex-col gap-2">
         {configurations.map(configuration => (
           <StoreConfigurationField key={configuration.id} configuration={configuration} />
