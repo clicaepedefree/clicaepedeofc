@@ -34,7 +34,7 @@ const adminMenuItems = [
     icon: 'shopping-cart' as const,
     items: [
       {
-        title: 'Cardápio / produtos',
+        title: 'Cardápio e produtos',
         url: '/menu',
         icon: 'utensils' as const,
       },
@@ -47,11 +47,11 @@ const adminMenuItems = [
   },
   {
     type: 'section' as const,
-    title: 'Vendas / Pedidos',
+    title: 'Vendas e Pedidos',
     icon: 'dollar-sign' as const,
     items: [
       {
-        title: 'Ponto de Venda',
+        title: 'Caixas / PDV',
         url: '/pos',
         icon: 'monitor' as const,
       },
