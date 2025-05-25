@@ -1,8 +1,8 @@
 'use client'
 
-import { DeleteCategoryConfirmation } from '@/features/catalog/components/categories-list/delete-category-confirmation'
 import { Button } from '@/shared/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/dropdown-menu'
+import { DeleteResourceConfirmationModal } from '@/shared/modals/delete-resource-confirmation-modal'
 import { Edit, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Category, CategoryWithImage } from '../../types'
@@ -41,19 +41,19 @@ export const CategoryActions = ({ category, onCategoryUpdated, onDelete, isDelet
             onCategoryUpdated?.(category)
           }}
         />
-        <DeleteCategoryConfirmation
+        <DeleteResourceConfirmationModal
           trigger={
             <DropdownMenuItem variant="destructive" onSelect={e => e.preventDefault()}>
               <Trash2 className="mr-2 h-4 w-4" />
               Remover
             </DropdownMenuItem>
           }
-          categoryName={category.name}
+          resource="categoria"
+          resourceName={category.name}
           onConfirm={() => {
             onDelete?.()
             setIsActionsMenuOpen(false)
           }}
-          asChild
         />
       </DropdownMenuContent>
     </DropdownMenu>

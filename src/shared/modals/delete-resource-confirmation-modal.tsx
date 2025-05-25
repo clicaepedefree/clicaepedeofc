@@ -10,27 +10,34 @@ import {
 } from '@/shared/alert-dialog'
 import { Button } from '@/shared/button'
 
-type DeleteCategoryConfirmationProps = {
+type Resource = 'categoria' | 'produto'
+
+type DeleteResourceConfirmationProps = {
   trigger: React.ReactNode
-  categoryName: string
+  resource: Resource
+  resourceName: string
   onConfirm?(): void
   asChild?: boolean
 }
 
-export const DeleteCategoryConfirmation = ({
+export const DeleteResourceConfirmationModal = ({
   trigger,
-  categoryName,
+  resource,
+  resourceName,
   onConfirm,
-  asChild,
-}: DeleteCategoryConfirmationProps) => {
+  asChild = true,
+}: DeleteResourceConfirmationProps) => {
+  const resourceGenderArticle = resource.slice(-1) === 'a' ? 'A' : 'O'
+  const excludedForResource = resourceGenderArticle === 'A' ? 'excluída' : 'excluído'
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild={asChild}>{trigger}</AlertDialogTrigger>
       <AlertDialogContent onOpenAutoFocus={e => e.preventDefault()}>
         <AlertDialogHeader>
-          <AlertDialogTitle>Remover categoria</AlertDialogTitle>
+          <AlertDialogTitle>Remover {resource}</AlertDialogTitle>
           <AlertDialogDescription>
-            A categoria <b className="text-destructive">{categoryName}</b> será permanentemente excluída. <br />
+            {resourceGenderArticle} {resource} <b className="text-destructive">{resourceName}</b> será permanentemente
+            {excludedForResource}. <br />
             Esta ação não pode ser desfeita.
           </AlertDialogDescription>
         </AlertDialogHeader>
