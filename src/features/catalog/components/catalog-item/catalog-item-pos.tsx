@@ -17,7 +17,13 @@ export const CatalogItemPOS = ({ item, onClick }: CatalogItemPOSProps) => {
       className="relative flex items-center justify-between cursor-pointer border rounded-lg h-fit overflow-hidden hover:shadow-lg group/catalog-item bg-white"
       onClick={onClick}
     >
-      <div className="absolute right-0 top-0 px-2 py-0.5 text-xs bg-primary/10 rounded-bl-md">{item.category.name}</div>
+      <Body
+        variant={300}
+        fontWeight="regular"
+        className="absolute right-0 top-0 px-2 py-0.5 bg-primary/10 rounded-bl-md text-slate-500"
+      >
+        {item.category.name}
+      </Body>
       <div className="flex items-center gap-3">
         <div className="border-r h-full">
           <ImageWithPlaceholder size={80} image={item.image} alt={item.name} className="border-0 rounded-r-none" />
