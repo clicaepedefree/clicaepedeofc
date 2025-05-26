@@ -1,4 +1,4 @@
-import { Button } from '../button'
+import { Button } from '@/shared/button'
 
 export const IconButton = ({ onClick, children }: { onClick?: () => void; children: React.ReactNode }) => {
   return (

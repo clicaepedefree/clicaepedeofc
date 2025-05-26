@@ -1,9 +1,9 @@
 'use client'
 
+import { useAvailableStores } from '@/features/store/hooks/use-available-stores'
+import { selectedStoreIdAtom } from '@/features/store/state'
 import { Combobox } from '@/shared/combobox'
-import { useAvailableStores } from '../hooks/use-available-stores'
 import { useAtom } from 'jotai'
-import { selectedStoreIdAtom } from '../state'
 
 export const StoreSelector = () => {
   const { stores, isLoading } = useAvailableStores()

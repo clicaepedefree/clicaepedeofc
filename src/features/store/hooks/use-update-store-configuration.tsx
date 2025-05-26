@@ -1,6 +1,6 @@
+import { updateStoreConfiguration } from '@/features/store/api'
+import { storeConfigurationsCacheKey } from '@/features/store/cache-keys'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { updateStoreConfiguration } from '../api'
-import { storeConfigurationsCacheKey } from '../cache-keys'
 
 interface UpdateStoreConfigurationParams {
   storeId: number

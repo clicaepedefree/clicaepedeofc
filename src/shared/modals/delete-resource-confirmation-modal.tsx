@@ -9,7 +9,7 @@ import {
   AlertDialogTrigger,
 } from '@/shared/alert-dialog'
 import { Button } from '@/shared/button'
-import { LoadingSpinner } from '../spinner'
+import { LoadingSpinner } from '@/shared/spinner'
 
 type Resource = 'categoria' | 'produto'
 

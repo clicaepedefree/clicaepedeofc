@@ -1,6 +1,6 @@
+import { Button } from '@/shared/button'
+import { cn } from '@/shared/lib/utils'
 import { Trash2 } from 'lucide-react'
-import { Button } from '../button'
-import { cn } from '../lib/utils'
 
 export const DeleteButton = ({
   isDeleting,
