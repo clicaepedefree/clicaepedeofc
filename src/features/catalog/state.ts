@@ -2,7 +2,13 @@ import { atom } from 'jotai'
 import { CartItem, CartSession } from './types'
 export const cartSessionAtom = atom<CartSession | null>(null)
 export const cartSessionItemsAtom = atom(get => get(cartSessionAtom)?.items)
-export const cartSessionTotalAtom = atom(get => get(cartSessionAtom)?.total ?? 0)
+export const cartSessionTotalAtom = atom(get => {
+  const cartSession = get(cartSessionAtom)
+
+  if (!cartSession || !cartSession.items?.length) return '0'
+
+  return cartSession.items.reduce((total, item) => total + Number(item.price) * item.quantity, 0)
+})
 
 export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
   const cartSession = get(cartSessionAtom)
@@ -11,7 +17,6 @@ export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
     set(cartSessionAtom, {
       startedAt: new Date(),
       items: [newItem],
-      total: Number(newItem.price),
     })
     return
   }
@@ -19,7 +24,6 @@ export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
   set(cartSessionAtom, {
     ...cartSession,
     items: [...cartSession.items, newItem],
-    total: cartSession.total + Number(newItem.price),
   })
 })
 
@@ -42,6 +46,26 @@ export const removeItemFromCartAtom = atom(null, (get, set, index: number) => {
       const isItemToRemove = item.id === itemToRemove.id && itemIndex === index
       return !isItemToRemove
     }),
-    total: cartSession.total - Number(itemToRemove.price),
   })
 })
+
+export const updateItemQuantityAtom = atom(
+  null,
+  (get, set, { index, quantity }: { index: number; quantity: number }) => {
+    const cartSession = get(cartSessionAtom)
+
+    if (!cartSession || cartSession.items.length <= index) return
+
+    const itemToUpdate = cartSession.items[index]
+
+    if (!itemToUpdate) return
+
+    set(cartSessionAtom, {
+      ...cartSession,
+      items: cartSession.items.map((item, itemIndex) => {
+        const isItemToUpdate = item.id === itemToUpdate.id && itemIndex === index
+        return isItemToUpdate ? { ...item, quantity } : item
+      }),
+    })
+  }
+)

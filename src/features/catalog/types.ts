@@ -39,5 +39,4 @@ export type CartItem = CatalogItem & {
 export type CartSession = {
   startedAt: Date
   items: CartItem[]
-  total: number
 }
