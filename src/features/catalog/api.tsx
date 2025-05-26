@@ -14,7 +14,8 @@ import { db } from '@/services/db'
 import { categoriesTable, InsertCategory } from '@/services/db/schema/categories'
 import { categoryProductsTable, InsertCategoryProduct } from '@/services/db/schema/category-products'
 import { InsertProduct, productsTable } from '@/services/db/schema/products'
-import { baseStoreFileRelationalQuery } from '@/services/db/schema/store-files'
+import { baseStoreFileRelationalQuery, storeFilesTable } from '@/services/db/schema/store-files'
+import { getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq } from 'drizzle-orm'
 import { difference } from 'lodash'
 
@@ -158,4 +159,37 @@ export const updateProduct = async (
 
 export const deleteProduct = async (productId: number) => {
   await db.delete(productsTable).where(eq(productsTable.id, productId))
+}
+
+export const listCatalogItems = async ({ storeId }: { storeId: number }) => {
+  const catalogProducts = await db
+    .select({
+      ...getTableColumnsWithExclusions(categoryProductsTable, [
+        categoryProductsTable.createdAt,
+        categoryProductsTable.updatedAt,
+        categoryProductsTable.categoryId,
+      ]),
+      ...getTableColumnsWithExclusions(productsTable, [
+        productsTable.id,
+        productsTable.createdAt,
+        productsTable.updatedAt,
+        productsTable.imageId,
+      ]),
+      category: {
+        id: categoriesTable.id,
+        name: categoriesTable.name,
+      },
+      image: {
+        id: storeFilesTable.id,
+        url: storeFilesTable.url,
+      },
+    })
+    .from(productsTable)
+    .innerJoin(categoryProductsTable, eq(categoryProductsTable.productId, productsTable.id))
+    .innerJoin(categoriesTable, eq(categoriesTable.id, categoryProductsTable.categoryId))
+    .leftJoin(storeFilesTable, eq(storeFilesTable.id, productsTable.imageId))
+    .where(eq(productsTable.storeId, storeId))
+    .orderBy(productsTable.name)
+
+  return catalogProducts
 }

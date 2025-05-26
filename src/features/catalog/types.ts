@@ -27,3 +27,8 @@ export type ProductWithImage = Omit<SelectProduct, 'imageId'> & {
 }
 export type CategoryProductWithImage = ProductWithImage &
   Omit<SelectCategoryProduct, 'id' | 'categoryId' | 'productId' | 'createdAt' | 'updatedAt'>
+
+export type CatalogItem = Omit<SelectCategoryProduct, 'categoryId' | 'createdAt' | 'updatedAt'> &
+  Omit<ProductWithImage, 'id' | 'createdAt' | 'updatedAt'> & {
+    category: BaseCategory
+  }

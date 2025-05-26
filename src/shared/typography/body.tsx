@@ -4,6 +4,7 @@ import { twMerge } from 'tailwind-merge'
 const bodyVariants = cva('tracking-normal', {
   variants: {
     variant: {
+      50: 'text-lg',
       100: 'text-base',
       200: 'text-sm tracking-[0.28px]',
       300: 'text-xs',

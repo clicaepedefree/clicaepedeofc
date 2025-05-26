@@ -16,12 +16,13 @@ export const useCategory = () => {
       await queryClient.cancelQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
     },
     onError: (_, categoryToDelete) => {
-      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
       dispatchToast({ message: `Erro ao remover categoria '${categoryToDelete.name}'`, type: 'error' })
     },
     onSuccess: (_, categoryToDelete) => {
-      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
       dispatchToast({ message: `Categoria '${categoryToDelete.name}' removida`, type: 'success' })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
     },
   })
 
