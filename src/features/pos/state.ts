@@ -70,3 +70,5 @@ export const updateItemQuantityAtom = atom(
     })
   }
 )
+
+export const activeCashierIdAtom = atom<number | undefined>()

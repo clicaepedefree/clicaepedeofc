@@ -14,7 +14,7 @@ export default function Page() {
   const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
-  const {} = useCashiers()
+  const { activeCashierId } = useCashiers()
 
   const { addItemToCart } = useCart()
 
@@ -23,7 +23,7 @@ export default function Page() {
   return (
     <div className="col-span-2 flex flex-col items-start gap-2 overflow-y-scroll h-full">
       <Headline variant={300} className="flex items-center justify-center gap-2">
-        Ponto de Venda {isFetching && <LoadingSpinner />}
+        Ponto de Venda {activeCashierId} {isFetching && <LoadingSpinner />}
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
