@@ -4,7 +4,6 @@ import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catal
 import { useCatalog } from '@/features/catalog/hooks/use-catalog'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { useCart } from '@/features/pos/hooks/use-cart'
-import { useCashiers } from '@/features/pos/hooks/use-cashiers'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
@@ -14,8 +13,6 @@ export default function Page() {
   const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
-  const { activeCashierId } = useCashiers()
-
   const { addItemToCart } = useCart()
 
   const hasCatalogItems = !!catalogItems?.length
@@ -23,7 +20,7 @@ export default function Page() {
   return (
     <div className="col-span-2 flex flex-col items-start gap-2 overflow-y-scroll h-full">
       <Headline variant={300} className="flex items-center justify-center gap-2">
-        Ponto de Venda {activeCashierId} {isFetching && <LoadingSpinner />}
+        Ponto de Venda {isFetching && <LoadingSpinner />}
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
