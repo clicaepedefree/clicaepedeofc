@@ -19,7 +19,7 @@ export default function Page() {
         Ponto de Venda {isFetching && <LoadingSpinner />}
       </Headline>
 
-      <div className="grid grid-cols-[2fr_1fr] w-full gap-6 h-[inherit] items-start overflow-y-hidden">
+      <div className="grid grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
         <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] overflow-y-[inherit]">
           {catalogItems?.map((item, index) => (
             <CatalogItemPOS

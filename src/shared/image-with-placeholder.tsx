@@ -13,14 +13,14 @@ export type ImageWithPlaceholderProps = {
 export function ImageWithPlaceholder({ image, alt, className, iconClassName, size = 56 }: ImageWithPlaceholderProps) {
   return (
     <div
-      className={cn('rounded-md overflow-hidden bg-slate-100 border border-slate-200', className)}
+      className={cn('rounded-md overflow-hidden bg-primary/10 border border-slate-200', className)}
       style={{ height: `${size}px`, width: `${size}px` }}
     >
       {image ? (
         <Image src={image.url} alt={alt} width={size} height={size} className="w-full h-full" />
       ) : (
         <div className="flex items-center justify-center h-full">
-          <ImageIcon className={cn('h-6 w-6 text-slate-400', iconClassName)} />
+          <ImageIcon className={cn('h-6 w-6 text-primary/60', iconClassName)} />
         </div>
       )}
     </div>

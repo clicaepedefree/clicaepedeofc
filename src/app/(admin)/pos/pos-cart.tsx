@@ -19,7 +19,7 @@ export const PosCart = () => {
         {cartSessionItems?.map((item, index) => (
           <Fragment key={index}>
             <PosCartItem item={item} />
-            <Separator orientation="horizontal" className="mx-3" />
+            {index < cartSessionItems.length - 1 && <Separator orientation="horizontal" className="mx-3 my-1.5" />}
           </Fragment>
         ))}
       </div>
