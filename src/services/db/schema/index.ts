@@ -1,3 +1,4 @@
+export * from './cashiers'
 export * from './catalog-categories'
 export * from './catalog-categories-relations'
 export * from './catalog-category-products'

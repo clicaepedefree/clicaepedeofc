@@ -71,6 +71,13 @@
       "when": 1747938429410,
       "tag": "0009_Update price columns types for decimal",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1748284416775,
+      "tag": "0010_Add cashiers table",
+      "breakpoints": true
     }
   ]
 }
