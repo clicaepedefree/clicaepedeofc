@@ -26,3 +26,22 @@ export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
 export const clearCartAtom = atom(null, (_, set) => {
   set(cartSessionAtom, null)
 })
+
+export const removeItemFromCartAtom = atom(null, (get, set, index: number) => {
+  const cartSession = get(cartSessionAtom)
+
+  if (!cartSession || cartSession.items.length <= index) return
+
+  const itemToRemove = cartSession.items[index]
+
+  if (!itemToRemove) return
+
+  set(cartSessionAtom, {
+    ...cartSession,
+    items: cartSession.items.filter((item, itemIndex) => {
+      const isItemToRemove = item.id === itemToRemove.id && itemIndex === index
+      return !isItemToRemove
+    }),
+    total: cartSession.total - Number(itemToRemove.price),
+  })
+})

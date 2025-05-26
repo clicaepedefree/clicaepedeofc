@@ -5,7 +5,7 @@ import ImageWithPlaceholder from '@/shared/image-with-placeholder'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 
-export const PosCartItem = ({ item }: { item: CartItem }) => {
+export const PosCartItem = ({ item, onDelete }: { item: CartItem; onDelete?: () => void }) => {
   return (
     <div className="flex items-center gap-2 p-2">
       <ImageWithPlaceholder image={item.image} alt={item.name} size={72} />
@@ -19,7 +19,7 @@ export const PosCartItem = ({ item }: { item: CartItem }) => {
         <div>{item.quantity}</div>
       </div>
       <div className="flex flex-col justify-between items-end self-stretch">
-        <DeleteButton />
+        <DeleteButton onClick={onDelete} />
         <Body variant={200} fontWeight="regular" className="pr-2">
           {formatValueToCurrency({ value: item.price, includeCurrencySymbol: true })}
         </Body>

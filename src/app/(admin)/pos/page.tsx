@@ -1,26 +1,21 @@
 'use client'
 
 import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catalog-item-pos'
+import { useCart } from '@/features/catalog/hooks/use-cart'
 import { useCatalog } from '@/features/catalog/hooks/use-catalog'
-import { addItemToCartAtom, clearCartAtom } from '@/features/catalog/state'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
 import { useAtom } from 'jotai'
-import { useEffect } from 'react'
 import { PosCart } from './pos-cart'
 
 export default function Page() {
   const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const [, addItemToCart] = useAtom(addItemToCartAtom)
-  const [, clearCart] = useAtom(clearCartAtom)
+
+  const { addItemToCart } = useCart()
 
   const hasCatalogItems = !!catalogItems?.length
-
-  useEffect(() => {
-    clearCart()
-  }, [selectedStoreId])
 
   return (
     <div className="col-span-2 flex flex-col items-start gap-2 overflow-y-scroll h-full">
