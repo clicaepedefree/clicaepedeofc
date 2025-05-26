@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/shared/button'
+import { DeleteButton } from '@/shared/buttons/delete-button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { ImageWithPlaceholder } from '@/shared/image-with-placeholder'
@@ -11,7 +12,7 @@ import { Switch } from '@/shared/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit } from 'lucide-react'
 import { useProduct } from '../../hooks/use-product'
 import { BaseCategory, CategoryProductWithImage } from '../../types'
 import { UpdateProductAction } from '../create-or-update-product/update-product-action'
@@ -116,11 +117,7 @@ const CategoryProductRow = ({
             }}
           />
           <DeleteResourceConfirmationModal
-            trigger={
-              <Button variant="ghost" size="icon" className="group/delete" disabled={isDeleting}>
-                <Trash2 size={16} className={cn('group-hover/delete:text-destructive')} />
-              </Button>
-            }
+            trigger={<DeleteButton isDeleting={isDeleting} />}
             resource="produto"
             resourceName={product.name}
             isDeleting={isDeleting}
