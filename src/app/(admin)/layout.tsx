@@ -51,7 +51,7 @@ const adminMenuItems = [
     icon: 'dollar-sign' as const,
     items: [
       {
-        title: 'Caixas / PDV',
+        title: 'Balcão / PDV',
         url: '/pos',
         icon: 'monitor' as const,
       },
