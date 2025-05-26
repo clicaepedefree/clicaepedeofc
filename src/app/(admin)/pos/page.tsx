@@ -4,6 +4,7 @@ import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catal
 import { useCatalog } from '@/features/catalog/hooks/use-catalog'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { useCart } from '@/features/pos/hooks/use-cart'
+import { useCashiers } from '@/features/pos/hooks/use-cashiers'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
@@ -12,6 +13,8 @@ import { useAtom } from 'jotai'
 export default function Page() {
   const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+
+  const {} = useCashiers()
 
   const { addItemToCart } = useCart()
 
