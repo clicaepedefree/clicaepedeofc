@@ -34,6 +34,7 @@ export const BaseSideBarActionForm = ({ children, title, description, trigger }:
         onPointerDownOutside={() => {}}
         onInteractOutside={event => event.preventDefault()}
         onFocusOutside={() => {}}
+        disableCloseOnOverlayClick
       >
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>

@@ -39,16 +39,20 @@ function SheetContent({
   className,
   children,
   side = 'right',
+  disableCloseOnOverlayClick = false,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
+  disableCloseOnOverlayClick?: boolean
 }) {
   return (
     <SheetPortal>
       <SheetOverlay
         onClick={event => {
-          event.stopPropagation()
-          event.preventDefault()
+          if (disableCloseOnOverlayClick) {
+            event.stopPropagation()
+            event.preventDefault()
+          }
         }}
       />
       <SheetPrimitive.Content
