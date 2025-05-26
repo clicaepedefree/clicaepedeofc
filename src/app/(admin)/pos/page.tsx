@@ -6,9 +6,8 @@ import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
 
 export default function Page() {
-  const { catalogItems: _catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
+  const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
 
-  const catalogItems = Array.isArray(_catalogItems) ? [..._catalogItems, ..._catalogItems, ..._catalogItems] : []
   return (
     <div className="col-span-2 flex flex-col items-start gap-2 overflow-y-scroll h-full pb-10">
       <Headline variant={300} className="flex items-center justify-center gap-2">
