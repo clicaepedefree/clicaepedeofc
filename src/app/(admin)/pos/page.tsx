@@ -1,8 +1,8 @@
 'use client'
 
 import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catalog-item-pos'
-import { useCart } from '@/features/catalog/hooks/use-cart'
 import { useCatalog } from '@/features/catalog/hooks/use-catalog'
+import { useCart } from '@/features/pos/hooks/use-cart'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'

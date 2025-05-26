@@ -1,5 +1,6 @@
+import { CartItem, CartSession } from '@/features/pos/types'
 import { atom } from 'jotai'
-import { CartItem, CartSession } from './types'
+
 export const cartSessionAtom = atom<CartSession | null>(null)
 export const cartSessionItemsAtom = atom(get => get(cartSessionAtom)?.items)
 export const cartSessionTotalAtom = atom(get => {

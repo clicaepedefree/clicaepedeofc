@@ -1,4 +1,4 @@
-import { useCart } from '@/features/catalog/hooks/use-cart'
+import { useCart } from '@/features/pos/hooks/use-cart'
 import { Button } from '@/shared/button'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Separator } from '@/shared/separator'

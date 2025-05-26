@@ -1,4 +1,4 @@
-import { CartItem } from '@/features/catalog/types'
+import { CartItem } from '@/features/pos/types'
 import { Button } from '@/shared/button'
 import { DeleteButton } from '@/shared/buttons/delete-button'
 import { formatValueToCurrency } from '@/shared/formatters/currency'

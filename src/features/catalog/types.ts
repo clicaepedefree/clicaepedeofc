@@ -32,11 +32,3 @@ export type CatalogItem = Omit<SelectCategoryProduct, 'categoryId' | 'createdAt'
   Omit<ProductWithImage, 'id' | 'createdAt' | 'updatedAt'> & {
     category: BaseCategory
   }
-
-export type CartItem = CatalogItem & {
-  quantity: number
-}
-export type CartSession = {
-  startedAt: Date
-  items: CartItem[]
-}

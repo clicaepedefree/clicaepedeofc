@@ -5,7 +5,7 @@ import {
   clearCartAtom,
   removeItemFromCartAtom,
   updateItemQuantityAtom,
-} from '@/features/catalog/state'
+} from '@/features/pos/state'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { useAtom } from 'jotai'
 import { useEffect } from 'react'
