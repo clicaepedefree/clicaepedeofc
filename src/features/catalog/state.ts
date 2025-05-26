@@ -22,3 +22,7 @@ export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
     total: cartSession.total + Number(newItem.price),
   })
 })
+
+export const clearCartAtom = atom(null, (_, set) => {
+  set(cartSessionAtom, null)
+})
