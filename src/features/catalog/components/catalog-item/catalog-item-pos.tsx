@@ -14,7 +14,7 @@ export const CatalogItemPOS = ({ item, onClick }: CatalogItemPOSProps) => {
   return (
     <div
       key={item.id}
-      className="relative flex items-center justify-between cursor-pointer border rounded-lg h-fit overflow-hidden hover:shadow-lg"
+      className="relative flex items-center justify-between cursor-pointer border rounded-lg h-fit overflow-hidden hover:shadow-lg group/catalog-item"
       onClick={onClick}
     >
       <div className="absolute right-0 top-0 px-2 py-0.5 text-xs bg-primary/10 rounded-bl-md">{item.category.name}</div>
@@ -31,10 +31,10 @@ export const CatalogItemPOS = ({ item, onClick }: CatalogItemPOSProps) => {
       <Button
         size="sm"
         variant="ghost"
-        onClick={onClick}
-        className="self-end rounded-tl-3xl rounded-tr-none rounded-bl-none"
+        className="self-end rounded-tl-3xl rounded-tr-none rounded-bl-none pr-2 pb-0 group-hover/catalog-item:bg-primary/80 hover:bg-primary/80"
+        isClickable
       >
-        <Body variant={200} fontWeight="regular" className="text-neutral-600">
+        <Body variant={200} fontWeight="regular" className="text-neutral-600 group-hover/catalog-item:text-white">
           {formatValueToCurrency({ value: item.price, includeCurrencySymbol: true })}
         </Body>
       </Button>
