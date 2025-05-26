@@ -20,8 +20,9 @@ export const useCart = () => {
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
 
   useEffect(() => {
+    if (!selectedStoreId) return
     clearCart()
-  }, [selectedStoreId])
+  }, [selectedStoreId, clearCart])
 
   return {
     cartSessionItems,

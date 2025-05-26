@@ -19,7 +19,7 @@ export const CategoriesList = ({ categories, onCategoryCreated, onCategoryUpdate
     if (openedCategoryIds || !categories) return
 
     setOpenedCategoryIds(new Set(categories.map(category => category.id.toString())))
-  }, [categories])
+  }, [categories, openedCategoryIds])
 
   const onCategoryOpenedStateChange = (isOpen: boolean, categoryId: string) => {
     const updatedOpenedCategories = new Set(openedCategoryIds)
