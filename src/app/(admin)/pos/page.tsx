@@ -43,7 +43,7 @@ export default function Page() {
 
 const NewCounterCard = ({ initialIsCreating = false }: { initialIsCreating?: boolean }) => {
   const [isCreating, setIsCreating] = useState(initialIsCreating)
-  const ref = useClickAway<HTMLDivElement>(() => setIsCreating(false))
+  const ref = useClickAway<HTMLDivElement>(() => !initialIsCreating && setIsCreating(false))
 
   if (!isCreating)
     return (
