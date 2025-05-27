@@ -1,6 +1,6 @@
 'use client'
 
-import { useCurrentAdminPage } from '@/app/(admin)/use-current-admin-page'
+import { useAdminHeaderInfo } from '@/features/admin/hooks/use-admin-header-info'
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -12,7 +12,7 @@ import { DynamicIcon } from 'lucide-react/dynamic'
 import Link from 'next/link'
 
 export const AppSidebarItem = ({ item }: { item: MenuItem }) => {
-  const { isCurrentPage } = useCurrentAdminPage()
+  const { isCurrentPage } = useAdminHeaderInfo()
 
   const isActive = isCurrentPage(item.url)
   return (
@@ -28,7 +28,7 @@ export const AppSidebarItem = ({ item }: { item: MenuItem }) => {
 }
 
 export const AppSidebarSubItem = ({ item }: { item: MenuItem }) => {
-  const { isCurrentPage } = useCurrentAdminPage()
+  const { isCurrentPage } = useAdminHeaderInfo()
 
   const isActive = isCurrentPage(item.url)
   return (

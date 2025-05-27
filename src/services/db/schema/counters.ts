@@ -12,3 +12,6 @@ export const countersTable = pgTable('counters', {
   createdAt,
   updatedAt,
 })
+
+export type InsertCounter = Omit<typeof countersTable.$inferInsert, 'createdAt' | 'updatedAt'>
+export type SelectCounter = typeof countersTable.$inferSelect
