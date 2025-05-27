@@ -8,7 +8,7 @@ export const AdminPageInfo = ({ pageInfo }: { pageInfo: AdminPageHeaderInfo; chi
 
   useEffect(() => {
     setHeaderInfo(pageInfo)
-  }, [pageInfo])
+  }, [pageInfo, setHeaderInfo])
 
   return null
 }

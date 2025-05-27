@@ -4,7 +4,6 @@ import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catal
 import { useCatalog } from '@/features/catalog/hooks/use-catalog'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { useCart } from '@/features/pos/hooks/use-cart'
-import { useCounters } from '@/features/pos/hooks/use-counters'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
@@ -14,7 +13,6 @@ export default function CounterPage({}) {
   const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { addItemToCart } = useCart()
-  const { activeCounterId, isLoading: isLoadingCounters } = useCounters()
 
   const hasCatalogItems = !!catalogItems?.length
 
