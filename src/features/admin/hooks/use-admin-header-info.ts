@@ -2,9 +2,10 @@
 
 import { atom, useAtom } from 'jotai'
 import { usePathname } from 'next/navigation'
+import { ReactNode, useEffect } from 'react'
 
 export type AdminPageHeaderInfo = {
-  title: string
+  title: ReactNode
 }
 
 export const adminPageHeaderInfoAtom = atom<AdminPageHeaderInfo | undefined>()
@@ -14,6 +15,10 @@ export const useAdminHeaderInfo = () => {
   const currentPagePathName = usePathname()
 
   const isCurrentPage = (pathNameToTest: string) => currentPagePathName === pathNameToTest
+
+  useEffect(() => {
+    setHeaderInfo(undefined)
+  }, [currentPagePathName])
 
   return { ...headerInfo, isCurrentPage, setHeaderInfo }
 }
