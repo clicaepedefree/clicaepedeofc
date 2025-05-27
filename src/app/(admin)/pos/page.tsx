@@ -35,7 +35,7 @@ export default function Page() {
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4 items-center justify-items-center overflow-y-hidden p-6">
         {counters?.map(counter => <CounterCard key={counter.id} counter={counter} />)}
-        {<NewCounterCard initialIsCreating={!hasCounters} />}
+        {<NewCounterCard key={selectedStoreId} initialIsCreating={!hasCounters} />}
       </div>
     </>
   )

@@ -45,7 +45,7 @@ export const CategoryBlock = ({
           containerClassName="flex-1 grow"
         >
           <>
-            <ImageWithPlaceholder image={category.image} alt={category.name} className="my-3" />
+            <ImageWithPlaceholder image={category.image} alt={category.name} containerClassName="my-3" />
             <div className="flex flex-col items-start justify-center grow">
               <LargeText variant="lg">{category.name}</LargeText>
               {category.description && (

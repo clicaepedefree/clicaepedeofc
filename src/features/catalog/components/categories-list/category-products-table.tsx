@@ -76,9 +76,11 @@ const CategoryProductRow = ({
 
   return (
     <TableRow>
-      <TableCell className="w-fit flex items-center  justify-center gap-1 sm:gap-4 flex-wrap sm:flex-nowrap">
+      <TableCell className="w-fit flex items-center  justify-baseline gap-1 sm:gap-4 flex-wrap sm:flex-nowrap ">
         <ImageWithPlaceholder image={product.image} alt={product.name} />
-        <LargeText variant="sm">{product.name}</LargeText>
+        <LargeText variant="sm" className="text-wrap line-clamp-2 pr-2 md:pr-8">
+          {product.name}
+        </LargeText>
       </TableCell>
       <TableCell className="max-w-24 w-fit place-items-center space-y-2">
         {product.originalPrice && (

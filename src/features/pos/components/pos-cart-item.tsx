@@ -20,9 +20,7 @@ export const PosCartItem = ({
 
   return (
     <div className="flex items-center gap-2 p-2">
-      <div className="aspect-square self-start">
-        <ImageWithPlaceholder image={item.image} alt={item.name} size={72} />
-      </div>
+      <ImageWithPlaceholder image={item.image} alt={item.name} size={72} containerClassName="self-start" />
       <div className="flex flex-col gap-1 grow justify-between self-stretch">
         <div className="space-y-0">
           <LargeText variant="sm">{item.name}</LargeText>

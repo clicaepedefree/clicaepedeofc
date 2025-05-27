@@ -25,9 +25,13 @@ export const CatalogItemPOS = ({ item, onClick }: CatalogItemPOSProps) => {
         {item.category.name}
       </Body>
       <div className="flex items-center gap-3">
-        <div className="border-r h-full">
-          <ImageWithPlaceholder size={80} image={item.image} alt={item.name} className="border-0 rounded-r-none" />
-        </div>
+        <ImageWithPlaceholder
+          size={80}
+          image={item.image}
+          alt={item.name}
+          containerClassName="border-r h-full"
+          className="border-0 rounded-r-none"
+        />
         <div className="flex flex-col h-full justify-between gap-1 self-start py-4">
           <LargeText variant="md" className="font-semibold line-clamp-2 leading-5">
             {item.name}
