@@ -1,0 +1,43 @@
+'use client'
+
+import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catalog-item-pos'
+import { useCatalog } from '@/features/catalog/hooks/use-catalog'
+import { PosCart } from '@/features/pos/components/pos-cart'
+import { useCart } from '@/features/pos/hooks/use-cart'
+import { useCounters } from '@/features/pos/hooks/use-counters'
+import { selectedStoreIdAtom } from '@/features/store/state'
+import { LoadingSpinner } from '@/shared/spinner'
+import { Headline } from '@/shared/typography/headline'
+import { useAtom } from 'jotai'
+
+export default function CounterPage({}) {
+  const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
+  const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { addItemToCart } = useCart()
+  const { activeCounterId, isLoading: isLoadingCounters } = useCounters()
+
+  const hasCatalogItems = !!catalogItems?.length
+
+  return (
+    <div className="col-span-2 flex flex-col items-start gap-4 overflow-y-scroll h-full p-4">
+      <Headline variant={300} className="flex items-center justify-center gap-2">
+        Ponto de Venda {isFetching && <LoadingSpinner />}
+      </Headline>
+
+      <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
+        <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] overflow-y-[inherit]">
+          {catalogItems?.map((item, index) => (
+            <CatalogItemPOS
+              key={index}
+              item={item}
+              onClick={() => {
+                addItemToCart({ ...item, quantity: 1 })
+              }}
+            />
+          ))}
+        </div>
+        {hasCatalogItems && <PosCart key={selectedStoreId} />}
+      </div>
+    </div>
+  )
+}

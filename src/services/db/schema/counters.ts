@@ -2,7 +2,7 @@ import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
 import { boolean, integer, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
-export const cashiersTable = pgTable('cashiers', {
+export const countersTable = pgTable('counters', {
   id: serial('id').primaryKey(),
   storeId: integer('store_id')
     .notNull()

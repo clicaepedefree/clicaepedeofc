@@ -5,7 +5,7 @@ import { Separator } from '@/shared/separator'
 import { LargeText } from '@/shared/typography/large-text'
 import { ShoppingBag } from 'lucide-react'
 import { Fragment } from 'react'
-import { PosCartItem } from './post-cart-item'
+import { PosCartItem } from './pos-cart-item'
 
 export const PosCart = () => {
   const { cartSessionItems, cartSessionTotal, removeItemFromCart, updateItemQuantity, clearCart } = useCart()

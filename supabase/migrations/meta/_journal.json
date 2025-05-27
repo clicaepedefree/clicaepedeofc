@@ -78,6 +78,13 @@
       "when": 1748284416775,
       "tag": "0010_Add cashiers table",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1748353691368,
+      "tag": "0011_Rename cashiers table to counters",
+      "breakpoints": true
     }
   ]
 }

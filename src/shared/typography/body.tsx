@@ -14,11 +14,17 @@ const bodyVariants = cva('tracking-normal', {
       semibold: 'font-semibold',
       medium: 'font-medium',
       regular: 'font-normal',
+      light: 'font-light',
+    },
+    highlight: {
+      default: 'text-foreground',
+      secondary: 'text-muted-foreground',
     },
   },
   defaultVariants: {
     variant: 300,
     fontWeight: 'medium',
+    highlight: 'default',
   },
 })
 
@@ -27,6 +33,6 @@ type BodyProps = VariantProps<typeof bodyVariants> & {
   className?: string
 }
 
-export const Body = ({ variant, fontWeight, className, children }: BodyProps) => {
-  return <div className={twMerge(bodyVariants({ variant, fontWeight }), className)}>{children}</div>
+export const Body = ({ variant, fontWeight, highlight, className, children }: BodyProps) => {
+  return <div className={twMerge(bodyVariants({ variant, fontWeight, highlight }), className)}>{children}</div>
 }

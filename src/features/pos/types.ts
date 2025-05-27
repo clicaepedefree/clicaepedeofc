@@ -7,3 +7,5 @@ export type CartSession = {
   startedAt: Date
   items: CartItem[]
 }
+
+export type Counter = {}

@@ -1,42 +1,112 @@
 'use client'
 
-import { CatalogItemPOS } from '@/features/catalog/components/catalog-item/catalog-item-pos'
-import { useCatalog } from '@/features/catalog/hooks/use-catalog'
-import { PosCart } from '@/features/pos/components/pos-cart'
-import { useCart } from '@/features/pos/hooks/use-cart'
+import { useCounters } from '@/features/pos/hooks/use-counters'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { cn } from '@/shared/lib/utils'
 import { LoadingSpinner } from '@/shared/spinner'
+import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { useAtom } from 'jotai'
+import { Check, Monitor, User } from 'lucide-react'
 
 export default function Page() {
-  const { catalogItems, isFetching } = useCatalog({ catalogName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { counters, isLoading: isLoadingCounters } = useCounters()
 
-  const { addItemToCart } = useCart()
-
-  const hasCatalogItems = !!catalogItems?.length
+  if (isLoadingCounters || !selectedStoreId) return <LoadingSpinner />
 
   return (
-    <div className="col-span-2 flex flex-col items-start gap-2 overflow-y-scroll h-full">
-      <Headline variant={300} className="flex items-center justify-center gap-2">
-        Ponto de Venda {isFetching && <LoadingSpinner />}
-      </Headline>
-
-      <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
-        <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] overflow-y-[inherit]">
-          {catalogItems?.map((item, index) => (
-            <CatalogItemPOS
-              key={index}
-              item={item}
-              onClick={() => {
-                addItemToCart({ ...item, quantity: 1 })
-              }}
-            />
-          ))}
-        </div>
-        {hasCatalogItems && <PosCart key={selectedStoreId} />}
+    <>
+      <div className="bg-white border-b-2 p-4 space-y-2 ">
+        <Headline variant={300}>Selecione um balcão</Headline>
+        <Body fontWeight="light" highlight="secondary" variant={100}>
+          Selecione um balcão para abrir o ponto de venda
+        </Body>
       </div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4 items-center justify-items-center overflow-y-hidden p-6">
+        {counters?.map(counter => (
+          <div
+            key={counter.id}
+            className={cn(
+              'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 border-l-8 rounded-lg bg-white hover:scale-105 hover:shadow-lg cursor-pointer min-w-68',
+              {
+                'border-green-700/80': counter.isAvailable,
+                'border-destructive/60': !counter.isAvailable,
+              }
+            )}
+          >
+            <Monitor
+              size={20}
+              className={cn({
+                'text-green-700/80': counter.isAvailable,
+                'text-destructive/80': !counter.isAvailable,
+              })}
+            />
+            <Headline variant={400}>{counter.name}</Headline>
+            <Body
+              variant={300}
+              fontWeight="regular"
+              className={cn('flex items-center justify-center gap-2 w-fit px-1.5 py-0.5 rounded-md', {
+                'bg-green-700/10 text-green-700/80': counter.isAvailable,
+                'bg-destructive/10 text-destructive/80': !counter.isAvailable,
+              })}
+            >
+              {counter.isAvailable ? (
+                <>
+                  <Check size={14} />
+                  Livre
+                </>
+              ) : (
+                <>
+                  <User size={16} />
+                  Em atendimento
+                </>
+              )}
+            </Body>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+const CounterCard = ({ counter }: { counter: Counter }) => {
+  return (
+    <div
+      key={counter.id}
+      className={cn(
+        'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 border-l-8 rounded-lg bg-white hover:scale-105 hover:shadow-lg cursor-pointer min-w-68',
+        {
+          'border-green-700/80': counter.isAvailable,
+          'border-destructive/60': !counter.isAvailable,
+        }
+      )}
+    >
+      <Monitor
+        size={20}
+        className={cn({ 'text-green-700/80': counter.isAvailable, 'text-destructive/80': !counter.isAvailable })}
+      />
+      <Headline variant={400}>{counter.name}</Headline>
+      <Body
+        variant={300}
+        fontWeight="regular"
+        className={cn('flex items-center justify-center gap-2 w-fit px-1.5 py-0.5 rounded-md', {
+          'bg-green-700/10 text-green-700/80': counter.isAvailable,
+          'bg-destructive/10 text-destructive/80': !counter.isAvailable,
+        })}
+      >
+        {counter.isAvailable ? (
+          <>
+            <Check size={14} />
+            Livre
+          </>
+        ) : (
+          <>
+            <User size={16} />
+            Em atendimento
+          </>
+        )}
+      </Body>
     </div>
   )
 }
