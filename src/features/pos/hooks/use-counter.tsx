@@ -20,11 +20,11 @@ export const useCounter = () => {
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: countersCacheKey(selectedStoreId) })
     },
-    onError: (_, counterToDelete) => {
-      dispatchToast({ message: `Erro ao remover balcão '${counterToDelete.name}'`, type: 'error' })
+    onError: (_, counterToCreate) => {
+      dispatchToast({ message: `Erro ao criar balcão '${counterToCreate.name}'`, type: 'error' })
     },
-    onSuccess: (_, counterToDelete) => {
-      dispatchToast({ message: `Balcão '${counterToDelete.name}' removido`, type: 'success' })
+    onSuccess: (_, counterToCreate) => {
+      dispatchToast({ message: `Balcão '${counterToCreate.name}' criado`, type: 'success' })
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: countersCacheKey(selectedStoreId) })
