@@ -1,0 +1,812 @@
+// Orders - iFood
+[
+  {
+    "id": "63895716-37c3-4372-afd0-3240bfef708d",
+    "orderTiming": "IMMEDIATE",
+    "orderType": "DELIVERY",
+    "salesChannel": "IFOOD",
+    "category": "FOOD",
+    "delivery": {
+      "mode": "DEFAULT",
+      "description": "Padrão",
+      "deliveredBy": "IFOOD",
+      "deliveryDateTime": "2021-02-09T18:10:32Z",
+      "deliveryAddress": {
+        "streetName": "Example",
+        "streetNumber": "1234",
+        "formattedAddress": "Example St., 1234, Apt. 1234",
+        "neighborhood": "Examplehood",
+        "complement": "Apt. 1234",
+        "reference": "perto da praça",
+        "postalCode": "12345678",
+        "city": "Example City",
+        "state": "Example State",
+        "country": "BR",
+        "coordinates": {
+          "latitude": -2.1059418202311173e141,
+          "longitude": -49545.71
+        }
+      },
+      "pickupCode": "1234"
+    },
+    "displayId": "XPTO",
+    "createdAt": "2021-02-16T18:10:27Z",
+    "preparationStartDateTime": "2021-02-09T20:15:13Z",
+    "merchant": {
+      "id": "c54bb20a-bce0-4e38-bd4a-fe5f0a7b6b5a",
+      "name": "Example Merchant"
+    },
+    "customer": {
+      "id": "22587f70-60b4-423c-8cd2-27d288f47f99",
+      "name": "Example Customer",
+      "documentNumber": "123456789",
+      "phone": {
+        "number": "123456789",
+        "localizer": "12345678",
+        "localizerExpiration": "2021-02-09T18:11:07Z"
+      },
+      "ordersCountOnMerchant": 1234,
+      "segmentation": "Gold"
+    },
+    "items": [
+      {
+        "index": 0,
+        "id": "f1e48636-4bf0-4656-bce8-0e2214fcd3d4",
+        "uniqueId": "092ce140-b809-4a13-b776-31d9792eee99",
+        "name": "Example Item",
+        "imageUrl": "https://static-images.ifood.com.br/image/upload/t_high/pratos/4c714577-fe5d-4d31-9531-f9ebb7f89249/202104071957_0mfD_.jpeg",
+        "externalCode": "ex01",
+        "ean": "12345678910",
+        "unit": "G",
+        "quantity": 12,
+        "unitPrice": 0.12,
+        "price": 1.44,
+        "optionsPrice": 1.69,
+        "totalPrice": 3.13,
+        "observations": "This is an example item.",
+        "options": [
+          {
+            "index": 0,
+            "id": "acea6ac1-f595-4a6b-af00-cc2f1fa0886a",
+            "name": "Example Option",
+            "externalCode": "ex02",
+            "ean": "12345678911",
+            "unit": "UN",
+            "quantity": 13,
+            "unitPrice": 0.13,
+            "addition": 0,
+            "price": 1.69
+          }
+        ]
+      }
+    ],
+    "benefits": [
+      {
+        "value": 1.0,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.5
+          }
+        ],
+        "target": "CART",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "my campaign name"
+        }
+      },
+      {
+        "value": 0.5,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0
+          }
+        ],
+        "target": "ITEM",
+        "targetId": "1",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "my campaign name"
+        }
+      },
+      {
+        "value": 0.49,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.49
+          }
+        ],
+        "target": "DELIVERY_FEE",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "my campaign name"
+        }
+      }
+    ],
+    "additionalFees": [
+      {
+        "type": "SMALL_ORDER_FEE",
+        "value": 1.0
+      }
+    ],
+    "total": {
+      "subTotal": 3.13,
+      "deliveryFee": 5.99,
+      "additionalFees": 1,
+      "benefits": 1.99,
+      "orderAmount": 8.13
+    },
+    "payments": {
+      "prepaid": 2.13,
+      "pending": 5,
+      "methods": [
+        {
+          "value": 5,
+          "currency": "BRL",
+          "method": "CASH",
+          "type": "OFFLINE",
+          "prepaid": false
+        },
+        {
+          "value": 2.13,
+          "currency": "BRL",
+          "method": "CREDIT",
+          "type": "ONLINE",
+          "prepaid": true,
+          "card": {
+            "brand": "VISA"
+          },
+          "transaction": {
+            "authorizationCode": "6982354",
+            "acquirerDocument": "12345678901234"
+          }
+        }
+      ]
+    },
+    "picking": {
+      "picker": "DRIVER_SHOPPER",
+      "replacementOptions": "STORE_REMOVE_ITEMS"
+    },
+    "test": false,
+    "additionalInfo": {
+      "metadata": {
+        "codigoInternoPdv": "18bf73f64715",
+        "nomeVendedor": "João"
+      }
+    }
+  },
+  {
+    "id": "63895716-37c3-4372-afd0-3240bfef708d",
+    "orderTiming": "SCHEDULED",
+    "schedule": {
+      "deliveryDateTimeStart": "2021-02-09T21:05:29Z",
+      "deliveryDateTimeEnd": "2021-02-09T18:19:50Z"
+    },
+    "orderType": "DELIVERY",
+    "salesChannel": "IFOOD",
+    "category": "FOOD",
+    "delivery": {
+      "mode": "DEFAULT",
+      "description": "Padrão",
+      "deliveredBy": "IFOOD",
+      "deliveryDateTime": "2021-02-09T18:10:32Z",
+      "deliveryAddress": {
+        "streetName": "Example",
+        "streetNumber": "1234",
+        "formattedAddress": "Example St., 1234, Apt. 1234",
+        "neighborhood": "Examplehood",
+        "complement": "Apt. 1234",
+        "reference": "perto da praça",
+        "postalCode": "12345678",
+        "city": "Example City",
+        "state": "Example State",
+        "country": "BR",
+        "coordinates": {
+          "latitude": -2.1059418202311173e141,
+          "longitude": -49545.71
+        }
+      },
+      "pickupCode": "1234"
+    },
+    "displayId": "XPTO",
+    "createdAt": "2021-02-16T18:10:27Z",
+    "preparationStartDateTime": "2021-02-09T20:15:13Z",
+    "merchant": {
+      "id": "c54bb20a-bce0-4e38-bd4a-fe5f0a7b6b5a",
+      "name": "Example Merchant"
+    },
+    "customer": {
+      "id": "22587f70-60b4-423c-8cd2-27d288f47f99",
+      "name": "Example Customer",
+      "documentNumber": "123456789",
+      "phone": {
+        "number": "123456789",
+        "localizer": "12345678",
+        "localizerExpiration": "2021-02-09T18:11:07Z"
+      },
+      "ordersCountOnMerchant": null
+    },
+    "items": [
+      {
+        "index": 0,
+        "id": "f1e48636-4bf0-4656-bce8-0e2214fcd3d4",
+        "uniqueId": "092ce140-b809-4a13-b776-31d9792eee99",
+        "name": "Example Item",
+        "imageUrl": "https://static-images.ifood.com.br/image/upload/t_high/pratos/4c714577-fe5d-4d31-9531-f9ebb7f89249/202104071957_0mfD_.jpeg",
+        "externalCode": "ex01",
+        "ean": "12345678910",
+        "unit": "G",
+        "quantity": 12,
+        "unitPrice": 0.12,
+        "price": 1.44,
+        "optionsPrice": 1.69,
+        "totalPrice": 3.13,
+        "observations": "This is an example item.",
+        "options": [
+          {
+            "index": 0,
+            "id": "acea6ac1-f595-4a6b-af00-cc2f1fa0886a",
+            "name": "Example Option",
+            "externalCode": "ex02",
+            "ean": "12345678911",
+            "unit": "UN",
+            "quantity": 13,
+            "unitPrice": 0.13,
+            "addition": 0,
+            "price": 1.69
+          }
+        ]
+      }
+    ],
+    "benefits": [
+      {
+        "value": 1.0,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.5
+          }
+        ],
+        "target": "CART",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.5,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0
+          }
+        ],
+        "target": "ITEM",
+        "targetId": "1",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_Y"
+        }
+      },
+      {
+        "value": 0.49,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.49
+          }
+        ],
+        "target": "DELIVERY_FEE"
+      }
+    ],
+    "additionalFees": [
+      {
+        "type": "SMALL_ORDER_FEE",
+        "value": 1.0
+      }
+    ],
+    "total": {
+      "subTotal": 3.13,
+      "deliveryFee": 5.99,
+      "additionalFees": 1,
+      "benefits": 1.99,
+      "orderAmount": 8.13
+    },
+    "payments": {
+      "prepaid": 2.13,
+      "pending": 5,
+      "methods": [
+        {
+          "value": 5,
+          "currency": "BRL",
+          "method": "CASH",
+          "type": "OFFLINE",
+          "prepaid": false
+        },
+        {
+          "value": 2.13,
+          "currency": "BRL",
+          "method": "MEAL_VOUCHER",
+          "type": "ONLINE",
+          "prepaid": true
+        }
+      ]
+    },
+    "picking": {
+      "picker": "DRIVER_SHOPPER",
+      "replacementOptions": "STORE_REMOVE_ITEMS"
+    },
+    "test": false
+  },
+  {
+    "id": "63895716-37c3-4372-afd0-3240bfef708d",
+    "orderTiming": "IMMEDIATE",
+    "orderType": "TAKEOUT",
+    "salesChannel": "IFOOD",
+    "category": "FOOD",
+    "takeout": {
+      "mode": "DEFAULT",
+      "takeoutDateTime": "2021-02-10T02:25:47Z"
+    },
+    "displayId": "XPTO",
+    "createdAt": "2021-02-16T18:10:27Z",
+    "preparationStartDateTime": "2021-02-09T20:15:13Z",
+    "merchant": {
+      "id": "c54bb20a-bce0-4e38-bd4a-fe5f0a7b6b5a",
+      "name": "Example Merchant"
+    },
+    "customer": {
+      "id": "22587f70-60b4-423c-8cd2-27d288f47f99",
+      "name": "Example Customer",
+      "documentNumber": "123456789",
+      "phone": {
+        "number": "123456789",
+        "localizer": "12345678",
+        "localizerExpiration": "2021-02-09T18:11:07Z"
+      },
+      "ordersCountOnMerchant": 1234,
+      "segmentation": "Platinum"
+    },
+    "items": [
+      {
+        "index": 0,
+        "id": "f1e48636-4bf0-4656-bce8-0e2214fcd3d4",
+        "uniqueId": "092ce140-b809-4a13-b776-31d9792eee99",
+        "name": "Example Item",
+        "imageUrl": "https://static-images.ifood.com.br/image/upload/t_high/pratos/4c714577-fe5d-4d31-9531-f9ebb7f89249/202104071957_0mfD_.jpeg",
+        "externalCode": "ex01",
+        "ean": "12345678910",
+        "unit": "G",
+        "quantity": 12,
+        "unitPrice": 0.12,
+        "price": 1.44,
+        "optionsPrice": 1.69,
+        "totalPrice": 3.13,
+        "observations": "This is an example item.",
+        "options": [
+          {
+            "index": 0,
+            "id": "acea6ac1-f595-4a6b-af00-cc2f1fa0886a",
+            "name": "Example Option",
+            "externalCode": "ex02",
+            "ean": "12345678911",
+            "unit": "UN",
+            "quantity": 13,
+            "unitPrice": 0.13,
+            "addition": 0,
+            "price": 1.69
+          }
+        ]
+      }
+    ],
+    "benefits": [
+      {
+        "value": 1.0,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.5
+          }
+        ],
+        "target": "CART",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.5,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0
+          }
+        ],
+        "target": "ITEM",
+        "targetId": "1",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_Y"
+        }
+      },
+      {
+        "value": 0.49,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.49
+          }
+        ],
+        "target": "DELIVERY_FEE"
+      }
+    ],
+    "additionalFees": [
+      {
+        "type": "SMALL_ORDER_FEE",
+        "value": 1.0
+      }
+    ],
+    "total": {
+      "subTotal": 3.13,
+      "deliveryFee": 5.99,
+      "additionalFees": 1,
+      "benefits": 1.99,
+      "orderAmount": 8.13
+    },
+    "payments": {
+      "prepaid": 2.13,
+      "pending": 5,
+      "methods": [
+        {
+          "value": 5,
+          "currency": "BRL",
+          "method": "CASH",
+          "type": "OFFLINE",
+          "prepaid": false
+        },
+        {
+          "value": 2.13,
+          "currency": "BRL",
+          "method": "MEAL_VOUCHER",
+          "type": "ONLINE",
+          "prepaid": true
+        }
+      ]
+    },
+    "test": false
+  },
+  {
+    "id": "63895716-37c3-4372-afd0-3240bfef708d",
+    "orderTiming": "IMMEDIATE",
+    "orderType": "DINE_IN",
+    "salesChannel": "IFOOD",
+    "category": "FOOD",
+    "dineIn": {
+      "deliveryDateTime": "2021-02-09T18:13:14Z"
+    },
+    "displayId": "XPTO",
+    "createdAt": "2021-02-16T18:10:27Z",
+    "preparationStartDateTime": "2021-02-09T20:15:13Z",
+    "merchant": {
+      "id": "c54bb20a-bce0-4e38-bd4a-fe5f0a7b6b5a",
+      "name": "Example Merchant"
+    },
+    "customer": {
+      "id": "22587f70-60b4-423c-8cd2-27d288f47f99",
+      "name": "Example Customer",
+      "documentNumber": "123456789",
+      "phone": {
+        "number": "123456789",
+        "localizer": "12345678",
+        "localizerExpiration": "2021-02-09T18:11:07Z"
+      }
+    },
+    "items": [
+      {
+        "index": 0,
+        "id": "f1e48636-4bf0-4656-bce8-0e2214fcd3d4",
+        "uniqueId": "092ce140-b809-4a13-b776-31d9792eee99",
+        "name": "Example Item",
+        "imageUrl": "https://static-images.ifood.com.br/image/upload/t_high/pratos/4c714577-fe5d-4d31-9531-f9ebb7f89249/202104071957_0mfD_.jpeg",
+        "externalCode": "ex01",
+        "ean": "12345678910",
+        "unit": "G",
+        "quantity": 12,
+        "unitPrice": 0.12,
+        "price": 1.44,
+        "optionsPrice": 1.69,
+        "totalPrice": 3.13,
+        "observations": "This is an example item.",
+        "options": [
+          {
+            "index": 0,
+            "id": "acea6ac1-f595-4a6b-af00-cc2f1fa0886a",
+            "name": "Example Option",
+            "externalCode": "ex02",
+            "ean": "12345678911",
+            "unit": "UN",
+            "quantity": 13,
+            "unitPrice": 0.13,
+            "addition": 0,
+            "price": 1.69
+          }
+        ]
+      }
+    ],
+    "benefits": [
+      {
+        "value": 1.0,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.5
+          }
+        ],
+        "target": "CART",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.5,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0
+          }
+        ],
+        "target": "ITEM",
+        "targetId": "1",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.49,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.49
+          }
+        ],
+        "target": "DELIVERY_FEE"
+      }
+    ],
+    "additionalFees": [
+      {
+        "type": "SMALL_ORDER_FEE",
+        "value": 1.0
+      }
+    ],
+    "total": {
+      "subTotal": 3.13,
+      "deliveryFee": 5.99,
+      "additionalFees": 1,
+      "benefits": 1.99,
+      "orderAmount": 8.13
+    },
+    "payments": {
+      "prepaid": 2.13,
+      "pending": 5,
+      "methods": [
+        {
+          "value": 5,
+          "currency": "BRL",
+          "method": "CASH",
+          "type": "OFFLINE",
+          "prepaid": false
+        },
+        {
+          "value": 2.13,
+          "currency": "BRL",
+          "method": "MEAL_VOUCHER",
+          "type": "ONLINE",
+          "prepaid": true
+        }
+      ]
+    },
+    "test": false
+  },
+  {
+    "id": "63895716-37c3-4372-afd0-3240bfef708d",
+    "orderTiming": "IMMEDIATE",
+    "orderType": "INDOOR",
+    "salesChannel": "IFOOD",
+    "category": "FOOD",
+    "indoor": {
+      "mode": "TABLE",
+      "table": "123",
+      "deliveryDateTime": "2021-02-09T18:13:14Z"
+    },
+    "displayId": "XPTO",
+    "createdAt": "2021-02-16T18:10:27Z",
+    "preparationStartDateTime": "2021-02-09T20:15:13Z",
+    "merchant": {
+      "id": "c54bb20a-bce0-4e38-bd4a-fe5f0a7b6b5a",
+      "name": "Example Merchant"
+    },
+    "customer": {
+      "id": "22587f70-60b4-423c-8cd2-27d288f47f99",
+      "name": "Example Customer",
+      "documentNumber": "123456789",
+      "phone": {
+        "number": "123456789",
+        "localizer": "12345678",
+        "localizerExpiration": "2021-02-09T18:11:07Z"
+      },
+      "ordersCountOnMerchant": 1234,
+      "segmentation": "Gold"
+    },
+    "items": [
+      {
+        "index": 0,
+        "id": "f1e48636-4bf0-4656-bce8-0e2214fcd3d4",
+        "uniqueId": "092ce140-b809-4a13-b776-31d9792eee99",
+        "name": "Example Item",
+        "imageUrl": "https://static-images.ifood.com.br/image/upload/t_high/pratos/4c714577-fe5d-4d31-9531-f9ebb7f89249/202104071957_0mfD_.jpeg",
+        "externalCode": "ex01",
+        "ean": "12345678910",
+        "unit": "G",
+        "quantity": 12,
+        "unitPrice": 0.12,
+        "price": 1.44,
+        "optionsPrice": 1.69,
+        "totalPrice": 3.13,
+        "observations": "This is an example item.",
+        "options": [
+          {
+            "index": 0,
+            "id": "acea6ac1-f595-4a6b-af00-cc2f1fa0886a",
+            "name": "Example Option",
+            "externalCode": "ex02",
+            "ean": "12345678911",
+            "unit": "UN",
+            "quantity": 13,
+            "unitPrice": 0.13,
+            "addition": 0,
+            "price": 1.69
+          }
+        ]
+      }
+    ],
+    "benefits": [
+      {
+        "value": 1.0,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.5
+          }
+        ],
+        "target": "CART",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.5,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0.5
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0
+          }
+        ],
+        "target": "ITEM",
+        "targetId": "1",
+        "campaign": {
+          "id": "42cea1aa-1e23-4741-b48a-300716de08de",
+          "name": "CAMPAIGN_X"
+        }
+      },
+      {
+        "value": 0.49,
+        "sponsorshipValues": [
+          {
+            "name": "IFOOD",
+            "value": 0
+          },
+          {
+            "name": "MERCHANT",
+            "value": 0.49
+          }
+        ],
+        "target": "DELIVERY_FEE"
+      }
+    ],
+    "additionalFees": [
+      {
+        "type": "SMALL_ORDER_FEE",
+        "value": 1.0
+      }
+    ],
+    "total": {
+      "subTotal": 3.13,
+      "deliveryFee": 5.99,
+      "additionalFees": 1,
+      "benefits": 1.99,
+      "orderAmount": 8.13
+    },
+    "payments": {
+      "prepaid": 2.13,
+      "pending": 5,
+      "methods": [
+        {
+          "value": 5,
+          "currency": "BRL",
+          "method": "CASH",
+          "type": "OFFLINE",
+          "prepaid": false
+        },
+        {
+          "value": 2.13,
+          "currency": "BRL",
+          "method": "MEAL_VOUCHER",
+          "type": "ONLINE",
+          "prepaid": true
+        }
+      ]
+    },
+    "test": false
+  }
+]
