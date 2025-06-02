@@ -13,7 +13,7 @@ export type Category = SelectCategory
 
 export type CategoryWithImage = Omit<SelectCategory, 'imageId'> & {
   image: BaseStoreFile | null
-  itemOfferings?: ItemOfferingWithImage[]
+  items?: ItemOfferingWithImage[]
 }
 
 export type NewItemOffering = Omit<PartialBy<InsertItemOffering, 'index'>, 'id'>

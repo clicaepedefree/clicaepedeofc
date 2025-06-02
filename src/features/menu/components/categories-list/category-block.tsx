@@ -28,7 +28,7 @@ export const CategoryBlock = ({
 }) => {
   const { deleteCategory, isDeleting, onUpdateCategory } = useCategory()
 
-  const itemOfferings = category.itemOfferings ?? []
+  const itemOfferings = category.items ?? []
 
   return (
     <AccordionItem
