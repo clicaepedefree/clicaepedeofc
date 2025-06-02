@@ -1,14 +1,14 @@
-import { catalogCategoriesTable } from '@/services/db/schema/catalog-categories'
 import { categoriesTable } from '@/services/db/schema/categories'
-import { categoryProductsTable } from '@/services/db/schema/category-products'
+import { itemOfferingsTable } from '@/services/db/schema/item-offerings'
+import { menuCategoriesTable } from '@/services/db/schema/menu-categories'
 import { storeFilesTable } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
 import { relations } from 'drizzle-orm'
-import { productsTable } from './products'
+import { itemsTable } from './items'
 
 export const categoryRelations = relations(categoriesTable, ({ many, one }) => ({
-  categoryProducts: many(categoryProductsTable),
-  products: many(productsTable),
+  itemOfferings: many(itemOfferingsTable),
+  items: many(itemsTable),
   store: one(storesTable, {
     fields: [categoriesTable.storeId],
     references: [storesTable.id],
@@ -17,5 +17,5 @@ export const categoryRelations = relations(categoriesTable, ({ many, one }) => (
     fields: [categoriesTable.imageId],
     references: [storeFilesTable.id],
   }),
-  catalogCategories: many(catalogCategoriesTable),
+  menuCategories: many(menuCategoriesTable),
 }))

@@ -1,8 +1,8 @@
 'use client'
 
 import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
-import { CategoriesList } from '@/features/catalog/components/categories-list/categories-list'
-import { useCategories } from '@/features/catalog/hooks/use-categories'
+import { CategoriesList } from '@/features/menu/components/categories-list/categories-list'
+import { useCategories } from '@/features/menu/hooks/use-categories'
 import { Headline } from '@/shared/typography/headline'
 
 export default function Page() {

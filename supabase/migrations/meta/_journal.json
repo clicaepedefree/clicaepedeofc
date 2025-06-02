@@ -92,6 +92,13 @@
       "when": 1748832659764,
       "tag": "0012_Add orders and order items tables",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1748834878243,
+      "tag": "0013_Update tables names for clarity",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
-import { CatalogItem } from '@/features/catalog/types'
+import { MenuItem } from '@/features/menu/types'
 import { SelectCounter } from '@/services/db/schema'
 
-export type CartItem = CatalogItem & {
+export type CartItem = MenuItem & {
   quantity: number
 }
 export type CartSession = {
