@@ -99,6 +99,13 @@
       "when": 1748834878243,
       "tag": "0013_Update tables names for clarity",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1748917464076,
+      "tag": "0014_Include timezone on created_at and updated_at columns",
+      "breakpoints": true
     }
   ]
 }
