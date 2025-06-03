@@ -5,10 +5,17 @@ import { Separator } from '@/shared/separator'
 import { LargeText } from '@/shared/typography/large-text'
 import { ShoppingBag } from 'lucide-react'
 import { Fragment } from 'react'
+import { useCounters } from '../hooks/use-counters'
 import { PosCartItem } from './pos-cart-item'
 
 export const PosCart = () => {
-  const { cartSessionItems, cartSessionTotal, removeItemFromCart, updateItemQuantity, clearCart } = useCart()
+  const { cartSessionItems, cartSessionTotal, removeItemFromCart, updateItemQuantity, clearCart, createOrder } =
+    useCart('POS')
+
+  const { activeCounterId, activeCounterName } = useCounters()
+
+  const hasCartItems = !!cartSessionItems?.length
+  const hasSelectedCounter = !!activeCounterId && !!activeCounterName
 
   return (
     <div className="relative bg-white w-full border rounded-md h-full overflow-y-scroll flex flex-col">
@@ -44,7 +51,13 @@ export const PosCart = () => {
           >
             Limpar
           </Button>
-          <Button variant="default" size="xl" className="grow">
+          <Button
+            variant="default"
+            size="xl"
+            className="grow"
+            onClick={() => createOrder({ counterId: activeCounterId!, counterName: activeCounterName! })}
+            disabled={!hasCartItems || !hasSelectedCounter}
+          >
             Pagamentos
           </Button>
         </div>

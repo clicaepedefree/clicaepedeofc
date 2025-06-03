@@ -16,10 +16,10 @@ export type CategoryWithImage = Omit<SelectCategory, 'imageId'> & {
   items?: ItemOfferingWithImage[]
 }
 
-export type NewItemOffering = Omit<PartialBy<InsertItemOffering, 'index'>, 'id'>
+export type NewItemOffering = Omit<PartialBy<InsertItemOffering, 'index'>, 'id' | 'itemId'>
 
 export type NewItem = Omit<InsertItem, 'id'> & {
-  offerings: Omit<NewItemOffering, 'itemId'>[]
+  offerings: NewItemOffering[]
 }
 
 export type Item = SelectItem

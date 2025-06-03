@@ -23,3 +23,6 @@ export const orderItemsTable = pgTable('order_items', {
   externalCode: text('external_code'),
   ean: text('ean'),
 })
+
+export type InsertOrderItem = typeof orderItemsTable.$inferInsert
+export type SelectOrderItem = typeof orderItemsTable.$inferSelect

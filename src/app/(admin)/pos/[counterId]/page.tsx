@@ -12,7 +12,7 @@ import { useAtom } from 'jotai'
 export default function CounterPage({}) {
   const { menuItems, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { addItemToCart } = useCart()
+  const { addItemToCart } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
 

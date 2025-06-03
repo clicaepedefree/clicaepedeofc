@@ -9,15 +9,18 @@ export const ordersTable = pgTable('orders', {
   storeId: integer('store_id')
     .notNull()
     .references(() => storesTable.id),
-  type: text('type', { enum: ['DELIVERY', 'TAKEOUT', 'DINE_IN'] }).notNull(),
+  type: text('type', { enum: ['DELIVERY', 'TAKEOUT', 'INDOOR'] }).notNull(),
   salesChannel: text('sales_channel', { enum: ['POS'] }).notNull(),
-  pos_counter_id: integer('pos_counter_id').references(() => countersTable.id, { onDelete: 'no action' }),
-  pos_counter_name: text('pos_counter_name'),
+  posCounterId: integer('pos_counter_id').references(() => countersTable.id, { onDelete: 'no action' }),
+  posCounterName: text('pos_counter_name'),
   status: text('status', { enum: ['PENDING', 'COMPLETED', 'CANCELLED'] }).notNull(),
   totalPrice: numeric('total_price', { precision: 19, scale: 4 }).notNull(),
   createdAt,
   updatedAt,
 })
+
+export type InsertOrder = Omit<typeof ordersTable.$inferInsert, 'createdAt' | 'updatedAt'>
+export type SelectOrder = typeof ordersTable.$inferSelect
 
 /*
 Payment: {

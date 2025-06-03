@@ -5,6 +5,7 @@ import { selectedStoreIdAtom } from '@/features/store/state'
 import { useQuery } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import { useParams } from 'next/navigation'
+import { useMemo } from 'react'
 
 export const useCounters = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
@@ -21,11 +22,21 @@ export const useCounters = () => {
     refetchOnReconnect: true,
   })
 
+  const counters = result.data
+
+  const activeCounterId = counterId ? Number(counterId) : undefined
+
+  const activeCounter = useMemo(
+    () => counters?.find(counter => counter.id === activeCounterId),
+    [counters, activeCounterId]
+  )
+
   return {
-    counters: result.data,
+    counters,
     refetch: result.refetch,
     isLoading: result.isLoading,
     isError: result.isError,
-    activeCounterId: counterId ? Number(counterId) : undefined,
+    activeCounterId,
+    activeCounterName: activeCounter?.name,
   }
 }
