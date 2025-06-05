@@ -5,6 +5,7 @@ import {
   cartSessionItemsAtom,
   cartSessionTotalAtom,
   clearCartAtom,
+  isUsingPaymentScreenAtom,
   removeItemFromCartAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
@@ -28,11 +29,19 @@ export const useCart = (salesChannel: SalesChannel) => {
   const [, clearCart] = useAtom(clearCartAtom)
   const [, removeItemFromCart] = useAtom(removeItemFromCartAtom)
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
+  const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(isUsingPaymentScreenAtom)
 
   useEffect(() => {
-    if (!selectedStoreId) return
-    clearCart()
-  }, [selectedStoreId, clearCart])
+    if (!selectedStoreId || !cartSessionItems) return
+
+    const cartItemsIndexesToRemove = cartSessionItems
+      .filter(cartItem => cartItem.storeId !== selectedStoreId)
+      .map((_, index) => index)
+      .reverse()
+
+    cartItemsIndexesToRemove.forEach(index => removeItemFromCart(index))
+    setIsUsingPaymentScreen(false)
+  }, [selectedStoreId])
 
   const createOrderMutation = useMutation({
     mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
@@ -80,5 +89,7 @@ export const useCart = (salesChannel: SalesChannel) => {
     removeItemFromCart,
     updateItemQuantity,
     createOrder: createOrderMutation.mutateAsync,
+    isUsingPaymentScreen,
+    setIsUsingPaymentScreen,
   }
 }

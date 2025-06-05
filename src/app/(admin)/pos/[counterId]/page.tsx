@@ -1,8 +1,8 @@
 'use client'
 
-import { MenuItemPOS } from '@/features/menu/components/menu-item/menu-item-pos'
 import { useMenu } from '@/features/menu/hooks/use-menu'
 import { PosCart } from '@/features/pos/components/pos-cart'
+import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
 import { useCart } from '@/features/pos/hooks/use-cart'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
@@ -12,7 +12,7 @@ import { useAtom } from 'jotai'
 export default function CounterPage({}) {
   const { menuItems, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { addItemToCart } = useCart('POS')
+  const { isUsingPaymentScreen, setIsUsingPaymentScreen } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
 
@@ -23,17 +23,11 @@ export default function CounterPage({}) {
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
-        <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(19rem,1fr))] overflow-y-[inherit]">
-          {menuItems?.map((item, index) => (
-            <MenuItemPOS
-              key={index}
-              item={item}
-              onClick={() => {
-                addItemToCart({ ...item, quantity: 1 })
-              }}
-            />
-          ))}
-        </div>
+        {isUsingPaymentScreen ? (
+          <div onClick={() => setIsUsingPaymentScreen(false)}>Payments</div>
+        ) : (
+          <PosMenuItemsList menuItems={menuItems ?? []} />
+        )}
         {hasMenuItems && <PosCart key={selectedStoreId} />}
       </div>
     </div>

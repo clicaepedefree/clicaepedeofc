@@ -72,3 +72,5 @@ export const updateItemQuantityAtom = atom(
 )
 
 export const activeCounterIdAtom = atom<number | undefined>()
+
+export const isUsingPaymentScreenAtom = atom<boolean>(false)
