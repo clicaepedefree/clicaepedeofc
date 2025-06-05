@@ -106,6 +106,27 @@
       "when": 1748917464076,
       "tag": "0014_Include timezone on created_at and updated_at columns",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1749132215949,
+      "tag": "0015_Add order payments table",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1749132594862,
+      "tag": "0016_Turn change_for column into numeric and update check constraint",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1749133017768,
+      "tag": "0017_Add createdAt and updatedAt columns for order payments",
+      "breakpoints": true
     }
   ]
 }

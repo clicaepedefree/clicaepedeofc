@@ -23,18 +23,6 @@ export type InsertOrder = Omit<typeof ordersTable.$inferInsert, 'createdAt' | 'u
 export type SelectOrder = typeof ordersTable.$inferSelect
 
 /*
-Payment: {
-- value
-- type: "PREPAID" | "PENDING"
-- method: "CREDIT" | "DEBIT" | "MEAL_VOUCHER" | "FOOD_VOUCHER" | "DIGITAL_WALLET" | "PIX" | "CASH" | "CREDIT_DEBIT" | "COUPON" | "REDEEM" | "PREPAID_REDEEM" | "OTHER"
-- methodInfo?: string (required for "OTHER"?)
-- transaction: {
-    authCode: string
-    acquirerDocument: string
-    }
-- changeFor?: string
-}
-
 TaxInvoice: {
     issued: boolean
     taxInvoiceURL: string (URL)

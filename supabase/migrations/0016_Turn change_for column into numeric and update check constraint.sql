@@ -1,0 +1,3 @@
+ALTER TABLE "order_payments" DROP CONSTRAINT "change_for_required_for_cash";--> statement-breakpoint
+ALTER TABLE "order_payments" ALTER COLUMN "change_for" SET DATA TYPE numeric(19, 4) USING ("change_for"::numeric);--> statement-breakpoint
+ALTER TABLE "order_payments" ADD CONSTRAINT "change_for_required_for_cash" CHECK ("order_payments"."method" != 'CASH' OR ("order_payments"."change_for" IS NOT NULL AND "order_payments"."change_for" >= "order_payments"."value"));
