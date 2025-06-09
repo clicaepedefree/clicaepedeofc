@@ -1,5 +1,5 @@
+import { cn } from '@/shared/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { twMerge } from 'tailwind-merge'
 
 const bodyVariants = cva('tracking-normal', {
   variants: {
@@ -15,10 +15,12 @@ const bodyVariants = cva('tracking-normal', {
       medium: 'font-medium',
       regular: 'font-normal',
       light: 'font-light',
+      inherit: 'font-[inherit]',
     },
     highlight: {
       default: 'text-foreground',
       secondary: 'text-muted-foreground',
+      inherit: 'text-[inherit]',
     },
   },
   defaultVariants: {
@@ -34,5 +36,5 @@ type BodyProps = VariantProps<typeof bodyVariants> & {
 }
 
 export const Body = ({ variant, fontWeight, highlight, className, children }: BodyProps) => {
-  return <div className={twMerge(bodyVariants({ variant, fontWeight, highlight }), className)}>{children}</div>
+  return <div className={cn(bodyVariants({ variant, fontWeight, highlight }), className)}>{children}</div>
 }

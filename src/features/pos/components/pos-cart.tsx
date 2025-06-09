@@ -32,7 +32,7 @@ export const PosCart = () => {
       </div>
       {isUsingPaymentScreen && (
         <div className="absolute h-full w-full flex items-center justify-center">
-          <div className="absolute h-full w-full bg-black opacity-50 z-20"></div>
+          <div className="absolute h-full w-full bg-black opacity-70 z-20"></div>
           <LargeText variant="md" className="z-20 text-white flex flex-col items-center justify-center mb-24">
             <CircleDollarSign size={28} />
             Pagamento em andamento
@@ -64,7 +64,7 @@ export const PosCart = () => {
             className="hover:text-white hover:bg-destructive grow"
             size="xl"
             onClick={() => clearCart()}
-            disabled={isUsingPaymentScreen}
+            disabled={!hasCartItems || isUsingPaymentScreen}
           >
             Limpar
           </Button>
@@ -73,6 +73,7 @@ export const PosCart = () => {
             size="xl"
             className="grow"
             onClick={() => setIsUsingPaymentScreen(true)}
+            // onClick={() => createOrder({ counterId: activeCounterId!, counterName: activeCounterName! })}
             disabled={!hasCartItems || !hasSelectedCounter || isUsingPaymentScreen}
           >
             Pagamentos

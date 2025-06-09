@@ -3,6 +3,7 @@
 import { useMenu } from '@/features/menu/hooks/use-menu'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
+import { PosPayments } from '@/features/pos/components/pos-payments'
 import { useCart } from '@/features/pos/hooks/use-cart'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
@@ -23,11 +24,8 @@ export default function CounterPage({}) {
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
-        {isUsingPaymentScreen ? (
-          <div onClick={() => setIsUsingPaymentScreen(false)}>Payments</div>
-        ) : (
-          <PosMenuItemsList menuItems={menuItems ?? []} />
-        )}
+        {isUsingPaymentScreen && <PosPayments onClose={() => setIsUsingPaymentScreen(false)} />}
+        {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} />}
         {hasMenuItems && <PosCart key={selectedStoreId} />}
       </div>
     </div>
