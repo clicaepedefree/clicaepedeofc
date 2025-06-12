@@ -1,0 +1,2 @@
+ALTER TABLE "order_payments" DROP CONSTRAINT "change_for_required_for_cash";--> statement-breakpoint
+ALTER TABLE "order_payments" ADD CONSTRAINT "change_for_required_for_cash" CHECK ("order_payments"."method" != 'CASH' OR ("order_payments"."change_for" IS NULL OR "order_payments"."change_for" >= "order_payments"."value"));

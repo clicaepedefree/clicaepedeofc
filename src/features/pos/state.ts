@@ -1,12 +1,13 @@
-import { CartItem, CartSession } from '@/features/pos/types'
+import { CartItem, CartPayment, CartSession } from '@/features/pos/types'
 import { atom } from 'jotai'
 
 export const cartSessionAtom = atom<CartSession | null>(null)
 export const cartSessionItemsAtom = atom(get => get(cartSessionAtom)?.items)
+export const cartSessionPaymentsAtom = atom(get => get(cartSessionAtom)?.payments)
 export const cartSessionTotalAtom = atom(get => {
   const cartSession = get(cartSessionAtom)
 
-  if (!cartSession || !cartSession.items?.length) return '0'
+  if (!cartSession || !cartSession.items?.length) return 0
 
   return cartSession.items.reduce((total, item) => total + Number(item.price) * item.quantity, 0)
 })
@@ -74,3 +75,16 @@ export const updateItemQuantityAtom = atom(
 export const activeCounterIdAtom = atom<number | undefined>()
 
 export const isUsingPaymentScreenAtom = atom<boolean>(false)
+
+export const addPaymentAtom = atom(null, (get, set, payment: CartPayment) => {
+  const cartSession = get(cartSessionAtom)
+
+  if (!cartSession) return
+
+  const { payments = [] } = cartSession
+
+  set(cartSessionAtom, {
+    ...cartSession,
+    payments: [...payments, payment],
+  })
+})

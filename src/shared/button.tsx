@@ -3,6 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
+import { LoadingSpinner } from './spinner'
 
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
@@ -41,27 +42,36 @@ function Button({
   asChild = false,
   isClickable = false,
   type = 'button',
+  isLoading = false,
+  children,
+  disabled,
   ref,
   ...props
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
     isClickable?: boolean
+    isLoading?: boolean
   }) {
   const Comp = asChild ? Slot : 'button'
 
   const hasHoverStyle = isClickable || props.onClick
+
+  const isDisabled = isLoading || disabled
 
   return (
     <Comp
       ref={ref}
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }), {
-        'cursor-pointer': !props.disabled && hasHoverStyle,
+        'cursor-pointer': !isDisabled && hasHoverStyle,
       })}
       type={type}
+      disabled={isDisabled}
       {...props}
-    />
+    >
+      {isLoading && <LoadingSpinner className="text-white" />} {children}
+    </Comp>
   )
 }
 

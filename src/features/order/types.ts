@@ -3,13 +3,13 @@ import { InsertOrderPayment, SelectOrderPayment } from '@/services/db/schema/ord
 import { InsertOrder, SelectOrder } from '@/services/db/schema/orders'
 
 export type NewOrderItem = Omit<InsertOrderItem, 'id' | 'orderId'>
+export type NewOrderPayment = Omit<InsertOrderPayment, 'id' | 'orderId'>
+export type OrderPayment = SelectOrderPayment
 
 export type NewOrder = Omit<InsertOrder, 'id' | 'displayId'> & {
   items: NewOrderItem[]
+  payments: NewOrderPayment[]
 }
 
 export type SalesChannel = SelectOrder['salesChannel']
 export type OrderType = SelectOrder['type']
-
-export type NewOrderPayment = Omit<InsertOrderPayment, 'id'>
-export type OrderPayment = SelectOrderPayment

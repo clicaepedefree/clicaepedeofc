@@ -3,7 +3,7 @@
 import { useMenu } from '@/features/menu/hooks/use-menu'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
-import { PosPayments } from '@/features/pos/components/pos-payments'
+import { PosPayments } from '@/features/pos/components/pos-payments/pos-payments'
 import { useCart } from '@/features/pos/hooks/use-cart'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
@@ -13,7 +13,7 @@ import { useAtom } from 'jotai'
 export default function CounterPage({}) {
   const { menuItems, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { isUsingPaymentScreen, setIsUsingPaymentScreen } = useCart('POS')
+  const { cartSessionTotal, isUsingPaymentScreen, setIsUsingPaymentScreen } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
 
@@ -24,7 +24,9 @@ export default function CounterPage({}) {
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
-        {isUsingPaymentScreen && <PosPayments onClose={() => setIsUsingPaymentScreen(false)} />}
+        {isUsingPaymentScreen && (
+          <PosPayments onClose={() => setIsUsingPaymentScreen(false)} amountLeftToPay={cartSessionTotal} />
+        )}
         {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} />}
         {hasMenuItems && <PosCart key={selectedStoreId} />}
       </div>

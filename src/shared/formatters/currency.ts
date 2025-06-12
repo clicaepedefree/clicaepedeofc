@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js'
-import { cleanValue, formatValue } from 'react-currency-input-field'
+import { formatValue } from 'react-currency-input-field'
 
 export const DecimalFormatter = Decimal.set({ precision: 2 })
 
@@ -10,8 +10,9 @@ export const baseCurrencyConfig = {
 }
 
 export const getValueFromCurrencyString = (value: string | number) => {
-  if (!value) return ''
   if (typeof value === 'number') return value
+
+  if (!value) return 0
 
   const cleanedValue = value.replace(baseCurrencyConfig.decimalSeparator, '.')
 
@@ -21,15 +22,17 @@ export const getValueFromCurrencyString = (value: string | number) => {
 export const formatValueToCurrency = ({
   value,
   includeCurrencySymbol = false,
+  decimalPlaces = 2,
 }: {
   value: string | number
   includeCurrencySymbol?: boolean
+  decimalPlaces?: number
 }) => {
-  if (!value) return ''
+  if (value !== 0 && !value) return ''
 
   const cleanedValue = getValueFromCurrencyString(value)
 
-  const valueAsDecimal = new DecimalFormatter(cleanedValue).toFixed(2)
+  const valueAsDecimal = new DecimalFormatter(cleanedValue).toFixed(decimalPlaces)
 
   if (!includeCurrencySymbol) return valueAsDecimal
 

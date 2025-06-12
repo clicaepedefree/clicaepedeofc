@@ -8,6 +8,7 @@ type Tab = {
   value: string
   content: string
   icon: React.ReactNode
+  disabled?: boolean
 }
 
 type TabsWithIconsProps = {
@@ -16,9 +17,17 @@ type TabsWithIconsProps = {
   headerClassName?: string
   triggerClassName?: string
   children: React.ReactNode
+  footer?: React.ReactNode
 }
 
-export const TabsWithIcons = ({ tabs, className, headerClassName, triggerClassName, children }: TabsWithIconsProps) => {
+export const TabsWithIcons = ({
+  tabs,
+  className,
+  headerClassName,
+  triggerClassName,
+  children,
+  footer,
+}: TabsWithIconsProps) => {
   return (
     <Tabs defaultValue={tabs[0].value} className={cn('w-full', className)}>
       <TabsList
@@ -31,6 +40,7 @@ export const TabsWithIcons = ({ tabs, className, headerClassName, triggerClassNa
           <TabsTrigger
             key={tab.value}
             value={tab.value}
+            disabled={tab.disabled}
             className={cn(
               'flex flex-col gap-2 h-full border-b-2 border-transparent data-[state=active]:border-primary rounded-sm data-[state=active]:shadow-md data-[state=active]:text-primary [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0 data-[state=inactive]:hover:shadow-sm data-[state=inactive]:hover:border data-[state=inactive]:hover:bg-white',
               triggerClassName
@@ -44,6 +54,7 @@ export const TabsWithIcons = ({ tabs, className, headerClassName, triggerClassNa
         ))}
       </TabsList>
       <div className="w-full h-full px-2">{children}</div>
+      {footer}
     </Tabs>
   )
 }

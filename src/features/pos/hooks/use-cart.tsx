@@ -2,7 +2,9 @@ import { createOrder } from '@/features/order/api'
 import { SalesChannel } from '@/features/order/types'
 import {
   addItemToCartAtom,
+  addPaymentAtom,
   cartSessionItemsAtom,
+  cartSessionPaymentsAtom,
   cartSessionTotalAtom,
   clearCartAtom,
   isUsingPaymentScreenAtom,
@@ -24,15 +26,17 @@ type CreateOrderParams = {
 export const useCart = (salesChannel: SalesChannel) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const [cartSessionItems] = useAtom(cartSessionItemsAtom)
+  const [cartSessionPayments] = useAtom(cartSessionPaymentsAtom)
   const [cartSessionTotal] = useAtom(cartSessionTotalAtom)
   const [, addItemToCart] = useAtom(addItemToCartAtom)
   const [, clearCart] = useAtom(clearCartAtom)
   const [, removeItemFromCart] = useAtom(removeItemFromCartAtom)
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
+  const [, addPayment] = useAtom(addPaymentAtom)
   const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(isUsingPaymentScreenAtom)
 
   useEffect(() => {
-    if (!selectedStoreId || !cartSessionItems) return
+    if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) return
 
     const cartItemsIndexesToRemove = cartSessionItems
       .filter(cartItem => cartItem.storeId !== selectedStoreId)
@@ -40,12 +44,17 @@ export const useCart = (salesChannel: SalesChannel) => {
       .reverse()
 
     cartItemsIndexesToRemove.forEach(index => removeItemFromCart(index))
-    setIsUsingPaymentScreen(false)
   }, [selectedStoreId])
+
+  useEffect(() => {
+    if (cartSessionItems?.length || !isUsingPaymentScreen) return
+
+    setIsUsingPaymentScreen(false)
+  }, [cartSessionItems])
 
   const createOrderMutation = useMutation({
     mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
-      if (!selectedStoreId || !cartSessionItems) return
+      if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) return
 
       const orderItems = cartSessionItems.map((cartItem, index) => ({
         index,
@@ -60,6 +69,13 @@ export const useCart = (salesChannel: SalesChannel) => {
         ean: cartItem.ean,
       }))
 
+      const orderPayments = cartSessionPayments.map(payment => ({
+        type: payment.type,
+        value: payment.value,
+        method: payment.method,
+        changeFor: payment.changeFor,
+      }))
+
       const newOrder = await createOrder({
         storeId: selectedStoreId!,
         items: orderItems,
@@ -69,7 +85,9 @@ export const useCart = (salesChannel: SalesChannel) => {
         status: 'COMPLETED',
         posCounterId: counterId,
         posCounterName: counterName,
+        payments: orderPayments,
       })
+      console.log('newOrder', newOrder)
       return newOrder
     },
     onError: () => {
@@ -88,6 +106,7 @@ export const useCart = (salesChannel: SalesChannel) => {
     clearCart,
     removeItemFromCart,
     updateItemQuantity,
+    addPayment,
     createOrder: createOrderMutation.mutateAsync,
     isUsingPaymentScreen,
     setIsUsingPaymentScreen,

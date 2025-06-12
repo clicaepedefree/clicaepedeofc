@@ -11,6 +11,7 @@ interface CurrencyInputProps extends BaseCurrencyInputProps {
   prefixElement?: React.ReactNode
   inputClassName?: string
   error?: string
+  hideCurrencySymbol?: boolean
 }
 
 export const CurrencyInput = ({
@@ -19,6 +20,7 @@ export const CurrencyInput = ({
   className,
   inputClassName,
   error,
+  hideCurrencySymbol = false,
   ...props
 }: CurrencyInputProps) => {
   const id = useId()
@@ -27,9 +29,11 @@ export const CurrencyInput = ({
       {label}
       <div className="flex w-[inherit] min-w-0">
         {prefixElement}
-        <span className="shadow-xs border-input bg-accent text-muted-foreground inline-flex items-center rounded-s border-r-0 border px-2 sm:px-3 text-sm">
-          {baseCurrencyConfig.prefix}
-        </span>
+        {!hideCurrencySymbol && (
+          <span className="shadow-xs border-input bg-accent text-muted-foreground inline-flex items-center rounded-s border-r-0 border px-2 sm:px-3 text-sm">
+            {baseCurrencyConfig.prefix}
+          </span>
+        )}
         <BaseCurrencyInput
           id={id}
           className={cn('rounded-s-none shadow-xs px-2 sm:px-3', inputClassName)}
@@ -44,6 +48,7 @@ export const CurrencyInput = ({
           customInput={Input}
           disableAbbreviations
           prefix={''}
+          inputMode="numeric"
           intlConfig={{
             locale: 'pt-BR',
           }}

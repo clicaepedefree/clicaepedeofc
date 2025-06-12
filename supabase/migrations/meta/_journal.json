@@ -127,6 +127,13 @@
       "when": 1749133017768,
       "tag": "0017_Add createdAt and updatedAt columns for order payments",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1749656059291,
+      "tag": "0018_Fix changeFor constraint for cash payments",
+      "breakpoints": true
     }
   ]
 }

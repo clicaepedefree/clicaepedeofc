@@ -22,10 +22,10 @@ export const orderPaymentsTable = pgTable(
   table => [
     check(
       'change_for_required_for_cash',
-      sql`${table.method} != 'CASH' OR (${table.changeFor} IS NOT NULL AND ${table.changeFor} >= ${table.value})`
+      sql`${table.method} != 'CASH' OR (${table.changeFor} IS NULL OR ${table.changeFor} >= ${table.value})`
     ),
   ]
 )
 
-export type InsertOrderPayment = Omit<typeof orderPaymentsTable.$inferInsert, 'createdAt' | 'updatedAt'>
+export type InsertOrderPayment = Omit<typeof orderPaymentsTable.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>
 export type SelectOrderPayment = typeof orderPaymentsTable.$inferSelect

@@ -1,6 +1,7 @@
 'use server'
 
 import { InsertOrderItem, orderItemsTable } from '@/services/db/schema/order-items'
+import { InsertOrderPayment, orderPaymentsTable } from '@/services/db/schema/order-payments'
 import { InsertOrder, ordersTable } from '@/services/db/schema/orders'
 import { DbSession } from '@/services/db/types'
 import { and, count, eq, sql } from 'drizzle-orm'
@@ -48,4 +49,19 @@ export const createOrderItemOnDb = async ({
     .returning()
 
   return createdOrderItem
+}
+
+export const createOrderPaymentOnDb = async ({
+  newOrderPayment,
+  dbSession,
+}: {
+  newOrderPayment: InsertOrderPayment
+  dbSession: DbSession
+}) => {
+  const [createdOrderPayment] = await dbSession
+    .insert(orderPaymentsTable)
+    .values({ ...newOrderPayment, orderId: newOrderPayment.orderId })
+    .returning()
+
+  return createdOrderPayment
 }

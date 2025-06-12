@@ -1,6 +1,11 @@
 'use server'
 
-import { createOrderItemOnDb, createOrderOnDb, getNextOrderDisplayIdForStore } from '@/features/order/db'
+import {
+  createOrderItemOnDb,
+  createOrderOnDb,
+  createOrderPaymentOnDb,
+  getNextOrderDisplayIdForStore,
+} from '@/features/order/db'
 import { NewOrder } from '@/features/order/types'
 import { db } from '@/services/db'
 
@@ -21,6 +26,15 @@ export const createOrder = async (newOrder: NewOrder) => {
     )
 
     const createdOrderItems = await Promise.all(createdOrderItemsPromises)
-    return { ...createdOrder, items: createdOrderItems }
+
+    const createdOrderPaymentsPromises = newOrder.payments.map(newOrderPayment =>
+      createOrderPaymentOnDb({
+        newOrderPayment: { ...newOrderPayment, orderId: createdOrder.id },
+        dbSession: tx,
+      })
+    )
+
+    const createdOrderPayments = await Promise.all(createdOrderPaymentsPromises)
+    return { ...createdOrder, items: createdOrderItems, payments: createdOrderPayments }
   })
 }

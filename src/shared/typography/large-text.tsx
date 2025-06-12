@@ -8,6 +8,7 @@ const largeTextVariants = cva('text-lg font-semibold', {
       sm: 'text-sm',
       md: 'text-base font-medium',
       lg: 'text-xl',
+      xl: 'text-2xl',
     },
     hoverBehavior: {
       default: '',
