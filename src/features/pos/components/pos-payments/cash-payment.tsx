@@ -1,7 +1,7 @@
-import { createOrder } from '@/features/order/api'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
+import { Label } from '@/shared/label'
 import { LargeText } from '@/shared/typography/large-text'
 import { useState } from 'react'
 import { CartPayment } from '../../types'
@@ -47,13 +47,16 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <CurrencyInput
-        className="max-w-72 w-fit"
-        inputClassName="text-center w-fit"
-        value={cashAmount}
-        onValueChange={updatedValue => setCashAmount(updatedValue ?? '0')}
-        autoFocus
-      />
+      <Label size="sm" className="w-full px-4">
+        Valor pago
+        <CurrencyInput
+          className="w-full"
+          // inputClassName="w-fit"
+          value={cashAmount}
+          onValueChange={updatedValue => setCashAmount(updatedValue ?? '0')}
+          autoFocus
+        />
+      </Label>
       <div className="flex items-center gap-4 justify-center">
         <Button
           variant="outline"

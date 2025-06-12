@@ -7,6 +7,7 @@ import { ArrowLeft, Banknote, CreditCard } from 'lucide-react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
 import { CartPayment } from '../../types'
+import { CardPayment } from './card-payment'
 import { CashPayment } from './cash-payment'
 
 const paymentTabs = [
@@ -98,7 +99,9 @@ export const PosPayments = ({ amountPaid = 0, amountLeftToPay = 0, onClose }: Po
       <TabsContent value={'cash'}>
         <CashPayment amountLeftToPay={amountLeftToPay} onPaymentAdded={onPaymentAdded} />
       </TabsContent>
-      <TabsContent value={'card'}>Cartão</TabsContent>
+      <TabsContent value={'card'}>
+        <CardPayment amountLeftToPay={amountLeftToPay} onPaymentAdded={onPaymentAdded} />
+      </TabsContent>
       <TabsContent value={'pix'}>PIX</TabsContent>
     </TabsWithIcons>
   )
