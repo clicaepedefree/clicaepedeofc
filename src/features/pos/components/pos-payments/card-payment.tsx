@@ -4,8 +4,13 @@ import { Combobox } from '@/shared/combobox'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { Label } from '@/shared/label'
-import { useMemo, useState } from 'react'
-import { CartPayment } from '../../types'
+import { useForm, useStore } from '@tanstack/react-form'
+
+import { useMemo } from 'react'
+import { z } from 'zod'
+
+import { cardPaymentSchema, cardTypes } from '@/features/pos/form-validation/card-payment-schema'
+import { CartPayment } from '@/features/pos/types'
 import { CreditCardOperatorSelector } from '../credit-card-operator-selector'
 import { DebitCardOperatorSelector } from '../debit-card-operator-selector'
 import { FoodVoucherOperatorSelector } from '../food-voucher-operator-selector'
@@ -16,7 +21,6 @@ type CardPaymentProps = {
   onPaymentAdded?(payment: CartPayment): Promise<void>
 }
 
-const cardTypes = ['CREDIT', 'DEBIT', 'FOOD_VOUCHER', 'MEAL_VOUCHER'] as const
 type CardType = (typeof cardTypes)[number]
 
 type CardOperatorSelector = React.FC<{
@@ -32,107 +36,157 @@ const cardOperatorSelectorByType: Record<CardType, CardOperatorSelector> = {
 }
 
 export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProps) => {
-  const amountLeftToPayAsString = String(amountLeftToPay)
-  const [selectedCardType, setSelectedCardType] = useState<CardType>('CREDIT')
-  const [cardAmount, setCardAmount] = useState(amountLeftToPayAsString)
-  const [cardOperator, setCardOperator] = useState<CardBrand | null>(null)
-  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
-
-  const cardAmountAsNumber = getValueFromCurrencyString(cardAmount)
-
-  const onUpdateAmount = (value: string) => {
-    const valueAsNumber = getValueFromCurrencyString(value)
-
-    const isValueBiggerThanAmountLeftToPay = valueAsNumber > amountLeftToPay
-
-    const updatedValue = isValueBiggerThanAmountLeftToPay ? amountLeftToPayAsString : value
-    const formattedValue = formatValueToCurrency({ value: updatedValue })
-    setCardAmount(formattedValue)
-  }
-
-  const onSubmitPayment = async () => {
-    setIsSubmittingOrder(true)
-
-    const payment = {
+  const form = useForm({
+    defaultValues: {
       type: 'PREPAID',
-      value: formatValueToCurrency({ value: cardAmountAsNumber }),
-      method: selectedCardType,
-      cardBrand: cardOperator,
-    } as const
+      value: String(amountLeftToPay),
+      cardType: 'CREDIT',
+    } as z.input<typeof cardPaymentSchema>,
+    validators: {
+      onSubmit: cardPaymentSchema,
+    },
+    onSubmit: async ({ value }) => {
+      const formattedPaymentValue = formatValueToCurrency({ value: value.value })
 
-    await onPaymentAdded?.(payment)
-    setIsSubmittingOrder(false)
-  }
+      const payment = {
+        type: value.type,
+        value: formattedPaymentValue,
+        method: value.cardType,
+        cardBrand: value.cardBrand,
+      } as const
 
-  const isPaymentTotalAmount = amountLeftToPay == cardAmountAsNumber
-  const canSubmitPayment = cardAmountAsNumber > 0 && cardOperator
+      await onPaymentAdded?.(payment)
+    },
+  })
+
+  const amountLeftToPayAsString = formatValueToCurrency({ value: amountLeftToPay })
+
+  const selectedCardType = useStore(form.store, state => state.values.cardType)
+  const payingAmount = useStore(form.store, state => state.values.value)
+
+  const isPaymentTotalAmount = amountLeftToPay == getValueFromCurrencyString(payingAmount)
 
   const CardOperatorSelector = useMemo(() => cardOperatorSelectorByType[selectedCardType], [selectedCardType])
 
   return (
-    <div className="flex flex-col gap-6 px-4">
-      <Label size="sm" className="w-full">
-        Tipo de cartão
-        <Combobox
-          options={[
-            {
-              value: 'DEBIT',
-              label: 'Cartão de débito',
-            },
-            {
-              value: 'CREDIT',
-              label: 'Cartão de crédito',
-            },
-            {
-              value: 'FOOD_VOUCHER',
-              label: 'Vale alimentação',
-            },
-            {
-              value: 'MEAL_VOUCHER',
-              label: 'Vale refeição',
-            },
-          ]}
-          value={selectedCardType}
-          onChange={updatedValue => {
-            setCardOperator(null)
-            setSelectedCardType(updatedValue as CardType)
-          }}
-          placeholder="Tipo de cartão"
-          noResultMessage="Nenhum tipo de cartão encontrado"
-          disableUnselectingOption
-        />
-      </Label>
+    <form
+      onSubmit={event => {
+        event.preventDefault()
+        event.stopPropagation()
+        form.handleSubmit()
+      }}
+      className="flex flex-col gap-6 px-4"
+    >
+      <form.Field
+        name="cardType"
+        listeners={{
+          onChange: () => form.resetField('cardBrand'),
+        }}
+      >
+        {field => (
+          <Label size="sm" className="w-full">
+            Tipo de cartão
+            <Combobox
+              options={[
+                {
+                  value: 'DEBIT',
+                  label: 'Cartão de débito',
+                },
+                {
+                  value: 'CREDIT',
+                  label: 'Cartão de crédito',
+                },
+                {
+                  value: 'FOOD_VOUCHER',
+                  label: 'Vale alimentação',
+                },
+                {
+                  value: 'MEAL_VOUCHER',
+                  label: 'Vale refeição',
+                },
+              ]}
+              value={field.state.value}
+              onChange={updatedValue => field.handleChange(updatedValue as CardType)}
+              placeholder="Tipo de cartão"
+              noResultMessage="Nenhum tipo de cartão encontrado"
+              disableUnselectingOption
+            />
+          </Label>
+        )}
+      </form.Field>
       {selectedCardType && (
-        <Label size="sm" className="w-full" disableAutoFocus>
-          Operadora
-          <CardOperatorSelector value={cardOperator} onChange={value => setCardOperator(value)} />
-        </Label>
+        <form.Field name="cardBrand">
+          {field => (
+            <Label size="sm" className="w-full" disableAutoFocus>
+              Operadora
+              <CardOperatorSelector
+                value={field.state.value}
+                onChange={value => (!!value ? field.handleChange(value) : form.resetField(field.name))}
+              />
+            </Label>
+          )}
+        </form.Field>
       )}
-      <Label size="sm" className="w-full">
-        Valor pago
-        <div className="flex items-center gap-4">
-          <CurrencyInput
-            className="max-w-72 w-fit"
-            inputClassName="w-fit"
-            value={cardAmount}
-            onValueChange={updatedValue => onUpdateAmount(updatedValue ?? '0')}
-          />
-          <Button
-            variant="outline"
-            className="font-normal flex flex-col items-center justify-center border-amber-600 text-amber-800"
-            onClick={() => onUpdateAmount(amountLeftToPayAsString)}
-          >
-            TOTAL (
-            {formatValueToCurrency({ value: amountLeftToPayAsString, includeCurrencySymbol: true, decimalPlaces: 2 })})
-          </Button>
-        </div>
-      </Label>
-      <div className="space-y-2">
-        <Button onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
-          {!isSubmittingOrder && (!isPaymentTotalAmount ? 'Adicionar pagamento' : 'Finalizar pedido')}
-          {isSubmittingOrder && 'Finalizando pedido...'}
-        </Button>
-      </div>
-    </div>
+      <form.Field
+        name="value"
+        listeners={{
+          onBlur: ({ value }) => {
+            if (getValueFromCurrencyString(value) > amountLeftToPay) {
+              form.resetField('value')
+              form.setFieldValue('value', amountLeftToPayAsString)
+            }
+          },
+        }}
+        validators={{
+          onChange: ({ value }) => {
+            if (getValueFromCurrencyString(value) > amountLeftToPay) {
+              return { message: 'Valor pago não pode ser maior do que o restante' }
+            }
+          },
+          onBlur: ({ value }) => {
+            if (getValueFromCurrencyString(value) <= 0) return { message: 'Valor deve ser maior que 0' }
+          },
+        }}
+      >
+        {field => (
+          <Label size="sm" className="w-full">
+            Valor pago
+            <div className="flex items-center gap-4">
+              <CurrencyInput
+                className="max-w-72 w-fit"
+                inputClassName="w-fit"
+                value={field.state.value}
+                onValueChange={updatedValue => field.handleChange(updatedValue ?? '0')}
+                error={field.state.meta.errors[0]?.message}
+                onBlur={field.handleBlur}
+              />
+              <Button
+                variant="outline"
+                className="font-normal self-baseline  flex flex-col items-center justify-center border-amber-600 text-amber-800"
+                onClick={() => field.handleChange(amountLeftToPayAsString)}
+              >
+                TOTAL (
+                {formatValueToCurrency({
+                  value: amountLeftToPayAsString,
+                  includeCurrencySymbol: true,
+                  decimalPlaces: 2,
+                })}
+                )
+              </Button>
+            </div>
+          </Label>
+        )}
+      </form.Field>
+      <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
+        {([canSubmitPayment, isSubmittingOrder]) => (
+          <div className="space-y-2">
+            <Button type="submit" disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
+              {!isSubmittingOrder && (!isPaymentTotalAmount ? 'Adicionar pagamento' : 'Finalizar pedido')}
+              {isSubmittingOrder && 'Finalizando pedido...'}
+            </Button>
+          </div>
+        )}
+      </form.Subscribe>
+    </form>
   )
 }

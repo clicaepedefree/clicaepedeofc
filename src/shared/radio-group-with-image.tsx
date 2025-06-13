@@ -24,7 +24,7 @@ export const RadioGroupWithImage = <T extends string>({
 }: RadioGroupWithImageProps<T>) => {
   return (
     <RadioGroupPrimitive.Root
-      value={selectedValue}
+      value={selectedValue ?? ''}
       onValueChange={onValueChange}
       className={cn('w-full grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-4 justify-center', className)}
       {...props}

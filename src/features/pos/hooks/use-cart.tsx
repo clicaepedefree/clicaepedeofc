@@ -88,7 +88,7 @@ export const useCart = (salesChannel: SalesChannel) => {
         posCounterName: counterName,
         payments: orderPayments,
       })
-      console.log('newOrder', newOrder)
+
       return newOrder
     },
     onError: () => {

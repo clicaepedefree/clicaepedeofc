@@ -4,6 +4,7 @@ import { atom } from 'jotai'
 export const cartSessionAtom = atom<CartSession | null>(null)
 export const cartSessionItemsAtom = atom(get => get(cartSessionAtom)?.items)
 export const cartSessionPaymentsAtom = atom(get => get(cartSessionAtom)?.payments)
+
 export const cartSessionTotalAtom = atom(get => {
   const cartSession = get(cartSessionAtom)
 
