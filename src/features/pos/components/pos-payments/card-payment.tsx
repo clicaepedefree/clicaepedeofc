@@ -1,9 +1,9 @@
+import { CardBrand } from '@/features/order/types'
 import { Button } from '@/shared/button'
 import { Combobox } from '@/shared/combobox'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { Label } from '@/shared/label'
-import { LargeText } from '@/shared/typography/large-text'
 import { useMemo, useState } from 'react'
 import { CartPayment } from '../../types'
 import { CreditCardOperatorSelector } from '../credit-card-operator-selector'
@@ -16,52 +16,56 @@ type CardPaymentProps = {
   onPaymentAdded?(payment: CartPayment): Promise<void>
 }
 
-const cardPaymentButtons = ['100', '50', '20', '10', '5', '2']
-
 const cardTypes = ['CREDIT', 'DEBIT', 'FOOD_VOUCHER', 'MEAL_VOUCHER'] as const
 type CardType = (typeof cardTypes)[number]
 
-const cardOperatorSelectorByType: Record<CardType, React.FC<{ value?: string; onChange: (value: string) => void }>> = {
-  CREDIT: CreditCardOperatorSelector,
-  DEBIT: DebitCardOperatorSelector,
-  FOOD_VOUCHER: FoodVoucherOperatorSelector,
-  MEAL_VOUCHER: MealVoucherOperatorSelector,
-} as const
+type CardOperatorSelector = React.FC<{
+  value: CardBrand | null
+  onChange(value: CardBrand): void
+}>
+
+const cardOperatorSelectorByType: Record<CardType, CardOperatorSelector> = {
+  CREDIT: CreditCardOperatorSelector as CardOperatorSelector,
+  DEBIT: DebitCardOperatorSelector as CardOperatorSelector,
+  FOOD_VOUCHER: FoodVoucherOperatorSelector as CardOperatorSelector,
+  MEAL_VOUCHER: MealVoucherOperatorSelector as CardOperatorSelector,
+}
 
 export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProps) => {
   const amountLeftToPayAsString = String(amountLeftToPay)
   const [selectedCardType, setSelectedCardType] = useState<CardType>('CREDIT')
   const [cardAmount, setCardAmount] = useState(amountLeftToPayAsString)
-  const [cardOperator, setCardOperator] = useState<string | undefined>(undefined)
-  console.log('cardOperator', cardOperator)
+  const [cardOperator, setCardOperator] = useState<CardBrand | null>(null)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
 
   const cardAmountAsNumber = getValueFromCurrencyString(cardAmount)
 
-  const onClickCardOption = (buttonValue: string) => {
-    const formattedValue = formatValueToCurrency({ value: buttonValue })
+  const onUpdateAmount = (value: string) => {
+    const valueAsNumber = getValueFromCurrencyString(value)
+
+    const isValueBiggerThanAmountLeftToPay = valueAsNumber > amountLeftToPay
+
+    const updatedValue = isValueBiggerThanAmountLeftToPay ? amountLeftToPayAsString : value
+    const formattedValue = formatValueToCurrency({ value: updatedValue })
     setCardAmount(formattedValue)
   }
 
   const onSubmitPayment = async () => {
     setIsSubmittingOrder(true)
 
-    const changeFor = totalChange > 0 ? cardAmount : null
-    const paymentAmount = totalChange > 0 ? amountLeftToPay : cardAmountAsNumber
-
     const payment = {
       type: 'PREPAID',
-      value: formatValueToCurrency({ value: paymentAmount }),
-      method: 'CREDIT',
-      changeFor,
+      value: formatValueToCurrency({ value: cardAmountAsNumber }),
+      method: selectedCardType,
+      cardBrand: cardOperator,
     } as const
 
     await onPaymentAdded?.(payment)
     setIsSubmittingOrder(false)
   }
 
-  const totalChange = cardAmountAsNumber - amountLeftToPay
-  const canSubmitPayment = cardAmountAsNumber > 0
+  const isPaymentTotalAmount = amountLeftToPay == cardAmountAsNumber
+  const canSubmitPayment = cardAmountAsNumber > 0 && cardOperator
 
   const CardOperatorSelector = useMemo(() => cardOperatorSelectorByType[selectedCardType], [selectedCardType])
 
@@ -90,7 +94,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
           ]}
           value={selectedCardType}
           onChange={updatedValue => {
-            setCardOperator(undefined)
+            setCardOperator(null)
             setSelectedCardType(updatedValue as CardType)
           }}
           placeholder="Tipo de cartão"
@@ -101,47 +105,33 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
       {selectedCardType && (
         <Label size="sm" className="w-full" disableAutoFocus>
           Operadora
-          <CardOperatorSelector value={cardOperator} onChange={setCardOperator} />
+          <CardOperatorSelector value={cardOperator} onChange={value => setCardOperator(value)} />
         </Label>
       )}
       <Label size="sm" className="w-full">
         Valor pago
-        <CurrencyInput
-          className="max-w-72 w-fit"
-          inputClassName="w-fit"
-          value={cardAmount}
-          onValueChange={updatedValue => setCardAmount(updatedValue ?? '0')}
-        />
-      </Label>
-      <div className="flex items-center gap-4 justify-center">
-        <Button
-          variant="outline"
-          className="font-normal flex flex-col items-center justify-center border-amber-600 text-amber-800"
-          onClick={() => onClickCardOption(amountLeftToPayAsString)}
-        >
-          {formatValueToCurrency({ value: amountLeftToPayAsString, includeCurrencySymbol: true, decimalPlaces: 2 })}
-        </Button>
-        {cardPaymentButtons.map(buttonValue => (
+        <div className="flex items-center gap-4">
+          <CurrencyInput
+            className="max-w-72 w-fit"
+            inputClassName="w-fit"
+            value={cardAmount}
+            onValueChange={updatedValue => onUpdateAmount(updatedValue ?? '0')}
+          />
           <Button
             variant="outline"
-            className="font-normal"
-            key={buttonValue}
-            onClick={() => onClickCardOption(buttonValue)}
+            className="font-normal flex flex-col items-center justify-center border-amber-600 text-amber-800"
+            onClick={() => onUpdateAmount(amountLeftToPayAsString)}
           >
-            {formatValueToCurrency({ value: buttonValue, includeCurrencySymbol: true, decimalPlaces: 0 })}
+            TOTAL (
+            {formatValueToCurrency({ value: amountLeftToPayAsString, includeCurrencySymbol: true, decimalPlaces: 2 })})
           </Button>
-        ))}
-      </div>
+        </div>
+      </Label>
       <div className="space-y-2">
         <Button onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
-          {!isSubmittingOrder && (totalChange < 0 ? 'Adicionar pagamento' : 'Finalizar pedido')}
+          {!isSubmittingOrder && (!isPaymentTotalAmount ? 'Adicionar pagamento' : 'Finalizar pedido')}
           {isSubmittingOrder && 'Finalizando pedido...'}
         </Button>
-        {totalChange > 0 && (
-          <LargeText variant="md">
-            Troco: {formatValueToCurrency({ value: totalChange, includeCurrencySymbol: true, decimalPlaces: 2 })}
-          </LargeText>
-        )}
       </div>
     </div>
   )

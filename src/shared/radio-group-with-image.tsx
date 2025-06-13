@@ -4,24 +4,24 @@ import * as RadioGroupPrimitive from '@radix-ui/react-radio-group'
 import { CircleCheck } from 'lucide-react'
 import Image from 'next/image'
 
-type RadioGroupWithImageOption = {
-  value: string
+type RadioGroupWithImageOption<T extends string> = {
+  value: T
   label: string
   logoPath: string
 }
-type RadioGroupWithImageProps = {
-  options: RadioGroupWithImageOption[]
-  selectedValue?: string
-  onValueChange: (value: string) => void
+type RadioGroupWithImageProps<T extends string> = {
+  options: RadioGroupWithImageOption<T>[]
+  selectedValue?: T | null
+  onValueChange: (value: T) => void
 } & React.ComponentProps<typeof RadioGroupPrimitive.Root>
 
-export const RadioGroupWithImage = ({
+export const RadioGroupWithImage = <T extends string>({
   options,
   selectedValue,
   onValueChange,
   className,
   ...props
-}: RadioGroupWithImageProps) => {
+}: RadioGroupWithImageProps<T>) => {
   return (
     <RadioGroupPrimitive.Root
       value={selectedValue}

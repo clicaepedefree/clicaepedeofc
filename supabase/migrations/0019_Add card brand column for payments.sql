@@ -1,0 +1,2 @@
+ALTER TABLE "order_payments" ADD COLUMN "card_brand" text;--> statement-breakpoint
+ALTER TABLE "order_payments" ADD CONSTRAINT "card_brand_required_for_card" CHECK ("order_payments"."method" NOT IN ('CREDIT', 'DEBIT', 'MEAL_VOUCHER', 'FOOD_VOUCHER') OR ("order_payments"."card_brand" IS NOT NULL));

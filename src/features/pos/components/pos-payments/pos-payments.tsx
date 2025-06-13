@@ -49,6 +49,7 @@ export const PosPayments = ({ amountPaid = 0, amountLeftToPay = 0, onClose }: Po
   const onPaymentAdded = async (payment: CartPayment) => {
     const paymentAmount = getValueFromCurrencyString(payment.value)
     addPayment(payment)
+
     if (paymentAmount >= amountLeftToPay) {
       await createOrder({
         counterId: activeCounterId!,

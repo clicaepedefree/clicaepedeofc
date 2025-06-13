@@ -74,6 +74,7 @@ export const useCart = (salesChannel: SalesChannel) => {
         value: payment.value,
         method: payment.method,
         changeFor: payment.changeFor,
+        cardBrand: payment.cardBrand,
       }))
 
       const newOrder = await createOrder({

@@ -15,6 +15,25 @@ export const orderPaymentsTable = pgTable(
     method: text('method', {
       enum: ['CASH', 'PIX', 'CREDIT', 'DEBIT', 'MEAL_VOUCHER', 'FOOD_VOUCHER'],
     }).notNull(),
+    cardBrand: text('card_brand', {
+      enum: [
+        'ALELO',
+        'AMEX',
+        'BANES_CARD',
+        'BEN_CARD',
+        'DINERS',
+        'ELO',
+        'GOOD_CARD',
+        'GREEN_CARD',
+        'HIPERCARD',
+        'MASTERCARD',
+        'SODEXO',
+        'TICKET',
+        'VALE_CARD',
+        'VISA',
+        'VR_BENEFICIOS',
+      ],
+    }),
     changeFor: numeric('change_for', { precision: 19, scale: 4 }),
     createdAt,
     updatedAt,
@@ -23,6 +42,10 @@ export const orderPaymentsTable = pgTable(
     check(
       'change_for_required_for_cash',
       sql`${table.method} != 'CASH' OR (${table.changeFor} IS NULL OR ${table.changeFor} >= ${table.value})`
+    ),
+    check(
+      'card_brand_required_for_card',
+      sql`${table.method} NOT IN ('CREDIT', 'DEBIT', 'MEAL_VOUCHER', 'FOOD_VOUCHER') OR (${table.cardBrand} IS NOT NULL)`
     ),
   ]
 )

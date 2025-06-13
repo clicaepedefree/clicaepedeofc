@@ -13,3 +13,5 @@ export type NewOrder = Omit<InsertOrder, 'id' | 'displayId'> & {
 
 export type SalesChannel = SelectOrder['salesChannel']
 export type OrderType = SelectOrder['type']
+
+export type CardBrand = SelectOrderPayment['cardBrand']

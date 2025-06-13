@@ -134,6 +134,13 @@
       "when": 1749656059291,
       "tag": "0018_Fix changeFor constraint for cash payments",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1749784636723,
+      "tag": "0019_Add card brand column for payments",
+      "breakpoints": true
     }
   ]
 }

@@ -2,42 +2,42 @@ import { RadioGroupWithImage } from '@/shared/radio-group-with-image'
 
 const options = [
   {
-    value: 'diners',
+    value: 'DINERS',
     label: 'Diners',
     logoPath: '/images/card-operators/diners.svg',
   },
   {
-    value: 'elo',
+    value: 'ELO',
     label: 'Elo',
     logoPath: '/images/card-operators/elo.svg',
   },
   {
-    value: 'hiper',
+    value: 'HIPERCARD',
     label: 'Hiper',
     logoPath: '/images/card-operators/hiper.svg',
   },
   {
-    value: 'mastercard',
+    value: 'MASTERCARD',
     label: 'Mastercard',
     logoPath: '/images/card-operators/mastercard.svg',
   },
   {
-    value: 'visa',
+    value: 'VISA',
     label: 'Visa',
     logoPath: '/images/card-operators/visa.svg',
   },
-]
+] as const
 
 type DebitCardOperatorSelectorProps = {
-  value?: string
-  onChange(value: string): void
+  value: (typeof options)[number]['value'] | null
+  onChange(value: (typeof options)[number]['value']): void
 }
 
 export const DebitCardOperatorSelector = ({ value, onChange }: DebitCardOperatorSelectorProps) => {
   return (
     <RadioGroupWithImage
       name="debit-card-operator-selector"
-      options={options}
+      options={[...options]}
       selectedValue={value}
       onValueChange={onChange}
     />

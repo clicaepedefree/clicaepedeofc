@@ -6,7 +6,7 @@ export type CartItem = MenuItem & {
   quantity: number
 }
 
-export type CartPayment = PartialBy<NewOrderPayment, 'orderId'>
+export type CartPayment = NewOrderPayment
 
 export type CartSession = {
   startedAt: Date
