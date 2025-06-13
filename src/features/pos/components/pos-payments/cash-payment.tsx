@@ -46,12 +46,12 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
   const canSubmitPayment = cashAmountAsNumber > 0
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <Label size="sm" className="w-full px-4">
+    <div className="flex flex-col gap-6 px-4">
+      <Label size="sm" className="w-full">
         Valor pago
         <CurrencyInput
           className="w-full"
-          // inputClassName="w-fit"
+          inputClassName="w-fit"
           value={cashAmount}
           onValueChange={updatedValue => setCashAmount(updatedValue ?? '0')}
           autoFocus
@@ -77,8 +77,8 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
         ))}
       </div>
 
-      <div className="space-y-2 text-center">
-        <Button className="mt-4" onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
+      <div className="space-y-2">
+        <Button onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
           {!isSubmittingOrder && (totalChange < 0 ? 'Adicionar pagamento' : 'Finalizar pedido')}
           {isSubmittingOrder && 'Finalizando pedido...'}
         </Button>

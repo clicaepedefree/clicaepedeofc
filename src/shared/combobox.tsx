@@ -17,6 +17,7 @@ type ComboboxProps = {
   noResultMessage?: string
   disabled?: boolean
   disableUnselectingOption?: boolean
+  autoFocus?: boolean
 }
 
 export const Combobox = ({
@@ -28,6 +29,7 @@ export const Combobox = ({
   noResultMessage = 'Nenhuma opção encontrada',
   disabled = false,
   disableUnselectingOption = false,
+  autoFocus = false,
 }: ComboboxProps) => {
   const [open, setOpen] = React.useState(false)
 
@@ -41,6 +43,7 @@ export const Combobox = ({
       </PopoverTrigger>
       <PopoverContent className="w-full p-0">
         <Command
+          autoFocus={autoFocus}
           loop
           className="w-full"
           filter={(_, search, keywords = []) => {

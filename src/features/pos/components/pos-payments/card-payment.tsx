@@ -66,8 +66,8 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
   const CardOperatorSelector = useMemo(() => cardOperatorSelectorByType[selectedCardType], [selectedCardType])
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      <Label size="sm" className="w-full px-4">
+    <div className="flex flex-col gap-6 px-4">
+      <Label size="sm" className="w-full">
         Tipo de cartão
         <Combobox
           options={[
@@ -99,18 +99,20 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
         />
       </Label>
       {selectedCardType && (
-        <Label size="sm" className="w-full px-4" disableAutoFocus>
+        <Label size="sm" className="w-full" disableAutoFocus>
           Operadora
           <CardOperatorSelector value={cardOperator} onChange={setCardOperator} />
         </Label>
       )}
-      <CurrencyInput
-        className="max-w-72 w-fit"
-        inputClassName="text-center w-fit"
-        value={cardAmount}
-        onValueChange={updatedValue => setCardAmount(updatedValue ?? '0')}
-        autoFocus
-      />
+      <Label size="sm" className="w-full">
+        Valor pago
+        <CurrencyInput
+          className="max-w-72 w-fit"
+          inputClassName="w-fit"
+          value={cardAmount}
+          onValueChange={updatedValue => setCardAmount(updatedValue ?? '0')}
+        />
+      </Label>
       <div className="flex items-center gap-4 justify-center">
         <Button
           variant="outline"
@@ -130,8 +132,8 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
           </Button>
         ))}
       </div>
-      <div className="space-y-2 text-center">
-        <Button className="mt-4" onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
+      <div className="space-y-2">
+        <Button onClick={onSubmitPayment} disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
           {!isSubmittingOrder && (totalChange < 0 ? 'Adicionar pagamento' : 'Finalizar pedido')}
           {isSubmittingOrder && 'Finalizando pedido...'}
         </Button>

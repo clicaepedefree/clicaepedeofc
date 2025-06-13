@@ -45,6 +45,7 @@ function Label({
           size,
           className,
         }),
+        !disableAutoFocus && 'cursor-pointer',
         className
       )}
       {...props}
