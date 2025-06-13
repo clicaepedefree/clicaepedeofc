@@ -3,7 +3,6 @@ import { Body } from '@/shared/typography/body'
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group'
 import { CircleCheck } from 'lucide-react'
 import Image from 'next/image'
-import React from 'react'
 
 type RadioGroupWithImageOption = {
   value: string
@@ -12,16 +11,23 @@ type RadioGroupWithImageOption = {
 }
 type RadioGroupWithImageProps = {
   options: RadioGroupWithImageOption[]
-  selectedValue: string
+  selectedValue?: string
   onValueChange: (value: string) => void
-}
+} & React.ComponentProps<typeof RadioGroupPrimitive.Root>
 
-export const RadioGroupWithImage = ({ options, selectedValue, onValueChange }: RadioGroupWithImageProps) => {
+export const RadioGroupWithImage = ({
+  options,
+  selectedValue,
+  onValueChange,
+  className,
+  ...props
+}: RadioGroupWithImageProps) => {
   return (
     <RadioGroupPrimitive.Root
       value={selectedValue}
       onValueChange={onValueChange}
-      className="max-w-xl w-full grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-4"
+      className={cn('w-full grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-4 justify-center', className)}
+      {...props}
     >
       {options.map(option => (
         <RadioGroupPrimitive.Item

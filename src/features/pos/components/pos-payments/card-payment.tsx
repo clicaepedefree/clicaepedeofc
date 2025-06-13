@@ -4,11 +4,12 @@ import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { Label } from '@/shared/label'
 import { LargeText } from '@/shared/typography/large-text'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CartPayment } from '../../types'
 import { CreditCardOperatorSelector } from '../credit-card-operator-selector'
 import { DebitCardOperatorSelector } from '../debit-card-operator-selector'
 import { FoodVoucherOperatorSelector } from '../food-voucher-operator-selector'
+import { MealVoucherOperatorSelector } from '../meal-voucher-operator-selector'
 
 type CardPaymentProps = {
   amountLeftToPay: number
@@ -20,11 +21,11 @@ const cardPaymentButtons = ['100', '50', '20', '10', '5', '2']
 const cardTypes = ['CREDIT', 'DEBIT', 'FOOD_VOUCHER', 'MEAL_VOUCHER'] as const
 type CardType = (typeof cardTypes)[number]
 
-const cardOperatorSelectorByType: Record<CardType, React.FC<{ value: string; onChange: (value: string) => void }>> = {
+const cardOperatorSelectorByType: Record<CardType, React.FC<{ value?: string; onChange: (value: string) => void }>> = {
   CREDIT: CreditCardOperatorSelector,
   DEBIT: DebitCardOperatorSelector,
   FOOD_VOUCHER: FoodVoucherOperatorSelector,
-  MEAL_VOUCHER: () => null,
+  MEAL_VOUCHER: MealVoucherOperatorSelector,
 } as const
 
 export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProps) => {
@@ -32,6 +33,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
   const [selectedCardType, setSelectedCardType] = useState<CardType>('CREDIT')
   const [cardAmount, setCardAmount] = useState(amountLeftToPayAsString)
   const [cardOperator, setCardOperator] = useState<string | undefined>(undefined)
+  console.log('cardOperator', cardOperator)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
 
   const cardAmountAsNumber = getValueFromCurrencyString(cardAmount)
@@ -61,7 +63,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
   const totalChange = cardAmountAsNumber - amountLeftToPay
   const canSubmitPayment = cardAmountAsNumber > 0
 
-  const CardOperatorSelector = cardOperatorSelectorByType[selectedCardType]
+  const CardOperatorSelector = useMemo(() => cardOperatorSelectorByType[selectedCardType], [selectedCardType])
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -97,9 +99,9 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
         />
       </Label>
       {selectedCardType && (
-        <Label size="sm" className="w-full px-4">
+        <Label size="sm" className="w-full px-4" disableAutoFocus>
           Operadora
-          <CardOperatorSelector value={cardOperator ?? ''} onChange={setCardOperator} />
+          <CardOperatorSelector value={cardOperator} onChange={setCardOperator} />
         </Label>
       )}
       <CurrencyInput

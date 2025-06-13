@@ -34,10 +34,17 @@ const options = [
 ]
 
 type CreditCardOperatorSelectorProps = {
-  value: string
+  value?: string
   onChange: (value: string) => void
 }
 
 export const CreditCardOperatorSelector = ({ value, onChange }: CreditCardOperatorSelectorProps) => {
-  return <RadioGroupWithImage options={options} selectedValue={value} onValueChange={onChange} />
+  return (
+    <RadioGroupWithImage
+      name="credit-card-operator-selector"
+      options={options}
+      selectedValue={value}
+      onValueChange={onChange}
+    />
+  )
 }

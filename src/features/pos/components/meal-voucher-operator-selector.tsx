@@ -13,8 +13,8 @@ const options = [
   },
   {
     value: 'ticket',
-    label: 'Ticket',
-    logoPath: '/images/card-operators/ticket.svg',
+    label: 'Ticket Restaurante',
+    logoPath: '/images/card-operators/ticket-restaurante.svg',
   },
   {
     value: 'vr',
@@ -48,15 +48,15 @@ const options = [
   },
 ]
 
-type FoodVoucherOperatorSelectorProps = {
+type MealVoucherOperatorSelectorProps = {
   value?: string
   onChange(value: string): void
 }
 
-export const FoodVoucherOperatorSelector = ({ value, onChange }: FoodVoucherOperatorSelectorProps) => {
+export const MealVoucherOperatorSelector = ({ value, onChange }: MealVoucherOperatorSelectorProps) => {
   return (
     <RadioGroupWithImage
-      name="food-voucher-operator-selector"
+      name="meal-voucher-operator-selector"
       options={options}
       selectedValue={value}
       onValueChange={onChange}

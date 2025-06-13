@@ -31,8 +31,11 @@ function Label({
   className,
   variant,
   size,
+  disableAutoFocus = false,
+  onClick,
   ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root> & VariantProps<typeof labelVariants>) {
+}: React.ComponentProps<typeof LabelPrimitive.Root> &
+  VariantProps<typeof labelVariants> & { disableAutoFocus?: boolean }) {
   return (
     <LabelPrimitive.Root
       data-slot="label"
@@ -45,6 +48,13 @@ function Label({
         className
       )}
       {...props}
+      onClick={event => {
+        onClick?.(event)
+        if (disableAutoFocus) {
+          event.stopPropagation()
+          event.preventDefault()
+        }
+      }}
     />
   )
 }
