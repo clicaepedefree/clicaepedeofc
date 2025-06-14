@@ -19,6 +19,7 @@ export const AppSidebarHeader = () => {
               alt="Clica Pedidos Logo"
               sizes="(max-width: 768px) 271px, 239px"
               fill
+              priority={true}
             />
           </div>
         )}

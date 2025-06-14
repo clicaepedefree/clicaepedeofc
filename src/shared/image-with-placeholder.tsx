@@ -26,7 +26,7 @@ export function ImageWithPlaceholder({
         style={{ height: `${size}px`, width: `${size}px` }}
       >
         {image ? (
-          <Image src={image.url} alt={alt} width={size} height={size} className="w-full h-full" />
+          <Image src={image.url} alt={alt} width="0" height="0" sizes="100vw" className="w-full h-full" />
         ) : (
           <div className="flex items-center justify-center h-full">
             <ImageIcon className={cn('h-6 w-6 text-primary/60', iconClassName)} />

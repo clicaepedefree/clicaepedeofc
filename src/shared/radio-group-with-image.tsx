@@ -44,9 +44,10 @@ export const RadioGroupWithImage = <T extends string>({
             <Image
               src={option.logoPath}
               alt={`${option.label} logo`}
-              width={80}
-              height={32}
-              className="object-contain"
+              width="0"
+              height="0"
+              sizes="100vw"
+              className="object-contain w-full h-full min-h-8"
             />
           </div>
           <Body variant={400} fontWeight="regular" className="tracking-tight text-center">
