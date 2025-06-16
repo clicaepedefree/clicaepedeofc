@@ -1,14 +1,17 @@
 import { Button } from '@/shared/button'
 import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
+import { dispatchToast } from '@/shared/lib/toast'
 import { TabsContent, TabsWithIcons } from '@/shared/tabs-with-icons'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
-import { ArrowLeft, Banknote, CreditCard } from 'lucide-react'
+import { ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
 import { CartPayment } from '../../types'
 import { CardPayment } from './card-payment'
 import { CashPayment } from './cash-payment'
+import { PaymentsList } from './payments-list'
 
 const paymentTabs = [
   {
@@ -43,7 +46,7 @@ type PosPaymentsProps = {
 }
 
 export const PosPayments = ({ amountPaid = 0, amountLeftToPay = 0, onClose }: PosPaymentsProps) => {
-  const { createOrder, addPayment } = useCart('POS')
+  const { createOrder, addPayment, cartSessionPayments } = useCart('POS')
   const { activeCounterId, activeCounterName } = useCounters()
 
   const onPaymentAdded = async (payment: CartPayment) => {
@@ -55,7 +58,13 @@ export const PosPayments = ({ amountPaid = 0, amountLeftToPay = 0, onClose }: Po
         counterId: activeCounterId!,
         counterName: activeCounterName!,
       })
+      return
     }
+
+    dispatchToast({
+      message: `Pagamento de R$ ${payment.value} incluído no pedido`,
+      type: 'success',
+    })
   }
   const paymentsFooter = (
     <div className="sticky float-end bottom-0 left-0 w-full p-2 bg-accent border-t z-20 grid grid-cols-[1fr_1fr_1fr] gap-4">
@@ -84,7 +93,19 @@ export const PosPayments = ({ amountPaid = 0, amountLeftToPay = 0, onClose }: Po
         <Body variant={200} className="text-inherit">
           Valor pago
         </Body>
-        <LargeText variant="xl">{formatValueToCurrency({ value: amountPaid, includeCurrencySymbol: true })}</LargeText>
+        <LargeText variant="xl" className="flex items-center justify-center gap-2">
+          {formatValueToCurrency({ value: amountPaid, includeCurrencySymbol: true })}
+          {!!cartSessionPayments?.length && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info size={20} />
+              </TooltipTrigger>
+              <TooltipContent className="border-2 text-foreground bg-white" hideArrow>
+                <PaymentsList payments={cartSessionPayments} />
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </LargeText>
       </div>
     </div>
   )

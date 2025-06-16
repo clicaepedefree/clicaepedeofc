@@ -13,7 +13,7 @@ import { useAtom } from 'jotai'
 export default function CounterPage({}) {
   const { menuItems, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { cartSessionTotal, isUsingPaymentScreen, setIsUsingPaymentScreen } = useCart('POS')
+  const { isUsingPaymentScreen, setIsUsingPaymentScreen, amountPaid, amountLeftToPay } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
 
@@ -25,7 +25,11 @@ export default function CounterPage({}) {
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
         {isUsingPaymentScreen && (
-          <PosPayments onClose={() => setIsUsingPaymentScreen(false)} amountLeftToPay={cartSessionTotal} />
+          <PosPayments
+            onClose={() => setIsUsingPaymentScreen(false)}
+            amountLeftToPay={amountLeftToPay}
+            amountPaid={amountPaid}
+          />
         )}
         {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} />}
         {hasMenuItems && <PosCart key={selectedStoreId} />}

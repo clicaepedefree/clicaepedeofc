@@ -3,6 +3,8 @@ import { SalesChannel } from '@/features/order/types'
 import {
   addItemToCartAtom,
   addPaymentAtom,
+  amountLeftToPayAtom,
+  amountPaidAtom,
   cartSessionItemsAtom,
   cartSessionPaymentsAtom,
   cartSessionTotalAtom,
@@ -34,6 +36,8 @@ export const useCart = (salesChannel: SalesChannel) => {
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
   const [, addPayment] = useAtom(addPaymentAtom)
   const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(isUsingPaymentScreenAtom)
+  const [amountPaid] = useAtom(amountPaidAtom)
+  const [amountLeftToPay] = useAtom(amountLeftToPayAtom)
 
   useEffect(() => {
     if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) return
@@ -103,6 +107,7 @@ export const useCart = (salesChannel: SalesChannel) => {
   return {
     cartSessionItems,
     cartSessionTotal,
+    cartSessionPayments,
     addItemToCart,
     clearCart,
     removeItemFromCart,
@@ -111,5 +116,7 @@ export const useCart = (salesChannel: SalesChannel) => {
     createOrder: createOrderMutation.mutateAsync,
     isUsingPaymentScreen,
     setIsUsingPaymentScreen,
+    amountPaid,
+    amountLeftToPay,
   }
 }

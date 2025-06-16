@@ -1,7 +1,7 @@
 import { cn } from '@/shared/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 
-const largeTextVariants = cva('text-lg font-semibold', {
+const largeTextVariants = cva('text-lg font-semibold text-inherit', {
   variants: {
     variant: {
       default: 'leading-6 text-lg',

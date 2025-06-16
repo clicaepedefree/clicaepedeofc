@@ -89,3 +89,18 @@ export const addPaymentAtom = atom(null, (get, set, payment: CartPayment) => {
     payments: [...payments, payment],
   })
 })
+
+export const amountPaidAtom = atom(get => {
+  const cartSession = get(cartSessionAtom)
+
+  if (!cartSession || !cartSession.payments?.length) return 0
+
+  return cartSession.payments.reduce((amountPaid, payment) => amountPaid + Number(payment.value), 0)
+})
+
+export const amountLeftToPayAtom = atom(get => {
+  const cartSessionTotal = get(cartSessionTotalAtom)
+  const amountPaid = get(amountPaidAtom)
+
+  return cartSessionTotal - amountPaid
+})

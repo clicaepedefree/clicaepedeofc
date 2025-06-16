@@ -7,6 +7,7 @@ export type CartItem = MenuItem & {
 }
 
 export type CartPayment = NewOrderPayment
+export type CartPaymentMethod = NewOrderPayment['method']
 
 export type CartSession = {
   startedAt: Date
