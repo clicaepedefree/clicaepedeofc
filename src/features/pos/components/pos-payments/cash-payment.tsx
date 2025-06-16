@@ -57,7 +57,7 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
           autoFocus
         />
       </Label>
-      <div className="flex items-center gap-4 justify-center">
+      <div className="flex items-center gap-4">
         <Button
           variant="outline"
           className="font-normal flex flex-col items-center justify-center border-amber-600 text-amber-800"
