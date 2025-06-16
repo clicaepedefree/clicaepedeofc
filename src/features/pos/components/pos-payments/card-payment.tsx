@@ -43,7 +43,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
       cardType: 'CREDIT',
     } as z.input<typeof cardPaymentSchema>,
     validators: {
-      onSubmit: cardPaymentSchema,
+      onChange: cardPaymentSchema,
     },
     onSubmit: async ({ value }) => {
       const formattedPaymentValue = formatValueToCurrency({ value: value.value })
@@ -63,6 +63,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
 
   const selectedCardType = useStore(form.store, state => state.values.cardType)
   const payingAmount = useStore(form.store, state => state.values.value)
+  const cardBrand = useStore(form.store, state => state.values.cardBrand)
 
   const isPaymentTotalAmount = amountLeftToPay == getValueFromCurrencyString(payingAmount)
 
@@ -180,7 +181,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
       <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
         {([canSubmitPayment, isSubmittingOrder]) => (
           <div className="space-y-2">
-            <Button type="submit" disabled={!canSubmitPayment} isLoading={isSubmittingOrder}>
+            <Button type="submit" disabled={!canSubmitPayment || !cardBrand} isLoading={isSubmittingOrder}>
               {!isSubmittingOrder && (!isPaymentTotalAmount ? 'Adicionar pagamento' : 'Finalizar pedido')}
               {isSubmittingOrder && 'Finalizando pedido...'}
             </Button>
