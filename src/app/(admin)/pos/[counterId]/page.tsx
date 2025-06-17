@@ -23,7 +23,7 @@ export default function CounterPage({}) {
         Ponto de Venda {isFetching && <LoadingSpinner />}
       </Headline>
 
-      <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-10 h-[inherit] items-start overflow-y-hidden">
+      <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-4 h-[inherit] items-start overflow-y-hidden">
         {isUsingPaymentScreen && (
           <PosPayments
             onClose={() => setIsUsingPaymentScreen(false)}

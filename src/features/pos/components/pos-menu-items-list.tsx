@@ -22,21 +22,24 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
   }, [menuItems, selectedCategoryId])
 
   return (
-    <div className="w-full overflow-x-hidden">
+    <div className="w-full overflow-x-hidden h-full">
       <Combobox<MenuItem>
         options={menuItems}
         customOptionLabelComponent={option => (
           <div className="flex items-center justify-between gap-2 w-full">
             <Body
               variant={300}
+              className="px-2 py-0.5 bg-amber-500/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center min-w-20"
+            >
+              {formatValueToCurrency({ value: option.price, includeCurrencySymbol: true })}
+            </Body>
+            <Body className="grow">{option.name}</Body>
+            <Body
+              variant={300}
               fontWeight="regular"
               className="px-2 py-0.5 bg-primary/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center"
             >
               {option.category.name}
-            </Body>
-            <Body className="grow">{option.name}</Body>
-            <Body variant={200} fontWeight="regular">
-              {formatValueToCurrency({ value: option.price, includeCurrencySymbol: true })}
             </Body>
           </div>
         )}
@@ -73,7 +76,7 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
         </div>
       )}
       <Separator className="mb-4" />
-      <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] overflow-y-[inherit]">
+      <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] overflow-y-scroll">
         {menuItemsFilteredByCategory?.map((item, index) => (
           <MenuItemPOS
             key={index}
