@@ -8,9 +8,11 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from '@/shared/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/popover'
 
-type ComboboxProps = {
-  options: { value: string; label: string }[]
-  value: string
+type ComboboxBaseOption = { value: string; label: string }
+
+type ComboboxProps<T extends object = ComboboxBaseOption> = {
+  options: T[]
+  value?: string
   onChange: (updatedValue: string) => void
   placeholder?: string
   searchPlaceholder?: string
@@ -18,10 +20,20 @@ type ComboboxProps = {
   disabled?: boolean
   disableUnselectingOption?: boolean
   autoFocus?: boolean
+  inputValue?: string
+  onInputValueChange?: (updatedValue: string) => void
+  customOptionLabelComponent?: (option: T) => React.ReactNode
+  customKeyValueParserForOption?: (option: T) => { value: string; label: string; keywords?: string[] }
+  customIcon?: React.ElementType
+  contentClassName?: string
+  hideOptionsOnEmptyInput?: boolean
 }
 
-export const Combobox = ({
+export const Combobox = <T extends object = ComboboxBaseOption>({
   options,
+  customOptionLabelComponent,
+  customKeyValueParserForOption,
+  customIcon,
   value,
   onChange,
   placeholder = 'Selecione opção',
@@ -30,49 +42,94 @@ export const Combobox = ({
   disabled = false,
   disableUnselectingOption = false,
   autoFocus = false,
-}: ComboboxProps) => {
+  inputValue,
+  onInputValueChange,
+  contentClassName,
+  hideOptionsOnEmptyInput = false,
+}: ComboboxProps<T>) => {
   const [open, setOpen] = React.useState(false)
+  const [defaultInputValue, setDefaultInputValue] = React.useState('')
 
+  const getOptionBaseFields = (option: T) => {
+    const baseValue = (option as ComboboxBaseOption).value
+    const baseLabel = (option as ComboboxBaseOption).label
+
+    if (baseValue && baseLabel) return { value: baseValue, label: baseLabel }
+
+    if (!customKeyValueParserForOption)
+      throw new Error('When using custom options, the `customKeyValueParserForOption` is required')
+
+    return customKeyValueParserForOption(option)
+  }
+
+  const selectedOption = options.find(option => getOptionBaseFields(option).value === value)
+
+  const Icon = customIcon ?? ChevronsUpDown
+
+  const inputValueToUse = inputValue ?? defaultInputValue
+  const setInputValueToUse = onInputValueChange ?? setDefaultInputValue
+  const canDisplayOptions = !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
-          {value ? options.find(option => option.value === value)?.label : placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          {value && selectedOption ? getOptionBaseFields(selectedOption).label : placeholder}
+          <Icon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0">
+      <PopoverContent className={cn('p-0 w-[var(--radix-popper-anchor-width)] -translate-y-10', contentClassName)}>
         <Command
-          autoFocus={autoFocus}
           loop
-          className="w-full"
+          autoFocus={autoFocus}
           filter={(_, search, keywords = []) => {
             const searchLower = search.toLowerCase()
             const keywordsLowerCase = keywords.map(keyword => keyword.toLowerCase()).join(' ')
             return Number(keywordsLowerCase.includes(searchLower))
           }}
         >
-          <CommandInput placeholder={searchPlaceholder} disabled={disabled} className="w-full" />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            disabled={disabled}
+            value={inputValueToUse}
+            onValueChange={setInputValueToUse}
+          />
           <CommandList>
-            <CommandEmpty>{noResultMessage}</CommandEmpty>
-            <CommandGroup>
-              {options.map(option => (
-                <CommandItem
-                  key={option.value}
-                  value={option.value}
-                  keywords={[option.label]}
-                  onSelect={currentValue => {
-                    if (disableUnselectingOption && currentValue === value) return
+            {canDisplayOptions && (
+              <>
+                <CommandEmpty>{noResultMessage}</CommandEmpty>
+                <CommandGroup>
+                  {options.map(option => {
+                    const {
+                      value: optionValue,
+                      label: optionLabel,
+                      keywords: optionKeywords = [],
+                    } = getOptionBaseFields(option)
+                    return (
+                      <CommandItem
+                        key={optionValue}
+                        value={optionValue}
+                        keywords={[optionLabel, ...optionKeywords]}
+                        onSelect={currentValue => {
+                          if (disableUnselectingOption && currentValue === value) return
 
-                    onChange(currentValue === value ? '' : currentValue)
-                    setOpen(false)
-                  }}
-                >
-                  <Check className={cn('mr-2 h-4 w-4', value === option.value ? 'opacity-100' : 'opacity-0')} />
-                  {option.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+                          onChange(currentValue === value ? '' : currentValue)
+                          setOpen(false)
+                        }}
+                      >
+                        {customOptionLabelComponent?.(option) ?? (
+                          <>
+                            <Check
+                              className={cn('mr-2 h-4 w-4', value === optionValue ? 'opacity-100' : 'opacity-0')}
+                            />
+                            {optionLabel}
+                          </>
+                        )}
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

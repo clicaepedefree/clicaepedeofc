@@ -33,6 +33,7 @@ export const StoreSelector = () => {
           noResultMessage="Nenhuma loja encontrada"
           disabled={isLoading}
           disableUnselectingOption
+          contentClassName="min-w-fit"
         />
       )}
     </>
