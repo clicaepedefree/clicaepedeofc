@@ -17,6 +17,7 @@ import { InsertItem, itemsTable } from '@/services/db/schema/items'
 import { baseStoreFileRelationalQuery, storeFilesTable } from '@/services/db/schema/store-files'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { difference } from 'lodash'
 
 export const createCategory = async (newCategory: NewCategory) => {
@@ -157,6 +158,7 @@ export const deleteItem = async (itemId: number) => {
 }
 
 export const listMenuItems = async ({ storeId }: { storeId: number }) => {
+  const categoryImagesTable = alias(storeFilesTable, 'categoryImages')
   const menuItems = await db
     .select({
       ...getTableColumnsWithExclusions(itemOfferingsTable, [
@@ -173,6 +175,7 @@ export const listMenuItems = async ({ storeId }: { storeId: number }) => {
       category: {
         id: categoriesTable.id,
         name: categoriesTable.name,
+        imageUrl: categoryImagesTable.url,
       },
       image: {
         id: storeFilesTable.id,
@@ -183,6 +186,7 @@ export const listMenuItems = async ({ storeId }: { storeId: number }) => {
     .innerJoin(itemOfferingsTable, eq(itemOfferingsTable.itemId, itemsTable.id))
     .innerJoin(categoriesTable, eq(categoriesTable.id, itemOfferingsTable.categoryId))
     .leftJoin(storeFilesTable, eq(storeFilesTable.id, itemsTable.imageId))
+    .leftJoin(categoryImagesTable, eq(categoryImagesTable.id, categoriesTable.imageId))
     .where(eq(itemsTable.storeId, storeId))
     .orderBy(itemsTable.name)
 

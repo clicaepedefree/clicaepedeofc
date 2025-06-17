@@ -7,7 +7,9 @@ export type BaseStoreFile = Pick<SelectStoreFile, 'id' | 'url'>
 
 export type NewCategory = Omit<PartialBy<InsertCategory, 'index'>, 'id'>
 
-export type BaseCategory = Pick<SelectCategory, 'id' | 'name'>
+export type BaseCategory = Pick<SelectCategory, 'id' | 'name'> & {
+  imageUrl?: string | null
+}
 
 export type Category = SelectCategory
 

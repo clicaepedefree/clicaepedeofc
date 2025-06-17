@@ -11,7 +11,7 @@ import { Headline } from '@/shared/typography/headline'
 import { useAtom } from 'jotai'
 
 export default function CounterPage({}) {
-  const { menuItems, isFetching } = useMenu({ menuName: 'POS' })
+  const { menuItems, categories, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { isUsingPaymentScreen, setIsUsingPaymentScreen, amountPaid, amountLeftToPay } = useCart('POS')
 
@@ -31,7 +31,7 @@ export default function CounterPage({}) {
             amountPaid={amountPaid}
           />
         )}
-        {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} />}
+        {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} categories={categories ?? []} />}
         {hasMenuItems && <PosCart key={selectedStoreId} />}
       </div>
     </div>
