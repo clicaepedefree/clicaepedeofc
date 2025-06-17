@@ -6,6 +6,7 @@ import { Separator } from '@/shared/separator'
 import { Body } from '@/shared/typography/body'
 import { Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import Highlighter from 'react-highlight-words'
 import { useCart } from '../hooks/use-cart'
 import { PosCategoryFilter } from './pos-category-filter'
 
@@ -25,7 +26,7 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
     <div className="w-full overflow-x-hidden h-full">
       <Combobox<MenuItem>
         options={menuItems}
-        customOptionLabelComponent={option => (
+        customOptionLabelComponent={(option, searchText) => (
           <div className="flex items-center justify-between gap-2 w-full">
             <Body
               variant={300}
@@ -33,7 +34,13 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
             >
               {formatValueToCurrency({ value: option.price, includeCurrencySymbol: true })}
             </Body>
-            <Body className="grow">{option.name}</Body>
+            <Body className="grow">
+              <Highlighter
+                searchWords={searchText.split(' ')}
+                textToHighlight={option.name}
+                highlightClassName="text-primary font-semibold bg-primary/5"
+              />
+            </Body>
             <Body
               variant={300}
               fontWeight="regular"

@@ -22,7 +22,7 @@ type ComboboxProps<T extends object = ComboboxBaseOption> = {
   autoFocus?: boolean
   inputValue?: string
   onInputValueChange?: (updatedValue: string) => void
-  customOptionLabelComponent?: (option: T) => React.ReactNode
+  customOptionLabelComponent?: (option: T, searchText: string) => React.ReactNode
   customKeyValueParserForOption?: (option: T) => { value: string; label: string; keywords?: string[] }
   customIcon?: React.ElementType
   contentClassName?: string
@@ -68,6 +68,7 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
 
   const inputValueToUse = inputValue ?? defaultInputValue
   const setInputValueToUse = onInputValueChange ?? setDefaultInputValue
+
   const canDisplayOptions = !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -116,7 +117,7 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
                           setOpen(false)
                         }}
                       >
-                        {customOptionLabelComponent?.(option) ?? (
+                        {customOptionLabelComponent?.(option, inputValueToUse) ?? (
                           <>
                             <Check
                               className={cn('mr-2 h-4 w-4', value === optionValue ? 'opacity-100' : 'opacity-0')}
