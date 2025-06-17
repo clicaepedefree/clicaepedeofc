@@ -1,7 +1,8 @@
 import { CartItem, CartPayment, CartSession } from '@/features/pos/types'
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 
-export const cartSessionAtom = atom<CartSession | null>(null)
+export const cartSessionAtom = atomWithStorage<CartSession | null>('posCartSession', null)
 export const cartSessionItemsAtom = atom(get => get(cartSessionAtom)?.items)
 export const cartSessionPaymentsAtom = atom(get => get(cartSessionAtom)?.payments)
 
@@ -87,6 +88,16 @@ export const addPaymentAtom = atom(null, (get, set, payment: CartPayment) => {
   set(cartSessionAtom, {
     ...cartSession,
     payments: [...payments, payment],
+  })
+})
+
+export const resetPaymentsAtom = atom(null, (get, set) => {
+  const cartSession = get(cartSessionAtom)
+  if (!cartSession) return
+
+  set(cartSessionAtom, {
+    ...cartSession,
+    payments: [],
   })
 })
 

@@ -11,11 +11,13 @@ export const useCounters = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { counterId } = useParams<{ counterId?: string }>()
 
+  const isEnabled = !!selectedStoreId
+
   const result = useQuery({
-    enabled: !!selectedStoreId,
+    enabled: isEnabled,
     queryKey: countersCacheKey(selectedStoreId),
     queryFn: async () => {
-      if (!selectedStoreId) throw new Error('No store selected')
+      if (!isEnabled) throw new Error('No store selected')
       return listCounters(selectedStoreId)
     },
     refetchOnMount: 'always',
@@ -35,8 +37,9 @@ export const useCounters = () => {
     counters,
     refetch: result.refetch,
     isLoading: result.isLoading,
+    isEnabled,
     isError: result.isError,
-    activeCounterId,
+    activeCounterId: activeCounter?.id,
     activeCounterName: activeCounter?.name,
   }
 }

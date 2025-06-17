@@ -73,7 +73,6 @@ export const PosCart = () => {
             size="xl"
             className="grow"
             onClick={() => setIsUsingPaymentScreen(true)}
-            // onClick={() => createOrder({ counterId: activeCounterId!, counterName: activeCounterName! })}
             disabled={!hasCartItems || !hasSelectedCounter || isUsingPaymentScreen}
           >
             Pagamentos

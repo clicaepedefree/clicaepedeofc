@@ -83,7 +83,7 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
         </div>
       )}
       <Separator className="mb-4" />
-      <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] overflow-y-scroll">
+      <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] overflow-y-scroll">
         {menuItemsFilteredByCategory?.map((item, index) => (
           <MenuItemPOS
             key={index}

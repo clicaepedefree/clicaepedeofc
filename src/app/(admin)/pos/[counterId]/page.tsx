@@ -5,17 +5,32 @@ import { PosCart } from '@/features/pos/components/pos-cart'
 import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
 import { PosPayments } from '@/features/pos/components/pos-payments/pos-payments'
 import { useCart } from '@/features/pos/hooks/use-cart'
+import { useCounters } from '@/features/pos/hooks/use-counters'
 import { selectedStoreIdAtom } from '@/features/store/state'
-import { LoadingSpinner } from '@/shared/spinner'
+import { dispatchToast } from '@/shared/lib/toast'
+import { LoadingSpinner, PageLoadingSpinner } from '@/shared/spinner'
 import { Headline } from '@/shared/typography/headline'
 import { useAtom } from 'jotai'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 export default function CounterPage({}) {
+  const router = useRouter()
   const { menuItems, categories, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { isLoading, isEnabled, activeCounterId } = useCounters()
   const { isUsingPaymentScreen, setIsUsingPaymentScreen, amountPaid, amountLeftToPay } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
+
+  useEffect(() => {
+    if (isLoading || !isEnabled || activeCounterId) return
+    dispatchToast({ message: 'Selecione um balcão para utilizar o PDV', type: 'warning' })
+
+    router.replace(`/pos`)
+  }, [isLoading])
+
+  if (isLoading || !isEnabled || !activeCounterId) return <PageLoadingSpinner />
 
   return (
     <div className="col-span-2 flex flex-col items-start gap-4 overflow-y-scroll h-full p-4">

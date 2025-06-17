@@ -11,6 +11,7 @@ import {
   clearCartAtom,
   isUsingPaymentScreenAtom,
   removeItemFromCartAtom,
+  resetPaymentsAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
 import { selectedStoreIdAtom } from '@/features/store/state'
@@ -35,12 +36,13 @@ export const useCart = (salesChannel: SalesChannel) => {
   const [, removeItemFromCart] = useAtom(removeItemFromCartAtom)
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
   const [, addPayment] = useAtom(addPaymentAtom)
+  const [, resetPayments] = useAtom(resetPaymentsAtom)
   const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(isUsingPaymentScreenAtom)
   const [amountPaid] = useAtom(amountPaidAtom)
   const [amountLeftToPay] = useAtom(amountLeftToPayAtom)
 
   useEffect(() => {
-    if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) return
+    if (!selectedStoreId || !cartSessionItems?.length) return
 
     const cartItemsIndexesToRemove = cartSessionItems
       .filter(cartItem => cartItem.storeId !== selectedStoreId)
@@ -51,9 +53,14 @@ export const useCart = (salesChannel: SalesChannel) => {
   }, [selectedStoreId])
 
   useEffect(() => {
-    if (cartSessionItems?.length || !isUsingPaymentScreen) return
+    if (cartSessionItems?.length) return
 
-    setIsUsingPaymentScreen(false)
+    if (cartSessionPayments?.length) {
+      resetPayments()
+    }
+    if (isUsingPaymentScreen) {
+      setIsUsingPaymentScreen(false)
+    }
   }, [cartSessionItems])
 
   const createOrderMutation = useMutation({

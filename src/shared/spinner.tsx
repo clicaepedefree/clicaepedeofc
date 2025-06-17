@@ -24,3 +24,11 @@ export const LoadingSpinner = ({ size = 24, className, ...props }: LoadingSpinne
     </svg>
   )
 }
+
+export const PageLoadingSpinner = ({ size = 40, ...props }: LoadingSpinnerProps) => {
+  return (
+    <div className="w-full h-full flex items-center justify-center">
+      <LoadingSpinner size={size} {...props} />
+    </div>
+  )
+}
