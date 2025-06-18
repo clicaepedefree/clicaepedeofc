@@ -1,19 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
-const isPublicRoute = createRouteMatcher(['/login(.*)'])
+const isPublicRoute = createRouteMatcher(['/login(.*)', '/api/files(.*)'])
 
 export default clerkMiddleware(async (auth, request) => {
-  const { pathname } = request.nextUrl
-
-  // Skip middleware for /api/files and its subroutes
-  if (pathname.startsWith('/api/files')) {
-    return NextResponse.next()
-  }
-
   if (!isPublicRoute(request)) {
-    await auth.protect()
+    auth.protect()
   }
+
+  return NextResponse.next()
 })
 
 export const config = {

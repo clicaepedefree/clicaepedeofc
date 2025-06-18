@@ -1,10 +1,10 @@
 import { baseFileInputForUpload } from '@/services/files-manager/base-file-input'
-import { currentUser } from '@clerk/nextjs/server'
 import { UploadThingError } from 'uploadthing/server'
 import { z } from 'zod'
+import { getAuthenticatedUser } from '../auth'
 
 export const fileAuthMiddleware = async ({ input }: { input: z.infer<typeof baseFileInputForUpload> }) => {
-  const user = await currentUser()
+  const user = await getAuthenticatedUser()
 
   if (!user) throw new UploadThingError('Unauthorized')
 
