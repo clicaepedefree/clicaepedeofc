@@ -141,6 +141,13 @@
       "when": 1749784636723,
       "tag": "0019_Add card brand column for payments",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1750211303217,
+      "tag": "0020_Add users table",
+      "breakpoints": true
     }
   ]
 }
