@@ -2,20 +2,20 @@
 
 import { getUserByClerkId } from '@/features/user/db'
 import type { SelectUser } from '@/services/db/schema'
-import { currentUser } from '@clerk/nextjs/server'
+import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { AuthError } from './authErrors'
 
 export type AuthenticatedUser = SelectUser
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
-  const clerkUser = await currentUser()
+  const clerkUserAuth = await auth()
 
-  if (!clerkUser) {
+  if (!clerkUserAuth.userId) {
     throw new AuthError({ type: 'NOT_AUTHENTICATED' })
   }
 
-  const authenticatedUser = await getUserByClerkId(clerkUser.id)
+  const authenticatedUser = await getUserByClerkId(clerkUserAuth.userId)
   if (!authenticatedUser) {
     throw new AuthError({ type: 'MISSING_ONBOARDING' })
   }
