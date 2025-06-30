@@ -39,6 +39,7 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
                 searchWords={searchText.split(' ')}
                 textToHighlight={option.name}
                 highlightClassName="text-primary font-semibold bg-primary/5"
+                autoEscape
               />
             </Body>
             <Body
