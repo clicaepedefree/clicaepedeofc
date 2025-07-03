@@ -148,6 +148,13 @@
       "when": 1750211303217,
       "tag": "0020_Add users table",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1751555802180,
+      "tag": "0021_Add user store permissions table",
+      "breakpoints": true
     }
   ]
 }
