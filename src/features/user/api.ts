@@ -24,10 +24,9 @@ export const finishUserOnboarding = async (clerkUser: ClerkUser) => {
   // TODO accept admin invitations
   const client = await clerkClient()
 
-  const response = await client.users.updateUser(clerkUser.id, {
+  await client.users.updateUser(clerkUser.id, {
     publicMetadata: {
       onboardingComplete: true,
     },
   })
-  console.log('response', response)
 }
