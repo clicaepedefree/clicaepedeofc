@@ -18,7 +18,6 @@ export default function UnauthorizedPage() {
             <UserButton
               appearance={{
                 elements: {
-                  userButtonPopoverFooter: 'hidden',
                   userButtonPopoverCard:
                     '[justify-self:anchor-center] left-[unset_!important]',
                 },

@@ -47,7 +47,13 @@ export const AuthProviders = ({
     <ClerkProvider
       localization={ptBR}
       {...clerkProviderProps}
-      appearance={{ cssLayerName: 'clerk' }}
+      appearance={{
+        cssLayerName: 'clerk',
+        elements: {
+          userButtonPopoverFooter: 'hidden',
+          navbar: '[&>*]:last:hidden',
+        },
+      }}
     >
       {children}
     </ClerkProvider>
