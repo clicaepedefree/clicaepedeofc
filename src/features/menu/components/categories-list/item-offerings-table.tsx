@@ -9,7 +9,14 @@ import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
 import { DeleteResourceConfirmationModal } from '@/shared/modals/delete-resource-confirmation-modal'
 import { Switch } from '@/shared/switch'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/shared/table'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
 import { Edit } from 'lucide-react'
@@ -85,7 +92,10 @@ const ItemOfferingRow = ({
       <TableCell className="max-w-24 w-fit place-items-center space-y-2">
         {item.originalPrice && (
           <SmallText className="line-through text-xs">
-            {formatValueToCurrency({ value: item.originalPrice, includeCurrencySymbol: true })}
+            {formatValueToCurrency({
+              value: item.originalPrice,
+              includeCurrencySymbol: true,
+            })}
           </SmallText>
         )}
         <CurrencyInput
@@ -100,7 +110,12 @@ const ItemOfferingRow = ({
           <LargeText variant="sm" className="font-medium">
             {item.isAvailable ? 'Ativo' : 'Inativo'}
           </LargeText>
-          <Switch size="lg" checked={item.isAvailable} className="disabled:opacity-90" disabled />
+          <Switch
+            size="lg"
+            checked={item.isAvailable}
+            className="disabled:opacity-90"
+            disabled
+          />
         </Label>
       </TableCell>
       <TableCell>
@@ -109,8 +124,16 @@ const ItemOfferingRow = ({
             category={category}
             item={item}
             trigger={
-              <Button variant="ghost" size="icon" className="group/edit" disabled={isDeleting}>
-                <Edit size={16} className={cn('group-hover/edit:text-primary')} />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="group/edit"
+                disabled={isDeleting}
+              >
+                <Edit
+                  size={16}
+                  className={cn('group-hover/edit:text-primary')}
+                />
               </Button>
             }
             onSuccess={item => {
@@ -123,10 +146,9 @@ const ItemOfferingRow = ({
             resource="item"
             resourceName={item.name}
             isDeleting={isDeleting}
-            onConfirm={async () => {
-              await deleteItem(item)
-              onItemUpdated?.()
-            }}
+            onConfirm={async () =>
+              deleteItem(item, { onSuccess: onItemUpdated })
+            }
           />
         </div>
       </TableCell>

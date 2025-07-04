@@ -23,3 +23,14 @@ export class PermissionsError extends Error {
     this.type = type
   }
 }
+
+export const isPermissionsError = (error: Error): error is PermissionsError => {
+  if (error instanceof PermissionsError) return true
+
+  const errorCodes = Object.values(permissionTypeToErrorCodeMapping)
+
+  if (errorCodes.some(errorCode => error?.message?.includes(errorCode)))
+    return true
+
+  return false
+}

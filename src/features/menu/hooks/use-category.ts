@@ -48,7 +48,7 @@ export const useCategory = () => {
   }
 
   return {
-    deleteCategory: deleteCategoryMutation.mutateAsync,
+    deleteCategory: deleteCategoryMutation.mutate,
     isDeleting: deleteCategoryMutation.isPending,
     onUpdateCategory,
   }

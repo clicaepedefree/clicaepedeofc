@@ -1,3 +1,4 @@
+import { isPermissionsError } from '@/features/store/errors'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,13 @@ export const useCounter = () => {
   const queryClient = useQueryClient()
 
   const createCounterMutation = useMutation({
-    mutationFn: async ({ name, isAvailable }: { name: string; isAvailable: boolean }) => {
+    mutationFn: async ({
+      name,
+      isAvailable,
+    }: {
+      name: string
+      isAvailable: boolean
+    }) => {
       if (!selectedStoreId) {
         console.error('Selecione uma loja antes de criar um balcão.')
         return
@@ -18,20 +25,36 @@ export const useCounter = () => {
       await createCounterApi({ storeId: selectedStoreId, name, isAvailable })
     },
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: countersCacheKey(selectedStoreId) })
+      await queryClient.cancelQueries({
+        queryKey: countersCacheKey(selectedStoreId),
+      })
     },
-    onError: (_, counterToCreate) => {
-      dispatchToast({ message: `Erro ao criar balcão '${counterToCreate.name}'`, type: 'error' })
+    onError: (error, counterToCreate) => {
+      const errorMessage = isPermissionsError(error)
+        ? error.message
+        : `Erro ao criar balcão '${counterToCreate.name}'`
+
+      dispatchToast({
+        message: errorMessage,
+        type: 'error',
+      })
     },
     onSuccess: (_, counterToCreate) => {
-      dispatchToast({ message: `Balcão '${counterToCreate.name}' criado`, type: 'success' })
+      dispatchToast({
+        message: `Balcão '${counterToCreate.name}' criado`,
+        type: 'success',
+      })
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: countersCacheKey(selectedStoreId) })
+    onSettled: (_, error) => {
+      if (error && isPermissionsError(error)) return
+
+      queryClient.invalidateQueries({
+        queryKey: countersCacheKey(selectedStoreId),
+      })
     },
   })
 
   return {
-    createCounter: createCounterMutation.mutateAsync,
+    createCounter: createCounterMutation.mutate,
   }
 }

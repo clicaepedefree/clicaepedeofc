@@ -12,15 +12,26 @@ import {
   storeFilesTable,
 } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
+import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
 import { coalesce, getTableColumnsWithExclusions } from '@/services/db/utils'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, getTableColumns } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from './errors'
 import { UserStoreRole } from './types'
 
 export const getAvailableStores = async () => {
-  // TODO add condition to filter only by stores the user has permissions
-  return await db.select().from(storesTable)
+  const user = await requireAuth()
+
+  return await db
+    .select(getTableColumns(storesTable))
+    .from(storesTable)
+    .innerJoin(
+      userStorePermissionsTable,
+      and(
+        eq(userStorePermissionsTable.storeId, storesTable.id),
+        eq(userStorePermissionsTable.userId, user.id)
+      )
+    )
 }
 
 export const getStoreConfigurations = async (storeId: number) => {

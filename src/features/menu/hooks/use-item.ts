@@ -47,7 +47,7 @@ export const useItem = () => {
   }
 
   return {
-    deleteItem: deleteItemMutation.mutateAsync,
+    deleteItem: deleteItemMutation.mutate,
     isDeleting: deleteItemMutation.isPending,
     onItemUpdated,
   }

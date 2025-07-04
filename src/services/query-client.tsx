@@ -1,4 +1,7 @@
-import { permissionTypeToErrorCodeMapping } from '@/features/store/errors'
+import {
+  isPermissionsError,
+  permissionTypeToErrorCodeMapping,
+} from '@/features/store/errors'
 import { dispatchToast } from '@/shared/lib/toast'
 import { isServer, QueryCache, QueryClient } from '@tanstack/react-query'
 
@@ -10,16 +13,15 @@ function makeQueryClient() {
         // above 0 to avoid refetching immediately on the client
         staleTime: 60 * 1000,
         retry: (failureCount, error) => {
-          const errorCodes = Object.values(permissionTypeToErrorCodeMapping)
-
-          if (errorCodes.some(errorCode => error.message.includes(errorCode)))
-            return false
+          if (isPermissionsError(error)) return false
           return failureCount < 2
         },
       },
     },
     queryCache: new QueryCache({
       onError: error => {
+        if (!isPermissionsError(error)) return
+
         dispatchToast({
           message: `${error.message}`,
           type: 'error',

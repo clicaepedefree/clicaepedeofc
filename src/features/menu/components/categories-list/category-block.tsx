@@ -101,8 +101,9 @@ export const CategoryBlock = ({
             }}
             onDelete={async () => {
               onUpdateOpenedState?.(false)
-              await deleteCategory(category)
-              onUpdateOpenedState?.(true)
+              deleteCategory(category, {
+                onSettled: () => onUpdateOpenedState?.(true),
+              })
             }}
             isDeleting={isDeleting}
           />

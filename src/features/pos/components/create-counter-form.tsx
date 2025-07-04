@@ -7,7 +7,11 @@ import { Check } from 'lucide-react'
 import { createCounterSchema } from '../form-validation/counter.schema'
 import { useCounter } from '../hooks/use-counter'
 
-export const CreateCounterForm = ({ onSuccess }: { onSuccess?: () => void }) => {
+export const CreateCounterForm = ({
+  onSuccess,
+}: {
+  onSuccess?: () => void
+}) => {
   const { createCounter } = useCounter()
   const form = useForm({
     defaultValues: {
@@ -18,8 +22,7 @@ export const CreateCounterForm = ({ onSuccess }: { onSuccess?: () => void }) => 
       onSubmit: createCounterSchema,
     },
     onSubmit: async ({ value }) => {
-      await createCounter(value)
-      onSuccess?.()
+      createCounter(value, { onSuccess })
     },
   })
 
@@ -43,7 +46,9 @@ export const CreateCounterForm = ({ onSuccess }: { onSuccess?: () => void }) => 
                 onChange={e => field.handleChange(e.target.value)}
                 autoFocus
               />
-              <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
+              <form.Subscribe
+                selector={state => [state.canSubmit, state.isSubmitting]}
+              >
                 {([canSubmit, isSubmitting]) => (
                   <IconButton
                     type="submit"
@@ -59,7 +64,9 @@ export const CreateCounterForm = ({ onSuccess }: { onSuccess?: () => void }) => 
               </form.Subscribe>
             </div>
             {field.state.meta.errors[0]?.message && (
-              <span className="text-red-500 text-xs text-wrap">{field.state.meta.errors[0]?.message}</span>
+              <span className="text-red-500 text-xs text-wrap">
+                {field.state.meta.errors[0]?.message}
+              </span>
             )}
           </>
         )}

@@ -37,7 +37,9 @@ export const useCart = (salesChannel: SalesChannel) => {
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
   const [, addPayment] = useAtom(addPaymentAtom)
   const [, resetPayments] = useAtom(resetPaymentsAtom)
-  const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(isUsingPaymentScreenAtom)
+  const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(
+    isUsingPaymentScreenAtom
+  )
   const [amountPaid] = useAtom(amountPaidAtom)
   const [amountLeftToPay] = useAtom(amountLeftToPayAtom)
 
@@ -65,7 +67,12 @@ export const useCart = (salesChannel: SalesChannel) => {
 
   const createOrderMutation = useMutation({
     mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
-      if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) return
+      if (
+        !selectedStoreId ||
+        !cartSessionItems?.length ||
+        !cartSessionPayments?.length
+      )
+        return
 
       const orderItems = cartSessionItems.map((cartItem, index) => ({
         index,
@@ -106,7 +113,10 @@ export const useCart = (salesChannel: SalesChannel) => {
       dispatchToast({ message: `Erro ao criar pedido`, type: 'error' })
     },
     onSuccess: newOrder => {
-      dispatchToast({ message: `Pedido '#${newOrder?.displayId}' criado com sucesso`, type: 'success' })
+      dispatchToast({
+        message: `Pedido '#${newOrder?.displayId}' criado com sucesso`,
+        type: 'success',
+      })
       clearCart()
     },
   })
