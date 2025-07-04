@@ -28,15 +28,15 @@ export default function UnauthorizedPage() {
           </SignedIn>
         </header>
         <div className="flex flex-col gap-2 items-center text-center bg-background py-8 px-4 shadow sm:rounded-lg sm:px-10 rounded-lg max-w-md">
-          <div className="flex items-center justify-center h-16 w-16 rounded-full bg-red-100">
-            <AlertTriangle className="h-8 w-8 text-red-600" />
+          <div className="flex items-center justify-center h-16 w-16 rounded-full bg-destructive/15">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
           </div>
 
           <h1 className="text-2xl font-bold text-gray-900 mt-2">
             Acesso Negado
           </h1>
 
-          <p className="text-gray-600">
+          <p>
             Você não possui permissões de administrador para nenhuma loja. Entre
             em contato com o administrador da loja para pedir acesso.
           </p>
