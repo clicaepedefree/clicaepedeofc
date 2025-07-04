@@ -19,22 +19,34 @@ export default function CounterPage({}) {
   const { menuItems, categories, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { isLoading, isEnabled, activeCounterId } = useCounters()
-  const { isUsingPaymentScreen, setIsUsingPaymentScreen, amountPaid, amountLeftToPay } = useCart('POS')
+
+  const {
+    isUsingPaymentScreen,
+    setIsUsingPaymentScreen,
+    amountPaid,
+    amountLeftToPay,
+  } = useCart('POS')
 
   const hasMenuItems = !!menuItems?.length
 
   useEffect(() => {
-    if (isLoading || !isEnabled || activeCounterId) return
-    dispatchToast({ message: 'Selecione um balcão para utilizar o PDV', type: 'warning' })
+    if (isLoading || !isEnabled || !!activeCounterId) return
+    dispatchToast({
+      message: 'Selecione um balcão para utilizar o PDV',
+      type: 'warning',
+    })
 
     router.replace(`/pos`)
-  }, [isLoading])
+  }, [isLoading, activeCounterId])
 
   if (isLoading || !isEnabled || !activeCounterId) return <PageLoadingSpinner />
 
   return (
     <div className="col-span-2 flex flex-col items-start gap-4 overflow-y-scroll h-full p-4">
-      <Headline variant={300} className="flex items-center justify-center gap-2">
+      <Headline
+        variant={300}
+        className="flex items-center justify-center gap-2"
+      >
         Ponto de Venda {isFetching && <LoadingSpinner />}
       </Headline>
 
@@ -46,7 +58,12 @@ export default function CounterPage({}) {
             amountPaid={amountPaid}
           />
         )}
-        {!isUsingPaymentScreen && <PosMenuItemsList menuItems={menuItems ?? []} categories={categories ?? []} />}
+        {!isUsingPaymentScreen && (
+          <PosMenuItemsList
+            menuItems={menuItems ?? []}
+            categories={categories ?? []}
+          />
+        )}
         {hasMenuItems && <PosCart key={selectedStoreId} />}
       </div>
     </div>
