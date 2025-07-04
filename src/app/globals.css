@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));
@@ -108,6 +110,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -116,6 +119,4 @@
     @apply bg-background text-foreground;
   }
 }
-
-@layer clerk, components, utilities;
-@import "tailwindcss";
+@layer clerk;
