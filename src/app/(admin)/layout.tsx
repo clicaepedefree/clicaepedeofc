@@ -3,7 +3,6 @@ import { validateAdminAccess } from '@/features/store/api'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { AppSidebar } from '@/shared/sidebar/app-sidebar'
 import { SidebarInset, SidebarProvider } from '@/shared/sidebar/base-sidebar'
-import { Toaster } from '@/shared/sonner'
 import type { Metadata } from 'next'
 import { AuthProviders } from '../providers'
 
@@ -66,7 +65,6 @@ export default async function AdminLayout({
             <div className="bg-slate-50 h-full overflow-y-scroll">
               {children}
             </div>
-            <Toaster />
           </PostHogProvider>
         </SidebarInset>
       </SidebarProvider>

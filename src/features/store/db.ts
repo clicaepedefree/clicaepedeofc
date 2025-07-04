@@ -14,3 +14,20 @@ export const isUserAdminOfAnyStore = async (userId: string) => {
 
   return result > 0
 }
+
+export const getUserStorePermissions = async (
+  userId: string,
+  storeId: number
+) => {
+  const [userStoreRole] = await db
+    .select()
+    .from(userStorePermissionsTable)
+    .where(
+      and(
+        eq(userStorePermissionsTable.userId, userId),
+        eq(userStorePermissionsTable.storeId, storeId)
+      )
+    )
+
+  return userStoreRole
+}

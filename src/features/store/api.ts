@@ -1,5 +1,9 @@
 'use server'
-import { getAuthenticatedUser } from '@/services/auth'
+import {
+  getUserStorePermissions,
+  isUserAdminOfAnyStore,
+} from '@/features/store/db'
+import { requireAuth } from '@/services/auth'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
@@ -11,13 +15,18 @@ import { storesTable } from '@/services/db/schema/stores'
 import { coalesce, getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
-import { isUserAdminOfAnyStore } from './db'
+import { PermissionsError } from './errors'
+import { UserStoreRole } from './types'
 
-export const getAvailableStores = async () =>
-  await db.select().from(storesTable)
+export const getAvailableStores = async () => {
+  // TODO add condition to filter only by stores the user has permissions
+  return await db.select().from(storesTable)
+}
 
-export const getStoreConfigurations = async (storeId: number) =>
-  await db
+export const getStoreConfigurations = async (storeId: number) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  return await db
     .select({
       id: configurationsTable.id,
       category: configurationsTable.category,
@@ -38,12 +47,15 @@ export const getStoreConfigurations = async (storeId: number) =>
         eq(storeConfigurationsTable.storeId, storeId)
       )
     )
+}
 
 export const updateStoreConfiguration = async (
   storeId: number,
   configurationId: number,
   value: string
 ) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
   await db
     .insert(storeConfigurationsTable)
     .values({ storeId, configurationId, value })
@@ -57,6 +69,16 @@ export const updateStoreConfiguration = async (
 }
 
 export const addStoreFile = async (values: InsertStoreFile) => {
+  const userStorePermissions = await validateUserPermissionsForStore(
+    values.storeId,
+    'admin'
+  )
+  if (userStorePermissions.userId !== values.creatorId)
+    throw new PermissionsError({
+      type: 'USER_CONFLICT',
+      message: 'Criador do arquivo não é o mesmo usuário',
+    })
+
   const storeFilesColumns = getTableColumnsWithExclusions(storeFilesTable, [
     storeFilesTable.createdAt,
     storeFilesTable.updatedAt,
@@ -70,10 +92,28 @@ export const addStoreFile = async (values: InsertStoreFile) => {
 }
 
 export const validateAdminAccess = async () => {
-  console.log('Validating admin access')
-  const user = await getAuthenticatedUser()
-  if (!user) redirect('/login', RedirectType.replace)
+  const user = await requireAuth()
 
   const isAdmin = await isUserAdminOfAnyStore(user.id)
   if (!isAdmin) redirect('/unauthorized', RedirectType.replace)
+}
+
+export const validateUserPermissionsForStore = async (
+  storeId: number,
+  role: UserStoreRole
+) => {
+  const user = await requireAuth()
+
+  const userPermissionsForStore = await getUserStorePermissions(
+    user.id,
+    storeId
+  )
+
+  if (userPermissionsForStore?.role !== role)
+    throw new PermissionsError({
+      type: 'FORBIDDEN',
+      message: 'Usuário não possui permissão para executar operação na loja',
+    })
+
+  return userPermissionsForStore
 }

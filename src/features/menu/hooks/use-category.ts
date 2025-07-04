@@ -11,24 +11,40 @@ export const useCategory = () => {
   const queryClient = useQueryClient()
 
   const deleteCategoryMutation = useMutation({
-    mutationFn: async (category: CategoryWithImage) => deleteCategory(category.id),
+    mutationFn: async (category: CategoryWithImage) =>
+      deleteCategory(category.id, category.storeId),
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+      await queryClient.cancelQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
     },
     onError: (_, categoryToDelete) => {
-      dispatchToast({ message: `Erro ao remover categoria '${categoryToDelete.name}'`, type: 'error' })
+      dispatchToast({
+        message: `Erro ao remover categoria '${categoryToDelete.name}'`,
+        type: 'error',
+      })
     },
     onSuccess: (_, categoryToDelete) => {
-      dispatchToast({ message: `Categoria '${categoryToDelete.name}' removida`, type: 'success' })
+      dispatchToast({
+        message: `Categoria '${categoryToDelete.name}' removida`,
+        type: 'success',
+      })
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+      queryClient.invalidateQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
     },
   })
 
   const onUpdateCategory = (category: Category) => {
-    queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
-    dispatchToast({ message: `Categoria '${category.name}' atualizada`, type: 'success' })
+    queryClient.invalidateQueries({
+      queryKey: categoriesCacheKey(selectedStoreId),
+    })
+    dispatchToast({
+      message: `Categoria '${category.name}' atualizada`,
+      type: 'success',
+    })
   }
 
   return {

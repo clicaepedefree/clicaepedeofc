@@ -1,4 +1,6 @@
-import { isServer, QueryClient } from '@tanstack/react-query'
+import { permissionTypeToErrorCodeMapping } from '@/features/store/errors'
+import { dispatchToast } from '@/shared/lib/toast'
+import { isServer, QueryCache, QueryClient } from '@tanstack/react-query'
 
 function makeQueryClient() {
   return new QueryClient({
@@ -7,8 +9,23 @@ function makeQueryClient() {
         // With SSR, we usually want to set some default staleTime
         // above 0 to avoid refetching immediately on the client
         staleTime: 60 * 1000,
+        retry: (failureCount, error) => {
+          const errorCodes = Object.values(permissionTypeToErrorCodeMapping)
+
+          if (errorCodes.some(errorCode => error.message.includes(errorCode)))
+            return false
+          return failureCount < 2
+        },
       },
     },
+    queryCache: new QueryCache({
+      onError: error => {
+        dispatchToast({
+          message: `${error.message}`,
+          type: 'error',
+        })
+      },
+    }),
   })
 }
 

@@ -11,24 +11,39 @@ export const useItem = () => {
   const queryClient = useQueryClient()
 
   const deleteItemMutation = useMutation({
-    mutationFn: (item: ItemWithImage) => deleteItem(item.id),
+    mutationFn: (item: ItemWithImage) => deleteItem(item.id, item.storeId),
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+      await queryClient.cancelQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
     },
     onError: (_, itemToDelete) => {
-      dispatchToast({ message: `Erro ao remover item '${itemToDelete.name}'`, type: 'error' })
+      dispatchToast({
+        message: `Erro ao remover item '${itemToDelete.name}'`,
+        type: 'error',
+      })
     },
     onSuccess: (_, itemToDelete) => {
-      dispatchToast({ message: `Item '${itemToDelete.name}' removido`, type: 'success' })
+      dispatchToast({
+        message: `Item '${itemToDelete.name}' removido`,
+        type: 'success',
+      })
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
+      queryClient.invalidateQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
     },
   })
 
   const onItemUpdated = (item: Item) => {
-    queryClient.invalidateQueries({ queryKey: categoriesCacheKey(selectedStoreId) })
-    dispatchToast({ message: `Item '${item.name}' atualizado`, type: 'success' })
+    queryClient.invalidateQueries({
+      queryKey: categoriesCacheKey(selectedStoreId),
+    })
+    dispatchToast({
+      message: `Item '${item.name}' atualizado`,
+      type: 'success',
+    })
   }
 
   return {

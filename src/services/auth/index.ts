@@ -4,11 +4,11 @@ import { getUserByClerkId } from '@/features/user/db'
 import type { SelectUser } from '@/services/db/schema'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { AuthError } from './authErrors'
+import { AuthError } from './auth-errors'
 
 export type AuthenticatedUser = SelectUser
 
-export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
+export async function getAuthenticatedUser(): Promise<AuthenticatedUser> {
   const clerkUserAuth = await auth()
 
   if (!clerkUserAuth.userId) {

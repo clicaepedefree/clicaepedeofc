@@ -23,7 +23,9 @@ export const useMenu = ({ menuName }: { menuName: string }) => {
   })
 
   const categories = useMemo(() => {
-    const allCategories = result.data?.map(itemOffering => itemOffering.category)
+    const allCategories = result.data?.map(
+      itemOffering => itemOffering.category
+    )
     const uniqueCategories = uniqBy(allCategories, 'id')
     return uniqueCategories
   }, [result.data])

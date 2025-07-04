@@ -1,6 +1,10 @@
 'use client'
 
-import { AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/accordion'
+import {
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/shared/accordion'
 import { Button } from '@/shared/button'
 import { ImageWithPlaceholder } from '@/shared/image-with-placeholder'
 import { cn } from '@/shared/lib/utils'
@@ -35,7 +39,8 @@ export const CategoryBlock = ({
       value={category.id.toString()}
       className={cn(
         'border rounded-lg bg-white',
-        isDeleting && 'border-destructive border-2 border-dashed animate-pulse bg-destructive/5'
+        isDeleting &&
+          'border-destructive border-2 border-dashed animate-pulse bg-destructive/5'
       )}
     >
       <div className="flex items-center justify-between px-4 ">
@@ -45,7 +50,11 @@ export const CategoryBlock = ({
           containerClassName="flex-1 grow"
         >
           <>
-            <ImageWithPlaceholder image={category.image} alt={category.name} containerClassName="my-3" />
+            <ImageWithPlaceholder
+              image={category.image}
+              alt={category.name}
+              containerClassName="my-3"
+            />
             <div className="flex flex-col items-start justify-center grow">
               <LargeText variant="lg">{category.name}</LargeText>
               {category.description && (

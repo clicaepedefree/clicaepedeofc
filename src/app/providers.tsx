@@ -1,6 +1,7 @@
 'use client'
 import { getQueryClient } from '@/services/query-client'
 import { cn } from '@/shared/lib/utils'
+import { Toaster } from '@/shared/sonner'
 import { ptBR } from '@clerk/localizations'
 import { ClerkProvider } from '@clerk/nextjs'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -25,6 +26,7 @@ export default function Providers({
         className={cn(inter.className, 'h-dvh text-foreground', bodyClassName)}
       >
         <QueryClientProvider client={queryClient}>
+          <Toaster />
           <JotaiProvider>{children}</JotaiProvider>
           <ReactQueryDevtools />
         </QueryClientProvider>
