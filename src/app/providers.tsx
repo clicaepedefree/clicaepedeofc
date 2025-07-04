@@ -44,7 +44,11 @@ export const AuthProviders = ({
   >
 }) => {
   return (
-    <ClerkProvider localization={ptBR} {...clerkProviderProps}>
+    <ClerkProvider
+      localization={ptBR}
+      {...clerkProviderProps}
+      appearance={{ cssLayerName: 'clerk' }}
+    >
       {children}
     </ClerkProvider>
   )

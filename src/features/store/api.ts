@@ -70,8 +70,8 @@ export const addStoreFile = async (values: InsertStoreFile) => {
 }
 
 export const validateAdminAccess = async () => {
+  console.log('Validating admin access')
   const user = await getAuthenticatedUser()
-  console.log('user', user)
   if (!user) redirect('/login', RedirectType.replace)
 
   const isAdmin = await isUserAdminOfAnyStore(user.id)
