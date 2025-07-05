@@ -11,18 +11,12 @@ export const useCounter = () => {
   const queryClient = useQueryClient()
 
   const createCounterMutation = useMutation({
-    mutationFn: async ({
-      name,
-      isAvailable,
-    }: {
-      name: string
-      isAvailable: boolean
-    }) => {
+    mutationFn: async ({ name }: { name: string }) => {
       if (!selectedStoreId) {
         console.error('Selecione uma loja antes de criar um balcão.')
         return
       }
-      await createCounterApi({ storeId: selectedStoreId, name, isAvailable })
+      await createCounterApi({ storeId: selectedStoreId, name })
     },
     onMutate: async () => {
       await queryClient.cancelQueries({

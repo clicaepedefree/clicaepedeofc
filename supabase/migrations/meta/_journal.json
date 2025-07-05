@@ -155,6 +155,13 @@
       "when": 1751555802180,
       "tag": "0021_Add user store permissions table",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1751683648607,
+      "tag": "0022_Add counter sessions table and remove isAvailable column",
+      "breakpoints": true
     }
   ]
 }

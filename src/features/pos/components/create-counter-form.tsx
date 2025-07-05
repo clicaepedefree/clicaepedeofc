@@ -16,7 +16,6 @@ export const CreateCounterForm = ({
   const form = useForm({
     defaultValues: {
       name: '',
-      isAvailable: true,
     },
     validators: {
       onSubmit: createCounterSchema,

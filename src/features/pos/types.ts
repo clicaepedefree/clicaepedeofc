@@ -15,4 +15,4 @@ export type CartSession = {
   payments?: CartPayment[]
 }
 
-export type Counter = SelectCounter
+export type Counter = SelectCounter & { isAvailable?: boolean }
