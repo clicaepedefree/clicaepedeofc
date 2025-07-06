@@ -10,3 +10,9 @@ export const createCounterSchema = z.object({
 export const updateCounterSchema = createCounterSchema.extend({
   id: z.number(),
 })
+
+export const openCounterSchema = z.object({
+  counterId: z.number(),
+  openAmount: z.string().nonempty('Valor de abertura é obrigatório'),
+  openNotes: z.union([z.string(), z.null()]),
+})
