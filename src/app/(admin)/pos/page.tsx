@@ -33,12 +33,10 @@ export default function Page() {
         {counters?.map(counter => (
           <CounterCard key={counter.id} counter={counter} />
         ))}
-        {
-          <NewCounterCard
-            key={selectedStoreId}
-            initialIsCreating={!hasCounters}
-          />
-        }
+        <NewCounterCard
+          key={selectedStoreId}
+          initialIsCreating={!hasCounters}
+        />
       </div>
     </>
   )
