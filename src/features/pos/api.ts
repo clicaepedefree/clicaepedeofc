@@ -3,8 +3,10 @@
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { InsertCounter } from '@/services/db/schema'
 
-import { PermissionsError } from '../store/errors'
+import { UseCaseError } from '@/shared/errors/use-case-error'
+import { PermissionsError } from '../../shared/errors/permissions-error'
 import {
+  closeCounterOnDb,
   createStoreCounterOnDb,
   getCounterByIdOnDb,
   listStoreCountersOnDb,
@@ -42,10 +44,44 @@ export const openCounter = async ({
       message: 'Balcão não pertence a loja',
     })
 
-  if (counter?.currentSession && counter.currentSession.status === 'OPEN') {
+  if (counter?.currentSession?.status === 'OPEN') {
     console.warn('Session is currently opened. Aborting!')
     return
   }
 
   await openCounterOnDb({ ...props, operatorId: user.id })
+}
+
+export const closeCounter = async ({
+  storeId,
+  ...props
+}: {
+  storeId: number
+  counterId: number
+  closeAmount: string
+  closeNotes: string | null
+}) => {
+  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+
+  const counter = await getCounterByIdOnDb(props.counterId)
+
+  if (counter?.storeId !== storeId)
+    throw new PermissionsError({
+      type: 'FORBIDDEN',
+      message: 'Balcão não pertence a loja',
+    })
+
+  if (counter.currentSession?.status !== 'OPEN') {
+    throw new UseCaseError({
+      type: 'IMMUTABLE_STATE',
+      message: 'Sessão do balcão não pode ser alterada por não estar aberta',
+    })
+  }
+
+  await closeCounterOnDb({
+    counterSessionId: counter.currentSession.id,
+    closedByOperatorId: user.id,
+    closeAmount: props.closeAmount,
+    closeNotes: props.closeNotes,
+  })
 }

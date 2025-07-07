@@ -16,3 +16,9 @@ export const openCounterSchema = z.object({
   openAmount: z.string().nonempty('Valor de abertura é obrigatório'),
   openNotes: z.union([z.string(), z.null()]),
 })
+
+export const closeCounterSchema = z.object({
+  counterId: z.number(),
+  closeAmount: z.string().nonempty('Valor de fechamento é obrigatório'),
+  closeNotes: z.union([z.string(), z.null()]),
+})

@@ -10,11 +10,11 @@ import { Textarea } from '@/shared/textarea'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { z } from 'zod'
-import { openCounter } from '../../api'
-import { openCounterSchema } from '../../form-validation/counter.schema'
+import { closeCounter } from '../../api'
+import { closeCounterSchema } from '../../form-validation/counter.schema'
 import { Counter } from '../../types'
 
-type OpenCounterFormProps = {
+type CloseCounterFormProps = {
   counter: Counter
   className?: string
   onSuccess?(): void
@@ -22,23 +22,23 @@ type OpenCounterFormProps = {
   FooterContainerComponent?: ComponentWithChildren
 }
 
-export const OpenCounterForm = ({
+export const CloseCounterForm = ({
   className,
   counter,
   onSuccess,
   onCancel,
   FooterContainerComponent,
-}: OpenCounterFormProps) => {
+}: CloseCounterFormProps) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
   const form = useForm({
     defaultValues: {
       counterId: counter.id,
-      openAmount: '0',
-      openNotes: null,
-    } as z.input<typeof openCounterSchema>,
+      closeAmount: '0',
+      closeNotes: null,
+    } as z.input<typeof closeCounterSchema>,
     validators: {
-      onSubmit: openCounterSchema,
+      onSubmit: closeCounterSchema,
     },
     onSubmit: async ({ value }) => {
       if (!selectedStoreId) {
@@ -46,11 +46,11 @@ export const OpenCounterForm = ({
         return
       }
 
-      await openCounter({
+      await closeCounter({
         storeId: selectedStoreId,
         counterId: counter.id,
-        openAmount: formatValueToCurrency({ value: value.openAmount }),
-        openNotes: value.openNotes,
+        closeAmount: formatValueToCurrency({ value: value.closeAmount }),
+        closeNotes: value.closeNotes,
       })
 
       form.reset()
@@ -83,7 +83,7 @@ export const OpenCounterForm = ({
             disabled={!canSubmit}
             onClick={form.handleSubmit}
           >
-            {`Abrir balcão '${counter.name}'`}
+            {`Fechar balcão '${counter.name}'`}
           </Button>
         </div>
       )}
@@ -105,10 +105,10 @@ export const OpenCounterForm = ({
           className
         )}
       >
-        <form.Field name="openAmount">
+        <form.Field name="closeAmount">
           {field => (
             <CurrencyInput
-              label="Valor em dinheiro disponível no caixa"
+              label="Valor em dinheiro restante no caixa"
               value={field.state.value ?? ''}
               onValueChange={value => field.handleChange(value ?? '')}
               className={cn('col-span-2')}
@@ -116,7 +116,7 @@ export const OpenCounterForm = ({
             />
           )}
         </form.Field>
-        <form.Field name="openNotes">
+        <form.Field name="closeNotes">
           {field => (
             <Label>
               Observações

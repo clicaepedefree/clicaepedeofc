@@ -56,3 +56,18 @@ export const openCounterOnDb = async (props: {
   openAmount: string
   openNotes: string | null
 }) => await db.insert(counterSessionsTable).values(props).returning()
+
+export const closeCounterOnDb = async ({
+  counterSessionId,
+  ...props
+}: {
+  counterSessionId: number
+  closedByOperatorId: UserId
+  closeAmount: string
+  closeNotes: string | null
+}) =>
+  await db
+    .update(counterSessionsTable)
+    .set({ ...props, status: 'CLOSED', closedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(counterSessionsTable.id, counterSessionId))
+    .returning()

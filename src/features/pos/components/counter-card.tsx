@@ -6,27 +6,38 @@ import { cn } from '@/shared/lib/utils'
 import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { Check, Monitor, User } from 'lucide-react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { CounterActionsDropdownMenu } from './counter-actions-dropdown-menu'
 import { OpenCounterAction } from './open-close-counter/open-counter-action'
 
-export const CounterCard = ({ counter }: { counter: Counter }) => {
+export const CounterCard = ({
+  counter,
+  onCounterStateChange,
+}: {
+  counter: Counter
+  onCounterStateChange?: () => void
+}) => {
   const router = useRouter()
 
   const counterPosPage = `/pos/${counter.id}`
 
-  if (!counter.isAvailable)
+  const onOpenCounter = () => router.push(counterPosPage)
+
+  if (counter.isAvailable)
     return (
-      <Link href={counterPosPage}>
-        <BaseCounterCard counter={counter} />
-      </Link>
+      <OpenCounterAction
+        counter={counter}
+        trigger={<BaseCounterCard counter={counter} />}
+        onSuccess={onOpenCounter}
+      />
     )
 
   return (
-    <OpenCounterAction
+    <CounterActionsDropdownMenu
       counter={counter}
       trigger={<BaseCounterCard counter={counter} />}
-      onSuccess={() => router.push(counterPosPage)}
+      onOpenPos={onOpenCounter}
+      onClosed={onCounterStateChange}
     />
   )
 }

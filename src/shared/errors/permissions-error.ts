@@ -1,9 +1,9 @@
-export type PermissionsErrorType = 'FORBIDDEN' | 'USER_CONFLICT'
-
 export const permissionTypeToErrorCodeMapping = {
-  FORBIDDEN: '401:',
-  USER_CONFLICT: '409U:',
+  FORBIDDEN: '401P:',
+  USER_CONFLICT: '409P:',
 }
+
+export type PermissionsErrorType = keyof typeof permissionTypeToErrorCodeMapping
 
 export class PermissionsError extends Error {
   type: PermissionsErrorType
