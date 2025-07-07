@@ -1,5 +1,5 @@
-import { isPermissionsError } from '@/features/store/errors'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { isPermissionsError } from '@/shared/errors/permissions-error'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'

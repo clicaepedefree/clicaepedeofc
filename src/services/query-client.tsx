@@ -1,7 +1,7 @@
 import {
   isPermissionsError,
   permissionTypeToErrorCodeMapping,
-} from '@/features/store/errors'
+} from '@/shared/errors/permissions-error'
 import { dispatchToast } from '@/shared/lib/toast'
 import { isServer, QueryCache, QueryClient } from '@tanstack/react-query'
 

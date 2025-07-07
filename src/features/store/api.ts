@@ -16,7 +16,7 @@ import { userStorePermissionsTable } from '@/services/db/schema/user-store-permi
 import { coalesce, getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq, getTableColumns } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
-import { PermissionsError } from './errors'
+import { PermissionsError } from '../../shared/errors/permissions-error'
 import { UserStoreRole } from './types'
 
 export const getAvailableStores = async () => {
