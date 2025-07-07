@@ -39,6 +39,7 @@ export const useCounters = () => {
     isLoading: result.isLoading,
     isEnabled,
     isError: result.isError,
+    activeCounter,
     activeCounterId: activeCounter?.id,
     activeCounterName: activeCounter?.name,
   }
