@@ -1,6 +1,7 @@
 'use client'
 
 import { useMenu } from '@/features/menu/hooks/use-menu'
+import { CounterSelector } from '@/features/pos/components/counter-selector'
 import { PosCart } from '@/features/pos/components/pos-cart'
 import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
 import { PosPayments } from '@/features/pos/components/pos-payments/pos-payments'
@@ -18,7 +19,8 @@ export default function CounterPage({}) {
   const router = useRouter()
   const { menuItems, categories, isFetching } = useMenu({ menuName: 'POS' })
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { isLoading, isEnabled, activeCounterId } = useCounters()
+  const { counters, isLoading, isEnabled, activeCounterId, activeCounterName } =
+    useCounters()
 
   const {
     isUsingPaymentScreen,
@@ -45,9 +47,17 @@ export default function CounterPage({}) {
     <div className="col-span-2 flex flex-col items-start gap-4 overflow-y-scroll h-full p-4">
       <Headline
         variant={300}
-        className="flex items-center justify-center gap-2"
+        className="flex items-center text-nowrap gap-4 w-56"
       >
-        Ponto de Venda {isFetching && <LoadingSpinner />}
+        Balcão:
+        {counters && (
+          <CounterSelector
+            counters={counters}
+            activeCounterId={activeCounterId}
+            onChangeCounter={counterId => router.replace(`/pos/${counterId}`)}
+          />
+        )}
+        {isFetching && <LoadingSpinner />}
       </Headline>
 
       <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-4 h-[inherit] items-start overflow-y-hidden">
