@@ -84,7 +84,7 @@ export const OpenCounterForm = ({
             disabled={!canSubmit}
             onClick={form.handleSubmit}
           >
-            Abrir balcão '{counter.name}'
+            {`Abrir balcão '${counter.name}'`}
           </Button>
         </div>
       )}
