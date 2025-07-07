@@ -7,12 +7,17 @@ import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { Check, Monitor, User } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { OpenCounterAction } from './open-close-counter/open-counter-action'
 
 export const CounterCard = ({ counter }: { counter: Counter }) => {
+  const router = useRouter()
+
+  const counterPosPage = `/pos/${counter.id}`
+
   if (!counter.isAvailable)
     return (
-      <Link href={`/pos/${counter.id}`}>
+      <Link href={counterPosPage}>
         <BaseCounterCard counter={counter} />
       </Link>
     )
@@ -21,6 +26,7 @@ export const CounterCard = ({ counter }: { counter: Counter }) => {
     <OpenCounterAction
       counter={counter}
       trigger={<BaseCounterCard counter={counter} />}
+      onSuccess={() => router.push(counterPosPage)}
     />
   )
 }

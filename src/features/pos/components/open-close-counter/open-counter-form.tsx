@@ -3,6 +3,7 @@
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
+import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
@@ -10,6 +11,7 @@ import { Textarea } from '@/shared/textarea'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { z } from 'zod'
+import { openCounter } from '../../api'
 import { openCounterSchema } from '../../form-validation/counter.schema'
 import { Counter } from '../../types'
 
@@ -44,7 +46,17 @@ export const OpenCounterForm = ({
         console.error('Selecione uma loja antes de criar / atualizar um item.')
         return
       }
-      console.log(value)
+
+      await openCounter({
+        storeId: selectedStoreId,
+        counterId: counter.id,
+        openAmount: formatValueToCurrency({ value: value.openAmount }),
+        openNotes: value.openNotes,
+      })
+
+      form.reset()
+      onSuccess?.()
+      return
     },
   })
 

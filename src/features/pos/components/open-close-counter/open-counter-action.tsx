@@ -9,6 +9,7 @@ type OpenCounterActionProps = {
   trigger: React.ReactNode
   onSuccess?(): void
 }
+
 export const OpenCounterAction = ({
   counter,
   trigger,

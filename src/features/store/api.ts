@@ -80,10 +80,9 @@ export const updateStoreConfiguration = async (
 }
 
 export const addStoreFile = async (values: InsertStoreFile) => {
-  const userStorePermissions = await validateUserPermissionsForStore(
-    values.storeId,
-    'admin'
-  )
+  const { storePermissions: userStorePermissions } =
+    await validateUserPermissionsForStore(values.storeId, 'admin')
+
   if (userStorePermissions.userId !== values.creatorId)
     throw new PermissionsError({
       type: 'USER_CONFLICT',
@@ -126,5 +125,5 @@ export const validateUserPermissionsForStore = async (
       message: 'Usuário não possui permissão para executar operação na loja',
     })
 
-  return userPermissionsForStore
+  return { user, storePermissions: userPermissionsForStore }
 }
