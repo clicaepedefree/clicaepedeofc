@@ -7,7 +7,9 @@ export const createOrUpdateUserFromLogin = async (clerkUser: ClerkUser) => {
   const primaryEmailAddressId = clerkUser.primaryEmailAddressId
   if (!primaryEmailAddressId) throw new Error('Primary email address not found')
 
-  const primaryEmailAddress = clerkUser.emailAddresses.find(emailAddress => emailAddress.id === primaryEmailAddressId)
+  const primaryEmailAddress = clerkUser.emailAddresses.find(
+    emailAddress => emailAddress.id === primaryEmailAddressId
+  )
 
   if (!primaryEmailAddress) throw new Error('Primary email address not found')
 
@@ -20,13 +22,17 @@ export const createOrUpdateUserFromLogin = async (clerkUser: ClerkUser) => {
   return await createOrUpdateUser(userInfoToUpsert)
 }
 
-export const finishUserOnboarding = async (clerkUser: ClerkUser) => {
+export const finishUserOnboarding = async (
+  clerkUser: ClerkUser,
+  userId: string
+) => {
   // TODO accept admin invitations
   const client = await clerkClient()
 
   await client.users.updateUser(clerkUser.id, {
     publicMetadata: {
       onboardingComplete: true,
+      userId,
     },
   })
 }
