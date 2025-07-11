@@ -7,12 +7,19 @@ import {
   itemOfferingSchemaWithIndex,
   updateItemSchema,
 } from '@/features/menu/form-validation/item-schema'
-import { BaseCategory, Item, ItemOfferingWithImage } from '@/features/menu/types'
+import {
+  BaseCategory,
+  Item,
+  ItemOfferingWithImage,
+} from '@/features/menu/types'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { SingleFileUploader } from '@/shared/file-upload'
-import { formatValueToCurrency, getValueFromCurrencyString } from '@/shared/formatters/currency'
+import {
+  formatValueToCurrency,
+  getValueFromCurrencyString,
+} from '@/shared/formatters/currency'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
@@ -32,7 +39,10 @@ type CreateOrUpdateItemFormProps = {
   FooterContainerComponent?: ComponentWithChildren
 }
 
-const getDefaultValues = (item?: ItemOfferingWithImage, category?: BaseCategory) => {
+const getDefaultValues = (
+  item?: ItemOfferingWithImage,
+  category?: BaseCategory
+) => {
   const defaultCategory = category ?? { id: 0, name: '' }
 
   if (item) {
@@ -138,11 +148,17 @@ export const CreateOrUpdateItemForm = ({
   const image = useStore(form.store, state => state.values.image)
 
   const submitButtonText = isCreatingItem ? 'Criar Item' : 'Atualizar Item'
-  const submitButtonLoadingText = isCreatingItem ? 'Criando...' : 'Atualizando...'
+  const submitButtonLoadingText = isCreatingItem
+    ? 'Criando...'
+    : 'Atualizando...'
   const footerActions = (
     <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
       {([canSubmit, isSubmitting]) => (
-        <div className={cn('grid grid-cols-2 gap-2 justify-around', { 'mt-8': !FooterContainerComponent })}>
+        <div
+          className={cn('grid grid-cols-2 gap-2 justify-around', {
+            'mt-8': !FooterContainerComponent,
+          })}
+        >
           <Button
             variant="secondary"
             type="reset"
@@ -153,7 +169,11 @@ export const CreateOrUpdateItemForm = ({
           >
             {isCreatingItem ? 'Limpar' : 'Desfazer alterações'}
           </Button>
-          <Button type="submit" disabled={!canSubmit} onClick={form.handleSubmit}>
+          <Button
+            type="submit"
+            disabled={!canSubmit}
+            onClick={form.handleSubmit}
+          >
             {isSubmitting ? submitButtonLoadingText : submitButtonText}
           </Button>
         </div>
@@ -171,7 +191,10 @@ export const CreateOrUpdateItemForm = ({
           e.stopPropagation()
           form.handleSubmit()
         }}
-        className={cn('grid grid-cols-1 md:grid-cols-2 gap-4 rounded w-full self-start pb-1', className)}
+        className={cn(
+          'grid grid-cols-1 md:grid-cols-2 gap-4 rounded w-full self-start pb-1',
+          className
+        )}
       >
         <form.Field name="image">
           {field => (
@@ -179,7 +202,12 @@ export const CreateOrUpdateItemForm = ({
               storeId={selectedStoreId}
               fileUrl={image?.url}
               fileTag="item"
-              onFileUploaded={file => field.setValue({ id: file.serverData.id, url: file.serverData.url })}
+              onFileUploaded={file =>
+                field.setValue({
+                  id: file.serverData.id,
+                  url: file.serverData.url,
+                })
+              }
               onFileDeleted={() => field.setValue(null)}
               onUploadBegin={() => {
                 field.setErrorMap({ onChange: [] })
@@ -230,9 +258,12 @@ export const CreateOrUpdateItemForm = ({
               field.state.value.map((_, index) => (
                 <div
                   key={index}
-                  className={cn('grid gap-4 grid-cols-[0fr_1fr] transition-all duration-500', {
-                    'grid-cols-[1fr_1fr]': applyDiscount,
-                  })}
+                  className={cn(
+                    'grid gap-4 grid-cols-[0fr_1fr] transition-all duration-500',
+                    {
+                      'grid-cols-[1fr_1fr]': applyDiscount,
+                    }
+                  )}
                 >
                   {applyDiscount && (
                     <form.Field
@@ -240,11 +271,19 @@ export const CreateOrUpdateItemForm = ({
                       validators={{
                         onChangeListenTo: [`offerings[${index}].price`],
                         onChange: ({ value, fieldApi }) => {
-                          const price = fieldApi.form.getFieldValue(`offerings[${index}].price`)
+                          const price = fieldApi.form.getFieldValue(
+                            `offerings[${index}].price`
+                          )
                           if (!value || !price) return
 
-                          if (getValueFromCurrencyString(value) <= getValueFromCurrencyString(price)) {
-                            return { message: 'Preço antigo deve ser maior que o atual' }
+                          if (
+                            getValueFromCurrencyString(value) <=
+                            getValueFromCurrencyString(price)
+                          ) {
+                            return {
+                              message:
+                                'Preço antigo deve ser maior que o atual',
+                            }
                           }
                           return undefined
                         },
@@ -254,7 +293,9 @@ export const CreateOrUpdateItemForm = ({
                         <CurrencyInput
                           label="Preço antigo"
                           value={subField.state.value ?? undefined}
-                          onValueChange={value => subField.handleChange(value ?? '')}
+                          onValueChange={value =>
+                            subField.handleChange(value ?? '')
+                          }
                           error={subField.state.meta.errors[0]?.message}
                           autoFocus
                           prefixElement={
@@ -269,7 +310,11 @@ export const CreateOrUpdateItemForm = ({
                                     setApplyDiscount(false)
                                   }}
                                 >
-                                  <BadgeX size={18} strokeWidth={2} className="text-destructive" />
+                                  <BadgeX
+                                    size={18}
+                                    strokeWidth={2}
+                                    className="text-destructive"
+                                  />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Remover desconto</TooltipContent>
@@ -284,8 +329,12 @@ export const CreateOrUpdateItemForm = ({
                       <CurrencyInput
                         label="Preço"
                         value={subField.state.value ?? ''}
-                        onValueChange={value => subField.handleChange(value ?? '')}
-                        className={cn('col-span-2', { 'col-span-1': applyDiscount })}
+                        onValueChange={value =>
+                          subField.handleChange(value ?? '')
+                        }
+                        className={cn('col-span-2', {
+                          'col-span-1': applyDiscount,
+                        })}
                         error={subField.state.meta.errors[0]?.message}
                         prefixElement={
                           !applyDiscount && (
@@ -307,10 +356,16 @@ export const CreateOrUpdateItemForm = ({
                                     setApplyDiscount(true)
                                   }}
                                 >
-                                  <Tag size={18} strokeWidth={2} className="text-destructive" />
+                                  <Tag
+                                    size={18}
+                                    strokeWidth={2}
+                                    className="text-destructive"
+                                  />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>Adicionar desconto</TooltipContent>
+                              <TooltipContent>
+                                Adicionar desconto
+                              </TooltipContent>
                             </Tooltip>
                           )
                         }
@@ -324,7 +379,9 @@ export const CreateOrUpdateItemForm = ({
           {!FooterContainerComponent && footerActions}
         </div>
       </form>
-      {FooterContainerComponent && <FooterContainerComponent>{footerActions}</FooterContainerComponent>}
+      {FooterContainerComponent && (
+        <FooterContainerComponent>{footerActions}</FooterContainerComponent>
+      )}
     </>
   )
 }

@@ -2,7 +2,12 @@ import '@/app/globals.css'
 import { AdminPageTitle } from '@/features/admin/components/admin-page-title'
 import { StoreSelector } from '@/features/store/components/store-selector'
 import { UserProfile } from '@/features/user/components/userProfile'
-import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/shared/breadcrumb'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/shared/breadcrumb'
 import { Button } from '@/shared/button'
 import { Separator } from '@/shared/separator'
 import { SidebarTrigger } from '@/shared/sidebar/base-sidebar'

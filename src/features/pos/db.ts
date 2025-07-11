@@ -3,6 +3,7 @@ import {
   counterSessionsTable,
   countersTable,
   InsertCounter,
+  usersTable,
 } from '@/services/db/schema'
 import { getSubQueryColumns } from '@/services/db/utils'
 import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm'
@@ -26,11 +27,19 @@ const listCountersQuery = ({
   db
     .select({
       ...getTableColumns(countersTable),
-      isAvailable: sql<boolean>`${currentCounterSessionSubQuery.id} IS NULL OR ${currentCounterSessionSubQuery.status} != 'OPEN'`,
-      currentSession: getSubQueryColumns(currentCounterSessionSubQuery),
+      isInService: sql<boolean>`${currentCounterSessionSubQuery.status} = 'OPEN'`,
+      currentSession: {
+        ...getSubQueryColumns(currentCounterSessionSubQuery),
+        operatorName: usersTable.name,
+        operatorEmail: usersTable.email,
+      },
     })
     .from(countersTable)
     .leftJoinLateral(currentCounterSessionSubQuery, sql`true`)
+    .leftJoin(
+      usersTable,
+      eq(usersTable.id, currentCounterSessionSubQuery.operatorId)
+    )
     .where(
       and(
         storeId ? eq(countersTable.storeId, storeId) : undefined,

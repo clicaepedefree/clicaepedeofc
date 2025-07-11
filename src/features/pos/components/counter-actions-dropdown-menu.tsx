@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/shared/dropdown-menu'
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { MonitorOff, SquareArrowOutUpRight } from 'lucide-react'
 import { CloseCounterAction } from './open-close-counter/close-counter-action'
 
@@ -16,11 +17,13 @@ export const CounterActionsDropdownMenu = ({
   trigger,
   onOpenPos,
   onClosed,
+  canUsePos = true,
 }: {
   counter: Counter
   trigger: React.ReactNode
   onOpenPos?(): void
   onClosed?(): void
+  canUsePos?: boolean
 }) => {
   return (
     <DropdownMenu>
@@ -28,10 +31,19 @@ export const CounterActionsDropdownMenu = ({
         {trigger}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top">
-        <DropdownMenuItem onSelect={onOpenPos}>
-          <SquareArrowOutUpRight className="mr-2 h-4 w-4" />
-          Abrir PDV
-        </DropdownMenuItem>
+        <Tooltip open={canUsePos ? false : undefined}>
+          <TooltipTrigger className="w-full">
+            <DropdownMenuItem onSelect={onOpenPos} disabled={!canUsePos}>
+              <SquareArrowOutUpRight className="mr-2 h-4 w-4" />
+              Abrir PDV
+            </DropdownMenuItem>
+            <TooltipContent variant="error">
+              Você não é o operador da sessão ativa.
+              <br />
+              Feche o caixa e inicie uma nova sessão para usar o PDV
+            </TooltipContent>
+          </TooltipTrigger>
+        </Tooltip>
         <CloseCounterAction
           counter={counter}
           trigger={

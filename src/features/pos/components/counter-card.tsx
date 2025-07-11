@@ -5,6 +5,7 @@ import { Button } from '@/shared/button'
 import { cn } from '@/shared/lib/utils'
 import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
+import { useAuth } from '@clerk/nextjs'
 import { Check, Monitor, User } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { CounterActionsDropdownMenu } from './counter-actions-dropdown-menu'
@@ -18,12 +19,13 @@ export const CounterCard = ({
   onCounterStateChange?: () => void
 }) => {
   const router = useRouter()
+  const { sessionClaims } = useAuth()
 
   const counterPosPage = `/pos/${counter.id}`
 
   const onOpenCounter = () => router.push(counterPosPage)
 
-  if (counter.isAvailable)
+  if (!counter.isInService)
     return (
       <OpenCounterAction
         counter={counter}
@@ -38,6 +40,9 @@ export const CounterCard = ({
       trigger={<BaseCounterCard counter={counter} />}
       onOpenPos={onOpenCounter}
       onClosed={onCounterStateChange}
+      canUsePos={
+        counter.currentSession?.operatorId === sessionClaims?.metadata.userId
+      }
     />
   )
 }
@@ -55,16 +60,16 @@ const BaseCounterCard = ({
       className={cn(
         'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 border-l-8 rounded-lg bg-white hover:scale-105 hover:shadow-lg cursor-pointer min-w-68',
         {
-          'border-green-700/80': counter.isAvailable,
-          'border-destructive/60': !counter.isAvailable,
+          'border-green-700/80': !counter.isInService,
+          'border-destructive/60': counter.isInService,
         }
       )}
     >
       <Monitor
         size={20}
         className={cn({
-          'text-green-700/80': counter.isAvailable,
-          'text-destructive/80': !counter.isAvailable,
+          'text-green-700/80': !counter.isInService,
+          'text-destructive/80': counter.isInService,
         })}
       />
       <Headline variant={400} className="text-center">
@@ -76,12 +81,12 @@ const BaseCounterCard = ({
         className={cn(
           'flex items-center justify-center gap-2 w-fit px-1.5 py-0.5 rounded-md',
           {
-            'bg-green-700/10 text-green-700/80': counter.isAvailable,
-            'bg-destructive/10 text-destructive/80': !counter.isAvailable,
+            'bg-green-700/10 text-green-700/80': !counter.isInService,
+            'bg-destructive/10 text-destructive/80': counter.isInService,
           }
         )}
       >
-        {counter.isAvailable ? (
+        {!counter.isInService || !counter.currentSession ? (
           <>
             <Check size={14} />
             Livre
@@ -89,7 +94,7 @@ const BaseCounterCard = ({
         ) : (
           <>
             <User size={16} />
-            Em atendimento
+            {counter.currentSession.operatorName}
           </>
         )}
       </Body>

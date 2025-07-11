@@ -2,18 +2,19 @@
 'use client'
 
 import { usePathname, useSearchParams } from 'next/navigation'
-import { useEffect, Suspense } from 'react'
 import { usePostHog } from 'posthog-js/react'
+import { Suspense, useEffect } from 'react'
 
+import { useAuth, useUser } from '@clerk/nextjs'
 import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
-import { useAuth, useUser } from '@clerk/nextjs'
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY as string, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+      api_host:
+        process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
       person_profiles: 'identified_only', // or 'always' to create profiles for anonymous users as well
       capture_pageview: false, // Disable automatic pageview capture, as we capture manually
     })

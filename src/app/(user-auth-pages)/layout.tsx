@@ -1,13 +1,7 @@
 import '@/app/globals.css'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { Button } from '@/shared/button'
-import {
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from '@clerk/nextjs'
+import { SignUpButton, SignedOut } from '@clerk/nextjs'
 import type { Metadata } from 'next'
 import { AuthProviders } from '../providers'
 

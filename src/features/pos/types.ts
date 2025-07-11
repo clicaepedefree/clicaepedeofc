@@ -1,5 +1,5 @@
 import { MenuItem } from '@/features/menu/types'
-import { SelectCounter } from '@/services/db/schema'
+import { SelectCounter, SelectCounterSession } from '@/services/db/schema'
 import { NewOrderPayment } from '../order/types'
 
 export type CartItem = MenuItem & {
@@ -15,4 +15,12 @@ export type CartSession = {
   payments?: CartPayment[]
 }
 
-export type Counter = SelectCounter & { isAvailable?: boolean }
+export type CounterSession = SelectCounterSession & {
+  operatorName: string | null
+  operatorEmail: string | null
+}
+
+export type Counter = SelectCounter & {
+  isInService?: boolean
+  currentSession?: CounterSession
+}
