@@ -11,7 +11,12 @@ import { useAtom } from 'jotai'
 
 export default function Page() {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { counters, refetch, isLoading: isLoadingCounters } = useCounters()
+  const {
+    counters,
+    refetch,
+    isLoading: isLoadingCounters,
+    openCounterPage: onOpenCounter,
+  } = useCounters()
 
   if (isLoadingCounters || !selectedStoreId) return <LoadingSpinner />
 
@@ -35,6 +40,7 @@ export default function Page() {
             key={counter.id}
             counter={counter}
             onCounterStateChange={refetch}
+            onOpenCounter={() => onOpenCounter(counter.id)}
           />
         ))}
         <NewCounterCard

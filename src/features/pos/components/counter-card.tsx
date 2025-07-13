@@ -7,23 +7,19 @@ import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { useAuth } from '@clerk/nextjs'
 import { Check, Monitor, User } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { CounterActionsDropdownMenu } from './counter-actions-dropdown-menu'
 import { OpenCounterAction } from './open-close-counter/open-counter-action'
 
 export const CounterCard = ({
   counter,
   onCounterStateChange,
+  onOpenCounter,
 }: {
   counter: Counter
-  onCounterStateChange?: () => void
+  onCounterStateChange(): void
+  onOpenCounter(): void
 }) => {
-  const router = useRouter()
   const { sessionClaims } = useAuth()
-
-  const counterPosPage = `/pos/${counter.id}`
-
-  const onOpenCounter = () => router.push(counterPosPage)
 
   if (!counter.isInService)
     return (
