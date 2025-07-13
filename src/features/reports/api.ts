@@ -37,7 +37,7 @@ export const getRevenueSummary = async (
     )
   }
 
-  // Get data using a single query approach
+  // Get data using a single SQL query with window functions
   let totalOrders = 0
   let totalRevenue = 0
   let averageOrderValue = 0
@@ -49,14 +49,17 @@ export const getRevenueSummary = async (
   }> = []
 
   if (startDate && endDate) {
-    // When date range is provided, get daily breakdown and calculate totals from it
-    const dailyData = await db
+    // Use window functions to get both daily breakdown and overall totals in one query
+    const data = await db
       .select({
         date: sql`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`.as(
           'date'
         ),
-        totalOrders: count(ordersTable.id),
-        totalRevenue: sum(ordersTable.totalPrice),
+        dailyOrders: count(ordersTable.id),
+        dailyRevenue: sum(ordersTable.totalPrice),
+        // Window functions to get overall totals
+        totalOrders: sql`sum(count(${ordersTable.id})) over()`.as('total_orders'),
+        totalRevenue: sql`sum(sum(${ordersTable.totalPrice})) over()`.as('total_revenue'),
       })
       .from(ordersTable)
       .where(and(...baseConditions))
@@ -67,16 +70,19 @@ export const getRevenueSummary = async (
         sql`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`
       )
 
-    // Process daily data and calculate overall totals
-    dailyBreakdown = dailyData.map(day => {
-      const dayTotalOrders = day.totalOrders || 0
-      const dayTotalRevenue = Number(day.totalRevenue) || 0
+    // Extract overall totals from first row (same across all rows due to window functions)
+    if (data.length > 0) {
+      totalOrders = Number(data[0].totalOrders) || 0
+      totalRevenue = Number(data[0].totalRevenue) || 0
+      averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
+    }
+
+    // Process daily breakdown - no calculations needed, just format
+    dailyBreakdown = data.map(day => {
+      const dayTotalOrders = day.dailyOrders || 0
+      const dayTotalRevenue = Number(day.dailyRevenue) || 0
       const dayAverageOrderValue =
         dayTotalOrders > 0 ? dayTotalRevenue / dayTotalOrders : 0
-
-      // Accumulate totals
-      totalOrders += dayTotalOrders
-      totalRevenue += dayTotalRevenue
 
       return {
         date: day.date as string,
@@ -85,9 +91,6 @@ export const getRevenueSummary = async (
         averageOrderValue: Number(dayAverageOrderValue.toFixed(2)),
       }
     })
-
-    // Calculate overall average
-    averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
   } else {
     // When no date range is provided, get overall totals only
     const revenueData = await db
