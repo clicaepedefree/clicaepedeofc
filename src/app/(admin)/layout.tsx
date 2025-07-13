@@ -46,6 +46,18 @@ const adminMenuItems = [
       },
     ],
   },
+  {
+    type: 'section' as const,
+    title: 'Gestão',
+    icon: 'notebook-pen' as const,
+    items: [
+      {
+        title: 'Relatórios',
+        url: '/reports',
+        icon: 'chart-spline' as const,
+      },
+    ],
+  },
 ]
 
 export default async function AdminLayout({
