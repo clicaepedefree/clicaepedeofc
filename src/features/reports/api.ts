@@ -37,21 +37,10 @@ export const getRevenueSummary = async (
     )
   }
 
-  // Get overall revenue data for the period
-  const revenueData = await db
-    .select({
-      totalOrders: count(ordersTable.id),
-      totalRevenue: sum(ordersTable.totalPrice),
-    })
-    .from(ordersTable)
-    .where(and(...baseConditions))
-
-  const { totalOrders, totalRevenue } = revenueData[0]
-
-  const averageOrderValue =
-    totalOrders > 0 && totalRevenue ? Number(totalRevenue) / totalOrders : 0
-
-  // Get daily breakdown if date range is provided
+  // Get data using a single query approach
+  let totalOrders = 0
+  let totalRevenue = 0
+  let averageOrderValue = 0
   let dailyBreakdown: Array<{
     date: string
     totalOrders: number
@@ -60,6 +49,7 @@ export const getRevenueSummary = async (
   }> = []
 
   if (startDate && endDate) {
+    // When date range is provided, get daily breakdown and calculate totals from it
     const dailyData = await db
       .select({
         date: sql`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`.as(
@@ -77,11 +67,16 @@ export const getRevenueSummary = async (
         sql`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`
       )
 
+    // Process daily data and calculate overall totals
     dailyBreakdown = dailyData.map(day => {
       const dayTotalOrders = day.totalOrders || 0
       const dayTotalRevenue = Number(day.totalRevenue) || 0
       const dayAverageOrderValue =
         dayTotalOrders > 0 ? dayTotalRevenue / dayTotalOrders : 0
+
+      // Accumulate totals
+      totalOrders += dayTotalOrders
+      totalRevenue += dayTotalRevenue
 
       return {
         date: day.date as string,
@@ -90,11 +85,28 @@ export const getRevenueSummary = async (
         averageOrderValue: Number(dayAverageOrderValue.toFixed(2)),
       }
     })
+
+    // Calculate overall average
+    averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
+  } else {
+    // When no date range is provided, get overall totals only
+    const revenueData = await db
+      .select({
+        totalOrders: count(ordersTable.id),
+        totalRevenue: sum(ordersTable.totalPrice),
+      })
+      .from(ordersTable)
+      .where(and(...baseConditions))
+
+    const result = revenueData[0]
+    totalOrders = result.totalOrders || 0
+    totalRevenue = Number(result.totalRevenue) || 0
+    averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
   }
 
   return {
-    totalOrders: totalOrders || 0,
-    totalRevenue: Number(totalRevenue) || 0,
+    totalOrders,
+    totalRevenue,
     averageOrderValue: Number(averageOrderValue.toFixed(2)),
     dailyBreakdown,
   }
