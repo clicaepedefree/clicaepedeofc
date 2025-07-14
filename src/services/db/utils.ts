@@ -27,7 +27,7 @@ import {
  * @param {SQL} defaultValue - The default value to be returned if the first value is null or undefined.
  * @returns {SQL<T>} - The SQL expression representing the coalesced value.
  */
-export function coalesce<T, R>(
+export function coalesce<T, R = unknown>(
   value: SQL.Aliased<T> | SQL<T> | PgColumn,
   defaultValue: SQL<R> | PgColumn
 ): SQL<R extends NonNullable<T> ? R : T> {
