@@ -129,7 +129,10 @@ export function RevenueMultilineChart({
                   includeCurrencySymbol: true,
                 })
               }
-              hide={!activeCharts.includes('dailyRevenue')}
+              hide={
+                !activeCharts.includes('dailyRevenue') &&
+                !activeCharts.includes('dailyAverageOrderValue')
+              }
               orientation="left"
             />
             <YAxis
