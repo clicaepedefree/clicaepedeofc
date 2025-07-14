@@ -156,6 +156,7 @@ export function RevenueMultilineChart({
               dataKey="dailyOrders"
               tickLine={false}
               axisLine={false}
+              domain={[0, 'dataMax + 1']}
               tickMargin={8}
               tickFormatter={value => `${value}`}
               hide={!activeCharts.includes('dailyOrders')}
