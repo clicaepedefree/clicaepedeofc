@@ -4,7 +4,7 @@ import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 import { ordersTable } from '@/services/db/schema/orders'
 import { coalesce, jsonAgg } from '@/services/db/utils'
-import { and, avg, count, eq, gte, lte, ne, sql, sum } from 'drizzle-orm'
+import { and, count, eq, gte, lte, ne, sql, sum } from 'drizzle-orm'
 
 export const getRevenueSummary = async (
   storeId: number,
@@ -12,6 +12,7 @@ export const getRevenueSummary = async (
   endDate?: string
 ) => {
   await validateUserPermissionsForStore(storeId, 'admin')
+
   const orderCreatedAtWithTimezone = sql<Date>`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`
   const dailyBreakdownsBaseTable = db.$with('dailyBreakdownsBaseTable').as(
     db
@@ -40,16 +41,17 @@ export const getRevenueSummary = async (
       .orderBy(orderCreatedAtWithTimezone)
   )
 
-  const revenueSummary = await db
+  const [revenueSummary] = await db
     .with(dailyBreakdownsBaseTable)
     .select({
       totalOrders: sum(dailyBreakdownsBaseTable.dailyOrders).as('totalOrders'),
       totalRevenue: sum(dailyBreakdownsBaseTable.dailyRevenue).as(
         'totalRevenue'
       ),
-      averageOrderValue: avg(dailyBreakdownsBaseTable.dailyRevenue).as(
-        'averageOrderValue'
-      ),
+      averageOrderValue:
+        sql<number>`sum(${dailyBreakdownsBaseTable.dailyRevenue}) / sum(${dailyBreakdownsBaseTable.dailyOrders})`.as(
+          'averageOrderValue'
+        ),
       dailyBreakdowns: jsonAgg(dailyBreakdownsBaseTable),
     })
     .from(dailyBreakdownsBaseTable)

@@ -52,7 +52,7 @@ const adminMenuItems = [
     icon: 'notebook-pen' as const,
     items: [
       {
-        title: 'Relatórios',
+        title: 'Desempenho',
         url: '/reports',
         icon: 'chart-spline' as const,
       },

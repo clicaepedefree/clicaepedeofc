@@ -3,9 +3,7 @@ import {
   AnyTable,
   Column,
   ColumnsSelection,
-  GetColumnData,
   getTableColumns,
-  InferColumnsDataTypes,
   InferSelectModel,
   sql,
   Subquery,
@@ -91,6 +89,23 @@ export function jsonAgg2<T extends AnyTable<TableConfig> | AnyColumn>(
   return sql<R[] | null>`json_agg(${selection})`
 }
 
+type InferSQLDataType<T extends SQL | SQL.Aliased> =
+  T extends SQL<infer U> ? U : T extends SQL.Aliased<infer U> ? U : never
+
+type InferColumnDataType<T extends Column> = T['_']['notNull'] extends true
+  ? T['_']['data']
+  : T['_']['data'] | null
+
+type InferRecordDataTypes<
+  T extends Record<string, Column | SQL | SQL.Aliased>,
+> = {
+  [K in keyof T]: T[K] extends SQL | SQL.Aliased
+    ? InferSQLDataType<T[K]>
+    : T[K] extends Column
+      ? InferColumnDataType<T[K]>
+      : never
+}
+
 export function jsonAgg<T extends Table | Column | Subquery | AnyPgSelect>(
   selection: T,
   { notNull = true }: { notNull?: boolean } = {}
@@ -98,9 +113,9 @@ export function jsonAgg<T extends Table | Column | Subquery | AnyPgSelect>(
   T extends Table
     ? InferSelectModel<T>
     : T extends Column
-      ? GetColumnData<T>[]
+      ? InferColumnDataType<T>[]
       : T extends Subquery
-        ? InferColumnsDataTypes<T['_']['selectedFields']>[]
+        ? InferRecordDataTypes<T['_']['selectedFields']>[]
         : T extends AnyPgSelect
           ? Awaited<T>
           : never
