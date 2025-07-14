@@ -87,7 +87,7 @@ export function RevenueMultilineChart({
       <CardHeader className="flex flex-col items-stretch border-b !px-0 !py-2 sm:flex-row">
         <div className="flex flex-1 flex-col justify-center gap-1 px-6 sm:pb-0">
           <CardTitle>Receita da loja</CardTitle>
-          <CardDescription>Total de vendas</CardDescription>
+          <CardDescription>Dados de vendas por dia</CardDescription>
         </div>
         <div className="flex">
           <div className="data-[active=true]:bg-muted/50 relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 text-left even:border-l sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
