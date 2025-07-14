@@ -17,6 +17,8 @@ import {
 } from '@/shared/chart'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { formatDate } from '@/shared/formatters/date'
+import { LoadingSpinner } from '@/shared/spinner'
+import { Body } from '@/shared/typography/body'
 import { useMemo, useState } from 'react'
 
 export const description = 'A multiple line chart'
@@ -48,6 +50,7 @@ type RevenueMultilineChartProps = {
     startDate: string
     endDate: string
   }
+  isLoading?: boolean
 }
 
 type ChartKey = keyof typeof chartConfig
@@ -57,6 +60,7 @@ const chartKeys = Object.keys(chartConfig) as ChartKey[]
 export function RevenueMultilineChart({
   chartData,
   dates,
+  isLoading,
 }: RevenueMultilineChartProps) {
   const [activeCharts, setActiveCharts] = useState<ChartKey[]>(['dailyRevenue'])
 
@@ -100,7 +104,19 @@ export function RevenueMultilineChart({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative">
+        {!chartData.length && (
+          <Body
+            variant={100}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center pt-4 pb-10 h-full flex items-center justify-center"
+          >
+            {isLoading ? (
+              <LoadingSpinner />
+            ) : (
+              'Loja não possui vendas no período'
+            )}
+          </Body>
+        )}
         <ChartContainer config={chartConfig} className="h-80 w-full">
           <LineChart
             accessibilityLayer

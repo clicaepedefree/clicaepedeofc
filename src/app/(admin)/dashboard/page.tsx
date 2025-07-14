@@ -10,8 +10,6 @@ import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/card'
 import { Combobox } from '@/shared/combobox'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
-import { LoadingSpinner } from '@/shared/spinner'
-import { Body } from '@/shared/typography/body'
 import { useState } from 'react'
 
 export default function Page() {
@@ -42,54 +40,47 @@ export default function Page() {
             />
           </div>
         </div>
-        {(isLoading || !isEnabled) && <LoadingSpinner />}
-        {!isLoading && isEnabled && !revenueSummary?.dailyBreakdowns && (
-          <Body variant={100} className="w-full text-center py-4">
-            Loja não possui vendas para o período
-          </Body>
-        )}
-        {!!revenueSummary?.dailyBreakdowns && (
-          <>
-            <div className="grid auto-rows-min gap-4 md:grid-cols-3 mb-4">
-              <Card className="@container/card w-full">
-                <CardHeader className="w-fit">
-                  <CardDescription>Receita Total</CardDescription>
-                  <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-                    {formatValueToCurrency({
-                      value: revenueSummary.totalRevenue ?? 0,
-                      includeCurrencySymbol: true,
-                    })}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card className="@container/card">
-                <CardHeader>
-                  <CardDescription>Total de vendas</CardDescription>
-                  <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-                    {revenueSummary.totalOrders} pedidos
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-              <Card className="@container/card">
-                <CardHeader>
-                  <CardDescription>Ticket médio</CardDescription>
-                  <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-                    {formatValueToCurrency({
-                      value: revenueSummary.averageOrderValue ?? 0,
-                      includeCurrencySymbol: true,
-                    })}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-            </div>
-            {revenueSummary.dailyBreakdowns && (
-              <RevenueMultilineChart
-                chartData={revenueSummary.dailyBreakdowns}
-                dates={dates}
-              />
-            )}
-          </>
-        )}
+        <>
+          <div className="grid auto-rows-min gap-4 md:grid-cols-3 mb-4">
+            <Card className="@container/card w-full">
+              <CardHeader className="w-fit">
+                <CardDescription>Receita Total</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                  {formatValueToCurrency({
+                    value: revenueSummary?.totalRevenue ?? 0,
+                    includeCurrencySymbol: true,
+                  })}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card className="@container/card">
+              <CardHeader>
+                <CardDescription>Total de vendas</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                  {revenueSummary?.totalOrders ?? 0} pedidos
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card className="@container/card">
+              <CardHeader>
+                <CardDescription>Ticket médio</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+                  {revenueSummary?.averageOrderValue
+                    ? formatValueToCurrency({
+                        value: revenueSummary.averageOrderValue,
+                        includeCurrencySymbol: true,
+                      })
+                    : '-'}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+          <RevenueMultilineChart
+            chartData={revenueSummary?.dailyBreakdowns ?? []}
+            dates={dates}
+            isLoading={isLoading}
+          />
+        </>
       </div>
     </>
   )
