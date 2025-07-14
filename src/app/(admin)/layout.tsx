@@ -15,7 +15,7 @@ const adminMenuItems = [
   {
     title: 'Dashboard',
     url: '/dashboard',
-    icon: 'chart-pie' as const,
+    icon: 'chart-spline' as const,
   },
   {
     type: 'section' as const,
@@ -51,11 +51,11 @@ const adminMenuItems = [
     title: 'Gestão',
     icon: 'notebook-pen' as const,
     items: [
-      {
-        title: 'Desempenho',
-        url: '/reports',
-        icon: 'chart-spline' as const,
-      },
+      // {
+      //   title: 'Relatórios',
+      //   url: '/reports',
+      //   icon: 'file-spreadsheet' as const,
+      // },
     ],
   },
 ]

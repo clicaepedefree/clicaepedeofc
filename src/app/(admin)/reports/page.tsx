@@ -23,7 +23,7 @@ export default function Page() {
 
   return (
     <>
-      <AdminPageInfo pageInfo={{ title: 'Desempenho de Vendas' }} />
+      <AdminPageInfo pageInfo={{ title: 'Relatórios' }} />
       <div className="p-4 max-w-[inherit]">
         <div className="flex items-center justify-between gap-4 w-full mb-4">
           <div className="min-w-52">
