@@ -8,6 +8,8 @@ import { LoadingSpinner } from '@/shared/spinner'
 import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { useAtom } from 'jotai'
+import { useRef } from 'react'
+import { useReactToPrint } from 'react-to-print'
 
 export default function Page() {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
@@ -17,6 +19,19 @@ export default function Page() {
     isLoading: isLoadingCounters,
     openCounterPage: onOpenCounter,
   } = useCounters()
+  const contentRef = useRef<HTMLDivElement>(null)
+  const content = (
+    <div className="hidden h-0 w-0 print:block" ref={contentRef}>
+      \n ABERTURA DE CAIXA \n\n************************************\n\nData
+      Abertura: 10/07/2025 14:43\nResponsável: Gustavo Almeida\nCaixa.....:
+      1752169381\n\n\nAbertura do caixa.............R$ 10,00\n\n\n
+      _________________________\nAssinatura\n
+    </div>
+  )
+
+  const printContent = useReactToPrint({
+    contentRef,
+  })
 
   if (isLoadingCounters || !selectedStoreId) return <LoadingSpinner />
 
@@ -33,6 +48,8 @@ export default function Page() {
             ? 'Selecione um balcão para abrir o ponto de venda'
             : 'Define o nome do seu primeiro balcão abaixo'}
         </Body>
+        {content}
+        <button onClick={printContent}>Print</button>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4 items-center justify-items-center overflow-y-hidden p-6">
         {counters?.map(counter => (
