@@ -25,6 +25,13 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  webpack(config: import('webpack').Configuration) {
+    config.module?.rules?.push({
+      test: /.*\.receipt$/,
+      use: 'raw-loader',
+    })
+    return config
+  },
 }
 
 module.exports = nextConfig
