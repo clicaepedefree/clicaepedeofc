@@ -23,7 +23,8 @@ export default function Page() {
     openCounterPage: onOpenCounter,
   } = useCounters()
 
-  const { printReceipt, ReceiptContent } = useReceipt<TestTemplateInput>()
+  const { printReceipt, ReceiptContent, isPrinting } =
+    useReceipt<TestTemplateInput>()
 
   if (isLoadingCounters || !selectedStoreId) return <LoadingSpinner />
 
@@ -47,10 +48,11 @@ export default function Page() {
         />
         <button
           onClick={async () => {
-            printReceipt({ title })
+            await printReceipt({ title })
           }}
+          className="flex items-center gap-2"
         >
-          Click
+          Click {isPrinting ? <LoadingSpinner /> : null}
         </button>
         {ReceiptContent}
       </div>
