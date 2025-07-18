@@ -10,6 +10,21 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  experimental: {
+    turbo: {
+      rules: {
+        '*.receipt': {
+          loaders: [
+            {
+              loader: 'raw-loader',
+              options: { esModule: false },
+            },
+          ],
+          as: '*.js',
+        },
+      },
+    },
+  },
 }
 
 module.exports = nextConfig

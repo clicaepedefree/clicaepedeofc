@@ -1,5 +1,3 @@
-export {}
-
 declare global {
   interface CustomJwtSessionClaims {
     metadata: {
@@ -7,4 +5,10 @@ declare global {
       userId?: string
     }
   }
+  module '*.receipt' {
+    const content: string
+    export default content
+  }
 }
+
+export {}
