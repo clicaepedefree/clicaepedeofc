@@ -1,5 +1,6 @@
 'use client'
 
+import { useReceipt } from '@/features/receipt/hooks/use-receipt'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
@@ -30,6 +31,7 @@ export const OpenCounterForm = ({
   FooterContainerComponent,
 }: OpenCounterFormProps) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { isPrinting, printReceipt, ReceiptContent } = useReceipt()
 
   const form = useForm({
     defaultValues: {
@@ -46,7 +48,7 @@ export const OpenCounterForm = ({
         return
       }
 
-      await openCounter({
+      const openedSession = await openCounter({
         storeId: selectedStoreId,
         counterId: counter.id,
         openAmount: formatValueToCurrency({ value: value.openAmount }),
@@ -55,6 +57,9 @@ export const OpenCounterForm = ({
 
       form.reset()
       onSuccess?.()
+      if (openedSession?.openReceipt) {
+        printReceipt(openedSession.openReceipt)
+      }
       return
     },
   })
@@ -80,7 +85,8 @@ export const OpenCounterForm = ({
           </Button>
           <Button
             type="submit"
-            disabled={!canSubmit}
+            isLoading={isPrinting}
+            disabled={!canSubmit || isPrinting}
             onClick={form.handleSubmit}
           >
             {`Abrir balcão '${counter.name}'`}
@@ -136,6 +142,7 @@ export const OpenCounterForm = ({
       {FooterContainerComponent && (
         <FooterContainerComponent>{footerActions}</FooterContainerComponent>
       )}
+      {ReceiptContent}
     </>
   )
 }

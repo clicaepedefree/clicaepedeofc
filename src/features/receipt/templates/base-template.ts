@@ -8,12 +8,18 @@ export type ReceiptTemplateOptions = {
 
 export const BaseTemplate = <T extends ReceiptTemplateInput>({
   templateText,
+  preProcessing,
 }: {
   templateText: string
+  preProcessing?: (data: T) => T
 }): ReceiptTemplate<T> => ({
   templateText,
   render: async (data: T, options?: ReceiptTemplateOptions) => {
-    const renderedTemplate = renderMustacheTemplate(templateText, data)
+    const templateInputData = preProcessing ? preProcessing(data) : data
+    const renderedTemplate = renderMustacheTemplate(
+      templateText,
+      templateInputData
+    )
     const receiptAsSvgString = generateReceiptSvg(renderedTemplate, options)
 
     return receiptAsSvgString

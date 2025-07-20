@@ -64,7 +64,27 @@ export const openCounterOnDb = async (props: {
   operatorId: UserId
   openAmount: string
   openNotes: string | null
-}) => await db.insert(counterSessionsTable).values(props).returning()
+}) => {
+  const result = await db.insert(counterSessionsTable).values(props).returning()
+
+  return result[0]
+}
+
+export const updateOpenCounterReceiptForSessionOnDb = async ({
+  counterSessionId,
+  receipt,
+}: {
+  counterSessionId: number
+  receipt: string
+}) => {
+  const result = await db
+    .update(counterSessionsTable)
+    .set({ openReceipt: receipt })
+    .where(eq(counterSessionsTable.id, counterSessionId))
+    .returning()
+
+  return result[0]
+}
 
 export const closeCounterOnDb = async ({
   counterSessionId,

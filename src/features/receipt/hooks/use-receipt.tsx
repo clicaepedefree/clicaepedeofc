@@ -1,21 +1,14 @@
-import { generateTestTemplate } from '@/features/receipt/api'
-import { TestTemplateInput } from '@/features/receipt/templates/test'
-import { ReceiptTemplateInput } from '@/features/receipt/types'
 import { JSX, useEffect, useId, useRef, useState } from 'react'
 import { useReactToPrint } from 'react-to-print'
 
-export const useReceipt = <T extends ReceiptTemplateInput>() => {
+export const useReceipt = (onPrintEndCallback?: () => void) => {
   const receiptNonceId = useId()
   const receiptPrintableContentRef = useRef<HTMLDivElement>(null)
   const [receiptImage, setReceiptImage] = useState<JSX.Element | null>(null)
 
   const [isPrinting, setIsPrinting] = useState(false)
 
-  const updateReceiptContent = async (data: T) => {
-    const receiptSvg = await generateTestTemplate(
-      data as unknown as TestTemplateInput
-    )
-
+  const updateReceiptContent = async (receiptSvg: string) => {
     const receiptImageComponent = receiptSvg ? (
       <img src={`data:image/svg+xml;utf8,${encodeURIComponent(receiptSvg)}`} />
     ) : null
@@ -37,12 +30,13 @@ export const useReceipt = <T extends ReceiptTemplateInput>() => {
     nonce: receiptNonceId,
     onAfterPrint: () => {
       setIsPrinting(false)
+      onPrintEndCallback?.()
     },
   })
 
-  const printReceipt = (data: T) => {
+  const printReceipt = (receiptSvg: string) => {
     setIsPrinting(true)
-    updateReceiptContent(data)
+    updateReceiptContent(receiptSvg)
   }
 
   useEffect(() => {

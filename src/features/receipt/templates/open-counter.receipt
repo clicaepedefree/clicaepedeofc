@@ -1,0 +1,20 @@
+
+ABERTURA DE CAIXA
+-
+{w:*,*}
+|Data Abertura: |{{{openedAt}}} |
+|Responsável: |{{operatorName}} |
+|Caixa: |({{counterId}}) {{counterName}} |
+
+
+|Abertura do caixa |{{openAmount}} |
+{w: auto}
+{{#openNotes}}
+
+|_Observações: 
+|{{openNotes}}
+{{/openNotes}}
+
+
+\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\__
+Assinatura

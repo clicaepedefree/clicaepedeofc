@@ -5,12 +5,14 @@ import { InsertCounter } from '@/services/db/schema'
 
 import { UseCaseError } from '@/shared/errors/use-case-error'
 import { PermissionsError } from '../../shared/errors/permissions-error'
+import { OpenCounterTemplate } from '../receipt/templates/open-counter'
 import {
   closeCounterOnDb,
   createStoreCounterOnDb,
   getCounterByIdOnDb,
   listStoreCountersOnDb,
   openCounterOnDb,
+  updateOpenCounterReceiptForSessionOnDb,
 } from './db'
 
 export const listCounters = async (storeId: number) => {
@@ -49,7 +51,27 @@ export const openCounter = async ({
     return
   }
 
-  await openCounterOnDb({ ...props, operatorId: user.id })
+  const newCounterSession = await openCounterOnDb({
+    ...props,
+    operatorId: user.id,
+  })
+
+  const newCounterReceipt = await OpenCounterTemplate.render({
+    openedAt: newCounterSession.openedAt,
+    openAmount: props.openAmount,
+    openNotes: props.openNotes,
+    operatorName: user.name ?? user.email,
+    counterId: newCounterSession.counterId,
+    counterName: counter.name,
+  })
+
+  const newCounterSessionWithReceipt =
+    await updateOpenCounterReceiptForSessionOnDb({
+      counterSessionId: newCounterSession.id,
+      receipt: newCounterReceipt,
+    })
+
+  return newCounterSessionWithReceipt
 }
 
 export const closeCounter = async ({
