@@ -34,10 +34,13 @@ export const counterSessionsTable = pgTable(
     openedAt: createdAtColumnGenerator('opened_at'),
     openAmount: baseCurrencyColumnGenerator('open_amount').notNull(),
     openNotes: text('open_notes'),
+    openReceipt: text('open_receipt'),
 
     closedAt: baseTimestampColumnGenerator('closed_at'),
     closeAmount: baseCurrencyColumnGenerator('close_amount'),
     closeNotes: text('close_notes'),
+    closeReceipt: text('close_receipt'),
+
     closedByOperatorId: uuid('closed_by_operator_id').references(
       () => usersTable.id,
       {
