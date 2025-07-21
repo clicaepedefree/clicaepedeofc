@@ -1,0 +1,20 @@
+FECHAMENTO DO CAIXA
+-
+{w:*,*}
+|Data Abertura: |{{{openedAt}}} |
+|Data Fechamento: |{{{closedAt}}} |
+|Responsável: |{{operatorName}} |
+|Caixa: |({{counterId}}) {{counterName}} |
+
+|Abertura do caixa |{{openAmount}} |
+|Fechamento do caixa |{{closeAmount}} |
+{w: auto}
+{{#closeNotes}}
+
+|_Observações: 
+|{{closeNotes}}
+{{/closeNotes}}
+
+
+\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\__
+Assinatura

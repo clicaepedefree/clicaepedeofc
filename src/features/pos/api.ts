@@ -5,6 +5,7 @@ import { InsertCounter } from '@/services/db/schema'
 
 import { UseCaseError } from '@/shared/errors/use-case-error'
 import { PermissionsError } from '../../shared/errors/permissions-error'
+import { CloseCounterTemplate } from '../receipt/templates/close-counter'
 import { OpenCounterTemplate } from '../receipt/templates/open-counter'
 import {
   closeCounterOnDb,
@@ -12,6 +13,7 @@ import {
   getCounterByIdOnDb,
   listStoreCountersOnDb,
   openCounterOnDb,
+  updateCloseCounterReceiptForSessionOnDb,
   updateOpenCounterReceiptForSessionOnDb,
 } from './db'
 
@@ -100,10 +102,29 @@ export const closeCounter = async ({
     })
   }
 
-  await closeCounterOnDb({
+  const closedCounterSession = await closeCounterOnDb({
     counterSessionId: counter.currentSession.id,
     closedByOperatorId: user.id,
     closeAmount: props.closeAmount,
     closeNotes: props.closeNotes,
   })
+
+  const closedCounterReceipt = await CloseCounterTemplate.render({
+    openedAt: closedCounterSession.openedAt,
+    closedAt: closedCounterSession.closedAt!,
+    openAmount: closedCounterSession.openAmount,
+    closeAmount: props.closeAmount,
+    closeNotes: props.closeNotes,
+    operatorName: user.name ?? user.email,
+    counterId: closedCounterSession.counterId,
+    counterName: counter.name,
+  })
+
+  const closedCounterSessionWithReceipt =
+    await updateCloseCounterReceiptForSessionOnDb({
+      counterSessionId: closedCounterSession.id,
+      receipt: closedCounterReceipt,
+    })
+
+  return closedCounterSessionWithReceipt
 }

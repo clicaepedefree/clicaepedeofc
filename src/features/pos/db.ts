@@ -3,6 +3,7 @@ import {
   counterSessionsTable,
   countersTable,
   InsertCounter,
+  SelectCounterSession,
   usersTable,
 } from '@/services/db/schema'
 import { getSubQueryColumns } from '@/services/db/utils'
@@ -94,9 +95,30 @@ export const closeCounterOnDb = async ({
   closedByOperatorId: UserId
   closeAmount: string
   closeNotes: string | null
-}) =>
-  await db
+}): Promise<
+  NonNullableBy<SelectCounterSession, 'closedAt' | 'closedByOperatorId'>
+> => {
+  const result = await db
     .update(counterSessionsTable)
     .set({ ...props, status: 'CLOSED', closedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(counterSessionsTable.id, counterSessionId))
     .returning()
+
+  return result[0]
+}
+
+export const updateCloseCounterReceiptForSessionOnDb = async ({
+  counterSessionId,
+  receipt,
+}: {
+  counterSessionId: number
+  receipt: string
+}) => {
+  const result = await db
+    .update(counterSessionsTable)
+    .set({ closeReceipt: receipt })
+    .where(eq(counterSessionsTable.id, counterSessionId))
+    .returning()
+
+  return result[0]
+}

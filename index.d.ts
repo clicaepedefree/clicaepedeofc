@@ -7,6 +7,7 @@ type WithNullableFields<T, Fields> = {
 }
 
 type PartialBy<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>
+type NonNullableBy<T, K extends keyof T> = Omit<T, K> & NonNullable<Pick<T, K>>
 type RequiredBy<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>
 
 type ComponentWithChildren = React.FC<{ children: React.ReactNode }>

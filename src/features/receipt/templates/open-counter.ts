@@ -1,6 +1,7 @@
 import openCounterTemplateFile from '@/features/receipt/templates/open-counter.receipt'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { formatDate } from '@/shared/formatters/date'
+import { formatMultilineString } from '../formatters'
 import { BaseTemplate } from './base-template'
 
 export type OpenCounterTemplateInput = {
@@ -19,7 +20,9 @@ export const OpenCounterTemplate = BaseTemplate<OpenCounterTemplateInput>({
       value: data.openAmount,
       includeCurrencySymbol: true,
     })
-    const formattedNotes = data.openNotes ? formatOpenNotes(data.openNotes) : ''
+    const formattedNotes = data.openNotes
+      ? formatMultilineString(data.openNotes)
+      : ''
     return {
       ...data,
       openedAt: formattedDate,
@@ -28,8 +31,3 @@ export const OpenCounterTemplate = BaseTemplate<OpenCounterTemplateInput>({
     }
   },
 })
-
-const formatOpenNotes = (notes: string) => {
-  const notesLines = notes.split('\n')
-  return notesLines.join(' |\n')
-}
