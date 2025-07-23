@@ -47,7 +47,7 @@ export default function CounterPage({}) {
   useEffect(() => {
     if (isLoading || !isEnabled || !!activeCounterId) return
     dispatchToast({
-      message: 'Selecione um balcão para utilizar o PDV',
+      message: 'Selecione um caixa para utilizar o PDV',
       type: 'warning',
     })
 
@@ -64,7 +64,7 @@ export default function CounterPage({}) {
           variant={300}
           className="flex items-center text-nowrap gap-4 w-56"
         >
-          Balcão:
+          Caixa:
           {counters && (
             <CounterSelector
               counters={counters}
@@ -86,7 +86,7 @@ export default function CounterPage({}) {
             onSuccess={() => {
               router.replace(`/pos`)
               dispatchToast({
-                message: `Balcão '${activeCounter.name}' fechado com sucesso`,
+                message: `Caixa '${activeCounter.name}' fechado com sucesso`,
                 type: 'success',
               })
             }}
@@ -96,7 +96,7 @@ export default function CounterPage({}) {
 
       {!canOperateActiveCounter && (
         <>
-          <Headline variant={500}>Você não pode operar este balcão</Headline>
+          <Headline variant={500}>Você não pode operar este caixa</Headline>
           <Body
             variant={300}
             fontWeight="regular"

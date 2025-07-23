@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const createCounterSchema = z.object({
   name: z
     .string()
-    .nonempty('Nome do balcão é obrigatório')
+    .nonempty('Nome do caixa é obrigatório')
     .min(3, 'Nome deve ter pelo menos 3 caracteres'),
 })
 

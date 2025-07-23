@@ -89,7 +89,7 @@ export const OpenCounterForm = ({
             disabled={!canSubmit || isPrinting}
             onClick={form.handleSubmit}
           >
-            {`Abrir balcão '${counter.name}'`}
+            {`Abrir caixa '${counter.name}'`}
           </Button>
         </div>
       )}

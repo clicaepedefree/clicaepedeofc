@@ -1,5 +1,6 @@
 export const useCaseErrorTypeToErrorCodeMapping = {
   IMMUTABLE_STATE: '1UC:',
+  NOT_FOUND: '2UC:',
 }
 
 export type UseCaseErrorType = keyof typeof useCaseErrorTypeToErrorCodeMapping

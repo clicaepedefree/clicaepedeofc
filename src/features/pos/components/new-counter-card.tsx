@@ -23,7 +23,7 @@ export const NewCounterCard = ({
         onClick={() => setIsCreating(true)}
       >
         <Plus className="mr-1 h-4 w-4" />
-        Adicionar Balcão
+        Adicionar Caixa
       </Button>
     )
 

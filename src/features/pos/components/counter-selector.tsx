@@ -25,9 +25,9 @@ export const CounterSelector = ({
         options={countersOptions}
         value={activeCounterIdAsString}
         onChange={value => onChangeCounter?.(Number(value))}
-        placeholder="Selecione um balcão"
-        searchPlaceholder="Buscar balcão"
-        noResultMessage="Nenhum balcão encontrado"
+        placeholder="Selecione um caixa"
+        searchPlaceholder="Buscar caixa"
+        noResultMessage="Nenhum caixa encontrado"
         disableUnselectingOption
       />
     </>

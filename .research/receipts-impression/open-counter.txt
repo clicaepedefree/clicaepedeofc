@@ -1,1 +1,16 @@
-"\n        <center>ABERTURA DE CAIXA</center>\n\n************************************\n\nData Abertura: 10/07/2025 14:43\nResponsável: Gustavo Almeida\nCaixa.....: 1752169381\n\n\nAbertura do caixa.............R$ 10,00\n\n\n<center>_______________________</center>\n<center>Assinatura</center>\n"
+"
+        <center>ABERTURA DE CAIXA</center>
+
+************************************
+
+Data Abertura: 10/07/2025 14:43
+Responsável: Gustavo Almeida
+Caixa.....: 1752169381
+
+
+Abertura do caixa.............R$ 10,00
+
+
+<center>_______________________</center>
+<center>Assinatura</center>
+"

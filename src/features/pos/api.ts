@@ -45,7 +45,7 @@ export const openCounter = async ({
   if (counter?.storeId !== storeId)
     throw new PermissionsError({
       type: 'FORBIDDEN',
-      message: 'Balcão não pertence a loja',
+      message: 'Caixa não pertence a loja',
     })
 
   if (counter?.currentSession?.status === 'OPEN') {
@@ -92,13 +92,13 @@ export const closeCounter = async ({
   if (counter?.storeId !== storeId)
     throw new PermissionsError({
       type: 'FORBIDDEN',
-      message: 'Balcão não pertence a loja',
+      message: 'Caixa não pertence a loja',
     })
 
   if (counter.currentSession?.status !== 'OPEN') {
     throw new UseCaseError({
       type: 'IMMUTABLE_STATE',
-      message: 'Sessão do balcão não pode ser alterada por não estar aberta',
+      message: 'Sessão do caixa não pode ser alterada por não estar aberta',
     })
   }
 
@@ -127,4 +127,32 @@ export const closeCounter = async ({
     })
 
   return closedCounterSessionWithReceipt
+}
+
+export const getCounterSessionSummary = async ({
+  storeId,
+  counterId,
+  sessionId,
+}: {
+  storeId: number
+  counterId: number
+  sessionId?: number
+}) => {
+  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const counter = await getCounterByIdOnDb(counterId)
+
+  if (counter?.storeId !== storeId)
+    throw new PermissionsError({
+      type: 'FORBIDDEN',
+      message: 'Caixa não pertence a loja',
+    })
+
+  if (!counter.currentSession) {
+    throw new UseCaseError({
+      type: 'NOT_FOUND',
+      message: 'Caixa não possui nenhuma sessão aberta',
+    })
+  }
+
+  return counter.currentSession
 }

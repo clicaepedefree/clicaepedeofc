@@ -17,7 +17,7 @@ export const OpenCounterAction = ({
 }: OpenCounterActionProps) => {
   return (
     <BaseSideBarActionForm
-      title={`Abrir balcão '${counter.name}'`}
+      title={`Abrir caixa '${counter.name}'`}
       description="Insira o valor disponível no caixa."
       trigger={trigger}
     >

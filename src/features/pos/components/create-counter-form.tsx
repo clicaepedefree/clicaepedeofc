@@ -39,7 +39,7 @@ export const CreateCounterForm = ({
             <div className="flex items-center gap-2">
               <Input
                 type="text"
-                placeholder="Nome do balcão"
+                placeholder="Nome do caixa"
                 value={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={e => field.handleChange(e.target.value)}

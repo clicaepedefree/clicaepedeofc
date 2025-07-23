@@ -13,7 +13,7 @@ export const useCounter = () => {
   const createCounterMutation = useMutation({
     mutationFn: async ({ name }: { name: string }) => {
       if (!selectedStoreId) {
-        console.error('Selecione uma loja antes de criar um balcão.')
+        console.error('Selecione uma loja antes de criar um caixa.')
         return
       }
       await createCounterApi({ storeId: selectedStoreId, name })
@@ -26,7 +26,7 @@ export const useCounter = () => {
     onError: (error, counterToCreate) => {
       const errorMessage = isPermissionsError(error)
         ? error.message
-        : `Erro ao criar balcão '${counterToCreate.name}'`
+        : `Erro ao criar caixa '${counterToCreate.name}'`
 
       dispatchToast({
         message: errorMessage,
@@ -35,7 +35,7 @@ export const useCounter = () => {
     },
     onSuccess: (_, counterToCreate) => {
       dispatchToast({
-        message: `Balcão '${counterToCreate.name}' criado`,
+        message: `Caixa '${counterToCreate.name}' criado`,
         type: 'success',
       })
     },

@@ -26,12 +26,12 @@ export default function Page() {
     <>
       <div className="bg-white border-b-2 p-4 space-y-2 ">
         <Headline variant={300}>
-          {hasCounters ? 'Selecione um balcão' : 'Crie seu primeiro balcão'}
+          {hasCounters ? 'Selecione um caixa' : 'Crie seu primeiro caixa'}
         </Headline>
         <Body fontWeight="light" highlight="secondary" variant={100}>
           {hasCounters
-            ? 'Selecione um balcão para abrir o ponto de venda'
-            : 'Define o nome do seu primeiro balcão abaixo'}
+            ? 'Selecione um caixa para abrir o ponto de venda'
+            : 'Define o nome do seu primeiro caixa abaixo'}
         </Body>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4 items-center justify-items-center overflow-y-hidden p-6">

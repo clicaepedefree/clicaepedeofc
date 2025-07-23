@@ -17,7 +17,7 @@ export const CloseCounterAction = ({
 }: CloseCounterActionProps) => {
   return (
     <BaseSideBarActionForm
-      title={`Fechar balcão '${counter.name}'`}
+      title={`Fechar caixa '${counter.name}'`}
       description="Insira o valor restante no caixa."
       trigger={trigger}
     >
