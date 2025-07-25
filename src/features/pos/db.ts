@@ -1,13 +1,30 @@
+'use server'
+
 import { db } from '@/services/db'
 import {
   counterSessionsTable,
   countersTable,
   InsertCounter,
+  ordersTable,
   SelectCounterSession,
   usersTable,
 } from '@/services/db/schema'
+import { orderPaymentsTable } from '@/services/db/schema/order-payments'
 import { getSubQueryColumns } from '@/services/db/utils'
-import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm'
+import {
+  and,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  isNull,
+  lte,
+  or,
+  sql,
+  sum,
+} from 'drizzle-orm'
+import { unionAll } from 'drizzle-orm/pg-core'
 import { UserId } from '../user/types'
 
 const currentCounterSessionSubQuery = db
@@ -58,6 +75,24 @@ export const createStoreCounterOnDb = async (newCounter: InsertCounter) =>
 export const getCounterByIdOnDb = async (counterId: number) => {
   const [counter] = await listCountersQuery({ counterId })
   return counter as typeof counter | undefined
+}
+
+export const getCounterSessionByIdOnDb = async (counterSessionId: number) => {
+  const [counterSession] = await db
+    .select({
+      ...getTableColumns(counterSessionsTable),
+      counter: {
+        ...getTableColumns(countersTable),
+      },
+    })
+    .from(counterSessionsTable)
+    .leftJoin(
+      countersTable,
+      eq(countersTable.id, counterSessionsTable.counterId)
+    )
+    .where(eq(counterSessionsTable.id, counterSessionId))
+    .limit(1)
+  return counterSession as typeof counterSession | undefined
 }
 
 export const openCounterOnDb = async (props: {
@@ -121,4 +156,55 @@ export const updateCloseCounterReceiptForSessionOnDb = async ({
     .returning()
 
   return result[0]
+}
+
+export const calculateCounterSessionSummary = async (
+  counterSessionId: number
+) => {
+  const ordersAndPaymentsTempTable = db.$with('ordersAndPaymentsTempTable').as(
+    db
+      .select({
+        ...getTableColumns(ordersTable),
+        paymentValue: orderPaymentsTable.value,
+        paymentMethod: orderPaymentsTable.method,
+      })
+      .from(ordersTable)
+      .leftJoin(
+        orderPaymentsTable,
+        eq(orderPaymentsTable.orderId, ordersTable.id)
+      )
+      .leftJoin(
+        counterSessionsTable,
+        eq(counterSessionsTable.id, counterSessionId)
+      )
+      .where(
+        and(
+          eq(ordersTable.posCounterId, counterSessionsTable.counterId),
+          gte(ordersTable.createdAt, counterSessionsTable.openedAt),
+          or(
+            isNull(counterSessionsTable.closedAt),
+            lte(ordersTable.createdAt, counterSessionsTable.closedAt)
+          )
+        )
+      )
+  )
+
+  const query = db
+    .with(ordersAndPaymentsTempTable)
+    .select({
+      paymentMethod: ordersAndPaymentsTempTable.paymentMethod,
+      salesChannel: ordersAndPaymentsTempTable.salesChannel,
+      type: ordersAndPaymentsTempTable.type,
+      ordersCount: count(ordersAndPaymentsTempTable.id).as('ordersCount'),
+      total: sum(ordersAndPaymentsTempTable.paymentValue).as('total'),
+    })
+    .from(ordersAndPaymentsTempTable)
+    .groupBy(
+      sql`GROUPING SETS(${ordersAndPaymentsTempTable.paymentMethod}, ${ordersAndPaymentsTempTable.salesChannel}, ${ordersAndPaymentsTempTable.type})`
+    )
+
+  console.log(query.toSQL())
+
+  const result = await query
+  return result
 }

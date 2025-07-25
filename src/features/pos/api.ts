@@ -8,9 +8,11 @@ import { PermissionsError } from '../../shared/errors/permissions-error'
 import { CloseCounterTemplate } from '../receipt/templates/close-counter'
 import { OpenCounterTemplate } from '../receipt/templates/open-counter'
 import {
+  calculateCounterSessionSummary,
   closeCounterOnDb,
   createStoreCounterOnDb,
   getCounterByIdOnDb,
+  getCounterSessionByIdOnDb,
   listStoreCountersOnDb,
   openCounterOnDb,
   updateCloseCounterReceiptForSessionOnDb,
@@ -132,27 +134,30 @@ export const closeCounter = async ({
 export const getCounterSessionSummary = async ({
   storeId,
   counterId,
-  sessionId,
+  counterSessionId,
 }: {
   storeId: number
   counterId: number
-  sessionId?: number
+  counterSessionId: number
 }) => {
-  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
-  const counter = await getCounterByIdOnDb(counterId)
+  await validateUserPermissionsForStore(storeId, 'admin')
+  const counterSession = await getCounterSessionByIdOnDb(counterSessionId)
 
-  if (counter?.storeId !== storeId)
+  if (counterSession?.counter?.storeId !== storeId)
     throw new PermissionsError({
       type: 'FORBIDDEN',
       message: 'Caixa não pertence a loja',
     })
 
-  if (!counter.currentSession) {
+  if (counterSession.counter.id !== counterId) {
     throw new UseCaseError({
       type: 'NOT_FOUND',
-      message: 'Caixa não possui nenhuma sessão aberta',
+      message: 'Sessão do caixa não encontrada',
     })
   }
 
-  return counter.currentSession
+  const counterSessionSummary =
+    await calculateCounterSessionSummary(counterSessionId)
+
+  return counterSessionSummary
 }

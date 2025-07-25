@@ -14,7 +14,7 @@ export const getRevenueSummary = async (
   await validateUserPermissionsForStore(storeId, 'admin')
 
   const orderCreatedAtWithTimezone = sql<Date>`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`
-  const dailyBreakdownsBaseTable = db.$with('dailyBreakdownsBaseTable').as(
+  const dailyBreakdownsTempTable = db.$with('dailyBreakdownsTempTable').as(
     db
       .select({
         date: orderCreatedAtWithTimezone.as('date'),
@@ -42,19 +42,19 @@ export const getRevenueSummary = async (
   )
 
   const [revenueSummary] = await db
-    .with(dailyBreakdownsBaseTable)
+    .with(dailyBreakdownsTempTable)
     .select({
-      totalOrders: sum(dailyBreakdownsBaseTable.dailyOrders).as('totalOrders'),
-      totalRevenue: sum(dailyBreakdownsBaseTable.dailyRevenue).as(
+      totalOrders: sum(dailyBreakdownsTempTable.dailyOrders).as('totalOrders'),
+      totalRevenue: sum(dailyBreakdownsTempTable.dailyRevenue).as(
         'totalRevenue'
       ),
       averageOrderValue:
-        sql<number>`sum(${dailyBreakdownsBaseTable.dailyRevenue}) / sum(${dailyBreakdownsBaseTable.dailyOrders})`.as(
+        sql<number>`sum(${dailyBreakdownsTempTable.dailyRevenue}) / sum(${dailyBreakdownsTempTable.dailyOrders})`.as(
           'averageOrderValue'
         ),
-      dailyBreakdowns: jsonAgg(dailyBreakdownsBaseTable),
+      dailyBreakdowns: jsonAgg(dailyBreakdownsTempTable),
     })
-    .from(dailyBreakdownsBaseTable)
+    .from(dailyBreakdownsTempTable)
 
   return revenueSummary
 }

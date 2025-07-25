@@ -1,6 +1,4 @@
 import {
-  AnyColumn,
-  AnyTable,
   Column,
   ColumnsSelection,
   getTableColumns,
@@ -8,7 +6,6 @@ import {
   sql,
   Subquery,
   Table,
-  TableConfig,
   type SQL,
 } from 'drizzle-orm'
 import {
@@ -74,19 +71,6 @@ export function getSubQueryColumns<
     | WithSubqueryWithSelection<TColumnsSelection, TTableName>
 ): TColumnsSelection {
   return subquery._.selectedFields as TColumnsSelection
-}
-
-export function jsonAgg2<T extends AnyTable<TableConfig> | AnyColumn>(
-  selection: T,
-  { notNull = true }: { notNull?: boolean } = {}
-) {
-  type R = T extends AnyTable<TableConfig> ? InferSelectModel<T> : T
-  if (notNull) {
-    return sql<
-      R[] | null
-    >`json_agg(${selection}) filter (where ${selection} is not null)`
-  }
-  return sql<R[] | null>`json_agg(${selection})`
 }
 
 type InferSQLDataType<T extends SQL | SQL.Aliased> =
