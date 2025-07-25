@@ -2,7 +2,6 @@
 
 import { CounterCard } from '@/features/pos/components/counter-card'
 import { NewCounterCard } from '@/features/pos/components/new-counter-card'
-import { calculateCounterSessionSummary } from '@/features/pos/db'
 import { useCounters } from '@/features/pos/hooks/use-counters'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { LoadingSpinner } from '@/shared/spinner'
@@ -34,14 +33,6 @@ export default function Page() {
             ? 'Selecione um caixa para abrir o ponto de venda'
             : 'Define o nome do seu primeiro caixa abaixo'}
         </Body>
-        <button
-          onClick={async () => {
-            const summary = await calculateCounterSessionSummary(37)
-            console.log(summary)
-          }}
-        >
-          Get summary
-        </button>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] gap-4 items-center justify-items-center overflow-y-hidden p-6">
         {counters?.map(counter => (

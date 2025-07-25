@@ -10,7 +10,7 @@ import {
   usersTable,
 } from '@/services/db/schema'
 import { orderPaymentsTable } from '@/services/db/schema/order-payments'
-import { getSubQueryColumns, groupingSets } from '@/services/db/utils'
+import { getSubQueryColumns, groupByGroupingSets } from '@/services/db/utils'
 import {
   and,
   count,
@@ -24,7 +24,6 @@ import {
   sql,
   sum,
 } from 'drizzle-orm'
-import { unionAll } from 'drizzle-orm/pg-core'
 import { UserId } from '../user/types'
 
 const currentCounterSessionSubQuery = db
@@ -189,30 +188,47 @@ export const calculateCounterSessionSummary = async (
       )
   )
 
-  const groupingColumns = {
+  const { groupBySQL, groupingColumns } = groupByGroupingSets({
     paymentMethod: ordersAndPaymentsTempTable.paymentMethod,
     salesChannel: ordersAndPaymentsTempTable.salesChannel,
     type: ordersAndPaymentsTempTable.type,
-  }
+  })
 
-  const { sql: groupingSetsSQL, makeNullable } = groupingSets(
-    ordersAndPaymentsTempTable.paymentMethod,
-    ordersAndPaymentsTempTable.salesChannel,
-    ordersAndPaymentsTempTable.type
-  )
-
-  const query = db
+  const result = await db
     .with(ordersAndPaymentsTempTable)
     .select({
-      ...makeNullable(groupingColumns),
+      ...groupingColumns,
       ordersCount: count(ordersAndPaymentsTempTable.id).as('ordersCount'),
       total: sum(ordersAndPaymentsTempTable.paymentValue).as('total'),
     })
     .from(ordersAndPaymentsTempTable)
-    .groupBy(groupingSetsSQL)
+    .groupBy(groupBySQL)
 
-  console.log(query.toSQL())
+  type GroupingColumnsKeys = keyof typeof groupingColumns
+  type SummaryInfo = Pick<(typeof result)[number], 'ordersCount' | 'total'>
 
-  const result = await query
-  return result
+  const summary = result.reduce(
+    (acc, item) => {
+      const groupingKey = Object.keys(groupingColumns).find(
+        key => item[key as GroupingColumnsKeys] != null
+      ) as GroupingColumnsKeys
+
+      const { ordersCount, total } = item
+      const groupingCategory = item[groupingKey]!
+
+      const summaryInfo = {
+        ordersCount,
+        total,
+      }
+      const groupingKeySummaryInfo = acc[groupingKey] ?? {}
+
+      acc[groupingKey] = {
+        ...groupingKeySummaryInfo,
+        [groupingCategory]: summaryInfo,
+      }
+      return acc
+    },
+    {} as Record<GroupingColumnsKeys, Record<string, SummaryInfo>>
+  )
+  return summary
 }
