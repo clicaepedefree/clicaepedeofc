@@ -10,7 +10,7 @@ import {
   usersTable,
 } from '@/services/db/schema'
 import { orderPaymentsTable } from '@/services/db/schema/order-payments'
-import { getSubQueryColumns } from '@/services/db/utils'
+import { getSubQueryColumns, groupingSets } from '@/services/db/utils'
 import {
   and,
   count,
@@ -189,19 +189,27 @@ export const calculateCounterSessionSummary = async (
       )
   )
 
+  const groupingColumns = {
+    paymentMethod: ordersAndPaymentsTempTable.paymentMethod,
+    salesChannel: ordersAndPaymentsTempTable.salesChannel,
+    type: ordersAndPaymentsTempTable.type,
+  }
+
+  const { sql: groupingSetsSQL, makeNullable } = groupingSets(
+    ordersAndPaymentsTempTable.paymentMethod,
+    ordersAndPaymentsTempTable.salesChannel,
+    ordersAndPaymentsTempTable.type
+  )
+
   const query = db
     .with(ordersAndPaymentsTempTable)
     .select({
-      paymentMethod: ordersAndPaymentsTempTable.paymentMethod,
-      salesChannel: ordersAndPaymentsTempTable.salesChannel,
-      type: ordersAndPaymentsTempTable.type,
+      ...makeNullable(groupingColumns),
       ordersCount: count(ordersAndPaymentsTempTable.id).as('ordersCount'),
       total: sum(ordersAndPaymentsTempTable.paymentValue).as('total'),
     })
     .from(ordersAndPaymentsTempTable)
-    .groupBy(
-      sql`GROUPING SETS(${ordersAndPaymentsTempTable.paymentMethod}, ${ordersAndPaymentsTempTable.salesChannel}, ${ordersAndPaymentsTempTable.type})`
-    )
+    .groupBy(groupingSetsSQL)
 
   console.log(query.toSQL())
 
