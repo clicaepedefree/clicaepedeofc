@@ -206,6 +206,11 @@ export const calculateCounterSessionSummary = async (
 
   type GroupingColumnsKeys = keyof typeof groupingColumns
   type SummaryInfo = Pick<(typeof result)[number], 'ordersCount' | 'total'>
+  type GroupingCategory =
+    (typeof ordersAndPaymentsTempTable)[GroupingColumnsKeys]['_']['data']
+
+  type SummaryGroupingKey = 'orderType' | Exclude<GroupingColumnsKeys, 'type'>
+  type GroupingKeySummaryInfo = Record<GroupingCategory, SummaryInfo>
 
   const summary = result.reduce(
     (acc, item) => {
@@ -220,15 +225,18 @@ export const calculateCounterSessionSummary = async (
         ordersCount,
         total,
       }
-      const groupingKeySummaryInfo = acc[groupingKey] ?? {}
+      const summaryGroupingKey =
+        groupingKey === 'type' ? 'orderType' : groupingKey
+      const groupingKeySummaryInfo = acc[summaryGroupingKey] ?? {}
 
-      acc[groupingKey] = {
+      acc[summaryGroupingKey] = {
         ...groupingKeySummaryInfo,
         [groupingCategory]: summaryInfo,
       }
       return acc
     },
-    {} as Record<GroupingColumnsKeys, Record<string, SummaryInfo>>
+    {} as Record<SummaryGroupingKey, GroupingKeySummaryInfo>
   )
+
   return summary
 }

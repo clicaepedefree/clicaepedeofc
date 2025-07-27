@@ -4,6 +4,10 @@ import { validateUserPermissionsForStore } from '@/features/store/api'
 import { InsertCounter } from '@/services/db/schema'
 
 import { UseCaseError } from '@/shared/errors/use-case-error'
+import {
+  formatValueToCurrency,
+  getValueFromCurrencyString,
+} from '@/shared/formatters/currency'
 import { PermissionsError } from '../../shared/errors/permissions-error'
 import { CloseCounterTemplate } from '../receipt/templates/close-counter'
 import { OpenCounterTemplate } from '../receipt/templates/open-counter'
@@ -159,5 +163,36 @@ export const getCounterSessionSummary = async ({
   const counterSessionSummary =
     await calculateCounterSessionSummary(counterSessionId)
 
-  return counterSessionSummary
+  const expectedCashLeft =
+    getValueFromCurrencyString(counterSession.openAmount) +
+    getValueFromCurrencyString(
+      counterSessionSummary.paymentMethod.CASH.total ?? '0'
+    )
+
+  const totalSummary = Object.values(counterSessionSummary.orderType).reduce(
+    (acc, { total, ordersCount }) => {
+      acc.ordersCount += ordersCount
+      acc.total += getValueFromCurrencyString(total ?? '0')
+      return acc
+    },
+    {
+      ordersCount: 0,
+      total: 0,
+    }
+  )
+
+  return {
+    categoriesSummary: counterSessionSummary,
+    expectedCashLeft: formatValueToCurrency({
+      value: expectedCashLeft,
+      decimalPlaces: 4,
+    }),
+    totalSummary: {
+      ordersCount: totalSummary.ordersCount,
+      total: formatValueToCurrency({
+        value: totalSummary.total,
+        decimalPlaces: 4,
+      }),
+    },
+  }
 }

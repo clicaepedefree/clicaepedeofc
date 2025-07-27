@@ -2,7 +2,9 @@ import { useId } from 'react'
 
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
-import BaseCurrencyInput, { type CurrencyInputProps as BaseCurrencyInputProps } from 'react-currency-input-field'
+import BaseCurrencyInput, {
+  type CurrencyInputProps as BaseCurrencyInputProps,
+} from 'react-currency-input-field'
 import { baseCurrencyConfig } from './formatters/currency'
 import { cn } from './lib/utils'
 
@@ -27,16 +29,19 @@ export const CurrencyInput = ({
   return (
     <Label htmlFor={id} className={cn('w-full', className)}>
       {label}
-      <div className="flex w-[inherit] min-w-0">
+      <div className="flex w-[inherit] min-w-0 items-center">
         {prefixElement}
         {!hideCurrencySymbol && (
-          <span className="shadow-xs border-input bg-accent text-muted-foreground inline-flex items-center rounded-s border-r-0 border px-2 sm:px-3 text-sm">
+          <span className="shadow-xs border-input bg-accent text-muted-foreground inline-flex items-center rounded-s border-r-0 border px-2 sm:px-3 text-sm self-stretch">
             {baseCurrencyConfig.prefix}
           </span>
         )}
         <BaseCurrencyInput
           id={id}
-          className={cn('rounded-s-none shadow-xs px-2 sm:px-3', inputClassName)}
+          className={cn(
+            'rounded-s-none shadow-xs px-2 sm:px-3',
+            inputClassName
+          )}
           placeholder="10,50"
           type="text"
           decimalSeparator={baseCurrencyConfig.decimalSeparator}

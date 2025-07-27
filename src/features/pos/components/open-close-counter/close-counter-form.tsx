@@ -2,17 +2,22 @@
 
 import { useReceipt } from '@/features/receipt/hooks/use-receipt'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
+import { LoadingSpinner } from '@/shared/spinner'
+import { Table, TableBody, TableCell, TableRow } from '@/shared/table'
 import { Textarea } from '@/shared/textarea'
+import { Headline } from '@/shared/typography/headline'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
 import { z } from 'zod'
 import { closeCounter } from '../../api'
 import { closeCounterSchema } from '../../form-validation/counter.schema'
+import { useCounterSession } from '../../hooks/use-counter-session'
 import { Counter } from '../../types'
 
 type CloseCounterFormProps = {
@@ -31,6 +36,10 @@ export const CloseCounterForm = ({
   FooterContainerComponent,
 }: CloseCounterFormProps) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { counterSessionSummary, isLoading } = useCounterSession({
+    counterId: counter.id,
+    counterSessionId: counter.currentSession?.id,
+  })
   const { isPrinting, printReceipt, ReceiptContent } = useReceipt()
 
   const form = useForm({
@@ -98,6 +107,11 @@ export const CloseCounterForm = ({
 
   if (!selectedStoreId) return null
 
+  if (isLoading) return <LoadingSpinner />
+
+  const { expectedCashLeft = '0', categoriesSummary } =
+    counterSessionSummary ?? {}
+
   return (
     <>
       <form
@@ -111,9 +125,43 @@ export const CloseCounterForm = ({
           className
         )}
       >
+        <section>
+          <Headline variant={500}>Resumo de caixa</Headline>
+          <Table className="w-fit">
+            <TableBody>
+              <TableRow>
+                <TableCell>Caixa inicial:</TableCell>
+                <TableCell>
+                  {formatValueToCurrency({
+                    value: counter.currentSession?.openAmount ?? '0',
+                    includeCurrencySymbol: true,
+                  })}
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>Valor recebido em dinheiro:</TableCell>
+                <TableCell>
+                  {formatValueToCurrency({
+                    value: categoriesSummary?.paymentMethod.CASH.total ?? '0',
+                    includeCurrencySymbol: true,
+                  })}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </section>
         <form.Field name="closeAmount">
           {field => (
             <CurrencyInput
+              prefixElement={
+                <Badge variant="warning" className="mr-2 self-stretch">
+                  Esperado{' '}
+                  {formatValueToCurrency({
+                    value: expectedCashLeft,
+                    includeCurrencySymbol: true,
+                  })}
+                </Badge>
+              }
               label="Valor em dinheiro restante no caixa"
               value={field.state.value ?? ''}
               onValueChange={value => field.handleChange(value ?? '')}
