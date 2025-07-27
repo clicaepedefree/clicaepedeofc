@@ -16,6 +16,10 @@ _Recebimentos
 {{#paymentMethodsSummary}}
 |{{key}} |{{ordersCount}}| {{total}}|
 {{/paymentMethodsSummary}}
+{{^paymentMethodsSummary}}
+{w:auto}
+| Nenhum pedido registrado |
+{{/paymentMethodsSummary}}
 -
 
 {w: auto}
@@ -26,6 +30,10 @@ _Origem dos pedidos
 -
 {{#salesChannelsSummary}}
 |{{key}} |{{ordersCount}}| {{total}}|
+{{/salesChannelsSummary}}
+{{^salesChannelsSummary}}
+{w:auto}
+| Nenhum pedido registrado |
 {{/salesChannelsSummary}}
 -
 
@@ -38,6 +46,10 @@ _Formas de Entrega
 {{#orderTypesSummary}}
 |{{key}} |{{ordersCount}}| {{total}}|
 {{/orderTypesSummary}}
+{{^orderTypesSummary}}
+{w:auto}
+| Nenhum pedido registrado |
+{{/orderTypesSummary}}
 -
 
 {w: auto}
@@ -47,8 +59,6 @@ _Movimentos de caixa (dinheiro)
 |Dinheiro recebido |{{cashReceived}} |
 |Fechamento |{{closeAmount}} |
 -
-
-{w: auto}
 {{#closeNotes}}
 
 |_Observações: 
