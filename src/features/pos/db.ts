@@ -18,7 +18,7 @@ import {
 } from '@/shared/formatters/currency'
 import {
   and,
-  count,
+  countDistinct,
   desc,
   eq,
   getTableColumns,
@@ -207,7 +207,9 @@ export const calculateCounterSessionSummary = async (
     .with(ordersAndPaymentsTempTable)
     .select({
       ...groupingColumns,
-      ordersCount: count(ordersAndPaymentsTempTable.id).as('ordersCount'),
+      ordersCount: countDistinct(ordersAndPaymentsTempTable.id).as(
+        'ordersCount'
+      ),
       total: sum(ordersAndPaymentsTempTable.paymentValue).as('total'),
     })
     .from(ordersAndPaymentsTempTable)
