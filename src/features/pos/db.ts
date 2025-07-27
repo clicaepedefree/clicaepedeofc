@@ -10,7 +10,7 @@ import {
   usersTable,
 } from '@/services/db/schema'
 import { orderPaymentsTable } from '@/services/db/schema/order-payments'
-import { getSubQueryColumns, groupByGroupingSets } from '@/services/db/utils'
+import { getSubQueryColumns, groupingSets } from '@/services/db/utils'
 import {
   and,
   count,
@@ -188,7 +188,7 @@ export const calculateCounterSessionSummary = async (
       )
   )
 
-  const { groupBySQL, groupingColumns } = groupByGroupingSets({
+  const { groupingSetsSQL: groupSetsSQL, groupingColumns } = groupingSets({
     paymentMethod: ordersAndPaymentsTempTable.paymentMethod,
     salesChannel: ordersAndPaymentsTempTable.salesChannel,
     type: ordersAndPaymentsTempTable.type,
@@ -202,7 +202,7 @@ export const calculateCounterSessionSummary = async (
       total: sum(ordersAndPaymentsTempTable.paymentValue).as('total'),
     })
     .from(ordersAndPaymentsTempTable)
-    .groupBy(groupBySQL)
+    .groupBy(groupSetsSQL)
 
   type GroupingColumnsKeys = keyof typeof groupingColumns
   type SummaryInfo = Pick<(typeof result)[number], 'ordersCount' | 'total'>

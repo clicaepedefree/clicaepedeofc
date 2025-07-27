@@ -1,38 +1,31 @@
-import { Column, sql, type SQL } from 'drizzle-orm'
 import { MakeNullable } from '@/services/db/utils/types'
+import { Column, sql, type SQL } from 'drizzle-orm'
 
 /**
- * Creates a GROUPING SETS SQL expression and returns a helper to make columns nullable
- * in the selection for proper typing when using grouping sets.
+ * Creates a grouping with GROUPING SETS and returns the columns with proper nullable typing.
+ * This is a more direct approach than using groupingSets + makeNullable separately.
  *
- * @param columns - The columns to include in the grouping sets
- * @returns An object with the SQL expression and a helper to make columns nullable
+ * @param columnsSelection - Object containing the columns to group by
+ * @returns The SQL for groupBy and the columns with nullable types applied
  */
 export function groupingSets<
   T extends Record<string, Column | SQL | SQL.Aliased>,
 >(
-  ...columns: (Column | SQL | SQL.Aliased)[]
+  columnsSelection: T
 ): {
-  sql: SQL
-  makeNullable: <TSelection extends T>(
-    selection: TSelection
-  ) => MakeNullable<TSelection>
+  groupingSetsSQL: SQL
+  groupingColumns: MakeNullable<T>
 } {
-  const groupingSetsSQL = sql`GROUPING SETS(${sql.join(columns, sql`, `)})`
+  const columnValues = Object.values(columnsSelection)
+  const groupingSetsSQL = sql`GROUPING SETS(${sql.join(columnValues, sql`, `)})`
+
+  const groupingColumns = {} as MakeNullable<T>
+  for (const [key, column] of Object.entries(columnsSelection)) {
+    groupingColumns[key as keyof T] = column as any
+  }
 
   return {
-    sql: groupingSetsSQL,
-    makeNullable: <TSelection extends T>(
-      selection: TSelection
-    ): MakeNullable<TSelection> => {
-      const nullableSelection = {} as MakeNullable<TSelection>
-
-      for (const [key, column] of Object.entries(selection)) {
-        // Cast the column to be nullable for grouping sets results
-        nullableSelection[key as keyof TSelection] = column as any
-      }
-
-      return nullableSelection
-    },
+    groupingSetsSQL,
+    groupingColumns,
   }
 }

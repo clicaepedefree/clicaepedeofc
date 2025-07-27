@@ -2,7 +2,6 @@
 export * from './coalesce'
 export * from './getSubQueryColumns'
 export * from './getTableColumnsWithExclusions'
-export * from './groupByGroupingSets'
 export * from './groupingSets'
 export * from './jsonAgg'
 export * from './types'
