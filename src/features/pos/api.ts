@@ -3,6 +3,7 @@
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { InsertCounter } from '@/services/db/schema'
 
+import { db } from '@/services/db'
 import { UseCaseError } from '@/shared/errors/use-case-error'
 import {
   formatValueToCurrency,
@@ -108,29 +109,37 @@ export const closeCounter = async ({
     })
   }
 
-  const closedCounterSession = await closeCounterOnDb({
-    counterSessionId: counter.currentSession.id,
-    closedByOperatorId: user.id,
-    closeAmount: props.closeAmount,
-    closeNotes: props.closeNotes,
-  })
+  const counterSessionSummary = await calculateCounterSessionSummary(
+    counter.currentSession.id
+  )
 
-  const closedCounterReceipt = await CloseCounterTemplate.render({
-    openedAt: closedCounterSession.openedAt,
-    closedAt: closedCounterSession.closedAt!,
-    openAmount: closedCounterSession.openAmount,
-    closeAmount: props.closeAmount,
-    closeNotes: props.closeNotes,
-    operatorName: user.name ?? user.email,
-    counterId: closedCounterSession.counterId,
-    counterName: counter.name,
-  })
+  const closedCounterSessionWithReceipt = await db.transaction(async tx => {
+    const closedCounterSession = await closeCounterOnDb({
+      dbSession: tx,
+      counterSessionId: counter.currentSession.id,
+      closedByOperatorId: user.id,
+      closeAmount: props.closeAmount,
+      closeNotes: props.closeNotes,
+    })
 
-  const closedCounterSessionWithReceipt =
-    await updateCloseCounterReceiptForSessionOnDb({
+    const closedCounterReceipt = await CloseCounterTemplate.render({
+      openedAt: closedCounterSession.openedAt,
+      closedAt: closedCounterSession.closedAt!,
+      openAmount: closedCounterSession.openAmount,
+      closeAmount: props.closeAmount,
+      closeNotes: props.closeNotes,
+      operatorName: user.name ?? user.email,
+      counterId: closedCounterSession.counterId,
+      counterName: counter.name,
+      sessionSummary: counterSessionSummary,
+    })
+
+    return await updateCloseCounterReceiptForSessionOnDb({
       counterSessionId: closedCounterSession.id,
       receipt: closedCounterReceipt,
+      dbSession: tx,
     })
+  })
 
   return closedCounterSessionWithReceipt
 }
@@ -166,35 +175,14 @@ export const getCounterSessionSummary = async ({
   const expectedCashLeft =
     getValueFromCurrencyString(counterSession.openAmount) +
     getValueFromCurrencyString(
-      counterSessionSummary.paymentMethod?.CASH?.total ?? '0'
+      counterSessionSummary.categoriesSummary?.paymentMethod?.CASH?.total ?? '0'
     )
 
-  const totalSummary = Object.values(
-    counterSessionSummary?.orderType ?? {}
-  ).reduce(
-    (acc, { total, ordersCount }) => {
-      acc.ordersCount += ordersCount
-      acc.total += getValueFromCurrencyString(total ?? '0')
-      return acc
-    },
-    {
-      ordersCount: 0,
-      total: 0,
-    }
-  )
-
   return {
-    categoriesSummary: counterSessionSummary,
+    ...counterSessionSummary,
     expectedCashLeft: formatValueToCurrency({
       value: expectedCashLeft,
       decimalPlaces: 4,
     }),
-    totalSummary: {
-      ordersCount: totalSummary.ordersCount,
-      total: formatValueToCurrency({
-        value: totalSummary.total,
-        decimalPlaces: 4,
-      }),
-    },
   }
 }

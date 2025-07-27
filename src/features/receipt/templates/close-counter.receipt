@@ -1,13 +1,53 @@
 FECHAMENTO DO CAIXA
 -
 {w:*,*}
+|Caixa: |({{counterId}}) {{counterName}} |
 |Data Abertura: |{{{openedAt}}} |
 |Data Fechamento: |{{{closedAt}}} |
 |Responsável: |{{operatorName}} |
-|Caixa: |({{counterId}}) {{counterName}} |
 
-|Abertura do caixa |{{openAmount}} |
-|Fechamento do caixa |{{closeAmount}} |
+{w: auto}
+
+_Recebimentos
+-
+{w:19,*,*}
+|Forma de Pagamento |Pedidos| Valor|
+-
+{{#paymentMethodsSummary}}
+|{{key}} |{{ordersCount}}| {{total}}|
+{{/paymentMethodsSummary}}
+-
+
+{w: auto}
+_Origem dos pedidos
+-
+{w:19,*,*}
+|Origem |Pedidos| Valor|
+-
+{{#salesChannelsSummary}}
+|{{key}} |{{ordersCount}}| {{total}}|
+{{/salesChannelsSummary}}
+-
+
+{w: auto}
+_Formas de Entrega
+-
+{w:19,*,*}
+|Forma de Entrega |Pedidos| Valor|
+-
+{{#orderTypesSummary}}
+|{{key}} |{{ordersCount}}| {{total}}|
+{{/orderTypesSummary}}
+-
+
+{w: auto}
+_Movimentos de caixa (dinheiro)
+-
+|Abertura |{{openAmount}} |
+|Dinheiro recebido |{{cashReceived}} |
+|Fechamento |{{closeAmount}} |
+-
+
 {w: auto}
 {{#closeNotes}}
 

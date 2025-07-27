@@ -1,5 +1,8 @@
 import { InsertOrderItem } from '@/services/db/schema'
-import { InsertOrderPayment, SelectOrderPayment } from '@/services/db/schema/order-payments'
+import {
+  InsertOrderPayment,
+  SelectOrderPayment,
+} from '@/services/db/schema/order-payments'
 import { InsertOrder, SelectOrder } from '@/services/db/schema/orders'
 
 export type NewOrderItem = Omit<InsertOrderItem, 'id' | 'orderId'>
@@ -11,6 +14,7 @@ export type NewOrder = Omit<InsertOrder, 'id' | 'displayId'> & {
   payments: NewOrderPayment[]
 }
 
+export type PaymentMethod = SelectOrderPayment['method']
 export type SalesChannel = SelectOrder['salesChannel']
 export type OrderType = SelectOrder['type']
 

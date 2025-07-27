@@ -10,7 +10,12 @@ import {
   usersTable,
 } from '@/services/db/schema'
 import { orderPaymentsTable } from '@/services/db/schema/order-payments'
+import { DbSession } from '@/services/db/types'
 import { getSubQueryColumns, groupingSets } from '@/services/db/utils'
+import {
+  formatValueToCurrency,
+  getValueFromCurrencyString,
+} from '@/shared/formatters/currency'
 import {
   and,
   count,
@@ -123,16 +128,18 @@ export const updateOpenCounterReceiptForSessionOnDb = async ({
 
 export const closeCounterOnDb = async ({
   counterSessionId,
+  dbSession,
   ...props
 }: {
   counterSessionId: number
   closedByOperatorId: UserId
   closeAmount: string
   closeNotes: string | null
+  dbSession: DbSession
 }): Promise<
   NonNullableBy<SelectCounterSession, 'closedAt' | 'closedByOperatorId'>
 > => {
-  const result = await db
+  const result = await dbSession
     .update(counterSessionsTable)
     .set({ ...props, status: 'CLOSED', closedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(counterSessionsTable.id, counterSessionId))
@@ -144,11 +151,13 @@ export const closeCounterOnDb = async ({
 export const updateCloseCounterReceiptForSessionOnDb = async ({
   counterSessionId,
   receipt,
+  dbSession,
 }: {
   counterSessionId: number
   receipt: string
+  dbSession: DbSession
 }) => {
-  const result = await db
+  const result = await dbSession
     .update(counterSessionsTable)
     .set({ closeReceipt: receipt })
     .where(eq(counterSessionsTable.id, counterSessionId))
@@ -238,5 +247,26 @@ export const calculateCounterSessionSummary = async (
     {} as Record<SummaryGroupingKey, GroupingKeySummaryInfo>
   )
 
-  return summary
+  const totalSummary = Object.values(summary?.orderType ?? {}).reduce(
+    (acc, { total, ordersCount }) => {
+      acc.ordersCount += ordersCount
+      acc.total += getValueFromCurrencyString(total ?? '0')
+      return acc
+    },
+    {
+      ordersCount: 0,
+      total: 0,
+    }
+  )
+
+  return {
+    categoriesSummary: summary,
+    totalSummary: {
+      ordersCount: totalSummary.ordersCount,
+      total: formatValueToCurrency({
+        value: totalSummary.total,
+        decimalPlaces: 4,
+      }),
+    },
+  }
 }
