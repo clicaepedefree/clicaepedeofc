@@ -166,10 +166,12 @@ export const getCounterSessionSummary = async ({
   const expectedCashLeft =
     getValueFromCurrencyString(counterSession.openAmount) +
     getValueFromCurrencyString(
-      counterSessionSummary.paymentMethod.CASH.total ?? '0'
+      counterSessionSummary.paymentMethod?.CASH?.total ?? '0'
     )
 
-  const totalSummary = Object.values(counterSessionSummary.orderType).reduce(
+  const totalSummary = Object.values(
+    counterSessionSummary?.orderType ?? {}
+  ).reduce(
     (acc, { total, ordersCount }) => {
       acc.ordersCount += ordersCount
       acc.total += getValueFromCurrencyString(total ?? '0')

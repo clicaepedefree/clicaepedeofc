@@ -142,7 +142,7 @@ export const CloseCounterForm = ({
                 <TableCell>Valor recebido em dinheiro:</TableCell>
                 <TableCell>
                   {formatValueToCurrency({
-                    value: categoriesSummary?.paymentMethod.CASH.total ?? '0',
+                    value: categoriesSummary?.paymentMethod?.CASH?.total ?? '0',
                     includeCurrencySymbol: true,
                   })}
                 </TableCell>
