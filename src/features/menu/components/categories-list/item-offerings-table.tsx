@@ -5,6 +5,7 @@ import { DeleteButton } from '@/shared/buttons/delete-button'
 import { CurrencyInput } from '@/shared/currency-input'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { ImageWithPlaceholder } from '@/shared/image-with-placeholder'
+import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
 import { DeleteResourceConfirmationModal } from '@/shared/modals/delete-resource-confirmation-modal'
@@ -17,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/table'
+import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
 import { Edit } from 'lucide-react'
@@ -50,6 +52,7 @@ export const ItemOfferingsTable = ({
         {hasOfferings && (
           <TableRow>
             <TableHead className="text-center">Item</TableHead>
+            <TableHead className="text-center">Estoque</TableHead>
             <TableHead className="text-center">Preço</TableHead>
             <TableHead className="text-center">Status de venda</TableHead>
             <TableHead className="text-center">Ações</TableHead>
@@ -88,6 +91,20 @@ const ItemOfferingRow = ({
         <LargeText variant="sm" className="text-wrap line-clamp-2 pr-2 md:pr-8">
           {item.name}
         </LargeText>
+      </TableCell>
+      <TableCell className="max-w-24 w-fit place-items-center space-y-2 text-center">
+        {item.inventory !== null && (
+          <Input
+            value={item.inventory ?? undefined}
+            placeholder="Estoque"
+            containerClassName="w-fit"
+            className="text-xs sm:text-normal disabled:opacity-100 max-w-16 w-fit text-center"
+            disabled
+          />
+        )}
+        {item.inventory === null && (
+          <Body className=" text-wrap text-center">Estoque desativado</Body>
+        )}
       </TableCell>
       <TableCell className="max-w-24 w-fit place-items-center space-y-2">
         {item.originalPrice && (

@@ -4,11 +4,18 @@ import { cn } from '@/shared/lib/utils'
 
 type InputProps = React.ComponentProps<'input'> & {
   error?: string
+  containerClassName?: string
 }
 
-export const Input = ({ className, type, error, ...props }: InputProps) => {
+export const Input = ({
+  className,
+  type,
+  error,
+  containerClassName,
+  ...props
+}: InputProps) => {
   return (
-    <div className="w-full">
+    <div className={cn('w-full', containerClassName)}>
       <input
         type={type}
         data-slot="input"
