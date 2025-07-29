@@ -15,9 +15,13 @@ export const itemsTable = pgTable('items', {
   externalCode: text('external_code'),
   unit: text('unit'),
   weightInUnits: integer('weight_in_units'),
+  inventory: integer('inventory'),
   createdAt,
   updatedAt,
 })
 
-export type InsertItem = Omit<typeof itemsTable.$inferInsert, 'createdAt' | 'updatedAt'>
+export type InsertItem = Omit<
+  typeof itemsTable.$inferInsert,
+  'createdAt' | 'updatedAt'
+>
 export type SelectItem = typeof itemsTable.$inferSelect

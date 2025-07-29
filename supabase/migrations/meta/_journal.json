@@ -169,6 +169,13 @@
       "when": 1753022895629,
       "tag": "0023_Add open and close receipts for counter session",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1753795318997,
+      "tag": "0024_Add item inventory",
+      "breakpoints": true
     }
   ]
 }
