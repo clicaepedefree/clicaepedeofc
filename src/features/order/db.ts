@@ -1,9 +1,17 @@
 'use server'
 
-import { InsertOrderItem, orderItemsTable } from '@/services/db/schema/order-items'
-import { InsertOrderPayment, orderPaymentsTable } from '@/services/db/schema/order-payments'
+import { itemsTable } from '@/services/db/schema/items'
+import {
+  InsertOrderItem,
+  orderItemsTable,
+} from '@/services/db/schema/order-items'
+import {
+  InsertOrderPayment,
+  orderPaymentsTable,
+} from '@/services/db/schema/order-payments'
 import { InsertOrder, ordersTable } from '@/services/db/schema/orders'
 import { DbSession } from '@/services/db/types'
+import { decrementColumnValue } from '@/services/db/utils/decrement-column-value'
 import { and, count, eq, sql } from 'drizzle-orm'
 
 export const getNextOrderDisplayIdForStore = async ({
@@ -30,8 +38,17 @@ export const getNextOrderDisplayIdForStore = async ({
   return nextDisplayIdAsNumber.toString()
 }
 
-export const createOrderOnDb = async ({ newOrder, dbSession }: { newOrder: InsertOrder; dbSession: DbSession }) => {
-  const [createdOrder] = await dbSession.insert(ordersTable).values(newOrder).returning()
+export const createOrderOnDb = async ({
+  newOrder,
+  dbSession,
+}: {
+  newOrder: InsertOrder
+  dbSession: DbSession
+}) => {
+  const [createdOrder] = await dbSession
+    .insert(ordersTable)
+    .values(newOrder)
+    .returning()
 
   return createdOrder
 }
@@ -64,4 +81,19 @@ export const createOrderPaymentOnDb = async ({
     .returning()
 
   return createdOrderPayment
+}
+
+export const updateOrderItemInventoryOnDb = async ({
+  itemId,
+  quantity,
+  dbSession,
+}: {
+  itemId: number
+  quantity: number
+  dbSession: DbSession
+}) => {
+  await dbSession
+    .update(itemsTable)
+    .set({ inventory: decrementColumnValue(itemsTable.inventory, quantity) })
+    .where(eq(itemsTable.id, itemId))
 }

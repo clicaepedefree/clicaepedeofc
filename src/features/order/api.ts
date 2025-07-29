@@ -5,6 +5,7 @@ import {
   createOrderOnDb,
   createOrderPaymentOnDb,
   getNextOrderDisplayIdForStore,
+  updateOrderItemInventoryOnDb,
 } from '@/features/order/db'
 import { NewOrder } from '@/features/order/types'
 import { validateUserPermissionsForStore } from '@/features/store/api'
@@ -23,6 +24,16 @@ export const createOrder = async (newOrder: NewOrder) => {
       newOrder: { ...newOrder, displayId: nextOrderDisplayId },
       dbSession: tx,
     })
+
+    const updateItemsInventoryPromises = newOrder.items.map(newOrderItem =>
+      updateOrderItemInventoryOnDb({
+        itemId: newOrderItem.itemId,
+        quantity: Number(newOrderItem.quantity),
+        dbSession: tx,
+      })
+    )
+
+    await Promise.all(updateItemsInventoryPromises)
 
     const createdOrderItemsPromises = newOrder.items.map(newOrderItem =>
       createOrderItemOnDb({
