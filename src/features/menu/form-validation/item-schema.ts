@@ -9,18 +9,32 @@ export const baseCategorySchema = z.object({
 export const itemOfferingSchema = z.object({
   category: baseCategorySchema,
   price: z.string().nonempty('Preço é obrigatório'),
-  originalPrice: z.union([z.string().nonempty('Preço original é obrigatório'), z.null()]),
+  originalPrice: z.union([
+    z.string().nonempty('Preço original é obrigatório'),
+    z.null(),
+  ]),
   index: z.number().nullable(),
 })
 
-export const itemOfferingSchemaWithIndex = itemOfferingSchema.extend({ index: z.number() })
+export const itemOfferingSchemaWithIndex = itemOfferingSchema.extend({
+  index: z.number(),
+})
 
 export const createItemSchema = z.object({
-  name: z.string().nonempty('Nome do produto é obrigatório').min(3, 'Nome do produto deve ter pelo menos 3 caracteres'),
+  name: z
+    .string()
+    .nonempty('Nome do produto é obrigatório')
+    .min(3, 'Nome do produto deve ter pelo menos 3 caracteres'),
   description: z.union([z.string(), z.null()]),
   isAvailable: z.boolean(),
   image: z.union([fileSchema, z.null()]),
-  offerings: z.array(itemOfferingSchema).nonempty('É necessário adicionar o preço para pelo menos uma categoria'),
+  offerings: z
+    .array(itemOfferingSchema)
+    .nonempty('É necessário adicionar o preço para pelo menos uma categoria'),
+  inventory: z.union([
+    z.number().nonnegative('Estoque não pode ser negativo'),
+    z.null(),
+  ]),
 })
 
 export const updateItemSchema = createItemSchema.extend({

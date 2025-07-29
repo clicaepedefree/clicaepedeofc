@@ -60,6 +60,7 @@ const getDefaultValues = (
       isAvailable: item.isAvailable,
       image: item.image,
       offerings: [itemOffering],
+      inventory: item.inventory,
     } as z.input<typeof updateItemSchema>
   }
 
@@ -76,6 +77,7 @@ const getDefaultValues = (
     isAvailable: true,
     image: null,
     offerings: [defaultItemOffering],
+    inventory: null,
   }
 
   return defaultValues
@@ -121,6 +123,7 @@ export const CreateOrUpdateItemForm = ({
             index: itemOffering.index ?? undefined,
           })),
           imageId: value.image?.id ?? null,
+          inventory: value.inventory,
         })
         form.reset()
         onSuccess?.(updatedItem)
@@ -139,6 +142,7 @@ export const CreateOrUpdateItemForm = ({
             : null,
         })),
         imageId: value.image?.id ?? null,
+        inventory: value.inventory,
       })
       form.reset()
       onSuccess?.(newItem)
@@ -248,6 +252,27 @@ export const CreateOrUpdateItemForm = ({
                   value={field.state.value ?? ''}
                   onBlur={field.handleBlur}
                   onChange={e => field.handleChange(e.target.value)}
+                  error={field.state.meta.errors[0]?.message}
+                />
+              </Label>
+            )}
+          </form.Field>
+          <form.Field name="inventory">
+            {field => (
+              <Label>
+                Estoque
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="Quantidade em estoque"
+                  value={field.state.value ?? ''}
+                  onBlur={field.handleBlur}
+                  onChange={e =>
+                    e.target.value === ''
+                      ? field.handleChange(null)
+                      : field.handleChange(Number(e.target.value))
+                  }
+                  required
                   error={field.state.meta.errors[0]?.message}
                 />
               </Label>
