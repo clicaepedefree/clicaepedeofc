@@ -2,6 +2,7 @@ import { MenuItemPOS } from '@/features/menu/components/menu-item/menu-item-pos'
 import { BaseCategory, MenuItem } from '@/features/menu/types'
 import { Combobox } from '@/shared/combobox'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
+import { cn } from '@/shared/lib/utils'
 import { Separator } from '@/shared/separator'
 import { Body } from '@/shared/typography/body'
 import { Search } from 'lucide-react'
@@ -10,12 +11,23 @@ import Highlighter from 'react-highlight-words'
 import { useCart } from '../hooks/use-cart'
 import { PosCategoryFilter } from './pos-category-filter'
 
-export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuItem[]; categories: BaseCategory[] }) => {
+export const PosMenuItemsList = ({
+  menuItems,
+  categories,
+}: {
+  menuItems: MenuItem[]
+  categories: BaseCategory[]
+}) => {
   const { addItemToCart } = useCart('POS')
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>(undefined)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<
+    number | undefined
+  >(undefined)
 
-  const categoriesWithAllOption = [{ id: undefined, name: 'Todas', imageUrl: undefined }, ...categories]
+  const categoriesWithAllOption = [
+    { id: undefined, name: 'Todas', imageUrl: undefined },
+    ...categories,
+  ]
 
   const menuItemsFilteredByCategory = useMemo(() => {
     if (!selectedCategoryId) return menuItems
@@ -30,15 +42,28 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
           <div className="flex items-center justify-between gap-2 w-full">
             <Body
               variant={300}
-              className="px-2 py-0.5 bg-amber-500/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center min-w-20"
+              className={cn(
+                'px-2 py-0.5 bg-amber-500/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center min-w-20',
+                {
+                  'bg-destructive/10 text-destructive': option.inventory === 0,
+                }
+              )}
             >
-              {formatValueToCurrency({ value: option.price, includeCurrencySymbol: true })}
+              {option.inventory === 0
+                ? 'Esgotado'
+                : formatValueToCurrency({
+                    value: option.price,
+                    includeCurrencySymbol: true,
+                  })}
             </Body>
             <Body className="grow">
               <Highlighter
                 searchWords={searchText.split(' ')}
                 textToHighlight={option.name}
                 highlightClassName="text-primary font-semibold bg-primary/5"
+                className={cn({
+                  'line-through': option.inventory === 0,
+                })}
                 autoEscape
               />
             </Body>
@@ -59,7 +84,10 @@ export const PosMenuItemsList = ({ menuItems, categories }: { menuItems: MenuIte
           return { value: option.id.toString(), label: option.name, keywords }
         }}
         onChange={selectedItemId => {
-          const selectedItem = menuItems.find(item => item.id === Number(selectedItemId))
+          const selectedItem = menuItems.find(
+            item => item.id === Number(selectedItemId)
+          )
+          if (selectedItem?.inventory === 0) return
           if (selectedItem) {
             addItemToCart({ ...selectedItem, quantity: 1 })
           }
