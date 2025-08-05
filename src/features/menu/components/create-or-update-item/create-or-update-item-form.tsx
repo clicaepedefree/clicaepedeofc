@@ -27,7 +27,7 @@ import { Textarea } from '@/shared/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { useForm, useStore } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
-import { BadgeX, Tag } from 'lucide-react'
+import { BadgeX, Package, Tag } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 
@@ -96,6 +96,9 @@ export const CreateOrUpdateItemForm = ({
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
   const [applyDiscount, setApplyDiscount] = useState(!!item?.originalPrice)
+  const [isStockEnabled, setIsStockEnabled] = useState(
+    Number.isFinite(item?.inventory)
+  )
 
   const form = useForm({
     defaultValues: getDefaultValues(item, category),
@@ -261,20 +264,37 @@ export const CreateOrUpdateItemForm = ({
             {field => (
               <Label>
                 Estoque
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="Quantidade em estoque"
-                  value={field.state.value ?? ''}
-                  onBlur={field.handleBlur}
-                  onChange={e =>
-                    e.target.value === ''
-                      ? field.handleChange(null)
-                      : field.handleChange(Number(e.target.value))
-                  }
-                  required
-                  error={field.state.meta.errors[0]?.message}
-                />
+                <div className="w-full flex items-center gap-1">
+                  {isStockEnabled && (
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Quantidade em estoque"
+                      value={field.state.value ?? ''}
+                      onBlur={field.handleBlur}
+                      onChange={e =>
+                        e.target.value === ''
+                          ? field.handleChange(null)
+                          : field.handleChange(Number(e.target.value))
+                      }
+                      required
+                      error={field.state.meta.errors[0]?.message}
+                    />
+                  )}
+                  <Button
+                    variant={isStockEnabled ? 'destructive' : 'secondary'}
+                    size="icon"
+                    onClick={() => {
+                      const updatedStockValue = isStockEnabled ? null : 0
+                      field.handleChange(updatedStockValue)
+                      setIsStockEnabled(!isStockEnabled)
+                    }}
+                    className="py-[6px] transition-all duration-700"
+                  >
+                    <Package />
+                    {isStockEnabled ? 'Desativar estoque' : 'Ativar estoque'}
+                  </Button>
+                </div>
               </Label>
             )}
           </form.Field>
