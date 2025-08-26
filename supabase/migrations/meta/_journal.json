@@ -176,6 +176,13 @@
       "when": 1753795318997,
       "tag": "0024_Add item inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1756219150715,
+      "tag": "0025_Add legal entity and store legal entity tables",
+      "breakpoints": true
     }
   ]
 }
