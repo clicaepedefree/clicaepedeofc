@@ -15,7 +15,7 @@ const adminMenuItems = [
   {
     title: 'Dashboard',
     url: '/dashboard',
-    icon: 'chart-spline' as const,
+    icon: 'layout-dashboard' as const,
   },
   {
     type: 'section' as const,
@@ -29,7 +29,7 @@ const adminMenuItems = [
       },
       {
         title: 'Configurações',
-        url: '/settings',
+        url: '/settings/store',
         icon: 'settings' as const,
       },
     ],
@@ -48,8 +48,20 @@ const adminMenuItems = [
   },
   {
     type: 'section' as const,
-    title: 'Gestão',
+    title: 'Gestão fiscal',
     icon: 'notebook-pen' as const,
+    items: [
+      {
+        title: 'Configurações',
+        url: '/settings/fiscal',
+        icon: 'settings' as const,
+      },
+    ],
+  },
+  {
+    type: 'section' as const,
+    title: 'Relatórios',
+    icon: 'chart-spline' as const,
     items: [
       // {
       //   title: 'Relatórios',
