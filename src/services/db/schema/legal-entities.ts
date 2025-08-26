@@ -24,5 +24,8 @@ export const legalEntitiesTable = pgTable('legal_entities', {
   updatedAt,
 })
 
-export type InsertLegalEntity = typeof legalEntitiesTable.$inferInsert
+export type InsertLegalEntity = Omit<
+  typeof legalEntitiesTable.$inferInsert,
+  'id' | 'createdAt' | 'updatedAt'
+>
 export type SelectLegalEntity = typeof legalEntitiesTable.$inferSelect
