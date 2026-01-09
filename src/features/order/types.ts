@@ -19,3 +19,5 @@ export type SalesChannel = SelectOrder['salesChannel']
 export type OrderType = SelectOrder['type']
 
 export type CardBrand = SelectOrderPayment['cardBrand']
+
+export type Order = SelectOrder

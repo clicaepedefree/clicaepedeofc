@@ -10,6 +10,8 @@ import {
 import { NewOrder } from '@/features/order/types'
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
+import { ordersTable } from '@/services/db/schema'
+import { desc, eq } from 'drizzle-orm'
 
 export const createOrder = async (newOrder: NewOrder) => {
   await validateUserPermissionsForStore(newOrder.storeId, 'admin')
@@ -63,4 +65,14 @@ export const createOrder = async (newOrder: NewOrder) => {
       payments: createdOrderPayments,
     }
   })
+}
+
+export const listOrders = async (storeId: number) => {
+  const orders = await db
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.storeId, storeId))
+    .orderBy(desc(ordersTable.createdAt))
+
+  return orders
 }

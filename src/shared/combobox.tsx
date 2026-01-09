@@ -4,7 +4,14 @@ import { Check, ChevronsUpDown } from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '@/shared/button'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/shared/command'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/shared/command'
 import { cn } from '@/shared/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/popover'
 
@@ -22,8 +29,15 @@ type ComboboxProps<T extends object = ComboboxBaseOption> = {
   autoFocus?: boolean
   inputValue?: string
   onInputValueChange?: (updatedValue: string) => void
-  customOptionLabelComponent?: (option: T, searchText: string) => React.ReactNode
-  customKeyValueParserForOption?: (option: T) => { value: string; label: string; keywords?: string[] }
+  customOptionLabelComponent?: (
+    option: T,
+    searchText: string
+  ) => React.ReactNode
+  customKeyValueParserForOption?: (option: T) => {
+    value: string
+    label: string
+    keywords?: string[]
+  }
   customIcon?: React.ElementType
   contentClassName?: string
   hideOptionsOnEmptyInput?: boolean
@@ -36,7 +50,7 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
   customIcon,
   value,
   onChange,
-  placeholder = 'Selecione opção',
+  placeholder = 'Selecione uma opção',
   searchPlaceholder = 'Digite opção',
   noResultMessage = 'Nenhuma opção encontrada',
   disabled = false,
@@ -57,34 +71,53 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
     if (baseValue && baseLabel) return { value: baseValue, label: baseLabel }
 
     if (!customKeyValueParserForOption)
-      throw new Error('When using custom options, the `customKeyValueParserForOption` is required')
+      throw new Error(
+        'When using custom options, the `customKeyValueParserForOption` is required'
+      )
 
     return customKeyValueParserForOption(option)
   }
 
-  const selectedOption = options.find(option => getOptionBaseFields(option).value === value)
+  const selectedOption = options.find(
+    option => getOptionBaseFields(option).value === value
+  )
 
   const Icon = customIcon ?? ChevronsUpDown
 
   const inputValueToUse = inputValue ?? defaultInputValue
   const setInputValueToUse = onInputValueChange ?? setDefaultInputValue
 
-  const canDisplayOptions = !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
+  const canDisplayOptions =
+    !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
-          {value && selectedOption ? getOptionBaseFields(selectedOption).label : placeholder}
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between"
+        >
+          {value && selectedOption
+            ? getOptionBaseFields(selectedOption).label
+            : placeholder}
           <Icon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn('p-0 w-[var(--radix-popper-anchor-width)] -translate-y-10', contentClassName)}>
+      <PopoverContent
+        className={cn(
+          'p-0 w-[var(--radix-popper-anchor-width)] -translate-y-10',
+          contentClassName
+        )}
+      >
         <Command
           loop
           autoFocus={autoFocus}
           filter={(_, search, keywords = []) => {
             const searchLower = search.toLowerCase()
-            const keywordsLowerCase = keywords.map(keyword => keyword.toLowerCase()).join(' ')
+            const keywordsLowerCase = keywords
+              .map(keyword => keyword.toLowerCase())
+              .join(' ')
             return Number(keywordsLowerCase.includes(searchLower))
           }}
         >
@@ -111,16 +144,28 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
                         value={optionValue}
                         keywords={[optionLabel, ...optionKeywords]}
                         onSelect={currentValue => {
-                          if (disableUnselectingOption && currentValue === value) return
+                          if (
+                            disableUnselectingOption &&
+                            currentValue === value
+                          )
+                            return
 
                           onChange(currentValue === value ? '' : currentValue)
                           setOpen(false)
                         }}
                       >
-                        {customOptionLabelComponent?.(option, inputValueToUse) ?? (
+                        {customOptionLabelComponent?.(
+                          option,
+                          inputValueToUse
+                        ) ?? (
                           <>
                             <Check
-                              className={cn('mr-2 h-4 w-4', value === optionValue ? 'opacity-100' : 'opacity-0')}
+                              className={cn(
+                                'mr-2 h-4 w-4',
+                                value === optionValue
+                                  ? 'opacity-100'
+                                  : 'opacity-0'
+                              )}
                             />
                             {optionLabel}
                           </>
