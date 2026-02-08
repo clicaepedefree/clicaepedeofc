@@ -1,5 +1,6 @@
 'use client'
 
+import { IntegrationsSettings } from '@/features/integrations/components/integrations-settings'
 import { CompanySettings } from '@/features/legal-entity/components/company-settings'
 import { LegalSettings } from '@/features/legal-entity/components/legal-settings'
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
@@ -25,6 +26,12 @@ const settingsPages = [
     title: 'Configuração fiscal',
     label: 'Fiscal',
     pageComponent: () => <LegalSettings />,
+  },
+  {
+    id: 'integracoes',
+    title: 'Integrações',
+    label: 'Integrações',
+    pageComponent: () => <IntegrationsSettings />,
   },
 ]
 

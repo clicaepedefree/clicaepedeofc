@@ -1038,3 +1038,1249 @@ When adding a new feature:
 ---
 
 This architecture provides excellent developer experience with full type safety, clear separation of concerns, and scalable patterns for a multi-tenant POS system.
+
+---
+
+## **13. Third-Party Integrations Pattern: iFood Integration**
+
+### **Overview**
+
+The iFood integration demonstrates the architecture for third-party API integrations with OAuth 2.0, following strict service/feature separation patterns.
+
+**Key Requirements**:
+- OAuth 2.0 distributed app authentication
+- Pull-only sync (read menu from iFood, update PDV codes back)
+- One-time onboarding with ephemeral mappings (no persistent mapping table)
+- Conservative auto-matching by externalCode only
+- Encrypted token storage with AES-256-GCM
+
+---
+
+### **Architecture: Service vs Features Layer**
+
+#### **CRITICAL PATTERN**: Service/Feature Separation
+
+**Services Layer** (`/src/services/ifood/`):
+- **ONLY** handles API communication and parsing
+- **NO** business logic whatsoever
+- Converts raw API responses to normalized types
+- Pure API client pattern
+
+**Features Layer** (`/src/features/ifood/`):
+- **ALL** business logic lives here
+- Consumes services but doesn't implement API calls
+- Matching rules, validation, data transformations
+- Database operations and server actions
+
+This separation is crucial for maintainability and testability.
+
+---
+
+### **Service Layer Implementation**
+
+#### **1. Service Client** (`/src/services/ifood/index.ts`)
+
+```typescript
+export class IFoodService {
+  private accessToken: string
+
+  constructor(config: { accessToken: string }) {
+    this.accessToken = config.accessToken
+  }
+
+  // Static methods for OAuth (no instance needed)
+  static async exchangeCodeForTokens(code: string): Promise<TokenResponse> {
+    const response = await fetch(`${IFOOD_API_BASE_URL}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: IFOOD_CLIENT_ID,
+        client_secret: IFOOD_CLIENT_SECRET,
+        redirect_uri: IFOOD_REDIRECT_URI,
+      }),
+    })
+
+    if (!response.ok) throw new Error('Failed to exchange code for tokens')
+    return response.json()
+  }
+
+  static async refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+    // Similar pattern for token refresh
+  }
+
+  // Instance methods for API calls
+  async getMerchantMenu(merchantId: string): Promise<IFoodMenu> {
+    const response = await fetch(
+      `${IFOOD_API_BASE_URL}/merchant/${merchantId}/catalog`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) throw new Error('Failed to fetch menu')
+
+    const rawData = await response.json()
+
+    // Parse and normalize to common format
+    return this.normalizeCatalogResponse(rawData)
+  }
+
+  async updateItemExternalCode(
+    merchantId: string,
+    itemId: string,
+    externalCode: string
+  ): Promise<void> {
+    const response = await fetch(
+      `${IFOOD_API_BASE_URL}/merchant/${merchantId}/items/${itemId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ externalCode }),
+      }
+    )
+
+    if (!response.ok) throw new Error('Failed to update item')
+  }
+
+  // ONLY parsing logic, NO business rules
+  private normalizeCatalogResponse(rawData: any): IFoodMenu {
+    return {
+      categories: rawData.categories.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        items: cat.items.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          externalCode: item.externalCode,
+          ean: item.ean,
+          price: item.price,
+        })),
+      })),
+    }
+  }
+}
+```
+
+**Key Principles**:
+- Static methods for OAuth (no token needed yet)
+- Instance methods for authenticated API calls
+- Automatic token refresh before API calls
+- Normalized return types (IFoodMenu, IFoodMenuItem)
+- Raw API types kept internal
+
+#### **2. Type Definitions** (`/src/services/ifood/types.ts`)
+
+```typescript
+// Normalized types (public API)
+export interface IFoodMenu {
+  categories: IFoodCategory[]
+}
+
+export interface IFoodCategory {
+  id: string
+  name: string
+  items: IFoodMenuItem[]
+}
+
+export interface IFoodMenuItem {
+  id: string
+  name: string
+  description: string | null
+  externalCode: string | null  // PDV code
+  ean: string | null
+  price: number
+}
+
+export interface TokenResponse {
+  access_token: string
+  refresh_token: string
+  expires_in: number
+  token_type: string
+}
+
+// Raw API response types (internal only)
+interface IFoodCatalogResponse {
+  // Raw structure from iFood API
+}
+```
+
+---
+
+### **Features Layer Implementation**
+
+#### **1. Database Operations** (`/src/features/ifood/db.ts`)
+
+```typescript
+import { encrypt, decrypt } from '@/lib/encryption'
+
+export const createIFoodIntegration = async ({
+  storeId,
+  merchantId,
+  accessToken,
+  refreshToken,
+  tokenExpiresAt,
+}: {
+  storeId: number
+  merchantId: string
+  accessToken: string
+  refreshToken: string
+  tokenExpiresAt: Date
+}) => {
+  const [integration] = await db
+    .insert(ifoodIntegrationsTable)
+    .values({
+      storeId,
+      merchantId,
+      accessToken: encrypt(accessToken),      // Encrypted
+      refreshToken: encrypt(refreshToken),    // Encrypted
+      tokenExpiresAt,
+      status: 'connected',
+    })
+    .returning()
+
+  return integration
+}
+
+export const getIFoodIntegration = async (storeId: number) => {
+  const integration = await db.query.ifoodIntegrationsTable.findFirst({
+    where: eq(ifoodIntegrationsTable.storeId, storeId),
+  })
+
+  if (!integration) return null
+
+  // Decrypt tokens before returning
+  return {
+    ...integration,
+    accessToken: decrypt(integration.accessToken),
+    refreshToken: decrypt(integration.refreshToken),
+  }
+}
+
+export const updateIFoodIntegration = async ({
+  storeId,
+  updates,
+}: {
+  storeId: number
+  updates: Partial<{
+    accessToken: string
+    refreshToken: string
+    tokenExpiresAt: Date
+    status: 'connected' | 'disconnected' | 'error'
+    lastSyncAt: Date
+    syncErrors: any
+  }>
+}) => {
+  // Encrypt tokens if provided
+  const encryptedUpdates = {
+    ...updates,
+    ...(updates.accessToken && { accessToken: encrypt(updates.accessToken) }),
+    ...(updates.refreshToken && { refreshToken: encrypt(updates.refreshToken) }),
+  }
+
+  const [updated] = await db
+    .update(ifoodIntegrationsTable)
+    .set(encryptedUpdates)
+    .where(eq(ifoodIntegrationsTable.storeId, storeId))
+    .returning()
+
+  return updated
+}
+
+export const deleteIFoodIntegration = async (storeId: number) => {
+  await db
+    .delete(ifoodIntegrationsTable)
+    .where(eq(ifoodIntegrationsTable.storeId, storeId))
+}
+```
+
+**Key Patterns**:
+- Encryption/decryption at DB boundary
+- Simple CRUD operations
+- No business logic
+- Transaction-compatible (could add dbSession parameter)
+
+#### **2. Business Logic & Matching** (`/src/features/ifood/utils.ts`)
+
+```typescript
+export interface LocalMenuItem {
+  id: number
+  name: string
+  ean: string | null
+  pdvCode: string | null  // externalCode in our system
+}
+
+export interface ItemMatch {
+  ifoodItemId: string
+  localItemId: number
+  matchType: 'auto' | 'manual'
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface SuggestedMatch {
+  localItem: LocalMenuItem
+  reason: string
+  confidence: 'medium' | 'low'
+}
+
+/**
+ * Conservative auto-matching: ONLY by externalCode
+ * User explicitly requested NOT to auto-match by EAN due to duplicates
+ */
+export function autoMatchItems(
+  localItems: LocalMenuItem[],
+  ifoodItems: IFoodMenuItem[]
+): {
+  matches: ItemMatch[]
+  unmatched: IFoodMenuItem[]
+} {
+  const matches: ItemMatch[] = []
+  const unmatched: IFoodMenuItem[] = []
+
+  for (const ifoodItem of ifoodItems) {
+    // ONLY match if both have externalCode AND they match exactly
+    if (ifoodItem.externalCode) {
+      const localMatch = localItems.find(
+        local => local.pdvCode === ifoodItem.externalCode
+      )
+
+      if (localMatch) {
+        matches.push({
+          ifoodItemId: ifoodItem.id,
+          localItemId: localMatch.id,
+          matchType: 'auto',
+          confidence: 'high',
+        })
+        continue
+      }
+    }
+
+    // If no match found, add to unmatched
+    unmatched.push(ifoodItem)
+  }
+
+  return { matches, unmatched }
+}
+
+/**
+ * Find suggested matches for manual review
+ * Uses EAN (if unique) and name similarity
+ */
+export function findSuggestedMatches(
+  ifoodItem: IFoodMenuItem,
+  localItems: LocalMenuItem[],
+  limit = 3
+): SuggestedMatch[] {
+  const suggestions: SuggestedMatch[] = []
+
+  // 1. EAN match (only if unique in local items)
+  if (ifoodItem.ean) {
+    const eanMatches = localItems.filter(local => local.ean === ifoodItem.ean)
+
+    if (eanMatches.length === 1) {
+      // Only suggest if EAN is unique
+      suggestions.push({
+        localItem: eanMatches[0],
+        reason: 'Same EAN code',
+        confidence: 'medium',
+      })
+    }
+  }
+
+  // 2. Name similarity (Levenshtein/word-based)
+  const nameSimilarities = localItems
+    .map(local => ({
+      local,
+      similarity: stringSimilarity(
+        ifoodItem.name.toLowerCase(),
+        local.name.toLowerCase()
+      ),
+    }))
+    .filter(({ similarity }) => similarity > 0.6)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit)
+
+  for (const { local, similarity } of nameSimilarities) {
+    if (!suggestions.find(s => s.localItem.id === local.id)) {
+      suggestions.push({
+        localItem: local,
+        reason: `Similar name (${Math.round(similarity * 100)}% match)`,
+        confidence: similarity > 0.8 ? 'medium' : 'low',
+      })
+    }
+  }
+
+  return suggestions.slice(0, limit)
+}
+
+/**
+ * Word-based string similarity
+ * More robust than Levenshtein for product names
+ */
+function stringSimilarity(str1: string, str2: string): number {
+  const words1 = str1.split(/\s+/).filter(w => w.length > 2)
+  const words2 = str2.split(/\s+/).filter(w => w.length > 2)
+
+  if (words1.length === 0 || words2.length === 0) return 0
+
+  const commonWords = words1.filter(w1 =>
+    words2.some(w2 => w2.includes(w1) || w1.includes(w2))
+  ).length
+
+  return commonWords / Math.max(words1.length, words2.length)
+}
+```
+
+**Critical Design Decisions**:
+
+1. **Conservative Auto-Matching**: Only externalCode (PDV code)
+   - User reported iFood has duplicate EANs across different items
+   - Auto-matching by EAN would cause confusion and errors
+   - Better to be conservative and require manual confirmation
+
+2. **Suggestions, Not Auto-Matches**: EAN and name similarity
+   - Show as suggestions requiring manual approval
+   - EAN only suggested if unique in local items
+   - Name similarity uses word-based matching (more robust)
+
+3. **No Persistent Mappings**: Ephemeral state only
+   - User only needs one-time onboarding flow
+   - After PDV codes are synced, matching is automatic (by externalCode)
+   - No need for mapping table in database
+
+#### **3. Server Actions** (`/src/features/ifood/api.ts`)
+
+```typescript
+'use server'
+
+import { IFoodService } from '@/services/ifood'
+
+export async function connectIFoodAccount(
+  storeId: number,
+  authCode: string
+) {
+  // 1. Permission check
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  // 2. Exchange code for tokens (static service method)
+  const tokens = await IFoodService.exchangeCodeForTokens(authCode)
+
+  // 3. Get merchant ID from iFood
+  const service = new IFoodService({ accessToken: tokens.access_token })
+  const merchantId = await service.getMerchantId()
+
+  // 4. Store encrypted tokens in database
+  const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000)
+
+  await createIFoodIntegration({
+    storeId,
+    merchantId,
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    tokenExpiresAt,
+  })
+
+  return { success: true }
+}
+
+export async function fetchIFoodMenu(storeId: number) {
+  // 1. Permission check
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  // 2. Get integration with decrypted tokens
+  const integration = await getIFoodIntegration(storeId)
+  if (!integration) throw new Error('iFood not connected')
+
+  // 3. Check if token needs refresh
+  if (new Date() >= integration.tokenExpiresAt) {
+    const newTokens = await IFoodService.refreshAccessToken(
+      integration.refreshToken
+    )
+
+    await updateIFoodIntegration({
+      storeId,
+      updates: {
+        accessToken: newTokens.access_token,
+        refreshToken: newTokens.refresh_token,
+        tokenExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+      },
+    })
+
+    integration.accessToken = newTokens.access_token
+  }
+
+  // 4. Fetch menu from iFood (service layer)
+  const service = new IFoodService({ accessToken: integration.accessToken })
+  const ifoodMenu = await service.getMerchantMenu(integration.merchantId)
+
+  // 5. Fetch local menu items (for matching)
+  const localItems = await listMenuItems({ storeId })
+
+  return {
+    ifoodMenu,
+    localItems,
+  }
+}
+
+export async function updateIFoodPDVCodes(
+  storeId: number,
+  updates: Array<{ ifoodItemId: string; pdvCode: string }>
+) {
+  // 1. Permission check
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  // 2. Get integration
+  const integration = await getIFoodIntegration(storeId)
+  if (!integration) throw new Error('iFood not connected')
+
+  // 3. Ensure fresh token
+  if (new Date() >= integration.tokenExpiresAt) {
+    const newTokens = await IFoodService.refreshAccessToken(
+      integration.refreshToken
+    )
+    await updateIFoodIntegration({
+      storeId,
+      updates: {
+        accessToken: newTokens.access_token,
+        refreshToken: newTokens.refresh_token,
+        tokenExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+      },
+    })
+    integration.accessToken = newTokens.access_token
+  }
+
+  // 4. Update PDV codes in iFood (service layer)
+  const service = new IFoodService({ accessToken: integration.accessToken })
+
+  const results = await Promise.allSettled(
+    updates.map(({ ifoodItemId, pdvCode }) =>
+      service.updateItemExternalCode(
+        integration.merchantId,
+        ifoodItemId,
+        pdvCode
+      )
+    )
+  )
+
+  // 5. Track errors
+  const errors = results
+    .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    .map((r, i) => ({ itemId: updates[i].ifoodItemId, error: r.reason }))
+
+  if (errors.length > 0) {
+    await updateIFoodIntegration({
+      storeId,
+      updates: {
+        syncErrors: errors,
+        lastSyncAt: new Date(),
+      },
+    })
+  } else {
+    await updateIFoodIntegration({
+      storeId,
+      updates: {
+        lastSyncAt: new Date(),
+        syncErrors: null,
+      },
+    })
+  }
+
+  return {
+    success: errors.length === 0,
+    updated: results.filter(r => r.status === 'fulfilled').length,
+    failed: errors.length,
+    errors,
+  }
+}
+
+export async function disconnectIFoodAccount(storeId: number) {
+  await validateUserPermissionsForStore(storeId, 'admin')
+  await deleteIFoodIntegration(storeId)
+  return { success: true }
+}
+```
+
+**Key Patterns**:
+- Permission validation first
+- Token refresh logic before API calls
+- Service layer for API, features layer for orchestration
+- Error tracking in database
+- Type-safe end-to-end
+
+---
+
+### **Database Schema**
+
+#### **iFood Integrations Table** (`/src/services/db/schema/ifood-integrations.ts`)
+
+```typescript
+export const ifoodIntegrationsTable = pgTable('ifood_integrations', {
+  id: serial('id').primaryKey(),
+  storeId: integer('store_id')
+    .unique()  // One integration per store
+    .notNull()
+    .references(() => storesTable.id),
+  merchantId: text('merchant_id').notNull(),
+
+  // Encrypted tokens
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  tokenExpiresAt: timestamp('token_expires_at').notNull(),
+
+  // Status tracking
+  status: text('status', {
+    enum: ['connected', 'disconnected', 'error'],
+  })
+    .notNull()
+    .default('connected'),
+  lastSyncAt: timestamp('last_sync_at'),
+  syncErrors: jsonb('sync_errors'),
+
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+export const ifoodIntegrationsRelations = relations(
+  ifoodIntegrationsTable,
+  ({ one }) => ({
+    store: one(storesTable, {
+      fields: [ifoodIntegrationsTable.storeId],
+      references: [storesTable.id],
+    }),
+  })
+)
+```
+
+**Key Decisions**:
+- Unique constraint on storeId (one integration per store)
+- Encrypted tokens (accessToken and refreshToken)
+- Status enum for connection state
+- syncErrors as JSONB for flexible error storage
+- No mapping table (ephemeral mappings only)
+
+---
+
+### **Token Encryption**
+
+#### **Encryption Utilities** (`/src/lib/encryption.ts`)
+
+```typescript
+import crypto from 'crypto'
+
+const ALGORITHM = 'aes-256-gcm'
+const IV_LENGTH = 16
+const SALT_LENGTH = 64
+const TAG_LENGTH = 16
+const KEY_LENGTH = 32
+
+function getKey(): Buffer {
+  const key = process.env.IFOOD_TOKEN_ENCRYPTION_KEY
+  if (!key) {
+    throw new Error('IFOOD_TOKEN_ENCRYPTION_KEY is not set')
+  }
+  return Buffer.from(key, 'hex')
+}
+
+export function encrypt(text: string): string {
+  const iv = crypto.randomBytes(IV_LENGTH)
+  const salt = crypto.randomBytes(SALT_LENGTH)
+  const key = crypto.pbkdf2Sync(getKey(), salt, 100000, KEY_LENGTH, 'sha512')
+
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv)
+
+  let encrypted = cipher.update(text, 'utf8', 'hex')
+  encrypted += cipher.final('hex')
+
+  const tag = cipher.getAuthTag()
+
+  // Format: iv:salt:tag:encrypted
+  return [
+    iv.toString('hex'),
+    salt.toString('hex'),
+    tag.toString('hex'),
+    encrypted,
+  ].join(':')
+}
+
+export function decrypt(encryptedText: string): string {
+  const [ivHex, saltHex, tagHex, encrypted] = encryptedText.split(':')
+
+  const iv = Buffer.from(ivHex, 'hex')
+  const salt = Buffer.from(saltHex, 'hex')
+  const tag = Buffer.from(tagHex, 'hex')
+  const key = crypto.pbkdf2Sync(getKey(), salt, 100000, KEY_LENGTH, 'sha512')
+
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv)
+  decipher.setAuthTag(tag)
+
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+  decrypted += decipher.final('utf8')
+
+  return decrypted
+}
+```
+
+**Security Features**:
+- AES-256-GCM (authenticated encryption)
+- Random IV per encryption
+- PBKDF2 key derivation with salt
+- Authentication tag for tampering detection
+- Environment variable for encryption key
+
+**Key Generation**:
+```bash
+openssl rand -hex 32
+```
+
+---
+
+### **Frontend Components**
+
+#### **1. Connection Card** (`/src/features/ifood/components/ifood-connection-card.tsx`)
+
+```typescript
+'use client'
+
+import { useAtom } from 'jotai'
+import { selectedStoreIdAtom } from '@/features/store/state'
+import { useIFoodConnection } from '../hooks/use-ifood-connection'
+
+export const IFoodConnectionCard = () => {
+  const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { integration, isLoading, disconnect } = useIFoodConnection()
+
+  const handleConnect = () => {
+    if (!selectedStoreId) return
+
+    const state = crypto.randomUUID() // CSRF protection
+    sessionStorage.setItem('ifood_oauth_state', state)
+
+    const authUrl = new URL('https://merchant-api.ifood.com.br/oauth/authorize')
+    authUrl.searchParams.set('client_id', process.env.NEXT_PUBLIC_IFOOD_CLIENT_ID!)
+    authUrl.searchParams.set('redirect_uri', process.env.NEXT_PUBLIC_IFOOD_REDIRECT_URI!)
+    authUrl.searchParams.set('response_type', 'code')
+    authUrl.searchParams.set('state', state)
+
+    window.location.href = authUrl.toString()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <IFoodIcon />
+          <div>
+            <CardTitle>iFood</CardTitle>
+            <CardDescription>
+              Connect your iFood account to sync menu items
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        {integration ? (
+          <div className="space-y-3">
+            <Badge variant="success">Connected</Badge>
+            <div className="text-sm text-muted-foreground">
+              Merchant ID: {integration.merchantId}
+            </div>
+            {integration.lastSyncAt && (
+              <div className="text-sm text-muted-foreground">
+                Last sync: {formatDate(integration.lastSyncAt)}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => router.push('/settings/integracoes/ifood/mapper')}
+              >
+                Map Menu Items
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={disconnect}
+                disabled={isLoading}
+              >
+                Disconnect
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={handleConnect} disabled={isLoading}>
+            Connect iFood
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+**Key Features**:
+- OAuth flow with state parameter (CSRF protection)
+- State stored in sessionStorage for validation
+- Connection status display
+- Direct link to mapper page
+
+#### **2. Menu Mapper** (`/src/features/ifood/components/ifood-menu-mapper.tsx`)
+
+```typescript
+'use client'
+
+export const IFoodMenuMapper = () => {
+  const [selectedStoreId] = useAtom(selectedStoreIdAtom)
+  const { ifoodMenu, localItems, isLoading } = useIFoodMenu()
+  const [mappings, setMappings] = useState<Map<string, number>>(new Map())
+
+  const handleAutoMatch = () => {
+    if (!ifoodMenu || !localItems) return
+
+    const allItems = ifoodMenu.categories.flatMap(c => c.items)
+    const { matches } = autoMatchItems(localItems, allItems)
+
+    const newMappings = new Map(mappings)
+    for (const match of matches) {
+      newMappings.set(match.ifoodItemId, match.localItemId)
+    }
+    setMappings(newMappings)
+
+    dispatchToast({
+      message: `Auto-matched ${matches.length} items by PDV code`,
+      type: 'success',
+    })
+  }
+
+  const handleSubmit = async () => {
+    if (!selectedStoreId) return
+
+    const updates = Array.from(mappings.entries()).map(
+      ([ifoodItemId, localItemId]) => {
+        const localItem = localItems?.find(i => i.id === localItemId)
+        return {
+          ifoodItemId,
+          pdvCode: localItem!.pdvCode!,
+        }
+      }
+    )
+
+    const result = await updateIFoodPDVCodes(selectedStoreId, updates)
+
+    if (result.success) {
+      dispatchToast({
+        message: `Updated ${result.updated} PDV codes in iFood`,
+        type: 'success',
+      })
+      setMappings(new Map()) // Clear ephemeral state
+    } else {
+      dispatchToast({
+        message: `Failed to update ${result.failed} items`,
+        type: 'error',
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2>Map iFood Menu Items</h2>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleAutoMatch}>
+            Auto-Match by PDV Code
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={mappings.size === 0 || isLoading}
+          >
+            Update {mappings.size} PDV Codes
+          </Button>
+        </div>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>iFood Item</TableHead>
+            <TableHead>Current PDV Code</TableHead>
+            <TableHead>Map to Local Item</TableHead>
+            <TableHead>Suggestions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ifoodMenu?.categories.map(category =>
+            category.items.map(item => (
+              <IFoodItemMappingRow
+                key={item.id}
+                ifoodItem={item}
+                localItems={localItems ?? []}
+                currentMapping={mappings.get(item.id)}
+                onMappingChange={(localItemId) => {
+                  const newMappings = new Map(mappings)
+                  if (localItemId) {
+                    newMappings.set(item.id, localItemId)
+                  } else {
+                    newMappings.delete(item.id)
+                  }
+                  setMappings(newMappings)
+                }}
+              />
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+```
+
+**Key Features**:
+- Ephemeral React state (Map<ifoodItemId, localItemId>)
+- Auto-match button (conservative matching)
+- Manual mapping with suggestions
+- Batch update to iFood
+- Clear state after successful sync
+
+#### **3. Item Mapping Row** (`/src/features/ifood/components/ifood-item-mapping-row.tsx`)
+
+```typescript
+export const IFoodItemMappingRow = ({
+  ifoodItem,
+  localItems,
+  currentMapping,
+  onMappingChange,
+}) => {
+  const suggestions = findSuggestedMatches(ifoodItem, localItems, 3)
+  const hasPDVCode = !!ifoodItem.externalCode
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div>
+          <div className="font-medium">{ifoodItem.name}</div>
+          <div className="text-sm text-muted-foreground">
+            {ifoodItem.description}
+          </div>
+        </div>
+      </TableCell>
+
+      <TableCell>
+        <div className="flex items-center gap-2">
+          {hasPDVCode ? (
+            <Badge variant="default">{ifoodItem.externalCode}</Badge>
+          ) : (
+            <Badge variant="destructive">No PDV Code</Badge>
+          )}
+        </div>
+      </TableCell>
+
+      <TableCell>
+        <Combobox
+          items={localItems}
+          value={currentMapping}
+          onChange={onMappingChange}
+          placeholder="Select local item..."
+          renderItem={(item) => (
+            <div>
+              <div>{item.name}</div>
+              {item.pdvCode && (
+                <div className="text-sm text-muted-foreground">
+                  PDV: {item.pdvCode}
+                </div>
+              )}
+            </div>
+          )}
+        />
+      </TableCell>
+
+      <TableCell>
+        {suggestions.length > 0 ? (
+          <div className="space-y-1">
+            {suggestions.map((suggestion) => (
+              <Button
+                key={suggestion.localItem.id}
+                variant="ghost"
+                size="sm"
+                onClick={() => onMappingChange(suggestion.localItem.id)}
+              >
+                {suggestion.localItem.name}
+                <Badge variant="outline" className="ml-2">
+                  {suggestion.reason}
+                </Badge>
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">No suggestions</span>
+        )}
+      </TableCell>
+    </TableRow>
+  )
+}
+```
+
+**Key Features**:
+- Warning for items without PDV codes
+- Combobox for manual selection
+- Suggested matches with confidence indicators
+- One-click suggestion application
+
+---
+
+### **OAuth Callback Route**
+
+```typescript
+// app/api/integrations/ifood/callback/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { connectIFoodAccount } from '@/features/ifood/api'
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams
+  const code = searchParams.get('code')
+  const state = searchParams.get('state')
+  const error = searchParams.get('error')
+
+  // Handle OAuth errors
+  if (error) {
+    return NextResponse.redirect(
+      new URL(
+        `/settings/integracoes?error=${encodeURIComponent(error)}`,
+        request.url
+      )
+    )
+  }
+
+  if (!code || !state) {
+    return NextResponse.redirect(
+      new URL('/settings/integracoes?error=invalid_request', request.url)
+    )
+  }
+
+  // Validate state (CSRF protection)
+  // Note: In production, validate against stored state
+
+  try {
+    // Get selected store from session/cookie
+    const storeId = getSelectedStoreIdFromSession(request)
+
+    if (!storeId) {
+      throw new Error('No store selected')
+    }
+
+    // Exchange code for tokens and store
+    await connectIFoodAccount(storeId, code)
+
+    return NextResponse.redirect(
+      new URL('/settings/integracoes?success=connected', request.url)
+    )
+  } catch (error) {
+    console.error('OAuth callback error:', error)
+    return NextResponse.redirect(
+      new URL(
+        `/settings/integracoes?error=${encodeURIComponent('connection_failed')}`,
+        request.url
+      )
+    )
+  }
+}
+```
+
+**Security Features**:
+- State parameter validation (CSRF protection)
+- Error handling and user feedback
+- Secure token exchange
+- Redirect to settings page with status
+
+---
+
+### **Environment Variables**
+
+Required in `.env.local`:
+
+```bash
+# iFood OAuth Credentials
+NEXT_PUBLIC_IFOOD_CLIENT_ID=your_client_id
+IFOOD_CLIENT_SECRET=your_client_secret
+NEXT_PUBLIC_IFOOD_REDIRECT_URI=http://localhost:3000/api/integrations/ifood/callback
+
+# iFood API
+IFOOD_API_BASE_URL=https://merchant-api.ifood.com.br
+
+# Token Encryption
+# Generate with: openssl rand -hex 32
+IFOOD_TOKEN_ENCRYPTION_KEY=your_64_char_hex_key
+```
+
+---
+
+### **Key Architectural Lessons**
+
+#### **1. Service/Feature Separation is Critical**
+
+**DON'T**:
+```typescript
+// ❌ Business logic in service layer
+class IFoodService {
+  async matchMenuItems(localItems, ifoodItems) {
+    // Matching logic here - WRONG LAYER!
+  }
+}
+```
+
+**DO**:
+```typescript
+// ✅ Service only handles API
+class IFoodService {
+  async getMerchantMenu() {
+    // Only API call and parsing
+  }
+}
+
+// ✅ Features layer handles business logic
+// features/ifood/utils.ts
+export function autoMatchItems(localItems, ifoodItems) {
+  // Business logic here
+}
+```
+
+#### **2. Conservative Matching Prevents Errors**
+
+When user reported "iFood might have multiple items using the same EAN", we changed from:
+
+**Before**:
+```typescript
+// ❌ Auto-match by EAN (causes false positives)
+if (ifoodItem.ean && localItem.ean === ifoodItem.ean) {
+  // Auto-match
+}
+```
+
+**After**:
+```typescript
+// ✅ Only auto-match by unique identifier
+if (ifoodItem.externalCode && localItem.pdvCode === ifoodItem.externalCode) {
+  // Auto-match (1:1 guaranteed)
+}
+
+// ✅ EAN as suggestion only (requires manual approval)
+const suggestions = findSuggestedMatches(ifoodItem, localItems)
+```
+
+#### **3. Ephemeral State for One-Time Operations**
+
+**DON'T**:
+```typescript
+// ❌ Persistent mapping table (unnecessary overhead)
+const ifoodItemMappingsTable = pgTable('ifood_item_mappings', {
+  ifoodItemId: text('ifood_item_id'),
+  localItemId: integer('local_item_id'),
+  // ...
+})
+```
+
+**DO**:
+```typescript
+// ✅ Ephemeral React state for onboarding
+const [mappings, setMappings] = useState<Map<string, number>>(new Map())
+
+// After sync completes, mappings are discarded
+// Future matching is automatic via externalCode
+```
+
+#### **4. Token Management Best Practices**
+
+- **Encryption at rest**: AES-256-GCM with authentication
+- **Refresh before expiry**: Check tokenExpiresAt before API calls
+- **Automatic refresh**: Transparent to user
+- **Secure storage**: Environment variable for encryption key
+
+#### **5. OAuth Security**
+
+- State parameter for CSRF protection
+- Validate state on callback
+- Store tokens encrypted immediately
+- Redirect with status (success/error)
+
+---
+
+### **Integration Checklist for Future Third-Party APIs**
+
+When adding new integrations, follow this pattern:
+
+**1. Service Layer** (`/src/services/[integration]/`):
+- [ ] API client class with typed methods
+- [ ] OAuth/authentication handling (static methods)
+- [ ] Normalized response types (public)
+- [ ] Raw API types (internal only)
+- [ ] NO business logic
+
+**2. Features Layer** (`/src/features/[integration]/`):
+- [ ] Database operations (db.ts)
+- [ ] Business logic utilities (utils.ts)
+- [ ] Server actions (api.ts) with permission checks
+- [ ] Feature-specific types (types.ts)
+- [ ] Custom hooks for UI (hooks/)
+- [ ] UI components (components/)
+
+**3. Database**:
+- [ ] Integration table with encrypted credentials
+- [ ] Status tracking fields
+- [ ] Error tracking (JSONB)
+- [ ] Relations to stores/users
+
+**4. Security**:
+- [ ] Token encryption utilities
+- [ ] OAuth state validation
+- [ ] Permission checks in all server actions
+- [ ] Environment variables for secrets
+
+**5. UI Flow**:
+- [ ] Connection card with OAuth initiation
+- [ ] OAuth callback route
+- [ ] Status display (connected/disconnected/error)
+- [ ] Main functionality page (mapper, sync, etc.)
+- [ ] Error handling and user feedback
+
+---
+
+### **Tools and Commands**
+
+#### **Database Migrations** (using Bun):
+```bash
+# Generate migration
+bunx --bun drizzle-kit generate
+
+# Run migration
+bunx --bun drizzle-kit migrate
+
+# Studio
+bunx --bun drizzle-kit studio
+```
+
+#### **Development**:
+```bash
+# Dev server
+bun dev
+
+# Build
+bun run build
+
+# Type check
+bun run type-check
+```
+
+#### **Generate Encryption Key**:
+```bash
+openssl rand -hex 32
+```
+
+---
+
+This integration demonstrates the complete pattern for adding third-party API integrations to the Clica Pedidos system, with emphasis on clean architecture, security, and maintainability.

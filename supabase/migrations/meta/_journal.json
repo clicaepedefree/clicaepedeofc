@@ -183,6 +183,13 @@
       "when": 1756219150715,
       "tag": "0025_Add legal entity and store legal entity tables",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1767984177922,
+      "tag": "0026_Add_ifood_integration_table",
+      "breakpoints": true
     }
   ]
 }
