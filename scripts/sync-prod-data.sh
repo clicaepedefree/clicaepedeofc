@@ -43,12 +43,20 @@ if [[ "$DIRECT_PROD_URL" != *"sslmode="* ]]; then
   fi
 fi
 
+# Use PostgreSQL 15 client tools if available (needed for Supabase PG 15)
+PG15_BIN="/opt/homebrew/opt/postgresql@15/bin"
+if [ -d "$PG15_BIN" ]; then
+  PG_DUMP="$PG15_BIN/pg_dump"
+else
+  PG_DUMP="pg_dump"
+fi
+
 DUMP_FILE=$(mktemp /tmp/prod_data_dump.XXXXXX.sql)
 cleanup() { rm -f "$DUMP_FILE"; }
 trap cleanup EXIT
 
 echo "=> Dumping production data (public schema only)..."
-pg_dump "$DIRECT_PROD_URL" \
+"$PG_DUMP" "$DIRECT_PROD_URL" \
   --data-only \
   --schema=public \
   --disable-triggers \
