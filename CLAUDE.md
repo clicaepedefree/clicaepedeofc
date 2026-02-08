@@ -16,7 +16,7 @@ bun run lint
 
 # Database
 bun run db                      # Opens Drizzle Studio
-bunx --bun drizzle-kit generate # Generate migration from schema changes
+bunx --bun drizzle-kit generate --name <descriptive_name> # Generate migration (ALWAYS use --name with a descriptive snake_case name, e.g. "add_option_groups_tables")
 bunx --bun drizzle-kit migrate  # Run migrations
 ```
 
