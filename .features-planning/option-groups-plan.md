@@ -289,6 +289,41 @@ orderItemsTable (existing)
   - Each selected option becomes a row in `order_item_options` with snapshot data
   - Update `totalPrice` calculation to account for options
 
+#### TASK-011: Add option groups tab to item create/edit form
+
+- **Status**: ⏳ Pending
+- **Type**: Core
+- **Complexity**: Medium
+- **Dependencies**: TASK-007
+- **Parallelizable With**: TASK-012
+- **Files**:
+  - Modify: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx` (add tab system)
+  - Possibly extract: a shared wrapper component for the tab layout
+- **Implementation Notes**:
+  - Add a **top-level tab bar** to the item create/edit form with two tabs:
+    1. **"Item"** — the existing item information form (name, description, image, price, stock, etc.)
+    2. **"Grupos de Opções"** — reuses the existing `LinkOptionGroupsModal` content (the list of available groups with checkboxes) but rendered inline as a tab panel instead of inside a Sheet
+  - The "Grupos de Opções" tab shows the **linking UI** for the current item offering: which option groups are attached and allows toggling them on/off
+  - This tab should only be available when **editing** an existing item (not when creating), since we need the `itemOfferingId` to link groups
+  - Reuse the same components/logic already built in `link-option-groups-modal.tsx` — extract the inner content into a shared component (e.g. `LinkOptionGroupsContent`) that can be rendered both inside the Sheet modal and inside the tab panel
+
+#### TASK-012: Allow creating option groups inline from the link modal
+
+- **Status**: ⏳ Pending
+- **Type**: Core
+- **Complexity**: Medium
+- **Dependencies**: TASK-007
+- **Parallelizable With**: TASK-011
+- **Files**:
+  - Modify: `src/features/option-groups/components/link-option-groups-modal.tsx` (add inline create)
+  - Reuse: `src/features/option-groups/components/option-group-form.tsx`
+- **Implementation Notes**:
+  - Add a **"Criar novo grupo"** (Create new group) button at the top or bottom of the link option groups modal/content
+  - Clicking it expands or opens the existing `OptionGroupForm` inline within the modal, allowing the user to create a new option group without navigating to the "Grupos de Opções" tab on the menu page
+  - On successful creation, the new group is automatically added to the list of available groups and can be immediately selected/linked to the current item offering
+  - Invalidate the option groups query cache after creation so the list refreshes
+  - This should work in both contexts: when rendered as a Sheet modal (from item offerings table) and when rendered inline as a tab panel (from TASK-011)
+
 ### Optional Tasks (Nice-to-Have Enhancements)
 
 #### TASK-OPT-001: Display option details in order history / receipt
@@ -341,6 +376,10 @@ Sequential:                          │
   TASK-009 (cart UI + edit) ◄────────┘ (depends on TASK-008)
   TASK-010 (order creation) ◄──── (depends on TASK-005 + TASK-009)
 
+Catalog UX Enhancements (after TASK-007, parallelizable):
+  TASK-011 (option groups tab in item form)
+  TASK-012 (inline create from link modal)
+
 Optional (after TASK-010):
   TASK-OPT-001 (order history/receipt)
   TASK-OPT-002 (drag & drop reorder)
@@ -369,6 +408,10 @@ Optional (after TASK-010):
   - [ ] Delete item used as option and verify it doesn't cascade-delete the item
   - [ ] Create option with price = 0 and verify no price is shown in POS modal or cart
   - [ ] Create option with price > 0 and verify price is displayed in POS modal and cart
+  - [ ] Edit existing item: verify "Grupos de Opções" tab appears and shows linked groups
+  - [ ] Create new item: verify "Grupos de Opções" tab is NOT shown (no itemOfferingId yet)
+  - [ ] From link modal: create a new option group inline and verify it appears in the list immediately
+  - [ ] From link modal: create a new group inline, then link it, and verify it persists
 
 ### Rollout Considerations
 
@@ -390,6 +433,8 @@ Optional (after TASK-010):
 | TASK-008     | POS UI: option group selector modal    | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Created option selector modal with group steps, validation, and price calculation |
 | TASK-009     | POS cart UI: display & edit options     | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Options display in cart, edit via pencil button re-opens modal |
 | TASK-010     | Order creation with options            | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Maps cart selectedOptions to order item options snapshots |
+| TASK-011     | Option groups tab in item form         | Core     | ⏳ Pending | -       | -         | -     |
+| TASK-012     | Inline create from link modal          | Core     | ⏳ Pending | -       | -         | -     |
 | TASK-OPT-001 | Order history / receipt options        | Optional | ⏳ Pending | -       | -         | -     |
 | TASK-OPT-002 | Drag & drop reorder                   | Optional | ⏳ Pending | -       | -         | -     |
 
