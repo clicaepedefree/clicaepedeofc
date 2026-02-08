@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db": "drizzle-kit studio & open https://local.drizzle.studio"
+    "db": "drizzle-kit studio & open https://local.drizzle.studio",
+    "db:sync-prod": "bash scripts/sync-prod-data.sh"
   },
   "dependencies": {
     "@clerk/localizations": "^3.12.0",
