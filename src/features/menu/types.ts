@@ -1,3 +1,4 @@
+import { OptionGroupWithOptions } from '@/features/option-groups/types'
 import { InsertCategory, SelectCategory } from '@/services/db/schema/categories'
 import { InsertItemOffering, SelectItemOffering } from '@/services/db/schema/item-offerings'
 import { InsertItem, SelectItem } from '@/services/db/schema/items'
@@ -29,9 +30,13 @@ export type ItemWithImage = Omit<SelectItem, 'imageId'> & {
   image: BaseStoreFile | null
 }
 export type ItemOfferingWithImage = ItemWithImage &
-  Omit<SelectItemOffering, 'id' | 'categoryId' | 'itemId' | 'createdAt' | 'updatedAt'>
+  Omit<SelectItemOffering, 'id' | 'categoryId' | 'itemId' | 'createdAt' | 'updatedAt'> & {
+    itemOfferingId: number
+    optionGroups?: OptionGroupWithOptions[]
+  }
 
 export type MenuItem = Omit<SelectItemOffering, 'categoryId' | 'createdAt' | 'updatedAt'> &
   Omit<ItemWithImage, 'id' | 'createdAt' | 'updatedAt'> & {
     category: BaseCategory
+    optionGroups: OptionGroupWithOptions[]
   }

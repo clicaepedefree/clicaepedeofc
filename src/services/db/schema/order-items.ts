@@ -22,6 +22,7 @@ export const orderItemsTable = pgTable('order_items', {
   quantity: numeric('quantity', { precision: 19, scale: 4 }).notNull(),
   externalCode: text('external_code'),
   ean: text('ean'),
+  comment: text('comment'),
 })
 
 export type InsertOrderItem = typeof orderItemsTable.$inferInsert

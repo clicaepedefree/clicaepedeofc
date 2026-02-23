@@ -11,7 +11,7 @@ import {
 import { Button } from '@/shared/button'
 import { LoadingSpinner } from '@/shared/spinner'
 
-type Resource = 'categoria' | 'item'
+type Resource = 'categoria' | 'item' | 'grupo de complementos'
 
 type DeleteResourceConfirmationProps = {
   trigger: React.ReactNode

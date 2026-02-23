@@ -2,6 +2,10 @@
 
 import { itemsTable } from '@/services/db/schema/items'
 import {
+  InsertOrderItemOption,
+  orderItemOptionsTable,
+} from '@/services/db/schema/order-item-options'
+import {
   InsertOrderItem,
   orderItemsTable,
 } from '@/services/db/schema/order-items'
@@ -96,4 +100,19 @@ export const updateOrderItemInventoryOnDb = async ({
     .update(itemsTable)
     .set({ inventory: decrementColumnValue(itemsTable.inventory, quantity) })
     .where(eq(itemsTable.id, itemId))
+}
+
+export const createOrderItemOptionsOnDb = async ({
+  options,
+  dbSession,
+}: {
+  options: InsertOrderItemOption[]
+  dbSession: DbSession
+}) => {
+  if (options.length === 0) return []
+
+  return await dbSession
+    .insert(orderItemOptionsTable)
+    .values(options)
+    .returning()
 }

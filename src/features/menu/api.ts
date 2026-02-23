@@ -10,6 +10,10 @@ import {
   updateItemOnDb,
 } from '@/features/menu/db'
 import { NewCategory, NewItem } from '@/features/menu/types'
+import {
+  getOptionGroupsByItemOfferingIds,
+  replaceItemOfferingOptionGroupLinks,
+} from '@/features/option-groups/db'
 import { db } from '@/services/db'
 import {
   categoriesTable,
@@ -66,7 +70,6 @@ export const listCategories = async ({
       image: baseStoreFileRelationalQuery,
       itemOfferings: {
         columns: {
-          id: false,
           categoryId: false,
           itemId: false,
           createdAt: false,
@@ -84,14 +87,33 @@ export const listCategories = async ({
     orderBy: [categoriesTable.index, itemOfferingsTable.index],
   })
 
+  if (!includeItems) {
+    return categoriesWithItems.map(
+      ({ itemOfferings, ...category }) => category
+    )
+  }
+
+  const allItemOfferingIds = categoriesWithItems.flatMap((cat) =>
+    cat.itemOfferings.map((io) => io.id)
+  )
+
+  const optionGroupsByOffering =
+    allItemOfferingIds.length > 0
+      ? await getOptionGroupsByItemOfferingIds({
+          itemOfferingIds: allItemOfferingIds,
+        })
+      : {}
+
   const categoriesWithItemsFinal = categoriesWithItems.map(
     ({ itemOfferings, ...category }) => {
-      if (!includeItems) return category
-
-      const items = itemOfferings.map(({ item, ...itemOffering }) => ({
-        ...item,
-        ...itemOffering,
-      }))
+      const items = itemOfferings.map(
+        ({ item, id: itemOfferingId, ...itemOffering }) => ({
+          ...item,
+          ...itemOffering,
+          itemOfferingId,
+          optionGroups: optionGroupsByOffering[itemOfferingId] ?? [],
+        })
+      )
 
       return {
         ...category,
@@ -116,19 +138,22 @@ export const deleteCategory = async (categoryId: number, storeId: number) => {
     )
 }
 
-export const createItem = async (newItem: NewItem) => {
+export const createItem = async (
+  newItem: NewItem & { optionGroupIds?: number[] }
+) => {
   const storeId = newItem.storeId
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await db.transaction(async tx => {
     const item = await createItemOnDb({ newItem, dbSession: tx })
 
+    let firstOfferingId: number | null = null
     for (const itemOffering of newItem.offerings) {
       const itemOfferingIndex = await getNextItemOfferingIndex({
         categoryId: itemOffering.categoryId,
         dbSession: tx,
       })
-      await createItemOfferingOnDb({
+      const offering = await createItemOfferingOnDb({
         newItemOffering: {
           ...itemOffering,
           itemId: item.id,
@@ -136,7 +161,22 @@ export const createItem = async (newItem: NewItem) => {
         },
         dbSession: tx,
       })
+      if (!firstOfferingId) firstOfferingId = offering.id
     }
+
+    if (newItem.optionGroupIds?.length && firstOfferingId) {
+      const links = newItem.optionGroupIds.map((optionGroupId, index) => ({
+        itemOfferingId: firstOfferingId!,
+        optionGroupId,
+        index,
+      }))
+      await replaceItemOfferingOptionGroupLinks({
+        itemOfferingId: firstOfferingId,
+        links,
+        dbSession: tx,
+      })
+    }
+
     return item
   })
 }
@@ -269,5 +309,17 @@ export const listMenuItems = async ({ storeId }: { storeId: number }) => {
     .where(eq(itemsTable.storeId, storeId))
     .orderBy(itemsTable.name)
 
-  return menuItems
+  const itemOfferingIds = menuItems.map(item => item.id)
+
+  const optionGroupsByOffering =
+    itemOfferingIds.length > 0
+      ? await getOptionGroupsByItemOfferingIds({ itemOfferingIds })
+      : {}
+
+  const menuItemsWithOptionGroups = menuItems.map(item => ({
+    ...item,
+    optionGroups: optionGroupsByOffering[item.id] ?? [],
+  }))
+
+  return menuItemsWithOptionGroups
 }

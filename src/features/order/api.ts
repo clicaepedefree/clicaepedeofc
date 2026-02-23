@@ -2,6 +2,7 @@
 
 import {
   createOrderItemOnDb,
+  createOrderItemOptionsOnDb,
   createOrderOnDb,
   createOrderPaymentOnDb,
   getNextOrderDisplayIdForStore,
@@ -10,6 +11,8 @@ import {
 import { NewOrder } from '@/features/order/types'
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
+import { ordersTable } from '@/services/db/schema'
+import { desc, eq } from 'drizzle-orm'
 
 export const createOrder = async (newOrder: NewOrder) => {
   await validateUserPermissionsForStore(newOrder.storeId, 'admin')
@@ -35,18 +38,30 @@ export const createOrder = async (newOrder: NewOrder) => {
 
     await Promise.all(updateItemsInventoryPromises)
 
-    const createdOrderItemsPromises = newOrder.items.map(newOrderItem =>
-      createOrderItemOnDb({
+    const createdOrderItems = []
+    for (const newOrderItem of newOrder.items) {
+      const { options, ...orderItemData } = newOrderItem
+      const createdOrderItem = await createOrderItemOnDb({
         newOrderItem: {
-          ...newOrderItem,
+          ...orderItemData,
           orderId: createdOrder.id,
-          index: newOrderItem.index,
+          index: orderItemData.index,
         },
         dbSession: tx,
       })
-    )
 
-    const createdOrderItems = await Promise.all(createdOrderItemsPromises)
+      if (options && options.length > 0) {
+        await createOrderItemOptionsOnDb({
+          options: options.map((opt) => ({
+            ...opt,
+            orderItemId: createdOrderItem.id,
+          })),
+          dbSession: tx,
+        })
+      }
+
+      createdOrderItems.push(createdOrderItem)
+    }
 
     const createdOrderPaymentsPromises = newOrder.payments.map(
       newOrderPayment =>
@@ -63,4 +78,21 @@ export const createOrder = async (newOrder: NewOrder) => {
       payments: createdOrderPayments,
     }
   })
+}
+
+export const listOrders = async (storeId: number) => {
+  const orders = await db.query.ordersTable.findMany({
+    where: eq(ordersTable.storeId, storeId),
+    orderBy: [desc(ordersTable.createdAt)],
+    with: {
+      items: {
+        with: {
+          options: true,
+        },
+      },
+      payments: true,
+    },
+  })
+
+  return orders
 }

@@ -1,4 +1,4 @@
-import { CartItem, CartPayment, CartSession } from '@/features/pos/types'
+import { CartItem, CartItemOption, CartPayment, CartSession } from '@/features/pos/types'
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
@@ -11,23 +11,32 @@ export const cartSessionTotalAtom = atom(get => {
 
   if (!cartSession || !cartSession.items?.length) return 0
 
-  return cartSession.items.reduce((total, item) => total + Number(item.price) * item.quantity, 0)
+  return cartSession.items.reduce((total, item) => {
+    const itemBasePrice = Number(item.price) * item.quantity
+    const optionsPrice = (item.selectedOptions ?? []).reduce(
+      (optTotal, opt) => optTotal + opt.price * opt.quantity,
+      0
+    ) * item.quantity
+    return total + itemBasePrice + optionsPrice
+  }, 0)
 })
 
 export const addItemToCartAtom = atom(null, (get, set, newItem: CartItem) => {
   const cartSession = get(cartSessionAtom)
 
+  const lightItem: CartItem = { ...newItem, optionGroups: [] }
+
   if (!cartSession) {
     set(cartSessionAtom, {
       startedAt: new Date(),
-      items: [newItem],
+      items: [lightItem],
     })
     return
   }
 
   set(cartSessionAtom, {
     ...cartSession,
-    items: [...cartSession.items, newItem],
+    items: [...cartSession.items, lightItem],
   })
 })
 
@@ -70,6 +79,30 @@ export const updateItemQuantityAtom = atom(
         const isItemToUpdate = item.id === itemToUpdate.id && itemIndex === index
         return isItemToUpdate ? { ...item, quantity } : item
       }),
+    })
+  }
+)
+
+export const updateCartItemAtom = atom(
+  null,
+  (
+    get,
+    set,
+    {
+      index,
+      selectedOptions,
+      comment,
+    }: { index: number; selectedOptions: CartItemOption[]; comment?: string }
+  ) => {
+    const cartSession = get(cartSessionAtom)
+
+    if (!cartSession || cartSession.items.length <= index) return
+
+    set(cartSessionAtom, {
+      ...cartSession,
+      items: cartSession.items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, selectedOptions, comment } : item
+      ),
     })
   }
 )

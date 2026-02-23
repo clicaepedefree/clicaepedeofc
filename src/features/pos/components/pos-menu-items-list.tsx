@@ -1,14 +1,16 @@
 import { MenuItemPOS } from '@/features/menu/components/menu-item/menu-item-pos'
 import { BaseCategory, MenuItem } from '@/features/menu/types'
+import { CartItemOption } from '@/features/pos/types'
 import { Combobox } from '@/shared/combobox'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { cn } from '@/shared/lib/utils'
 import { Separator } from '@/shared/separator'
 import { Body } from '@/shared/typography/body'
 import { Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Highlighter from 'react-highlight-words'
 import { useCart } from '../hooks/use-cart'
+import { OptionGroupSelectorModal } from './option-group-selector/option-group-selector-modal'
 import { PosCategoryFilter } from './pos-category-filter'
 
 export const PosMenuItemsList = ({
@@ -23,6 +25,28 @@ export const PosMenuItemsList = ({
   const [selectedCategoryId, setSelectedCategoryId] = useState<
     number | undefined
   >(undefined)
+
+  const [optionModalItem, setOptionModalItem] = useState<MenuItem | null>(null)
+
+  const handleItemClick = useCallback(
+    (item: MenuItem) => {
+      if (item.inventory === 0) return
+      setOptionModalItem(item)
+    },
+    []
+  )
+
+  const handleOptionConfirm = useCallback(
+    (item: MenuItem, selectedOptions: CartItemOption[], comment: string) => {
+      addItemToCart({
+        ...item,
+        quantity: 1,
+        selectedOptions,
+        comment: comment || undefined,
+      })
+    },
+    [addItemToCart]
+  )
 
   const categoriesWithAllOption = [
     { id: undefined, name: 'Todas', imageUrl: undefined },
@@ -87,9 +111,8 @@ export const PosMenuItemsList = ({
           const selectedItem = menuItems.find(
             item => item.id === Number(selectedItemId)
           )
-          if (selectedItem?.inventory === 0) return
           if (selectedItem) {
-            addItemToCart({ ...selectedItem, quantity: 1 })
+            handleItemClick(selectedItem)
           }
         }}
         placeholder="Pesquise um item (nome, descrição, código de barras)"
@@ -117,12 +140,18 @@ export const PosMenuItemsList = ({
           <MenuItemPOS
             key={index}
             item={item}
-            onClick={() => {
-              addItemToCart({ ...item, quantity: 1 })
-            }}
+            onClick={() => handleItemClick(item)}
           />
         ))}
       </div>
+      <OptionGroupSelectorModal
+        open={!!optionModalItem}
+        onOpenChange={(open) => {
+          if (!open) setOptionModalItem(null)
+        }}
+        item={optionModalItem}
+        onConfirm={handleOptionConfirm}
+      />
     </div>
   )
 }

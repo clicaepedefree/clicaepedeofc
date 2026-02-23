@@ -1,25 +1,53 @@
+import { MenuItem } from '@/features/menu/types'
 import { useCart } from '@/features/pos/hooks/use-cart'
+import { CartItem, CartItemOption } from '@/features/pos/types'
 import { Button } from '@/shared/button'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Separator } from '@/shared/separator'
 import { LargeText } from '@/shared/typography/large-text'
 import { CircleDollarSign, ShoppingBag } from 'lucide-react'
-import { Fragment } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { useCounters } from '../hooks/use-counters'
+import { OptionGroupSelectorModal } from './option-group-selector/option-group-selector-modal'
 import { PosCartItem } from './pos-cart-item'
 
-export const PosCart = () => {
+type EditingCartItem = {
+  index: number
+  item: CartItem
+}
+
+export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
   const {
     cartSessionItems,
     cartSessionTotal,
     removeItemFromCart,
     updateItemQuantity,
+    updateCartItem,
     clearCart,
     isUsingPaymentScreen,
     setIsUsingPaymentScreen,
   } = useCart('POS')
 
   const { activeCounterId, activeCounterName } = useCounters()
+
+  const [editingItem, setEditingItem] = useState<EditingCartItem | null>(null)
+
+  const editingMenuItem = useMemo(() => {
+    if (!editingItem) return null
+    return menuItems.find(mi => mi.id === editingItem.item.id) ?? null
+  }, [editingItem, menuItems])
+
+  const handleEditConfirm = useCallback(
+    (_item: MenuItem, selectedOptions: CartItemOption[], comment: string) => {
+      if (editingItem === null) return
+      updateCartItem({
+        index: editingItem.index,
+        selectedOptions,
+        comment: comment || undefined,
+      })
+    },
+    [editingItem, updateCartItem]
+  )
 
   const hasCartItems = !!cartSessionItems?.length
   const hasSelectedCounter = !!activeCounterId && !!activeCounterName
@@ -46,6 +74,7 @@ export const PosCart = () => {
               item={item}
               onUpdateQuantity={quantity => updateItemQuantity({ index, quantity })}
               onDelete={() => removeItemFromCart(index)}
+              onEditOptions={() => setEditingItem({ index, item })}
             />
             {index < cartSessionItems.length - 1 && <Separator orientation="horizontal" className="mx-3 my-1.5" />}
           </Fragment>
@@ -79,6 +108,16 @@ export const PosCart = () => {
           </Button>
         </div>
       </div>
+      <OptionGroupSelectorModal
+        open={!!editingItem}
+        onOpenChange={(open) => {
+          if (!open) setEditingItem(null)
+        }}
+        item={editingMenuItem ?? editingItem?.item ?? null}
+        initialSelections={editingItem?.item.selectedOptions}
+        initialComment={editingItem?.item.comment}
+        onConfirm={handleEditConfirm}
+      />
     </div>
   )
 }

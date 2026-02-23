@@ -52,6 +52,11 @@ const adminMenuItems = [
     icon: 'notebook-pen' as const,
     items: [
       {
+        title: 'Notas Fiscais',
+        url: '/invoices',
+        icon: 'files' as const,
+      },
+      {
         title: 'Configurações',
         url: '/settings/fiscal',
         icon: 'settings' as const,

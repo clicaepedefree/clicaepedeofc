@@ -1,3 +1,4 @@
+import { CollapsibleOptionsList } from '@/features/pos/components/collapsible-options-list'
 import { CartItem } from '@/features/pos/types'
 import { Button } from '@/shared/button'
 import { DeleteButton } from '@/shared/buttons/delete-button'
@@ -5,18 +6,33 @@ import { formatValueToCurrency } from '@/shared/formatters/currency'
 import ImageWithPlaceholder from '@/shared/image-with-placeholder'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
-import { Minus, Plus } from 'lucide-react'
+import { SmallText } from '@/shared/typography/small-text'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
+import { Minus, Pencil, Plus } from 'lucide-react'
 
 export const PosCartItem = ({
   item,
   onDelete,
   onUpdateQuantity,
+  onEditOptions,
 }: {
   item: CartItem
   onDelete?: () => void
   onUpdateQuantity?: (quantity: number) => void
+  onEditOptions?: () => void
 }) => {
-  const totalPriceForItem = Number(item.price) * item.quantity
+  const itemBasePrice = Number(item.price) * item.quantity
+  const optionsPrice = (item.selectedOptions ?? []).reduce(
+    (total, opt) => total + opt.price * opt.quantity,
+    0
+  ) * item.quantity
+  const totalPriceForItem = itemBasePrice + optionsPrice
+
+  const hasOptions = !!item.selectedOptions?.length
+  const hasOptionGroups = !!item.optionGroups?.length
+  const editTooltipText = hasOptionGroups
+    ? 'Modificar complementos e observações'
+    : 'Adicionar observação'
 
   return (
     <div className="flex items-center gap-2 p-2">
@@ -32,6 +48,14 @@ export const PosCartItem = ({
             {item.category.name}
           </Body>
         </div>
+        {hasOptions && (
+          <CollapsibleOptionsList options={item.selectedOptions!} />
+        )}
+        {item.comment && (
+          <SmallText className="text-muted-foreground italic mt-0.5">
+            Obs: {item.comment}
+          </SmallText>
+        )}
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
@@ -46,6 +70,23 @@ export const PosCartItem = ({
           <Button variant="outline" size="icon" className="p-1.5" onClick={() => onUpdateQuantity?.(item.quantity + 1)}>
             <Plus size={16} />
           </Button>
+          {onEditOptions && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="p-1.5 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors"
+                  onClick={onEditOptions}
+                >
+                  <Pencil size={14} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {editTooltipText}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
       <div className="flex flex-col justify-between items-end self-stretch">

@@ -149,7 +149,7 @@ export default function CounterPage({}) {
               categories={categories ?? []}
             />
           )}
-          {hasMenuItems && <PosCart key={selectedStoreId} />}
+          {hasMenuItems && <PosCart key={selectedStoreId} menuItems={menuItems ?? []} />}
         </div>
       )}
     </div>

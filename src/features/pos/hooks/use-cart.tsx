@@ -12,6 +12,7 @@ import {
   isUsingPaymentScreenAtom,
   removeItemFromCartAtom,
   resetPaymentsAtom,
+  updateCartItemAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
 import { selectedStoreIdAtom } from '@/features/store/state'
@@ -35,6 +36,7 @@ export const useCart = (salesChannel: SalesChannel) => {
   const [, clearCart] = useAtom(clearCartAtom)
   const [, removeItemFromCart] = useAtom(removeItemFromCartAtom)
   const [, updateItemQuantity] = useAtom(updateItemQuantityAtom)
+  const [, updateCartItem] = useAtom(updateCartItemAtom)
   const [, addPayment] = useAtom(addPaymentAtom)
   const [, resetPayments] = useAtom(resetPaymentsAtom)
   const [isUsingPaymentScreen, setIsUsingPaymentScreen] = useAtom(
@@ -85,6 +87,14 @@ export const useCart = (salesChannel: SalesChannel) => {
         categoryId: cartItem.category.id,
         externalCode: cartItem.externalCode,
         ean: cartItem.ean,
+        comment: cartItem.comment ?? null,
+        options: (cartItem.selectedOptions ?? []).map((opt, optIndex) => ({
+          optionGroupName: opt.optionGroupName,
+          optionName: opt.optionName,
+          price: formatValueToCurrency({ value: opt.price }),
+          quantity: formatValueToCurrency({ value: opt.quantity }),
+          index: optIndex,
+        })),
       }))
 
       const orderPayments = cartSessionPayments.map(payment => ({
@@ -129,6 +139,7 @@ export const useCart = (salesChannel: SalesChannel) => {
     clearCart,
     removeItemFromCart,
     updateItemQuantity,
+    updateCartItem,
     addPayment,
     createOrder: createOrderMutation.mutateAsync,
     isUsingPaymentScreen,
