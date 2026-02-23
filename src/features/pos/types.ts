@@ -2,8 +2,17 @@ import { MenuItem } from '@/features/menu/types'
 import { SelectCounter, SelectCounterSession } from '@/services/db/schema'
 import { NewOrderPayment } from '../order/types'
 
+export type CartItemOption = {
+  optionGroupName: string
+  optionName: string
+  price: number
+  quantity: number
+}
+
 export type CartItem = MenuItem & {
   quantity: number
+  selectedOptions?: CartItemOption[]
+  comment?: string
 }
 
 export type CartPayment = NewOrderPayment

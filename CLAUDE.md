@@ -130,6 +130,31 @@ export type InsertItem = Omit<typeof itemsTable.$inferInsert, 'createdAt' | 'upd
 export type SelectItem = typeof itemsTable.$inferSelect
 ```
 
+### Sidebar/Modal Forms
+
+Always use `BaseSideBarActionForm` (`shared/form/base-side-bar-action-form.tsx`) for sidebar modals. It manages the Sheet open/close state and exposes `closeSidebar()` to children. **Always call `closeSidebar()` AFTER the success callback, never before** — closing before the action causes Radix Dialog's `pointer-events: none` cleanup to race with state writes, freezing the page.
+
+```typescript
+// CORRECT: action first, then close
+<BaseSideBarActionForm title="..." trigger={<Button>Open</Button>}>
+  {({ FooterContainer, closeSidebar }) => (
+    <MyForm
+      onSuccess={() => {
+        onSuccess?.()
+        closeSidebar()
+      }}
+      FooterContainerComponent={FooterContainer}
+    />
+  )}
+</BaseSideBarActionForm>
+```
+
+For programmatically-controlled modals (no trigger button), use the same close-after-action pattern with `onOpenChange`:
+```typescript
+onConfirm(item, options)  // action first
+onOpenChange(false)        // then close
+```
+
 ### UI Stack
 
 - **Components**: Radix UI primitives + Tailwind CSS v4
@@ -142,3 +167,11 @@ export type SelectItem = typeof itemsTable.$inferSelect
 - Prettier: no semicolons, single quotes, trailing comma es5
 - Forms validate on submit with Zod schemas
 - Error classes: `AuthError`, `PermissionsError`, `UseCaseError`
+- **Variable naming**: Use descriptive, meaningful names that explain what the variable represents (e.g., `dailyRevenueData` instead of `existing`, `totalDaysInPeriod` instead of `totalDays`). This is especially important inside closures (event handlers, map/reduce/filter callbacks):
+  - Event handlers: use `event` instead of `e`
+  - Reduce accumulators: name what it accumulates (e.g., `accumulatedTotal` instead of `acc` or `sum`)
+  - Callback parameters: use descriptive names (e.g., `cartOption` instead of `eo`, `optionQuantity` instead of `qty`)
+  - State setters: use `previousState` or `previousSelections` instead of `prev`
+  - Ref callbacks: use `element` instead of `el`
+- **Avoid `else`**: Use early returns or `continue` instead of `if/else` blocks to keep code flat and readable
+- **Avoid negative margins/padding**: Do not use negative margins (`-mx-4`, `-mt-2`, etc.) or negative padding in CSS/Tailwind unless absolutely necessary. Instead, restructure the layout so parent containers handle spacing appropriately

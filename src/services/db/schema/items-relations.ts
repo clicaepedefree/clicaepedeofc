@@ -1,11 +1,13 @@
 import { itemOfferingsTable } from '@/services/db/schema/item-offerings'
 import { itemsTable } from '@/services/db/schema/items'
+import { optionsTable } from '@/services/db/schema/options'
 import { storesTable } from '@/services/db/schema/stores'
 import { relations } from 'drizzle-orm'
 import { storeFilesTable } from './store-files'
 
 export const itemRelations = relations(itemsTable, ({ many, one }) => ({
   offerings: many(itemOfferingsTable),
+  options: many(optionsTable),
   store: one(storesTable, {
     fields: [itemsTable.storeId],
     references: [storesTable.id],

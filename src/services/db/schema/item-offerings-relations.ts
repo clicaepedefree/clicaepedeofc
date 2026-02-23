@@ -1,4 +1,5 @@
 import { categoriesTable } from '@/services/db/schema/categories'
+import { itemOfferingOptionGroupsTable } from '@/services/db/schema/item-offering-option-groups'
 import { itemOfferingsTable } from '@/services/db/schema/item-offerings'
 import { itemsTable } from '@/services/db/schema/items'
 import { menuItemOfferingsTable } from '@/services/db/schema/menu-item-offerings'
@@ -14,4 +15,5 @@ export const itemOfferingsRelations = relations(itemOfferingsTable, ({ one, many
     references: [itemsTable.id],
   }),
   menuItemOfferings: many(menuItemOfferingsTable),
+  itemOfferingOptionGroups: many(itemOfferingOptionGroupsTable),
 }))

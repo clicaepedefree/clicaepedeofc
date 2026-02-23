@@ -17,8 +17,15 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/shared/popover'
 
 type ComboboxBaseOption = { value: string; label: string }
 
+type GroupedOption<T> = {
+  groupLabel: string
+  groupKey: string
+  items: T[]
+}
+
 type ComboboxProps<T extends object = ComboboxBaseOption> = {
   options: T[]
+  groupedOptions?: GroupedOption<T>[]
   value?: string
   onChange: (updatedValue: string) => void
   placeholder?: string
@@ -45,6 +52,7 @@ type ComboboxProps<T extends object = ComboboxBaseOption> = {
 
 export const Combobox = <T extends object = ComboboxBaseOption>({
   options,
+  groupedOptions,
   customOptionLabelComponent,
   customKeyValueParserForOption,
   customIcon,
@@ -78,7 +86,11 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
     return customKeyValueParserForOption(option)
   }
 
-  const selectedOption = options.find(
+  const allOptions = groupedOptions
+    ? groupedOptions.flatMap(group => group.items)
+    : options
+
+  const selectedOption = allOptions.find(
     option => getOptionBaseFields(option).value === value
   )
 
@@ -90,7 +102,7 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
   const canDisplayOptions =
     !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -131,49 +143,107 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
             {canDisplayOptions && (
               <>
                 <CommandEmpty>{noResultMessage}</CommandEmpty>
-                <CommandGroup>
-                  {options.map(option => {
-                    const {
-                      value: optionValue,
-                      label: optionLabel,
-                      keywords: optionKeywords = [],
-                    } = getOptionBaseFields(option)
-                    return (
-                      <CommandItem
-                        key={optionValue}
-                        value={optionValue}
-                        keywords={[optionLabel, ...optionKeywords]}
-                        onSelect={currentValue => {
-                          if (
-                            disableUnselectingOption &&
-                            currentValue === value
-                          )
-                            return
+                {groupedOptions ? (
+                  groupedOptions.map(group => (
+                    <CommandGroup
+                      key={group.groupKey}
+                      heading={group.groupLabel}
+                      className="[&_[cmdk-group-heading]]:sticky [&_[cmdk-group-heading]]:top-0 [&_[cmdk-group-heading]]:bg-popover [&_[cmdk-group-heading]]:z-10"
+                    >
+                      {group.items.map(option => {
+                        const {
+                          value: optionValue,
+                          label: optionLabel,
+                          keywords: optionKeywords = [],
+                        } = getOptionBaseFields(option)
+                        return (
+                          <CommandItem
+                            key={optionValue}
+                            value={optionValue}
+                            keywords={[
+                              optionLabel,
+                              group.groupLabel,
+                              ...optionKeywords,
+                            ]}
+                            onSelect={currentValue => {
+                              if (
+                                disableUnselectingOption &&
+                                currentValue === value
+                              )
+                                return
 
-                          onChange(currentValue === value ? '' : currentValue)
-                          setOpen(false)
-                        }}
-                      >
-                        {customOptionLabelComponent?.(
-                          option,
-                          inputValueToUse
-                        ) ?? (
-                          <>
-                            <Check
-                              className={cn(
-                                'mr-2 h-4 w-4',
-                                value === optionValue
-                                  ? 'opacity-100'
-                                  : 'opacity-0'
-                              )}
-                            />
-                            {optionLabel}
-                          </>
-                        )}
-                      </CommandItem>
-                    )
-                  })}
-                </CommandGroup>
+                              onChange(
+                                currentValue === value ? '' : currentValue
+                              )
+                              setOpen(false)
+                            }}
+                          >
+                            {customOptionLabelComponent?.(
+                              option,
+                              inputValueToUse
+                            ) ?? (
+                              <>
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    value === optionValue
+                                      ? 'opacity-100'
+                                      : 'opacity-0'
+                                  )}
+                                />
+                                {optionLabel}
+                              </>
+                            )}
+                          </CommandItem>
+                        )
+                      })}
+                    </CommandGroup>
+                  ))
+                ) : (
+                  <CommandGroup>
+                    {options.map(option => {
+                      const {
+                        value: optionValue,
+                        label: optionLabel,
+                        keywords: optionKeywords = [],
+                      } = getOptionBaseFields(option)
+                      return (
+                        <CommandItem
+                          key={optionValue}
+                          value={optionValue}
+                          keywords={[optionLabel, ...optionKeywords]}
+                          onSelect={currentValue => {
+                            if (
+                              disableUnselectingOption &&
+                              currentValue === value
+                            )
+                              return
+
+                            onChange(currentValue === value ? '' : currentValue)
+                            setOpen(false)
+                          }}
+                        >
+                          {customOptionLabelComponent?.(
+                            option,
+                            inputValueToUse
+                          ) ?? (
+                            <>
+                              <Check
+                                className={cn(
+                                  'mr-2 h-4 w-4',
+                                  value === optionValue
+                                    ? 'opacity-100'
+                                    : 'opacity-0'
+                                )}
+                              />
+                              {optionLabel}
+                            </>
+                          )}
+                        </CommandItem>
+                      )
+                    })}
+                  </CommandGroup>
+                )}
               </>
             )}
           </CommandList>

@@ -1,3 +1,236 @@
+# Feature: Cart Item Editing Enhancements & Item Comments
+
+**Created**: 2026-02-08
+**Status**: Planning
+**Branch**: `feat/add-support-to-option-groups`
+
+## Feature Overview
+
+### Goal
+
+Two enhancements to the POS cart experience:
+
+1. **Full edit support for cart items**: When editing a cart item, the modal should show ALL information from the original add flow — option groups (if any), and the comment field. Currently, the edit button only appears when the item has `selectedOptions`, and it only allows changing option groups. Items without option groups have no edit capability at all.
+
+2. **Item comment / observações**: Add a multi-line text field ("Observações") to every item in the POS flow. This field appears in the option group selector modal (for items with option groups) AND in a simpler modal for items without option groups. The comment is saved to the `order_items` table and displayed in the cart.
+
+### User Value
+
+- POS operators can add special instructions per item (e.g., "sem cebola", "bem passado", "alergia a amendoim")
+- Editing a cart item gives the same full experience as adding it, making the UX consistent and predictable
+- Comments are preserved in order history for kitchen/prep staff reference
+
+### Scope
+
+**Included:**
+- DB migration: add `comment` (nullable text) column to `order_items`
+- Cart state: add `comment` field to `CartItem` type
+- POS modal: add "Observações" textarea to `OptionGroupSelectorModal` (works for items with AND without option groups)
+- POS cart: show comment below options/item in cart, edit button available for ALL items (not just those with options)
+- Order creation: map `comment` from cart to `order_items.comment`
+- Edit flow: pre-fill comment and option selections when editing a cart item
+- Invoices: show item comments in order history
+
+**Excluded:**
+- Comments on individual options (only at the item level)
+- Character limit enforcement (keep it simple — just a text field)
+
+## Architecture Alignment
+
+### Patterns to Follow
+
+1. **Snapshot pattern** for order data — `comment` is stored directly on `order_items`, not as a FK
+2. **Transaction-aware DB functions** with `DbSession` parameter
+3. **Jotai atoms** for cart state with `atomWithStorage`
+4. **Permission check first** in server actions
+5. **Close-after-action** pattern for Radix modals
+
+### Data Changes
+
+```
+order_items table (MODIFY):
+  + comment: text (nullable) — stores the observação/comment at order time
+
+CartItem type (MODIFY):
+  + comment?: string — stores the observação while item is in cart
+
+CartItemOption type: unchanged
+
+OptionGroupSelectorModal (MODIFY):
+  + comment state (textarea)
+  + works for items both with and without option groups
+  + onConfirm callback updated to include comment
+```
+
+## Implementation Tasks
+
+### Core Tasks
+
+#### TASK-EXT-001: Add `comment` column to `order_items` table
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Low
+- **Dependencies**: None
+- **Parallelizable With**: TASK-EXT-002
+- **Files**:
+  - Modify: `src/services/db/schema/order-items.ts` (add `comment` column)
+  - Generate migration: `bunx --bun drizzle-kit generate --name add_comment_to_order_items`
+- **Implementation Notes**:
+  - Add `comment: text('comment')` — nullable, no default
+  - `InsertOrderItem` and `SelectOrderItem` types auto-update (inferred from schema)
+  - Run migration: `bunx --bun drizzle-kit migrate`
+
+#### TASK-EXT-002: Update cart types and state to support `comment`
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Low
+- **Dependencies**: None
+- **Parallelizable With**: TASK-EXT-001
+- **Files**:
+  - Modify: `src/features/pos/types.ts` (add `comment?: string` to `CartItem`)
+  - Modify: `src/features/pos/state.ts` (add `updateCartItemCommentAtom` or extend `updateCartItemOptionsAtom` to also handle comment)
+- **Implementation Notes**:
+  - Add `comment?: string` to `CartItem` type
+  - The `addItemToCartAtom` already strips `optionGroups` but keeps `selectedOptions` — it should also keep `comment`
+  - Option 1 (simpler): extend `updateCartItemOptionsAtom` to accept `{ index, selectedOptions, comment }` → rename to `updateCartItemAtom`
+  - Option 2: separate atom for comment. **Prefer option 1** since edit always saves both at once.
+
+#### TASK-EXT-003: Update `OptionGroupSelectorModal` to support comment and items without option groups
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Medium
+- **Dependencies**: TASK-EXT-002
+- **Parallelizable With**: None
+- **Files**:
+  - Modify: `src/features/pos/components/option-group-selector/option-group-selector-modal.tsx`
+- **Implementation Notes**:
+  - Add `comment` state: `const [comment, setComment] = useState('')`
+  - Initialize `comment` from `initialComment` prop (for edit flow) in the existing `useEffect`
+  - Add `initialComment?: string` to props type
+  - Update `onConfirm` callback type: `(item: MenuItem, selectedOptions: CartItemOption[], comment: string) => void`
+  - Add a "Observações" section at the bottom of the scrollable area (below option groups, if any):
+    - Label: "Observações" with a `Body` component
+    - `<textarea>` or use existing shared input component, multi-line, placeholder "Ex: sem cebola, bem passado..."
+    - No character limit
+  - The modal should now work for items WITHOUT option groups too:
+    - If `groups.length === 0`, skip the option group steps entirely
+    - Just show the item name/price header + comment textarea + confirm/cancel footer
+    - `isValid` should always be `true` when there are no groups (no min/max to validate)
+  - Update `handleConfirm` to pass `comment` to `onConfirm`
+
+#### TASK-EXT-004: Update POS flows to always open modal and support comment
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Medium
+- **Dependencies**: TASK-EXT-003
+- **Parallelizable With**: None
+- **Files**:
+  - Modify: `src/features/pos/components/pos-menu-items-list.tsx` (always open modal for all items)
+  - Modify: `src/features/pos/components/pos-cart.tsx` (enable edit for all items, pass comment)
+  - Modify: `src/features/pos/components/pos-cart-item.tsx` (show comment, enable edit for all items)
+  - Modify: `src/features/pos/hooks/use-cart.tsx` (update `updateCartItemOptions` → `updateCartItem`)
+- **Implementation Notes**:
+  - **pos-menu-items-list.tsx**: Remove the `if/else` on `optionGroups.length` — ALL items now open the modal. `handleItemClick` always calls `setOptionModalItem(item)`. Update `handleOptionConfirm` to accept `comment` parameter and pass to `addItemToCart`.
+  - **pos-cart.tsx**:
+    - Remove the condition `item.selectedOptions?.length` for showing the edit button — ALL items should be editable
+    - Pass `initialComment={editingItem?.item.comment}` to the modal
+    - Update `handleEditConfirm` to accept `comment` and call the updated atom
+  - **pos-cart-item.tsx**:
+    - Remove the `hasOptions` condition from the edit button — always show edit pencil icon
+    - Show `item.comment` below the selected options (if present), styled as muted text
+  - **use-cart.tsx**: Expose the updated atom (renamed from `updateCartItemOptions` to `updateCartItem`)
+  - **state.ts**: Rename `updateCartItemOptionsAtom` to `updateCartItemAtom`, accept `{ index, selectedOptions, comment }`. Update the cart item with both fields.
+
+#### TASK-EXT-005: Update order creation to include comment
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Low
+- **Dependencies**: TASK-EXT-001, TASK-EXT-004
+- **Parallelizable With**: None
+- **Files**:
+  - Modify: `src/features/pos/hooks/use-cart.tsx` (map `comment` in `createOrderMutation`)
+  - Modify: `src/features/order/types.ts` (if needed — `comment` should auto-infer from schema)
+- **Implementation Notes**:
+  - In `createOrderMutation`, add `comment: cartItem.comment ?? null` to each order item mapping
+  - The `InsertOrderItem` type already includes `comment` after the schema change (inferred), so `NewOrderItem` (which is `Omit<InsertOrderItem, 'id' | 'orderId'>`) will also include it automatically
+
+#### TASK-EXT-006: Show item comments in order history (invoices page)
+
+- **Status**: ✅ Completed
+- **Type**: Core
+- **Complexity**: Low
+- **Dependencies**: TASK-EXT-005
+- **Parallelizable With**: None
+- **Files**:
+  - Modify: `src/app/(admin)/invoices/page.tsx` (show comment in expandable order item rows)
+- **Implementation Notes**:
+  - The `listOrders` query already fetches order items with options via relational query — `comment` will be included automatically once the schema is updated
+  - In the expandable order item row, show `item.comment` below the item name/options if present, styled as italic muted text (e.g., `"Obs: sem cebola"`)
+
+## Task Dependency Graph
+
+```
+Parallel (no dependencies):
+  TASK-EXT-001 (DB migration: add comment column)
+  TASK-EXT-002 (Cart types + state: add comment)
+
+Sequential:
+  TASK-EXT-003 (Modal: add comment textarea + support items without groups) ← TASK-EXT-002
+  TASK-EXT-004 (POS flows: always open modal, pass comment) ← TASK-EXT-003
+  TASK-EXT-005 (Order creation: map comment) ← TASK-EXT-001, TASK-EXT-004
+  TASK-EXT-006 (Invoices: show comment) ← TASK-EXT-005
+```
+
+## Implementation Guidelines
+
+### Keep It Simple
+
+- The comment is just a nullable text column — no validation, no character limit
+- The modal already handles both add and edit flows — just add the textarea and comment state
+- Items without option groups will use the same modal, just without the option group steps
+- No new components needed — just extend the existing modal
+
+### Testing Strategy
+
+- Manual testing checklist:
+  - [ ] Add item WITHOUT option groups → modal opens → add a comment → confirm → item in cart shows comment
+  - [ ] Add item WITH option groups → modal opens → select options + add comment → confirm → item in cart shows both options and comment
+  - [ ] Edit cart item WITHOUT option groups → modal opens pre-filled with comment → change comment → confirm → cart updates
+  - [ ] Edit cart item WITH option groups → modal opens pre-filled with options AND comment → change both → confirm → cart updates
+  - [ ] Create order with items that have comments → verify `comment` is saved in `order_items` table
+  - [ ] Create order with items without comments → verify `comment` is null
+  - [ ] View order in invoices page → verify comments appear on items that have them
+  - [ ] Edit item, clear the comment → confirm → verify comment is removed from cart item
+
+### Rollout Considerations
+
+- **Database migration**: Adds a nullable column to `order_items` — safe, no data loss, backwards compatible
+- **Cart state migration**: Existing cart sessions in localStorage won't have `comment`. Code handles `undefined` gracefully (treat as empty string in modal, map to `null` for DB)
+
+## Progress Tracking
+
+| Task ID       | Title                                | Type | Status     | Started | Completed | Notes |
+| ------------- | ------------------------------------ | ---- | ---------- | ------- | --------- | ----- |
+| TASK-EXT-001  | DB: add comment column to order_items | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | Migration: 0028_add_comment_to_order_items.sql |
+| TASK-EXT-002  | Cart types/state: add comment        | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | Renamed updateCartItemOptionsAtom → updateCartItemAtom, added comment field |
+| TASK-EXT-003  | Modal: comment + items without groups | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | Added comment state, textarea, initialComment prop, works for items without groups |
+| TASK-EXT-004  | POS flows: always open modal, edit all | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | All items open modal, all cart items editable, comment shown in cart |
+| TASK-EXT-005  | Order creation: map comment          | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | Added comment mapping to order item creation |
+| TASK-EXT-006  | Invoices: show item comments         | Core | ✅ Completed | 2026-02-08 | 2026-02-08 | Shows "Obs: ..." italic text below item options in expanded order rows |
+
+## Open Questions
+
+- None — the approach is straightforward and builds on existing patterns
+
+---
+
+---
+
 # Feature: Option Groups & Options for Item Offerings
 
 **Created**: 2026-02-08
@@ -291,67 +524,152 @@ orderItemsTable (existing)
 
 #### TASK-011: Add option groups tab to item create/edit form
 
-- **Status**: ⏳ Pending
+- **Status**: ✅ Completed
 - **Type**: Core
 - **Complexity**: Medium
 - **Dependencies**: TASK-007
 - **Parallelizable With**: TASK-012
 - **Files**:
-  - Modify: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx` (add tab system)
-  - Possibly extract: a shared wrapper component for the tab layout
+  - Created: `src/features/option-groups/components/link-option-groups-content.tsx` (extracted shared presentational component)
+  - Modified: `src/features/option-groups/components/link-option-groups-modal.tsx` (refactored to use LinkOptionGroupsContent)
+  - Modified: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx` (added tab system with option groups)
 - **Implementation Notes**:
-  - Add a **top-level tab bar** to the item create/edit form with two tabs:
-    1. **"Item"** — the existing item information form (name, description, image, price, stock, etc.)
-    2. **"Grupos de Opções"** — reuses the existing `LinkOptionGroupsModal` content (the list of available groups with checkboxes) but rendered inline as a tab panel instead of inside a Sheet
-  - The "Grupos de Opções" tab shows the **linking UI** for the current item offering: which option groups are attached and allows toggling them on/off
-  - This tab should only be available when **editing** an existing item (not when creating), since we need the `itemOfferingId` to link groups
-  - Reuse the same components/logic already built in `link-option-groups-modal.tsx` — extract the inner content into a shared component (e.g. `LinkOptionGroupsContent`) that can be rendered both inside the Sheet modal and inside the tab panel
+  - Added tab bar with "Item" and "Grupos de Opções" tabs when editing an existing item (showOptionGroupsTab = !isCreatingItem && !!item?.itemOfferingId)
+  - Extracted `LinkOptionGroupsContent` as a shared presentational component used by both `LinkOptionGroupsModal` and the form tab
+  - Footer content swaps based on active tab: item form actions vs "Salvar grupos de opções" button
+  - Option groups tab loads all groups via `useOptionGroups()` and allows toggling selection
+  - Save triggers `linkOptionGroups` mutation with selected group IDs
 
 #### TASK-012: Allow creating option groups inline from the link modal
 
-- **Status**: ⏳ Pending
+- **Status**: ✅ Completed
 - **Type**: Core
 - **Complexity**: Medium
 - **Dependencies**: TASK-007
 - **Parallelizable With**: TASK-011
 - **Files**:
-  - Modify: `src/features/option-groups/components/link-option-groups-modal.tsx` (add inline create)
-  - Reuse: `src/features/option-groups/components/option-group-form.tsx`
+  - Modified: `src/features/option-groups/components/link-option-groups-content.tsx` (added inline create form with toggle button)
+  - Modified: `src/features/option-groups/components/link-option-groups-modal.tsx` (pass onCreateGroup/isCreating props)
+  - Modified: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx` (pass onCreateGroup/isCreating props)
+  - Reused: `src/features/option-groups/components/option-group-form.tsx`
 - **Implementation Notes**:
-  - Add a **"Criar novo grupo"** (Create new group) button at the top or bottom of the link option groups modal/content
-  - Clicking it expands or opens the existing `OptionGroupForm` inline within the modal, allowing the user to create a new option group without navigating to the "Grupos de Opções" tab on the menu page
-  - On successful creation, the new group is automatically added to the list of available groups and can be immediately selected/linked to the current item offering
-  - Invalidate the option groups query cache after creation so the list refreshes
-  - This should work in both contexts: when rendered as a Sheet modal (from item offerings table) and when rendered inline as a tab panel (from TASK-011)
+  - Added "Criar novo grupo" toggle button to `LinkOptionGroupsContent` (only shown when `onCreateGroup` prop is provided)
+  - Clicking the button expands the `OptionGroupForm` inline within a bordered container
+  - On successful creation, the form collapses and the new group is auto-selected via `setSelectedIds`
+  - Cache invalidation happens automatically via the existing `useOptionGroups().createOptionGroup` mutation's `onSettled` callback
+  - Works in both contexts: Sheet modal (LinkOptionGroupsModal) and tab panel (CreateOrUpdateItemForm)
 
 ### Optional Tasks (Nice-to-Have Enhancements)
 
 #### TASK-OPT-001: Display option details in order history / receipt
 
-- **Status**: ⏳ Pending
+- **Status**: ✅ Completed
 - **Type**: Optional
 - **Complexity**: Medium
 - **Dependencies**: TASK-010
 - **Value Add**: Show selected options when viewing past orders and on printed receipts
 - **Files**:
-  - Modify: receipt feature components
-  - Modify: order listing components (if they exist)
+  - Modified: `src/features/order/api.ts` (updated `listOrders` to include items with options via relational query)
+  - Modified: `src/app/(admin)/invoices/page.tsx` (expandable order rows showing items and options)
 - **Implementation Notes**:
-  - Query order items with their options
-  - Display indented under each item in the order detail view
+  - Updated `listOrders` to use `db.query.ordersTable.findMany` with nested `items → options` and `payments`
+  - Invoices page now shows expandable rows — click a row to see order items with their selected options
+  - Options with price > 0 show the price; zero-price options show only name/quantity
+  - Added order status display and item count column
+  - Receipt templates only exist for counter open/close — no order receipt template exists yet, so receipt part is deferred
 
 #### TASK-OPT-002: Reorder option groups via drag & drop
 
-- **Status**: ⏳ Pending
+- **Status**: ✅ Completed
 - **Type**: Optional
 - **Complexity**: Medium
 - **Dependencies**: TASK-007
 - **Value Add**: Allow store owners to reorder option groups and options within groups
 - **Files**:
-  - Modify: option-groups-section.tsx
+  - Modified: `src/features/option-groups/components/option-group-form.tsx` (added up/down reorder callbacks for options)
+  - Modified: `src/features/option-groups/components/option-row.tsx` (added up/down arrow buttons, onMoveUp/onMoveDown props)
 - **Implementation Notes**:
-  - Use a drag-and-drop library to reorder groups and options
-  - Update `index` fields on save
+  - Used simple up/down arrow buttons instead of a full DnD library (no new dependencies needed)
+  - Each option row shows small arrow-up and arrow-down buttons on the left side
+  - First option disables the up arrow, last option disables the down arrow
+  - Swapping updates `index` fields automatically on both swapped items
+  - Grid layout updated from 4 columns to 5 to accommodate the reorder controls
+
+### Bug Fix Tasks (Post-Testing)
+
+#### TASK-OPT-003: Fix POS page freeze after confirming option selections
+
+- **Status**: ✅ Completed
+- **Type**: Bug Fix (Critical)
+- **Complexity**: Medium
+- **Dependencies**: TASK-008
+- **Parallelizable With**: TASK-OPT-004, TASK-OPT-005
+- **Files**:
+  - Modify: `src/features/pos/state.ts` (strip optionGroups from cart items before localStorage write)
+  - Modify: `src/features/pos/components/option-group-selector/option-group-selector-modal.tsx` (close modal before heavy state write)
+  - Modify: `src/features/pos/components/pos-menu-items-list.tsx` (remove redundant setOptionModalItem(null))
+  - Modify: `src/features/pos/components/pos-cart.tsx` (remove redundant setEditingItem(null))
+- **Implementation Notes**:
+  - **Root cause**: `handleConfirm` calls `onConfirm()` (heavy Jotai `atomWithStorage` write serializing full `MenuItem` including nested `optionGroups` to localStorage) simultaneously with Radix Dialog close. This prevents Radix from cleaning up `pointer-events: none` on `document.body`.
+  - **Fix in `state.ts`**: In `addItemToCartAtom`, set `optionGroups: []` on the item before writing to the atom — the cart only needs `selectedOptions`, not the full group definitions
+  - **Fix in modal**: In `handleConfirm`, call `onOpenChange(false)` FIRST, then `onConfirm()` via `setTimeout(0)` so Radix cleans up before the heavy state write. Capture `item` and `cartOptions` in local variables before the timeout for the closure.
+  - **Fix in modal**: Memoize `groups` with `useMemo(() => item?.optionGroups ?? [], [item])` and add `initialSelections` to the useEffect deps: `[open, item, initialSelections]`
+  - **Fix in pos-menu-items-list.tsx**: In `handleOptionConfirm`, remove `setOptionModalItem(null)` since the modal's `onOpenChange(false)` already triggers it
+  - **Fix in pos-cart.tsx**: In `handleEditConfirm`, remove `setEditingItem(null)` since the modal's `onOpenChange(false)` already triggers it
+- **Testing Plan**:
+  - Navigate to POS → click item with option groups → select options → click "Confirmar" → page should remain interactive, item appears in cart
+  - Edit cart item options → confirm → page should remain interactive
+  - Verify cart total is still calculated correctly
+
+#### TASK-OPT-004: Improve option groups selection UX with Combobox + item preview
+
+- **Status**: ✅ Completed
+- **Type**: Bug Fix / UX Improvement
+- **Complexity**: High
+- **Dependencies**: TASK-011
+- **Parallelizable With**: TASK-OPT-003, TASK-OPT-005
+- **Files**:
+  - Modify: `src/features/option-groups/components/link-option-groups-content.tsx` (full rewrite: Combobox + ordered list with item preview)
+  - Modify: `src/features/option-groups/components/link-option-groups-modal.tsx` (update to use new props: addGroup, removeGroup, reorderGroups)
+  - Modify: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx` (update to use new props)
+- **Implementation Notes**:
+  - **Replace toggle buttons with Combobox + ordered list** in `LinkOptionGroupsContent`:
+    - New props: `onAddGroup(groupId)`, `onRemoveGroup(groupId)`, `onReorder(updatedIds)` replacing `onToggle`
+    - Compute `availableGroups` (allGroups minus selected) for the Combobox
+    - Compute `selectedGroups` by mapping `selectedGroupIds` → full objects (preserving order)
+    - Top: `Combobox` from `@/shared/combobox` to add groups (with `value=""` so it resets after selection)
+    - Below: ordered list of selected groups, each row shows:
+      - Group name + item names preview (e.g. "Queijo Cheddar, Queijo Prato, Mussarela" truncated to 4 items max with `+N` suffix)
+      - Option count + selection range (e.g. "3 opções · Seleção: 1 a 3")
+      - ArrowUp/ArrowDown buttons (same pattern as `option-row.tsx`)
+      - X/remove button
+    - Keep the "Criar novo grupo" inline form toggle at the top (existing behavior)
+  - **Update `link-option-groups-modal.tsx`**: Replace `toggleGroup` with `addGroup`, `removeGroup`, `reorderGroups` handlers
+  - **Update `create-or-update-item-form.tsx`**: Replace `toggleOptionGroup` with `addOptionGroup`, `removeOptionGroup`, `reorderOptionGroups` and pass new props to `LinkOptionGroupsContent`
+- **Testing Plan**:
+  - Edit an item → go to "Grupos de Opções" tab → verify Combobox shows available groups → select one → verify it appears in ordered list with item names preview → reorder with arrows → verify order changes
+  - Open link-option-groups-modal from item offerings table → verify same Combobox + ordered list UX works in the modal context
+
+#### TASK-OPT-005: Unified save for item form and option group links
+
+- **Status**: ✅ Completed
+- **Type**: Bug Fix / UX Improvement
+- **Complexity**: Medium
+- **Dependencies**: TASK-011
+- **Parallelizable With**: TASK-OPT-003, TASK-OPT-004
+- **Files**:
+  - Modify: `src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx`
+- **Implementation Notes**:
+  - Merge the two separate save buttons into one that saves both the item and option group links
+  - In the form's `onSubmit` (update branch): after `updateItem()` succeeds, also call `linkOptionGroups()` if `showOptionGroupsTab` is true
+  - Remove `optionGroupsFooterActions` variable entirely
+  - Remove `handleSaveOptionGroups` function
+  - Footer always renders `footerActions` regardless of active tab (remove the tab-switching ternary)
+  - Add `isLinking` to the submit button disabled state: `disabled={!canSubmit || isLinking}`
+  - Remove the standalone option groups save button from inside the tab content
+- **Testing Plan**:
+  - Edit an item → change name on "Item" tab → switch to "Grupos de Opções" tab → add/remove a group → click "Atualizar Item" → verify BOTH item changes AND option group links are saved
+  - Verify creating a new item still works (option groups tab not shown for new items)
 
 ## Task Dependency Graph
 
@@ -383,6 +701,11 @@ Catalog UX Enhancements (after TASK-007, parallelizable):
 Optional (after TASK-010):
   TASK-OPT-001 (order history/receipt)
   TASK-OPT-002 (drag & drop reorder)
+
+Bug Fixes (all parallelizable):
+  TASK-OPT-003 (POS freeze fix) ◄── TASK-008
+  TASK-OPT-004 (selection UX + item preview) ◄── TASK-011
+  TASK-OPT-005 (unified save) ◄── TASK-011
 ```
 
 ## Implementation Guidelines
@@ -433,10 +756,13 @@ Optional (after TASK-010):
 | TASK-008     | POS UI: option group selector modal    | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Created option selector modal with group steps, validation, and price calculation |
 | TASK-009     | POS cart UI: display & edit options     | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Options display in cart, edit via pencil button re-opens modal |
 | TASK-010     | Order creation with options            | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Maps cart selectedOptions to order item options snapshots |
-| TASK-011     | Option groups tab in item form         | Core     | ⏳ Pending | -       | -         | -     |
-| TASK-012     | Inline create from link modal          | Core     | ⏳ Pending | -       | -         | -     |
-| TASK-OPT-001 | Order history / receipt options        | Optional | ⏳ Pending | -       | -         | -     |
-| TASK-OPT-002 | Drag & drop reorder                   | Optional | ⏳ Pending | -       | -         | -     |
+| TASK-011     | Option groups tab in item form         | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Extracted LinkOptionGroupsContent, added tabs to edit form |
+| TASK-012     | Inline create from link modal          | Core     | ✅ Completed | 2026-02-08 | 2026-02-08 | Inline OptionGroupForm in LinkOptionGroupsContent, auto-select new group |
+| TASK-OPT-001 | Order history / receipt options        | Optional | ✅ Completed | 2026-02-08 | 2026-02-08 | Expandable rows in invoices page; no order receipt template exists yet |
+| TASK-OPT-002 | Drag & drop reorder                   | Optional | ✅ Completed | 2026-02-08 | 2026-02-08 | Used up/down arrow buttons instead of DnD library |
+| TASK-OPT-003 | Fix POS page freeze                   | Bug Fix  | ✅ Completed   | 2026-02-08 | 2026-02-08 | Strip optionGroups from cart, defer onConfirm after modal close |
+| TASK-OPT-004 | Selection UX + item preview            | Bug Fix  | ✅ Completed   | 2026-02-08 | 2026-02-08 | Combobox + ordered list with item names preview, reorder arrows |
+| TASK-OPT-005 | Unified save for item + option groups  | Bug Fix  | ✅ Completed   | 2026-02-08 | 2026-02-08 | Single save button now saves item + option group links |
 
 ## Decisions (Resolved)
 

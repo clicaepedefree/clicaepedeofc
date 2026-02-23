@@ -1,5 +1,6 @@
 'use client'
 
+import { LinkOptionGroupsModal } from '@/features/option-groups/components/link-option-groups-modal'
 import { Button } from '@/shared/button'
 import { DeleteButton } from '@/shared/buttons/delete-button'
 import { CurrencyInput } from '@/shared/currency-input'
@@ -18,10 +19,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/table'
+import { Badge } from '@/shared/badge'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
-import { Edit } from 'lucide-react'
+import { Edit, ListChecks } from 'lucide-react'
 import { useItem } from '../../hooks/use-item'
 import { BaseCategory, ItemOfferingWithImage } from '../../types'
 import { UpdateItemAction } from '../create-or-update-item/update-item-action'
@@ -137,6 +139,33 @@ const ItemOfferingRow = ({
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-center gap-2">
+          <LinkOptionGroupsModal
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="group/options relative"
+                disabled={isDeleting}
+              >
+                <ListChecks
+                  size={16}
+                  className="group-hover/options:text-primary"
+                />
+                {!!item.optionGroups?.length && (
+                  <Badge
+                    variant="default"
+                    className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px]"
+                  >
+                    {item.optionGroups.length}
+                  </Badge>
+                )}
+              </Button>
+            }
+            itemOfferingId={item.itemOfferingId}
+            itemName={item.name}
+            currentOptionGroups={item.optionGroups}
+            onSuccess={onItemUpdated}
+          />
           <UpdateItemAction
             category={category}
             item={item}

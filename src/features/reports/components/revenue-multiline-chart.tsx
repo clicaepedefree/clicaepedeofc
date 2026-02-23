@@ -19,6 +19,7 @@ import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { formatDate } from '@/shared/formatters/date'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Body } from '@/shared/typography/body'
+import dayjs from 'dayjs'
 import { useMemo, useState } from 'react'
 
 export const description = 'A multiple line chart'
@@ -75,12 +76,35 @@ export function RevenueMultilineChart({
   }
 
   const chartDataParsed = useMemo(() => {
-    return chartData.map(item => ({
-      ...item,
-      date: formatDate(item.date, 'DD MMM'),
-      dailyAverageOrderValue: Number(item.dailyRevenue) / item.dailyOrders,
-    }))
-  }, [chartData])
+    const revenueByDate = new Map(
+      chartData.map(item => [dayjs(item.date).format('YYYY-MM-DD'), item])
+    )
+
+    const totalDaysInPeriod =
+      dayjs(dates.endDate).diff(dayjs(dates.startDate), 'day') + 1
+
+    return Array.from({ length: totalDaysInPeriod }, (_, dayIndex) => {
+      const currentDay = dayjs(dates.startDate).add(dayIndex, 'day')
+      const dailyRevenueData = revenueByDate.get(currentDay.format('YYYY-MM-DD'))
+
+      if (dailyRevenueData) {
+        return {
+          date: formatDate(dailyRevenueData.date, 'DD MMM'),
+          dailyOrders: dailyRevenueData.dailyOrders,
+          dailyRevenue: dailyRevenueData.dailyRevenue,
+          dailyAverageOrderValue:
+            Number(dailyRevenueData.dailyRevenue) / dailyRevenueData.dailyOrders,
+        }
+      }
+
+      return {
+        date: formatDate(currentDay.toDate(), 'DD MMM'),
+        dailyOrders: 0,
+        dailyRevenue: '0',
+        dailyAverageOrderValue: 0,
+      }
+    })
+  }, [chartData, dates.startDate, dates.endDate])
 
   return (
     <Card className="pt-0">

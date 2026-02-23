@@ -2,6 +2,7 @@
 
 import {
   createOrderItemOnDb,
+  createOrderItemOptionsOnDb,
   createOrderOnDb,
   createOrderPaymentOnDb,
   getNextOrderDisplayIdForStore,
@@ -37,18 +38,30 @@ export const createOrder = async (newOrder: NewOrder) => {
 
     await Promise.all(updateItemsInventoryPromises)
 
-    const createdOrderItemsPromises = newOrder.items.map(newOrderItem =>
-      createOrderItemOnDb({
+    const createdOrderItems = []
+    for (const newOrderItem of newOrder.items) {
+      const { options, ...orderItemData } = newOrderItem
+      const createdOrderItem = await createOrderItemOnDb({
         newOrderItem: {
-          ...newOrderItem,
+          ...orderItemData,
           orderId: createdOrder.id,
-          index: newOrderItem.index,
+          index: orderItemData.index,
         },
         dbSession: tx,
       })
-    )
 
-    const createdOrderItems = await Promise.all(createdOrderItemsPromises)
+      if (options && options.length > 0) {
+        await createOrderItemOptionsOnDb({
+          options: options.map((opt) => ({
+            ...opt,
+            orderItemId: createdOrderItem.id,
+          })),
+          dbSession: tx,
+        })
+      }
+
+      createdOrderItems.push(createdOrderItem)
+    }
 
     const createdOrderPaymentsPromises = newOrder.payments.map(
       newOrderPayment =>
@@ -68,11 +81,18 @@ export const createOrder = async (newOrder: NewOrder) => {
 }
 
 export const listOrders = async (storeId: number) => {
-  const orders = await db
-    .select()
-    .from(ordersTable)
-    .where(eq(ordersTable.storeId, storeId))
-    .orderBy(desc(ordersTable.createdAt))
+  const orders = await db.query.ordersTable.findMany({
+    where: eq(ordersTable.storeId, storeId),
+    orderBy: [desc(ordersTable.createdAt)],
+    with: {
+      items: {
+        with: {
+          options: true,
+        },
+      },
+      payments: true,
+    },
+  })
 
   return orders
 }
