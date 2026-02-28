@@ -11,7 +11,6 @@ export type NewOrderItem = Omit<InsertOrderItem, 'id' | 'orderId'> & {
   options?: NewOrderItemOption[]
 }
 export type NewOrderPayment = Omit<InsertOrderPayment, 'id' | 'orderId'>
-export type OrderPayment = SelectOrderPayment
 
 export type NewOrder = Omit<InsertOrder, 'id' | 'displayId'> & {
   items: NewOrderItem[]
@@ -23,5 +22,3 @@ export type SalesChannel = SelectOrder['salesChannel']
 export type OrderType = SelectOrder['type']
 
 export type CardBrand = SelectOrderPayment['cardBrand']
-
-export type Order = SelectOrder
