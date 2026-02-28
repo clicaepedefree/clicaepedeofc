@@ -9,18 +9,21 @@ import {
   TableRow,
 } from '@/shared/table'
 
-import { listOrders } from '@/features/order/api'
+import { generateOrderReceipt, listOrders } from '@/features/order/api'
 import { ordersCacheKey } from '@/features/order/cache-keys'
+import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
+import { Button } from '@/shared/button'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { formatDate } from '@/shared/formatters/date'
 import { OptionItemLine } from '@/shared/option-item-line'
 import { LargeText } from '@/shared/typography/large-text'
 import { useQuery } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 type OrderWithDetails = Awaited<ReturnType<typeof listOrders>>[number]
 
@@ -53,6 +56,7 @@ export default function InvoicesPage() {
             <TableHead className="text-center">Itens</TableHead>
             <TableHead className="text-center">Data do Pedido</TableHead>
             <TableHead className="text-center">Status</TableHead>
+            <TableHead className="text-center">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -65,7 +69,54 @@ export default function InvoicesPage() {
 
 const OrderRow = ({ order }: { order: OrderWithDetails }) => {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isPrinting, setIsPrinting] = useState(false)
   const hasItems = order.items && order.items.length > 0
+
+  const {
+    printOrderReceipt,
+    ReceiptContent,
+    printError,
+    showPrintErrorToast,
+  } = useOrderReceipt()
+
+  // Show error toast with retry option when print error occurs
+  useEffect(() => {
+    if (printError) {
+      showPrintErrorToast(order.displayId)
+    }
+  }, [printError, showPrintErrorToast, order.displayId])
+
+  const handlePrint = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation() // Prevent row expansion when clicking print
+      setIsPrinting(true)
+
+      try {
+        const result = await generateOrderReceipt(order.id)
+        printOrderReceipt(result.receipt, result.displayId)
+        toast.success('Recibo enviado para impressão', {
+          description: `Pedido #${order.displayId}`,
+          richColors: true,
+          position: 'top-center',
+          duration: 3000,
+        })
+      } catch (error) {
+        console.error('[Order Reprint Error]', error)
+        toast.error('Erro ao reimprimir recibo', {
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Não foi possível gerar o recibo do pedido.',
+          richColors: true,
+          position: 'top-center',
+          duration: 5000,
+        })
+      } finally {
+        setIsPrinting(false)
+      }
+    },
+    [order.id, order.displayId, printOrderReceipt]
+  )
 
   return (
     <>
@@ -108,10 +159,22 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
             <OrderStatusBadge status={order.status} />
           </LargeText>
         </TableCell>
+        <TableCell className="text-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handlePrint}
+            disabled={isPrinting}
+            title="Imprimir recibo"
+          >
+            <Printer className="h-4 w-4" />
+            <span className="ml-1 hidden sm:inline">Imprimir</span>
+          </Button>
+        </TableCell>
       </TableRow>
       {isExpanded && hasItems && (
         <TableRow>
-          <TableCell colSpan={6} className="bg-muted/30 p-0">
+          <TableCell colSpan={7} className="bg-muted/30 p-0">
             <div className="px-6 py-3">
               <div className="space-y-2">
                 {order.items.map(item => (
@@ -152,6 +215,7 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
           </TableCell>
         </TableRow>
       )}
+      {ReceiptContent}
     </>
   )
 }
