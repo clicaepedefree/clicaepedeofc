@@ -129,8 +129,26 @@
 - No mock data patterns found in receipt feature
 - App compiles and loads correctly (verified via playwright-cli)
 
+**Feature #61: Include payment information in receipt** - PASSING
+- Verified payment section in receipt template (order.receipt lines 46-60):
+  - Section header: `_Pagamentos`
+  - Payment loop: `{{#payments}}...{{/payments}}`
+  - Payment method and amount: `|{{paymentMethod}} |{{paymentValue}} |`
+  - Cash change handling: `Troco para:` and `Troco:` displayed conditionally
+  - Fallback for no payments: `Pagamento pendente`
+- TypeScript module (order.ts) correctly processes payments:
+  - Uses `getPaymentMethodName()` to localize methods (CASH→Dinheiro, CREDIT→Cartão de crédito, etc.)
+  - Formats all values with R$ currency symbol
+  - Calculates change: `changeFor - value` using Decimal.js for precision
+- Verified via curl `/api/test-order-receipt` with multiple payments:
+  - Cartão de crédito: R$50,00
+  - Dinheiro: R$50,00 with Troco para: R$60,00 → Troco: R$10,00
+  - PIX: R$13,80
+- No mock data patterns found in receipt feature
+- No console errors
+
 ### Current Status
-- 9/97 features passing (9.3%)
+- 10/97 features passing (10.3%)
 
 ### Next Steps
 - Continue with core functionality features
