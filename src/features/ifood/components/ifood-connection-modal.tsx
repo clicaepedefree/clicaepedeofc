@@ -165,10 +165,8 @@ export function IFoodConnectionModal({
       const data = await getMerchantCatalogs(storeId, selectedMerchant.id)
 
       setCatalogs(data.catalogs)
-
-      if (data.catalogs.length === 1) {
-        setSelectedCatalog(data.catalogs[0])
-      }
+      // No catalog is pre-selected by default - user must explicitly select
+      setSelectedCatalog(null)
 
       setStep('selectCatalog')
       toast.success('Catalogos carregados! Selecione qual deseja usar.')
@@ -186,15 +184,19 @@ export function IFoodConnectionModal({
 
   const handleSelectCatalog = (catalog: Catalog) => {
     setSelectedCatalog(catalog)
+    if (connectionError) {
+      setConnectionError(null) // Clear error when user changes selection
+    }
   }
 
   const handleCompleteConnection = async () => {
     if (!selectedMerchant || !selectedCatalog) {
-      toast.error('Por favor, selecione um restaurante e um catalogo')
+      setConnectionError('Por favor, selecione um restaurante e um catalogo')
       return
     }
 
     setIsLoading(true)
+    setConnectionError(null) // Clear any previous error before attempting
 
     try {
       // Complete the connection - tokens are read from OAuth session server-side
@@ -206,14 +208,18 @@ export function IFoodConnectionModal({
         selectedMerchant.name
       )
 
+      setConnectionError(null) // Clear error on success
       toast.success('iFood conectado com sucesso!')
       handleOpenChange(false)
       onSuccess()
     } catch (error) {
       console.error('Error completing connection:', error)
-      toast.error(
-        error instanceof Error ? error.message : 'Erro ao conectar. Tente novamente.'
-      )
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao conectar. Tente novamente.'
+      setConnectionError(errorMessage)
+      // Selections (merchant, catalog) are preserved - user can retry
     } finally {
       setIsLoading(false)
     }
@@ -480,16 +486,29 @@ export function IFoodConnectionModal({
                     </div>
                   )}
 
+                  {connectionError && (
+                    <div
+                      id="connection-error"
+                      className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2"
+                      role="alert"
+                    >
+                      {connectionError}
+                    </div>
+                  )}
+
                   <div className="mt-4 flex gap-2">
                     <Button
                       onClick={handleCompleteConnection}
                       disabled={!selectedCatalog || isLoading}
                     >
-                      {isLoading ? 'Conectando...' : 'Conectar'}
+                      {isLoading ? 'Conectando...' : (connectionError ? 'Tentar Novamente' : 'Conectar')}
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setStep('selectMerchant')}
+                      onClick={() => {
+                        setConnectionError(null) // Clear error when going back
+                        setStep('selectMerchant')
+                      }}
                       disabled={isLoading}
                     >
                       Voltar
