@@ -42,7 +42,7 @@ export default function InvoicesPage() {
     <>
       <PageHeaderBlock
         title="Notas fiscais"
-        subtitle="Gerencie duas notas fiscais"
+        subtitle="Gerencie suas notas fiscais"
       />
       <Table className="table-auto overflow-x-scroll m-4 bg-white rounded-2xl">
         <TableHeader>
@@ -56,9 +56,7 @@ export default function InvoicesPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {result.data?.map(order => (
-            <OrderRow key={order.id} order={order} />
-          ))}
+          {result.data?.map(order => <OrderRow key={order.id} order={order} />)}
         </TableBody>
       </Table>
     </>
@@ -76,11 +74,12 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
         onClick={() => hasItems && setIsExpanded(!isExpanded)}
       >
         <TableCell className="w-8 text-center">
-          {hasItems && (
-            isExpanded
-              ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              : <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
+          {hasItems &&
+            (isExpanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            ))}
         </TableCell>
         <TableCell className="text-center">
           <LargeText variant="sm">#{order.displayId}</LargeText>
@@ -95,7 +94,8 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
         </TableCell>
         <TableCell className="text-center">
           <LargeText variant="sm">
-            {order.items?.length ?? 0} {order.items?.length === 1 ? 'item' : 'itens'}
+            {order.items?.length ?? 0}{' '}
+            {order.items?.length === 1 ? 'item' : 'itens'}
           </LargeText>
         </TableCell>
         <TableCell className="text-center">
@@ -156,13 +156,22 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
   )
 }
 
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'warning' }> = {
+const statusConfig: Record<
+  string,
+  {
+    label: string
+    variant: 'default' | 'secondary' | 'destructive' | 'warning'
+  }
+> = {
   PENDING: { label: 'Pendente', variant: 'warning' },
   COMPLETED: { label: 'Concluído', variant: 'default' },
   CANCELLED: { label: 'Cancelado', variant: 'destructive' },
 }
 
 const OrderStatusBadge = ({ status }: { status: string }) => {
-  const config = statusConfig[status] ?? { label: status, variant: 'secondary' as const }
+  const config = statusConfig[status] ?? {
+    label: status,
+    variant: 'secondary' as const,
+  }
   return <Badge variant={config.variant}>{config.label}</Badge>
 }
