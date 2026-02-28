@@ -1327,3 +1327,49 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #40, #45, #46)
+
+### Completed Features
+
+**Feature #40: Connected state card shows clean design without merchantId or lastSyncAt display** - PASSING
+- Removed merchantId display from connected state card (internal detail)
+- Removed lastSyncAt display from connected state card (not useful to users)
+- Kept merchantName with "Loja:" label
+- Kept catalogName with "Cardápio:" label
+- Changed spacing from space-y-2 to space-y-1 for cleaner design
+- Verified "Conectado" badge, "Gerenciar Cardápio" and "Desconectar" buttons present
+- Updated test page to match clean design
+
+**Feature #45: Loading spinner displayed during OAuth initiation API call** - PASSING
+- Added LoadingSpinner import from @/shared/spinner
+- Added 32px spinner above "Iniciando conexao..." text
+- Changed loading container to flex-col with gap-3 for better visual hierarchy
+- Loading state triggers immediately when modal opens via useEffect
+- Loading disappears once userCode is received
+- Close button (X icon) remains accessible during loading (built into DialogContent)
+
+**Feature #46: Loading state on submit button during authorization code exchange** - PASSING (already implemented)
+- Verified existing implementation meets all requirements:
+  - Button has disabled={isLoading}
+  - Button text changes to "Validando..." during loading
+  - Input field is disabled during loading
+  - setIsLoading(true) at start, setIsLoading(false) in finally block
+  - On success, transitions to merchant selection step
+
+### Code Quality
+- No "as unknown as" patterns: 0 matches
+- TypeScript compiles without errors in src/
+- All code follows existing patterns
+
+### Current Status
+- 86/102 features passing (84.3%)
+
+### Session Summary
+- Completed 3 features: #40, #45, #46
+- Feature #40: Cleaned up connected state card UI
+- Feature #45: Added visual loading spinner to OAuth initiation
+- Feature #46: Verified existing loading state implementation
+
+### Next Steps
+- Continue with remaining 16 features
