@@ -17,6 +17,7 @@ import {
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { LoadingSpinner } from '@/shared/spinner'
+import { CheckCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -27,7 +28,7 @@ interface IFoodConnectionModalProps {
   onSuccess: () => void
 }
 
-type Step = 'userCode' | 'authCode' | 'selectMerchant' | 'selectCatalog'
+type Step = 'userCode' | 'authCode' | 'selectMerchant' | 'selectCatalog' | 'success'
 
 interface Merchant {
   id: string
@@ -220,8 +221,8 @@ export function IFoodConnectionModal({
 
       setConnectionError(null) // Clear error on success
       toast.success('iFood conectado com sucesso!')
-      handleOpenChange(false)
-      onSuccess()
+      setStep('success')
+      onSuccess() // Trigger refresh of the connection card
     } catch (error) {
       console.error('Error completing connection:', error)
       const errorMessage =
@@ -532,6 +533,49 @@ export function IFoodConnectionModal({
                       Cancelar
                     </Button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : step === 'success' ? (
+          <div className="space-y-4">
+            {/* Success State */}
+            <div className="rounded-lg border border-green-200 bg-green-50 p-6">
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle className="h-10 w-10 text-green-600" />
+                </div>
+                <h3 className="mt-4 text-xl font-semibold text-green-900">
+                  Conexao estabelecida com sucesso!
+                </h3>
+                <p className="mt-2 text-sm text-green-700">
+                  Sua conta iFood foi conectada ao sistema. Agora voce pode
+                  sincronizar seu cardapio.
+                </p>
+
+                <div className="mt-4 w-full max-w-sm space-y-2 rounded-md bg-white p-4 border border-green-200">
+                  {selectedMerchant && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Loja:</span>
+                      <span className="font-medium text-gray-900">
+                        {selectedMerchant.name}
+                      </span>
+                    </div>
+                  )}
+                  {selectedCatalog && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Cardapio:</span>
+                      <span className="font-medium text-gray-900">
+                        {selectedCatalog.name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <Button onClick={() => handleOpenChange(false)}>
+                    Concluir
+                  </Button>
                 </div>
               </div>
             </div>
