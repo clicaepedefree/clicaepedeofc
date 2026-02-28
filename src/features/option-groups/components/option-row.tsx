@@ -220,10 +220,7 @@ const PriceFeedback = ({
   }
 
   return (
-    <div className="mt-1 flex items-center gap-2">
-      <SmallText className="text-green-600 font-medium">
-        +{formatValueToCurrency({ value: priceValue, includeCurrencySymbol: true })}
-      </SmallText>
+    <div className="mt-1">
       <button
         type="button"
         onClick={onSetIncluded}

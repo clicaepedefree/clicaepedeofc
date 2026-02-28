@@ -31,6 +31,7 @@ const isPublicRoute = createRouteMatcher([
   '/test-catalog-selection(.*)',
   '/test-connection-refresh(.*)',
   '/test-ifood-persistence(.*)',
+  '/test-option-row(.*)',
 ])
 
 /**
