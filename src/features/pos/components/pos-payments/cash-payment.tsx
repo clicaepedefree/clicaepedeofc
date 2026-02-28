@@ -9,11 +9,12 @@ import { CartPayment } from '../../types'
 type CashPaymentProps = {
   amountLeftToPay: number
   onPaymentAdded?(payment: CartPayment): Promise<void>
+  disabled?: boolean
 }
 
 const cashPaymentButtons = ['100', '50', '20', '10', '5', '2']
 
-export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProps) => {
+export const CashPayment = ({ amountLeftToPay, onPaymentAdded, disabled }: CashPaymentProps) => {
   const amountLeftToPayAsString = String(amountLeftToPay)
   const [cashAmount, setCashAmount] = useState(amountLeftToPayAsString)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
@@ -43,7 +44,7 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
   }
 
   const totalChange = cashAmountAsNumber - amountLeftToPay
-  const canSubmitPayment = cashAmountAsNumber > 0
+  const canSubmitPayment = cashAmountAsNumber > 0 && !disabled
 
   return (
     <div className="flex flex-col gap-6 px-4">
@@ -55,6 +56,7 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
           value={cashAmount}
           onValueChange={updatedValue => setCashAmount(updatedValue ?? '0')}
           autoFocus
+          disabled={disabled}
         />
       </Label>
       <div className="flex items-center gap-4">
@@ -62,6 +64,7 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
           variant="outline"
           className="font-normal flex flex-col items-center justify-center border-amber-600 text-amber-800"
           onClick={() => onClickCashOption(amountLeftToPayAsString)}
+          disabled={disabled}
         >
           {formatValueToCurrency({ value: amountLeftToPayAsString, includeCurrencySymbol: true, decimalPlaces: 2 })}
         </Button>
@@ -71,6 +74,7 @@ export const CashPayment = ({ amountLeftToPay, onPaymentAdded }: CashPaymentProp
             className="font-normal"
             key={buttonValue}
             onClick={() => onClickCashOption(buttonValue)}
+            disabled={disabled}
           >
             {formatValueToCurrency({ value: buttonValue, includeCurrencySymbol: true, decimalPlaces: 0 })}
           </Button>

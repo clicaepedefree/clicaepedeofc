@@ -5,11 +5,235 @@ import { IFoodService } from '@/services/ifood'
 import { validateUserPermissionsForStore } from '../store/api'
 import {
   createIFoodIntegration,
+  createIFoodOAuthSession,
   deleteIFoodIntegration,
+  deleteIFoodOAuthSession,
   getIFoodIntegration,
+  getIFoodOAuthSession,
   updateIFoodIntegration,
+  updateIFoodOAuthSession,
+  upsertIFoodIntegration,
 } from './db'
 import { listMenuItems } from '../menu/api'
+
+const IFOOD_API_BASE_URL =
+  process.env.IFOOD_API_BASE_URL || 'https://merchant-api.ifood.com.br'
+const IFOOD_CLIENT_ID = process.env.NEXT_PUBLIC_IFOOD_CLIENT_ID
+
+interface UserCodeResponse {
+  userCode: string
+  authorizationCodeVerifier: string
+  verificationUrl: string
+  verificationUrlComplete: string
+  expiresIn: number
+}
+
+/**
+ * Initiates iFood OAuth flow by generating a userCode and storing session server-side.
+ * Returns only userCode and verificationUrl - sensitive data stays server-side.
+ */
+export const initiateIFoodOAuth = async (storeId: number) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!IFOOD_CLIENT_ID) {
+    throw new Error('iFood client ID not configured')
+  }
+
+  // Call iFood API to generate userCode
+  const response = await fetch(
+    `${IFOOD_API_BASE_URL}/authentication/v1.0/oauth/userCode`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        clientId: IFOOD_CLIENT_ID,
+      }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('iFood userCode generation failed:', errorText)
+    throw new Error('Failed to generate user code')
+  }
+
+  const data: UserCodeResponse = await response.json()
+
+  // Store session in database with 10 minute expiry
+  // The authorizationCodeVerifier is stored server-side only and NEVER returned to client
+  const expiresAt = new Date(Date.now() + data.expiresIn * 1000)
+
+  await createIFoodOAuthSession({
+    storeId,
+    userCode: data.userCode,
+    authorizationCodeVerifier: data.authorizationCodeVerifier,
+    expiresAt,
+  })
+
+  // Return ONLY the userCode and verificationUrl - no sensitive data
+  return {
+    userCode: data.userCode,
+    verificationUrl: data.verificationUrlComplete,
+  }
+}
+
+/**
+ * Exchange authorization code for tokens using the server-stored verifier.
+ * The verifier is retrieved from DB (never exposed to client) and used for the exchange.
+ * Tokens are encrypted and stored in the OAuth session (never exposed to client).
+ * Returns only available merchants for selection - no tokens in response.
+ */
+export const exchangeIFoodAuthCode = async (
+  storeId: number,
+  authorizationCode: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  // Get the stored OAuth session (contains the verifier)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Exchange the code using the server-stored verifier
+  const tokens = await IFoodService.exchangeCodeForTokens(
+    authorizationCode,
+    session.authorizationCodeVerifier
+  )
+
+  // Store encrypted tokens in the OAuth session for the next steps
+  // Tokens stay server-side and are NEVER sent to the client
+  await updateIFoodOAuthSession(storeId, {
+    accessToken: encrypt(tokens.accessToken),
+    refreshToken: encrypt(tokens.refreshToken),
+  })
+
+  // Get available merchants
+  const service = new IFoodService({ accessToken: tokens.accessToken })
+  const merchants = await service.getMerchants()
+
+  // Return ONLY merchants - no tokens in response
+  return { merchants }
+}
+
+/**
+ * Get available catalogs for a merchant using tokens stored in the OAuth session.
+ * Tokens are read from DB (never from client) and used for the API call.
+ * Returns only catalog list - no tokens in response.
+ */
+export const getMerchantCatalogs = async (
+  storeId: number,
+  merchantId: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!merchantId) {
+    throw new Error('Merchant ID is required')
+  }
+
+  // Get the stored OAuth session (contains encrypted tokens)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Verify tokens exist in session (should be populated after exchange step)
+  if (!session.accessToken || !session.refreshToken) {
+    throw new Error('Tokens not found in session. Please complete the authorization step first.')
+  }
+
+  // Decrypt the access token for API call
+  const accessToken = decrypt(session.accessToken)
+
+  // Get available catalogs for the merchant
+  const service = new IFoodService({ accessToken })
+  const catalogs = await service.getMerchantCatalogs(merchantId)
+
+  // Return ONLY catalogs - no tokens in response
+  return { catalogs }
+}
+
+/**
+ * Complete the iFood connection by moving tokens from OAuth session to integration record.
+ * Tokens are read from the OAuth session (never from client) and stored in ifood_integrations.
+ * The OAuth session is then deleted.
+ * Returns success without exposing any tokens.
+ */
+export const completeIFoodConnection = async (
+  storeId: number,
+  merchantId: string,
+  catalogId: string,
+  catalogName: string,
+  merchantName?: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!merchantId) {
+    throw new Error('Merchant ID is required')
+  }
+
+  if (!catalogId) {
+    throw new Error('Catalog ID is required')
+  }
+
+  // Get the stored OAuth session (contains encrypted tokens)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Verify tokens exist in session (should be populated after exchange step)
+  if (!session.accessToken || !session.refreshToken) {
+    throw new Error('Tokens not found in session. Please complete the authorization step first.')
+  }
+
+  // Create or update the integration record with all data
+  // Tokens are already encrypted in the session, so we just move them
+  // We set token expiry to 1 hour from now (iFood tokens typically last 1 hour)
+  await upsertIFoodIntegration({
+    storeId,
+    merchantId,
+    accessToken: session.accessToken, // Already encrypted
+    refreshToken: session.refreshToken, // Already encrypted
+    tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    status: 'connected',
+    catalogId,
+    catalogName,
+    merchantName: merchantName || null,
+  })
+
+  // Delete the OAuth session - it's no longer needed
+  await deleteIFoodOAuthSession(storeId)
+
+  // Return success without exposing any tokens
+  return { success: true }
+}
 
 export const connectIFoodAccountWithCode = async (
   storeId: number,
@@ -49,6 +273,9 @@ export const getIFoodConnectionStatus = async (storeId: number) => {
     id: integration.id,
     storeId: integration.storeId,
     merchantId: integration.merchantId,
+    merchantName: integration.merchantName,
+    catalogId: integration.catalogId,
+    catalogName: integration.catalogName,
     status: integration.status,
     lastSyncAt: integration.lastSyncAt,
     tokenExpiresAt: integration.tokenExpiresAt,
@@ -62,6 +289,11 @@ export const fetchIFoodMenu = async (storeId: number) => {
 
   if (!integration) {
     throw new Error('iFood integration not found for this store')
+  }
+
+  // Validate catalogId exists (should have been set during connection)
+  if (!integration.catalogId) {
+    throw new Error('Catalog ID not configured. Please reconnect iFood and select a catalog.')
   }
 
   // Check if token needs refresh
@@ -88,7 +320,8 @@ export const fetchIFoodMenu = async (storeId: number) => {
   }
 
   const service = new IFoodService({ accessToken })
-  const menu = await service.getMerchantMenu(integration.merchantId)
+  // Use catalogId from the database instead of hardcoded value
+  const menu = await service.getMerchantMenu(integration.merchantId, integration.catalogId)
 
   // Update last sync timestamp
   await updateIFoodIntegration(storeId, {

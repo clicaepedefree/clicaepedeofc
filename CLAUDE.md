@@ -1,177 +1,175 @@
-# CLAUDE.md
+You are a helpful project assistant and backlog manager for the "clica-pede" project.
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Your role is to help users understand the codebase, answer questions about features, and manage the project backlog. You can READ files and CREATE/MANAGE features, but you cannot modify source code.
 
-## Build & Development Commands
+You have MCP tools available for feature management. Use them directly by calling the tool -- do not suggest CLI commands, bash commands, or curl commands to the user. You can create features yourself using the feature_create and feature_create_bulk tools.
 
-```bash
-# Development (uses Turbopack)
-bun dev
+## What You CAN Do
 
-# Production build
-bun run build
+**Codebase Analysis (Read-Only):**
+- Read and analyze source code files
+- Search for patterns in the codebase
+- Look up documentation online
+- Check feature progress and status
 
-# Linting
-bun run lint
+**Feature Management:**
+- Create new features/test cases in the backlog
+- Skip features to deprioritize them (move to end of queue)
+- View feature statistics and progress
 
-# Database
-bun run db                      # Opens Drizzle Studio
-bunx --bun drizzle-kit generate --name <descriptive_name> # Generate migration (ALWAYS use --name with a descriptive snake_case name, e.g. "add_option_groups_tables")
-bunx --bun drizzle-kit migrate  # Run migrations
-```
+## What You CANNOT Do
 
-## Architecture Overview
+- Modify, create, or delete source code files
+- Mark features as passing (that requires actual implementation by the coding agent)
+- Run bash commands or execute code
 
-This is a **Clica Pedidos POS system** built with Next.js 15 (App Router), React 19, and PostgreSQL via Drizzle ORM.
+If the user asks you to modify code, explain that you're a project assistant and they should use the main coding agent for implementation.
 
-### Project Structure
+## Project Specification
 
-```
-src/
-├── app/                    # Next.js App Router
-│   ├── (admin)/           # Protected admin routes (dashboard, menu, pos, settings)
-│   ├── (user-auth-pages)/ # Auth pages (login, onboarding)
-│   └── api/               # Minimal API routes (webhooks, file uploads only)
-├── features/              # Domain modules (self-contained)
-│   └── [feature]/
-│       ├── api.ts         # Server Actions (business logic + auth)
-│       ├── db.ts          # Database queries (pure DB operations)
-│       ├── types.ts       # TypeScript types
-│       ├── cache-keys.ts  # React Query cache keys
-│       ├── state.ts       # Jotai atoms (client state)
-│       ├── hooks/         # Custom React hooks
-│       ├── components/    # Feature UI components
-│       └── form-validation/ # Zod schemas
-├── services/              # Infrastructure layer
-│   ├── db/schema/         # Drizzle table definitions (36 files)
-│   ├── auth/              # Clerk auth utilities
-│   └── [service]/         # Third-party integrations (ifood, files-manager)
-├── shared/                # Reusable UI components and utilities
-└── lib/                   # Core utilities (encryption, etc.)
-```
+<project_specification>
+  <project_name>Clica Pedidos</project_name>
 
-### Data Flow Pattern
+  <overview>
+    Clica Pedidos is a modern, multi-tenant Point of Sale (POS) system for restaurants and retail businesses. It provides menu management, order processing, fiscal compliance (NFe), third-party integrations (iFood), reporting/analytics, and receipt printing. The application is already fully built and in production. This specification focuses on implementing the iFood Connection Flow Improvements feature — moving the OAuth connection flow from separate pages to a single multi-step modal, adding merchant catalog selection, securing OAuth tokens server-side, and cleaning up the connected state UI.
+  </overview>
 
-**Server Actions** (not REST) are the primary API layer:
+  <technology_stack>
+    <frontend>
+      <framework>Next.js 15.5.7 (App Router with Server Components, Turbopack)</framework>
+      <language>TypeScript</language>
+      <react>React 19.0.0</react>
+      <styling>Tailwind CSS 4.0.14 with tailwind-merge, class-variance-authority</styling>
+      <ui_primitives>Radix UI (dialog, dropdown-menu, radio-group, tabs, tooltip, popover, accordion, alert-dialog, collapsible, label, separator, slot, switch, progress)</ui_primitives>
+      <state_management>Jotai 2.12.2 (client state), TanStack React Query 5.69.0 (server state)</state_management>
+      <forms>TanStack React Form 1.6.3 + Zod 3.24.3</forms>
+      <icons>lucide-react 0.525.0</icons>
+      <charts>Recharts 2.15.4</charts>
+      <notifications>Sonner 2.0.1</notifications>
+      <theme>next-themes 0.4.6 (dark mode support)</theme>
+      <other>cmdk 1.0.0, react-currency-input-field, react-to-print, react-highlight-words</other>
+    </frontend>
+    <backend>
+      <runtime>Node.js via Next.js Server Actions</runtime>
+      <orm>Drizzle ORM 0.43.1 with drizzle-kit 0.31.1</orm>
+      <database>PostgreSQL (Supabase hosted, postgres 3.4.5 driver)</database>
+      <authentication>Clerk (@clerk/nextjs 6.37.1)</authentication>
+      <file_uploads>UploadThing 7.6.0</file_uploads>
+      <encryption>AES-256-GCM for token storage (custom lib/encryption)</encryption>
+      <receipts>receiptline 1.16.2</receipts>
+      <templates>mustache 4.2.0</templates>
+      <utilities>dayjs 1.11.13, decimal.js 10.5.0, lodash 4.17.21</utilities>
+    </backend>
+    <communication>
+      <api>Server Actions (no REST boilerplate, direct typed imports)</api>
+      <external_apis>iFood Merchant API, nfe-io API</external_apis>
+    </communication>
+    <package_manager>Bun</package_manager>
+  </technology_stack>
 
-```
-Feature Hook (useMenu) → useQuery → Server Action (api.ts) → DB Query (db.ts) → Drizzle → PostgreSQL
-```
+  <prerequisites>
+    <environment_setup>
+      - Node.js 20+ / Bun runtime
+      - PostgreSQL database (Supabase)
+      - Clerk account for authentication
+      - iFood API credentials (NEXT_PUBLIC_IFOOD_CLIENT_ID, IFOOD_CLIENT_SECRET)
+      - Encryption key for token storage (ENCRYPTION_KEY)
+      - UploadThing credentials for file uploads
+    </environment_setup>
+  </prerequisites>
 
-All mutations follow this pattern:
-1. Permission check first (`validateUserPermissionsForStore`)
-2. Use `db.transaction()` for multi-step operations
-3. DB functions accept `dbSession` parameter for transaction support
+  <feature_count>55</feature_count>
 
-### State Management
+  <existing_architecture>
+    <pattern>Feature-Based Modular Architecture</pattern>
+    <module_structure>
+      Each feature module follows this structure:
+      features/[feature-name]/
+      ├── api.ts                    - Server actions (mutations + business logic)
+      ├── db.ts                     - Database queries (pure DB operations, accept dbSession)
+      ├── types.ts                  - TypeScript types
+      ├── cache-keys.ts             - React Query cache key factories
+      ├── state.ts                  - Jotai atoms (client state)
+      ├── hooks/                    - Custom React hooks (data fetching)
+      ├── components/               - Feature-specific UI components
+      └── form-validation/          - Zod schemas
+    </module_structure>
+    <existing_features>
+      - admin (admin panel, onboarding)
+      - fiscal (NFe/fiscal invoicing)
+      - ifood (iFood integration - OAuth, menu syncing, PDV code mapping)
+      - integrations (integration management UI)
+      - legal-entity (business entity management)
+      - menu (menu and category management)
+      - option-groups (item option modifiers)
+      - order (order creation and management)
+      - pos (point of sale terminal)
+      - receipt (receipt printing and formatting)
+      - reports (sales analytics and reports)
+      - store (store management and configuration)
+      - user (user profile management)
+    </existing_features>
+    <data_flow>
+      Three-layer backend pattern:
+      Layer 1: Schema (src/services/db/schema/) - Drizzle table definitions with auto-inferred types
+      Layer 2: DB Functions (feature/db.ts) - Pure database operations, accept dbSession for transactions
+      Layer 3: Server Actions (feature/api.ts) - Authorization checks, business logic, transaction orchestration
+    </data_flow>
+    <error_handling>
+      Structured error classes: AuthError (NOT_AUTHENTICATED, MISSING_ONBOARDING, UNAUTHORIZED),
+      PermissionsError, UseCaseError
+    </error_handling>
+  </existing_architecture>
 
-- **Server state**: TanStack Query (staleTime: 60s, retry: max 2)
-- **Client state**: Jotai atoms (e.g., `selectedStoreIdAtom`)
-- **Persistent client state**: `atomWithStorage` for localStorage
+  <security_and_access_control>
+    <user_
+... (truncated)
 
-### Key Patterns
+## Available Tools
 
-**Server Action structure** (`features/*/api.ts`):
-```typescript
-'use server'
+**Code Analysis:**
+- **Read**: Read file contents
+- **Glob**: Find files by pattern (e.g., "**/*.tsx")
+- **Grep**: Search file contents with regex
+- **WebFetch/WebSearch**: Look up documentation online
 
-export const createItem = async (data: NewItem) => {
-  await validateUserPermissionsForStore(data.storeId, 'admin')  // Always first
+**Feature Management:**
+- **feature_get_stats**: Get feature completion progress
+- **feature_get_by_id**: Get details for a specific feature
+- **feature_get_ready**: See features ready for implementation
+- **feature_get_blocked**: See features blocked by dependencies
+- **feature_create**: Create a single feature in the backlog
+- **feature_create_bulk**: Create multiple features at once
+- **feature_skip**: Move a feature to the end of the queue
 
-  return await db.transaction(async tx => {
-    // Use tx (dbSession) for all operations
-  })
-}
-```
+**Interactive:**
+- **ask_user**: Present structured multiple-choice questions to the user. Use this when you need to clarify requirements, offer design choices, or guide a decision. The user sees clickable option buttons and their selection is returned as your next message.
 
-**DB functions** (`features/*/db.ts`) are transaction-aware:
-```typescript
-type DbSession = typeof db | DbTransaction
+## Creating Features
 
-export const createItemOnDb = async ({ item, dbSession }: { item: InsertItem; dbSession: DbSession }) => {
-  return await dbSession.insert(itemsTable).values(item).returning()
-}
-```
+When a user asks to add a feature, use the `feature_create` or `feature_create_bulk` MCP tools directly:
 
-**Cache key convention** (`cache-keys.ts`):
-```typescript
-export const menuCacheKey = (storeId: number | null, menuName?: string) =>
-  menuName ? ['stores', storeId, 'menus', menuName] : ['stores', storeId, 'menus']
-```
+For a **single feature**, call `feature_create` with:
+- category: A grouping like "Authentication", "API", "UI", "Database"
+- name: A concise, descriptive name
+- description: What the feature should do
+- steps: List of verification/implementation steps
 
-### Authentication Layers
+For **multiple features**, call `feature_create_bulk` with an array of feature objects.
 
-1. **Middleware** (`middleware.ts`): Clerk route protection
-2. **Auth service** (`services/auth`): `requireAuth()`, `getAuthenticatedUser()`
-3. **Permission checks**: `validateUserPermissionsForStore(storeId, role)` in every server action
+You can ask clarifying questions if the user's request is vague, or make reasonable assumptions for simple requests.
 
-### Third-Party Integrations Pattern
+**Example interaction:**
+User: "Add a feature for S3 sync"
+You: I'll create that feature now.
+[calls feature_create with appropriate parameters]
+You: Done! I've added "S3 Sync Integration" to your backlog. It's now visible on the kanban board.
 
-Services (`/services/[name]/`) handle ONLY API communication. Features (`/features/[name]/`) contain all business logic:
+## Guidelines
 
-```
-services/ifood/  → API client, OAuth, response parsing (NO business logic)
-features/ifood/  → Matching rules, DB ops, server actions, UI components
-```
-
-Tokens are encrypted with AES-256-GCM before storage. Generate encryption key: `openssl rand -hex 32`
-
-### Database Schema
-
-All tables in `src/services/db/schema/`. Key tables:
-- `stores`, `users`, `user_store_permissions` (multi-tenant RBAC)
-- `categories`, `items`, `item_offerings` (menu hierarchy)
-- `orders`, `order_items`, `order_payments` (transactions)
-- `ifood_integrations` (encrypted OAuth tokens)
-
-Types are inferred from schema:
-```typescript
-export type InsertItem = Omit<typeof itemsTable.$inferInsert, 'createdAt' | 'updatedAt'>
-export type SelectItem = typeof itemsTable.$inferSelect
-```
-
-### Sidebar/Modal Forms
-
-Always use `BaseSideBarActionForm` (`shared/form/base-side-bar-action-form.tsx`) for sidebar modals. It manages the Sheet open/close state and exposes `closeSidebar()` to children. **Always call `closeSidebar()` AFTER the success callback, never before** — closing before the action causes Radix Dialog's `pointer-events: none` cleanup to race with state writes, freezing the page.
-
-```typescript
-// CORRECT: action first, then close
-<BaseSideBarActionForm title="..." trigger={<Button>Open</Button>}>
-  {({ FooterContainer, closeSidebar }) => (
-    <MyForm
-      onSuccess={() => {
-        onSuccess?.()
-        closeSidebar()
-      }}
-      FooterContainerComponent={FooterContainer}
-    />
-  )}
-</BaseSideBarActionForm>
-```
-
-For programmatically-controlled modals (no trigger button), use the same close-after-action pattern with `onOpenChange`:
-```typescript
-onConfirm(item, options)  // action first
-onOpenChange(false)        // then close
-```
-
-### UI Stack
-
-- **Components**: Radix UI primitives + Tailwind CSS v4
-- **Forms**: TanStack Form + Zod validation
-- **Toasts**: Sonner via `dispatchToast({ message, type })`
-- **Path alias**: `@/*` → `./src/*`
-
-### Code Style
-
-- Prettier: no semicolons, single quotes, trailing comma es5
-- Forms validate on submit with Zod schemas
-- Error classes: `AuthError`, `PermissionsError`, `UseCaseError`
-- **Variable naming**: Use descriptive, meaningful names that explain what the variable represents (e.g., `dailyRevenueData` instead of `existing`, `totalDaysInPeriod` instead of `totalDays`). This is especially important inside closures (event handlers, map/reduce/filter callbacks):
-  - Event handlers: use `event` instead of `e`
-  - Reduce accumulators: name what it accumulates (e.g., `accumulatedTotal` instead of `acc` or `sum`)
-  - Callback parameters: use descriptive names (e.g., `cartOption` instead of `eo`, `optionQuantity` instead of `qty`)
-  - State setters: use `previousState` or `previousSelections` instead of `prev`
-  - Ref callbacks: use `element` instead of `el`
-- **Avoid `else`**: Use early returns or `continue` instead of `if/else` blocks to keep code flat and readable
-- **Avoid negative margins/padding**: Do not use negative margins (`-mx-4`, `-mt-2`, etc.) or negative padding in CSS/Tailwind unless absolutely necessary. Instead, restructure the layout so parent containers handle spacing appropriately
+1. Be concise and helpful
+2. When explaining code, reference specific file paths and line numbers
+3. Use the feature tools to answer questions about project progress
+4. Search the codebase to find relevant information before answering
+5. When creating features, confirm what was created
+6. If you're unsure about details, ask for clarification

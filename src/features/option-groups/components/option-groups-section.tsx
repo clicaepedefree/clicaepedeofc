@@ -99,6 +99,7 @@ export const OptionGroupsSection = () => {
               <Plus size={20} strokeWidth={3} /> Grupo de complementos
             </Button>
           }
+          contentClassName="sm:max-w-6xl"
         >
           {({ FooterContainer, closeSidebar }) => (
             <OptionGroupForm
@@ -136,6 +137,7 @@ export const OptionGroupsSection = () => {
                 <Plus size={20} strokeWidth={3} /> Criar primeiro grupo
               </Button>
             }
+            contentClassName="sm:max-w-6xl"
           >
             {({ FooterContainer, closeSidebar }) => (
               <OptionGroupForm
@@ -247,6 +249,7 @@ const OptionGroupRow = ({
                 />
               </Button>
             }
+            contentClassName="sm:max-w-6xl"
           >
             {({ FooterContainer, closeSidebar }) => (
               <OptionGroupForm

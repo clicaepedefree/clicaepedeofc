@@ -1,6 +1,7 @@
 'use client'
 
 import { disconnectIFoodAccount } from '@/features/ifood/api'
+import { IFoodConnectionModal } from '@/features/ifood/components/ifood-connection-modal'
 import { useIFoodConnection } from '@/features/ifood/hooks/use-ifood-connection'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
@@ -17,44 +18,25 @@ export function IFoodConnectionCard() {
   const router = useRouter()
   const { connection, isLoading, refetch } = useIFoodConnection(storeId!)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
-  const handleConnect = async () => {
+  const handleConnect = () => {
     if (!storeId) {
       toast.error('Selecione uma loja primeiro')
       return
     }
 
     if (!IFOOD_CLIENT_ID) {
-      toast.error('Configuração do iFood não encontrada')
+      toast.error('Configuracao do iFood nao encontrada')
       return
     }
 
-    try {
-      // Step 1: Generate userCode via backend
-      const response = await fetch('/api/integrations/ifood/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeId }),
-      })
+    // Open the connection modal instead of navigating away
+    setIsModalOpen(true)
+  }
 
-      if (!response.ok) {
-        throw new Error('Failed to initiate OAuth flow')
-      }
-
-      const data = await response.json()
-
-      // Store the verifier temporarily in sessionStorage
-      sessionStorage.setItem('ifood_verifier', data.authorizationCodeVerifier)
-      sessionStorage.setItem('ifood_store_id', storeId.toString())
-
-      // Navigate to the authorize page which will display the userCode
-      router.push(
-        `/settings/integracoes/ifood/authorize?userCode=${data.userCode}&verificationUrl=${encodeURIComponent(data.verificationUrlComplete)}`
-      )
-    } catch (error) {
-      console.error('Error initiating iFood connection:', error)
-      toast.error('Erro ao iniciar conexão com iFood')
-    }
+  const handleConnectionSuccess = () => {
+    refetch()
   }
 
   const handleDisconnect = async () => {
@@ -116,14 +98,15 @@ export function IFoodConnectionCard() {
           </div>
 
           {isConnected && connection && (
-            <div className="mt-2 space-y-2 text-sm text-gray-600">
-              <p>
-                <b>Merchant ID:</b> {connection.merchantId}
-              </p>
-              {connection.lastSyncAt && (
+            <div className="mt-2 space-y-1 text-sm text-gray-600">
+              {connection.merchantName && (
                 <p>
-                  <b>Última sincronização:</b>{' '}
-                  {new Date(connection.lastSyncAt).toLocaleString('pt-BR')}
+                  <b>Loja:</b> {connection.merchantName}
+                </p>
+              )}
+              {connection.catalogName && (
+                <p>
+                  <b>Cardápio:</b> {connection.catalogName}
                 </p>
               )}
             </div>
@@ -141,7 +124,7 @@ export function IFoodConnectionCard() {
           {isConnected ? (
             <>
               <Button variant="default" onClick={handleManageMenu}>
-                Gerenciar Cardápio
+                Gerenciar Cardapio
               </Button>
               <Button
                 variant="outline"
@@ -152,12 +135,22 @@ export function IFoodConnectionCard() {
               </Button>
             </>
           ) : (
-            <Button variant="default" onClick={handleConnect}>
+            <Button variant="default" onClick={handleConnect} disabled={isModalOpen}>
               Conectar
             </Button>
           )}
         </div>
       </div>
+
+      {/* Connection Modal */}
+      {storeId && (
+        <IFoodConnectionModal
+          open={isModalOpen}
+          onOpenChange={setIsModalOpen}
+          storeId={storeId}
+          onSuccess={handleConnectionSuccess}
+        />
+      )}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { Banknote, CreditCard } from 'lucide-react'
 import { Fragment } from 'react'
-import { CartPayment, CartPaymentMethod } from '../../types'
+import { CartPayment } from '../../types'
 
 const getPaymentMethodInfo = (
   paymentMethod: (typeof paymentMethods)[number]['id']

@@ -1,4 +1,4 @@
-import { createOrder } from '@/features/order/api'
+import { createOrder, validateCartStock } from '@/features/order/api'
 import { SalesChannel } from '@/features/order/types'
 import {
   addItemToCartAtom,
@@ -9,22 +9,30 @@ import {
   cartSessionPaymentsAtom,
   cartSessionTotalAtom,
   clearCartAtom,
+  clearStockErrorsAtom,
+  hasStockErrorsAtom,
   isUsingPaymentScreenAtom,
   removeItemFromCartAtom,
   resetPaymentsAtom,
+  stockValidationErrorsAtom,
   updateCartItemAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
+import { CartItem, CartPayment } from '@/features/pos/types'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 type CreateOrderParams = {
   counterId: number
   counterName: string
+  items?: CartItem[]
+  payments?: CartPayment[]
+  totalPrice?: number
+  storeId?: number
 }
 
 export const useCart = (salesChannel: SalesChannel) => {
@@ -44,6 +52,11 @@ export const useCart = (salesChannel: SalesChannel) => {
   )
   const [amountPaid] = useAtom(amountPaidAtom)
   const [amountLeftToPay] = useAtom(amountLeftToPayAtom)
+  const [stockValidationErrors, setStockValidationErrors] = useAtom(
+    stockValidationErrorsAtom
+  )
+  const [hasStockErrors] = useAtom(hasStockErrorsAtom)
+  const [, clearStockErrors] = useAtom(clearStockErrorsAtom)
 
   useEffect(() => {
     if (!selectedStoreId || !cartSessionItems?.length) return
@@ -67,16 +80,52 @@ export const useCart = (salesChannel: SalesChannel) => {
     }
   }, [cartSessionItems])
 
-  const createOrderMutation = useMutation({
-    mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
-      if (
-        !selectedStoreId ||
-        !cartSessionItems?.length ||
-        !cartSessionPayments?.length
-      )
-        return
+  // Clear stock errors when cart items change (user might resolve issues)
+  useEffect(() => {
+    if (stockValidationErrors.length > 0) {
+      clearStockErrors()
+    }
+  }, [cartSessionItems])
 
-      const orderItems = cartSessionItems.map((cartItem, index) => ({
+  // Validate stock availability for cart items
+  const validateStock = useCallback(async () => {
+    if (!selectedStoreId || !cartSessionItems?.length) {
+      return true // No items to validate
+    }
+
+    const items = cartSessionItems.map(item => ({
+      itemId: item.itemId,
+      quantity: item.quantity,
+    }))
+
+    const outOfStockItems = await validateCartStock({
+      storeId: selectedStoreId,
+      items,
+    })
+
+    setStockValidationErrors(outOfStockItems)
+    return outOfStockItems.length === 0
+  }, [selectedStoreId, cartSessionItems, setStockValidationErrors])
+
+  const createOrderMutation = useMutation({
+    mutationFn: async ({
+      counterId,
+      counterName,
+      items,
+      payments,
+      totalPrice,
+      storeId,
+    }: CreateOrderParams) => {
+      const effectiveStoreId = storeId ?? selectedStoreId
+      const effectiveItems = items ?? cartSessionItems
+      const effectivePayments = payments ?? cartSessionPayments
+      const effectiveTotal = totalPrice ?? cartSessionTotal
+
+      if (!effectiveStoreId || !effectiveItems?.length || !effectivePayments?.length) {
+        return
+      }
+
+      const orderItems = effectiveItems.map((cartItem, index) => ({
         index,
         itemId: cartItem.itemId,
         quantity: cartItem.quantity.toString(),
@@ -97,7 +146,7 @@ export const useCart = (salesChannel: SalesChannel) => {
         })),
       }))
 
-      const orderPayments = cartSessionPayments.map(payment => ({
+      const orderPayments = effectivePayments.map(payment => ({
         type: payment.type,
         value: payment.value,
         method: payment.method,
@@ -106,9 +155,9 @@ export const useCart = (salesChannel: SalesChannel) => {
       }))
 
       const newOrder = await createOrder({
-        storeId: selectedStoreId!,
+        storeId: effectiveStoreId!,
         items: orderItems,
-        totalPrice: formatValueToCurrency({ value: cartSessionTotal }),
+        totalPrice: formatValueToCurrency({ value: effectiveTotal }),
         salesChannel: salesChannel,
         type: 'INDOOR',
         status: 'COMPLETED',
@@ -123,10 +172,12 @@ export const useCart = (salesChannel: SalesChannel) => {
       dispatchToast({ message: `Erro ao criar pedido`, type: 'error' })
     },
     onSuccess: newOrder => {
-      dispatchToast({
-        message: `Pedido '#${newOrder?.displayId}' criado com sucesso`,
-        type: 'success',
-      })
+      if (newOrder?.displayId) {
+        dispatchToast({
+          message: `Pedido '#${newOrder.displayId}' criado com sucesso`,
+          type: 'success',
+        })
+      }
       clearCart()
     },
   })
@@ -146,5 +197,10 @@ export const useCart = (salesChannel: SalesChannel) => {
     setIsUsingPaymentScreen,
     amountPaid,
     amountLeftToPay,
+    // Stock validation
+    validateStock,
+    stockValidationErrors,
+    hasStockErrors,
+    clearStockErrors,
   }
 }

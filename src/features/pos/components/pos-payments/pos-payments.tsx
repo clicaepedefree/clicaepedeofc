@@ -1,3 +1,5 @@
+import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
+import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import {
   formatValueToCurrency,
@@ -8,7 +10,9 @@ import { TabsContent, TabsWithIcons } from '@/shared/tabs-with-icons'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
-import { ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
+import { useAtom } from 'jotai'
+import { AlertTriangle, ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
+import { useEffect } from 'react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
 import { CartPayment } from '../../types'
@@ -58,18 +62,65 @@ export const PosPayments = ({
   amountLeftToPay = 0,
   onClose,
 }: PosPaymentsProps) => {
-  const { createOrder, addPayment, cartSessionPayments } = useCart('POS')
+  const {
+    createOrder,
+    addPayment,
+    cartSessionItems,
+    cartSessionPayments,
+    cartSessionTotal,
+    validateStock,
+    stockValidationErrors,
+    hasStockErrors,
+  } = useCart('POS')
+  const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { activeCounterId, activeCounterName } = useCounters()
+  const {
+    printOrderReceipt,
+    ReceiptContent,
+    printError,
+    showPrintErrorToast,
+  } = useOrderReceipt()
+
+  // Show error toast with retry option when print error occurs
+  useEffect(() => {
+    if (printError) {
+      showPrintErrorToast()
+    }
+  }, [printError, showPrintErrorToast])
 
   const onPaymentAdded = async (payment: CartPayment) => {
+    // Validate stock before processing payment
+    const isStockValid = await validateStock()
+    if (!isStockValid) {
+      dispatchToast({
+        message: 'Alguns itens estão indisponíveis. Ajuste o pedido para continuar.',
+        type: 'error',
+      })
+      return
+    }
+
     const paymentAmount = getValueFromCurrencyString(payment.value)
     addPayment(payment)
 
     if (paymentAmount >= amountLeftToPay) {
-      await createOrder({
+      // Include the new payment in the payments array to avoid closure issues
+      // (addPayment updates Jotai state, but mutation closure has stale values)
+      const allPayments = [...(cartSessionPayments ?? []), payment]
+
+      const newOrder = await createOrder({
         counterId: activeCounterId!,
         counterName: activeCounterName!,
+        items: cartSessionItems ?? [],
+        payments: allPayments,
+        totalPrice: cartSessionTotal,
+        storeId: selectedStoreId!,
       })
+
+      // Print order receipt after successful order creation
+      // Error handling is done gracefully - order is already saved
+      if (newOrder?.receipt) {
+        printOrderReceipt(newOrder.receipt, newOrder.displayId)
+      }
       return
     }
 
@@ -135,26 +186,52 @@ export const PosPayments = ({
   )
 
   return (
-    <TabsWithIcons
-      className="relative bg-white w-full h-full rounded-xl border"
-      headerClassName=" bg-bottom"
-      triggerClassName="[&>svg]:h-7 [&>svg]:w-7 "
-      tabs={paymentTabs}
-      footer={paymentsFooter}
-    >
-      <TabsContent value={'cash'}>
-        <CashPayment
-          amountLeftToPay={amountLeftToPay}
-          onPaymentAdded={onPaymentAdded}
-        />
-      </TabsContent>
-      <TabsContent value={'card'}>
-        <CardPayment
-          amountLeftToPay={amountLeftToPay}
-          onPaymentAdded={onPaymentAdded}
-        />
-      </TabsContent>
-      <TabsContent value={'pix'}>PIX</TabsContent>
-    </TabsWithIcons>
+    <>
+      <TabsWithIcons
+        className="relative bg-white w-full h-full rounded-xl border"
+        headerClassName=" bg-bottom"
+        triggerClassName="[&>svg]:h-7 [&>svg]:w-7 "
+        tabs={paymentTabs}
+        footer={paymentsFooter}
+      >
+        {hasStockErrors && (
+          <div className="bg-destructive/10 border-b border-destructive/30 p-3">
+            <div className="flex items-center gap-2 text-destructive mb-2">
+              <AlertTriangle size={18} />
+              <Body variant={200} className="font-semibold text-inherit">
+                Itens indisponiveis no estoque
+              </Body>
+            </div>
+            <ul className="text-sm text-destructive/90 space-y-1">
+              {stockValidationErrors.map(error => (
+                <li key={error.itemId}>
+                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponivel{' '}
+                  {error.availableQty ?? 0}
+                </li>
+              ))}
+            </ul>
+            <Body variant={200} className="text-destructive/80 mt-2">
+              Retorne ao atendimento para ajustar as quantidades.
+            </Body>
+          </div>
+        )}
+        <TabsContent value={'cash'}>
+          <CashPayment
+            amountLeftToPay={amountLeftToPay}
+            onPaymentAdded={onPaymentAdded}
+            disabled={hasStockErrors}
+          />
+        </TabsContent>
+        <TabsContent value={'card'}>
+          <CardPayment
+            amountLeftToPay={amountLeftToPay}
+            onPaymentAdded={onPaymentAdded}
+            disabled={hasStockErrors}
+          />
+        </TabsContent>
+        <TabsContent value={'pix'}>PIX</TabsContent>
+      </TabsWithIcons>
+      {ReceiptContent}
+    </>
   )
 }
