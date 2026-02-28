@@ -57,9 +57,26 @@
 - Pattern consistent across all features (store/db.ts, menu/db.ts follow same approach)
 - CONFIRMED: All backend API calls execute real database queries via Drizzle ORM
 
+**Feature #56: Create order receipt template file** - PASSING
+- Created `src/features/receipt/templates/order.receipt` template file
+- Template follows receiptline format used by existing templates (open-counter.receipt, close-counter.receipt)
+- Includes all required sections:
+  - Header: Store name (optional, large text)
+  - Order info: Order ID (#displayId), date, type (Entrega/Retirada/Consumo local), counter name
+  - Items: Name, quantity × unit price, total, options (with +), comments (Obs:)
+  - Totals: Discount (optional), TOTAL
+  - Payments: Method, value, change for/change value (for cash)
+  - Customer: Name, phone, address (all optional)
+  - Footer: "Obrigado pela preferencia!"
+- Created `src/features/receipt/templates/order.ts` wrapper with:
+  - OrderTemplateInput type with full type definitions
+  - preProcessing function for currency formatting, date formatting, payment method names
+  - Decimal.js for precise change calculation
+- TypeScript compiles without errors
+- Verified syntax matches existing templates
+
 ### Current Status
-- 4/97 features passing (4.1%)
+- 5/97 features passing (5.2%)
 
 ### Next Steps
-- All 5 infrastructure features now complete
 - Continue with core functionality features
