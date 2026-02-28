@@ -19,6 +19,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-oauth-session-cleanup(.*)',
   '/api/test-ifood-disconnect(.*)',
   '/api/test-oauth-session-expiry(.*)',
+  '/api/test-concurrent-oauth(.*)',
   '/api/test-feature-16-verify(.*)',
   '/api/schema-check(.*)',
   '/api/apply-migration(.*)',
