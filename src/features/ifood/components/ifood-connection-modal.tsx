@@ -17,7 +17,8 @@ import {
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { LoadingSpinner } from '@/shared/spinner'
-import { CheckCircle } from 'lucide-react'
+import { cn } from '@/shared/lib/utils'
+import { Check, CheckCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -29,6 +30,63 @@ interface IFoodConnectionModalProps {
 }
 
 type Step = 'userCode' | 'authCode' | 'selectMerchant' | 'selectCatalog' | 'success'
+
+function getDisplayStep(step: Step): 1 | 2 | 3 {
+  if (step === 'userCode' || step === 'authCode') return 1
+  if (step === 'selectMerchant') return 2
+  return 3 // selectCatalog or success
+}
+
+function StepIndicator({ currentStep }: { currentStep: 1 | 2 | 3 }) {
+  const steps = [
+    { number: 1, label: 'Autorizar' },
+    { number: 2, label: 'Selecionar Loja' },
+    { number: 3, label: 'Selecionar Cardapio' },
+  ]
+
+  return (
+    <div className="flex items-center justify-center gap-2 mb-4 pb-4 border-b">
+      {steps.map((step, index) => (
+        <div key={step.number} className="flex items-center gap-2">
+          <div
+            className={cn(
+              'flex items-center gap-2',
+              step.number === currentStep
+                ? 'text-primary font-medium'
+                : 'text-muted-foreground'
+            )}
+          >
+            <div
+              className={cn(
+                'w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
+                step.number < currentStep &&
+                  'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
+                step.number === currentStep &&
+                  'bg-primary text-primary-foreground',
+                step.number > currentStep && 'bg-muted text-muted-foreground'
+              )}
+            >
+              {step.number < currentStep ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                step.number
+              )}
+            </div>
+            <span className="hidden sm:inline text-sm">{step.label}</span>
+          </div>
+          {index < steps.length - 1 && (
+            <div
+              className={cn(
+                'w-8 h-0.5 mx-1',
+                step.number < currentStep ? 'bg-green-500' : 'bg-muted'
+              )}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 interface Merchant {
   id: string
@@ -253,7 +311,15 @@ export function IFoodConnectionModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        hideCloseButton
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
+        {step !== 'success' && !initiationError && userCode && (
+          <StepIndicator currentStep={getDisplayStep(step)} />
+        )}
         <DialogHeader>
           <DialogTitle>Conectar iFood</DialogTitle>
           <DialogDescription>
