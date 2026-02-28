@@ -6,6 +6,14 @@ export interface TokenResponse {
   merchantId: string // iFood merchant UUID
 }
 
+// Catalog info returned by getMerchantCatalogs()
+export interface IFoodCatalog {
+  id: string
+  name: string
+  status: string
+  type: string
+}
+
 // Normalized menu structure returned by getMerchantMenu()
 export interface IFoodMenu {
   categories: IFoodCategory[]

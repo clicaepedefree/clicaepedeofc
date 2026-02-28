@@ -22,6 +22,34 @@ export const createIFoodIntegration = async (
   return integration
 }
 
+/**
+ * Upsert iFood integration - creates if not exists, updates if exists.
+ * Uses storeId as the conflict key (unique constraint).
+ */
+export const upsertIFoodIntegration = async (
+  data: InsertIfoodIntegration
+): Promise<SelectIfoodIntegration> => {
+  const [integration] = await db
+    .insert(ifoodIntegrationsTable)
+    .values(data)
+    .onConflictDoUpdate({
+      target: ifoodIntegrationsTable.storeId,
+      set: {
+        merchantId: data.merchantId,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        tokenExpiresAt: data.tokenExpiresAt,
+        status: data.status,
+        catalogId: data.catalogId,
+        catalogName: data.catalogName,
+        merchantName: data.merchantName,
+      },
+    })
+    .returning()
+
+  return integration
+}
+
 export const updateIFoodIntegration = async (
   storeId: number,
   data: Partial<InsertIfoodIntegration>

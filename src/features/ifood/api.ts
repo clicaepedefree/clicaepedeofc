@@ -12,6 +12,7 @@ import {
   getIFoodOAuthSession,
   updateIFoodIntegration,
   updateIFoodOAuthSession,
+  upsertIFoodIntegration,
 } from './db'
 import { listMenuItems } from '../menu/api'
 
@@ -123,6 +124,115 @@ export const exchangeIFoodAuthCode = async (
 
   // Return ONLY merchants - no tokens in response
   return { merchants }
+}
+
+/**
+ * Get available catalogs for a merchant using tokens stored in the OAuth session.
+ * Tokens are read from DB (never from client) and used for the API call.
+ * Returns only catalog list - no tokens in response.
+ */
+export const getMerchantCatalogs = async (
+  storeId: number,
+  merchantId: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!merchantId) {
+    throw new Error('Merchant ID is required')
+  }
+
+  // Get the stored OAuth session (contains encrypted tokens)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Verify tokens exist in session (should be populated after exchange step)
+  if (!session.accessToken || !session.refreshToken) {
+    throw new Error('Tokens not found in session. Please complete the authorization step first.')
+  }
+
+  // Decrypt the access token for API call
+  const accessToken = decrypt(session.accessToken)
+
+  // Get available catalogs for the merchant
+  const service = new IFoodService({ accessToken })
+  const catalogs = await service.getMerchantCatalogs(merchantId)
+
+  // Return ONLY catalogs - no tokens in response
+  return { catalogs }
+}
+
+/**
+ * Complete the iFood connection by moving tokens from OAuth session to integration record.
+ * Tokens are read from the OAuth session (never from client) and stored in ifood_integrations.
+ * The OAuth session is then deleted.
+ * Returns success without exposing any tokens.
+ */
+export const completeIFoodConnection = async (
+  storeId: number,
+  merchantId: string,
+  catalogId: string,
+  catalogName: string,
+  merchantName?: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!merchantId) {
+    throw new Error('Merchant ID is required')
+  }
+
+  if (!catalogId) {
+    throw new Error('Catalog ID is required')
+  }
+
+  // Get the stored OAuth session (contains encrypted tokens)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Verify tokens exist in session (should be populated after exchange step)
+  if (!session.accessToken || !session.refreshToken) {
+    throw new Error('Tokens not found in session. Please complete the authorization step first.')
+  }
+
+  // Create or update the integration record with all data
+  // Tokens are already encrypted in the session, so we just move them
+  // We set token expiry to 1 hour from now (iFood tokens typically last 1 hour)
+  await upsertIFoodIntegration({
+    storeId,
+    merchantId,
+    accessToken: session.accessToken, // Already encrypted
+    refreshToken: session.refreshToken, // Already encrypted
+    tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    status: 'connected',
+    catalogId,
+    catalogName,
+    merchantName: merchantName || null,
+  })
+
+  // Delete the OAuth session - it's no longer needed
+  await deleteIFoodOAuthSession(storeId)
+
+  // Return success without exposing any tokens
+  return { success: true }
 }
 
 export const connectIFoodAccountWithCode = async (

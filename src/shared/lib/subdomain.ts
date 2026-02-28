@@ -1,4 +1,5 @@
 import { headers } from 'next/headers'
+import { getAdminSubdomain } from './domain-config'
 
 export type SubdomainContext = 'admin' | 'public'
 
@@ -28,11 +29,13 @@ export async function isAdminSubdomain(): Promise<boolean> {
 /**
  * Client-side detection of admin subdomain.
  * Can be used in client components.
+ * Uses environment-configured admin subdomain prefix.
  *
- * @returns true if current hostname starts with 'admin.'
+ * @returns true if current hostname starts with the admin subdomain prefix
  */
 export function isAdminSubdomainClient(): boolean {
   if (typeof window === 'undefined') return false
   const hostname = window.location.hostname
-  return hostname.startsWith('admin.')
+  const adminSubdomain = getAdminSubdomain()
+  return hostname.startsWith(`${adminSubdomain}.`)
 }

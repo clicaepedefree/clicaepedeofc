@@ -49,22 +49,24 @@ export async function GET() {
     }
 
     // Feature #18 verification: exchangeIFoodAuthCode stores encrypted tokens
-    const hasAccessToken = !!currentSession.accessToken && currentSession.accessToken.length > 0
-    const hasRefreshToken = !!currentSession.refreshToken && currentSession.refreshToken.length > 0
+    const accessToken = currentSession.accessToken
+    const refreshToken = currentSession.refreshToken
+    const hasAccessToken = !!accessToken && accessToken.length > 0
+    const hasRefreshToken = !!refreshToken && refreshToken.length > 0
     const tokensAreEncrypted = hasAccessToken &&
-      currentSession.accessToken.includes(':') && // AES-GCM format: iv:authTag:encrypted
-      currentSession.accessToken.split(':').length === 3
+      accessToken.includes(':') && // AES-GCM format: iv:authTag:encrypted
+      accessToken.split(':').length === 3
 
     const feature18 = {
       passed: hasAccessToken && hasRefreshToken && tokensAreEncrypted,
       hasAccessToken,
       hasRefreshToken,
       tokensAreEncrypted,
-      accessTokenLength: currentSession.accessToken?.length || 0,
-      refreshTokenLength: currentSession.refreshToken?.length || 0,
+      accessTokenLength: accessToken?.length || 0,
+      refreshTokenLength: refreshToken?.length || 0,
       // The tokens should be encrypted in format: iv:authTag:encrypted (3 parts separated by :)
       accessTokenFormat: hasAccessToken ?
-        `${currentSession.accessToken.split(':').length} parts (expected 3)` : 'N/A',
+        `${accessToken.split(':').length} parts (expected 3)` : 'N/A',
     }
 
     const verification = {

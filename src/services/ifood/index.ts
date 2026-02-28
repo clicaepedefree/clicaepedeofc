@@ -1,6 +1,7 @@
 import type {
   IFoodAPICatalogResponse,
   IFoodAPITokenResponse,
+  IFoodCatalog,
   IFoodCategory,
   IFoodMenu,
   IFoodMenuItem,
@@ -126,6 +127,28 @@ export class IFoodService {
     const data = await response.json()
     // The API returns an array of merchants directly or wrapped in a data property
     return Array.isArray(data) ? data : data.data || []
+  }
+
+  /**
+   * Get list of catalogs for a merchant
+   * Endpoint: /catalog/v2.0/merchants/{merchantId}/catalogs
+   */
+  async getMerchantCatalogs(merchantId: string): Promise<IFoodCatalog[]> {
+    if (!merchantId) {
+      throw new Error('Merchant ID is required')
+    }
+
+    const data = await this.request<IFoodCatalog[]>(
+      `/catalog/v2.0/merchants/${merchantId}/catalogs`
+    )
+
+    // Ensure each catalog has required fields
+    return data.map(catalog => ({
+      id: catalog.id,
+      name: catalog.name,
+      status: catalog.status,
+      type: catalog.type,
+    }))
   }
 
   /**

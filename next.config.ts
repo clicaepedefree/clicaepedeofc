@@ -54,13 +54,13 @@ const nextConfig: NextConfig = {
         source: '/api/:path*',
         headers: [
           ...securityHeaders,
-          // Allow requests from admin subdomain in development
+          // Allow requests from admin subdomain
+          // Uses NEXT_PUBLIC_APP_DOMAIN and NEXT_PUBLIC_ADMIN_SUBDOMAIN env vars
           {
             key: 'Access-Control-Allow-Origin',
-            // In production, this should be the specific subdomain
-            // For dev, we use * since the subdomain varies
+            // In production, use configured domain; in dev, use * since subdomain varies
             value: process.env.NODE_ENV === 'production'
-              ? 'https://admin.clicapedidos.com.br'
+              ? `https://${process.env.NEXT_PUBLIC_ADMIN_SUBDOMAIN || 'admin'}.${process.env.NEXT_PUBLIC_APP_DOMAIN || 'clicapedidos.com.br'}`
               : '*',
           },
           {

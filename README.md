@@ -161,6 +161,25 @@ Both access methods work identically:
 - Session persists across both methods
 - The subdomain context is detected automatically for conditional rendering
 
+**Route Domain Separation:**
+
+Some routes are only served from the main domain and will redirect if accessed from the admin subdomain:
+
+| Route | Domain | Description |
+|-------|--------|-------------|
+| `/login` | Main only | Authentication pages |
+| `/admin-onboarding` | Main only | Onboarding flow |
+| `/unauthorized` | Main only | Access denied page |
+| `/` | Main only | Public landing page |
+| `/dashboard` | Both | Admin dashboard |
+| `/pos` | Both | Point of Sale |
+| `/menu` | Both | Menu management |
+| `/settings` | Both | Store settings |
+| `/reports` | Both | Sales reports |
+| `/invoices` | Both | Invoice management |
+
+Non-admin routes accessed via `admin.localhost:3000` will automatically redirect to `localhost:3000`.
+
 Modern browsers (Chrome 73+, Firefox, Safari) automatically resolve `*.localhost` to `127.0.0.1`, so no hosts file configuration is needed for subdomain testing.
 
 **Troubleshooting:**

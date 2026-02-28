@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import { isAdminHostname, stripAdminSubdomain } from '@/shared/lib/domain-config'
 
 const isPublicRoute = createRouteMatcher([
   '/login(.*)',
@@ -33,66 +34,75 @@ const isMainDomainOnlyRoute = createRouteMatcher([
 ])
 
 /**
- * Detects if the request is coming from the admin subdomain.
- * Handles various formats:
- * - admin.domain.com
- * - admin.localhost:3000
- * - admin.127.0.0.1:3000
- */
-function detectAdminSubdomain(hostname: string): boolean {
-  // Remove port if present
-  const hostWithoutPort = hostname.split(':')[0]
-
-  // Check if hostname starts with 'admin.'
-  return hostWithoutPort.startsWith('admin.')
-}
-
-/**
  * Extracts subdomain context from the request.
  * Returns 'admin' for admin subdomain, 'public' otherwise.
  */
 function getSubdomainContext(request: Request): 'admin' | 'public' {
   const hostname = request.headers.get('host') ?? ''
-  return detectAdminSubdomain(hostname) ? 'admin' : 'public'
+  return isAdminHostname(hostname) ? 'admin' : 'public'
 }
 
 /**
- * Removes the 'admin.' prefix from a hostname to get the main domain.
- * @example
- * getMainDomain('admin.localhost:3000') // 'localhost:3000'
- * getMainDomain('admin.example.com') // 'example.com'
+ * Gets the protocol for constructing URLs.
+ * Uses http for localhost, https for production.
  */
-function getMainDomain(hostname: string): string {
-  if (hostname.startsWith('admin.')) {
-    return hostname.slice(6) // Remove 'admin.' prefix
-  }
-  return hostname
+function getProtocol(hostname: string): string {
+  return hostname.includes('localhost') || hostname.includes('127.0.0.1')
+    ? 'http'
+    : 'https'
+}
+
+/**
+ * Builds a sign-in URL on the main domain with proper redirect back to admin subdomain.
+ * This ensures authentication happens on the main domain where cookies are set,
+ * then redirects back to the requested page on the admin subdomain.
+ */
+function buildMainDomainSignInUrl(hostname: string, originalUrl: URL): string {
+  const mainDomain = stripAdminSubdomain(hostname)
+  const protocol = getProtocol(hostname)
+
+  // Build the full URL of where the user wanted to go (on admin subdomain)
+  const returnUrl = originalUrl.toString()
+
+  // Redirect to login on main domain with redirect_url pointing back to admin subdomain
+  return `${protocol}://${mainDomain}/login?redirect_url=${encodeURIComponent(returnUrl)}`
 }
 
 export default clerkMiddleware(async (auth, request) => {
   const hostname = request.headers.get('host') ?? ''
-  const isAdminSubdomain = detectAdminSubdomain(hostname)
+  const isAdminSubdomain = isAdminHostname(hostname)
   const url = new URL(request.url)
 
   // Redirect main-domain-only routes from admin subdomain to main domain
   // This ensures public/non-admin routes are only served from the main domain
   if (isAdminSubdomain && isMainDomainOnlyRoute(request)) {
-    const mainDomain = getMainDomain(hostname)
-    // Use request URL's protocol, or default to http for localhost
-    const protocol = hostname.includes('localhost') ? 'http' : 'https'
+    const mainDomain = stripAdminSubdomain(hostname)
+    const protocol = getProtocol(hostname)
     const absoluteRedirectUrl = `${protocol}://${mainDomain}${url.pathname}${url.search}`
 
-    // Create redirect response manually to ensure absolute URL is used
-    return new NextResponse(null, {
-      status: 307,
-      headers: {
-        Location: absoluteRedirectUrl,
-      },
-    })
+    // Return a Response object directly to ensure the Location header is preserved
+    // Next.js middleware can normalize NextResponse redirects, so we use Response
+    return Response.redirect(absoluteRedirectUrl, 307)
   }
 
+  // Handle protected routes
   if (!isPublicRoute(request)) {
-    await auth.protect()
+    // For admin subdomain, we need to check auth manually and redirect to main domain if not authenticated
+    // This prevents the redirect loop where Clerk redirects to /login on the same subdomain
+    if (isAdminSubdomain) {
+      const { userId } = await auth()
+
+      if (!userId) {
+        // User is not authenticated on admin subdomain
+        // Redirect to main domain login with return URL back to admin subdomain
+        const signInUrl = buildMainDomainSignInUrl(hostname, url)
+        return Response.redirect(signInUrl, 307)
+      }
+      // User is authenticated, continue
+    } else {
+      // On main domain, use Clerk's default protection
+      await auth.protect()
+    }
   }
 
   // Detect subdomain context

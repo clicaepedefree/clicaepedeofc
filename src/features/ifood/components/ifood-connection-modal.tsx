@@ -1,6 +1,11 @@
 'use client'
 
-import { exchangeIFoodAuthCode, initiateIFoodOAuth } from '@/features/ifood/api'
+import {
+  completeIFoodConnection,
+  exchangeIFoodAuthCode,
+  getMerchantCatalogs,
+  initiateIFoodOAuth,
+} from '@/features/ifood/api'
 import { Button } from '@/shared/button'
 import {
   Dialog,
@@ -21,12 +26,19 @@ interface IFoodConnectionModalProps {
   onSuccess: () => void
 }
 
-type Step = 'userCode' | 'authCode' | 'selectMerchant'
+type Step = 'userCode' | 'authCode' | 'selectMerchant' | 'selectCatalog'
 
 interface Merchant {
   id: string
   name: string
   corporateName: string
+}
+
+interface Catalog {
+  id: string
+  name: string
+  status: string
+  type: string
 }
 
 export function IFoodConnectionModal({
@@ -41,8 +53,9 @@ export function IFoodConnectionModal({
   const [verificationUrl, setVerificationUrl] = useState('')
   const [authorizationCode, setAuthorizationCode] = useState('')
   const [merchants, setMerchants] = useState<Merchant[]>([])
-  const [selectedMerchantId, setSelectedMerchantId] = useState('')
-  // Tokens are now stored server-side in the OAuth session - not exposed to client
+  const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null)
+  const [catalogs, setCatalogs] = useState<Catalog[]>([])
+  const [selectedCatalog, setSelectedCatalog] = useState<Catalog | null>(null)
 
   const resetState = useCallback(() => {
     setStep('userCode')
@@ -51,7 +64,9 @@ export function IFoodConnectionModal({
     setVerificationUrl('')
     setAuthorizationCode('')
     setMerchants([])
-    setSelectedMerchantId('')
+    setSelectedMerchant(null)
+    setCatalogs([])
+    setSelectedCatalog(null)
   }, [])
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -62,11 +77,9 @@ export function IFoodConnectionModal({
   }
 
   // Step 1: Initiate OAuth and get userCode using server action
-  // The authorizationCodeVerifier is stored server-side and never exposed to the client
   const initiateConnection = useCallback(async () => {
     setIsLoading(true)
     try {
-      // Use server action - verifier is stored server-side automatically
       const data = await initiateIFoodOAuth(storeId)
       setUserCode(data.userCode)
       setVerificationUrl(data.verificationUrl)
@@ -78,13 +91,6 @@ export function IFoodConnectionModal({
       setIsLoading(false)
     }
   }, [storeId])
-
-  // When modal opens, initiate connection
-  const handleModalOpen = useCallback(() => {
-    if (open && !userCode && !isLoading) {
-      initiateConnection()
-    }
-  }, [open, userCode, isLoading, initiateConnection])
 
   // Call initiateConnection when modal opens
   if (open && !userCode && !isLoading && step === 'userCode') {
@@ -115,14 +121,13 @@ export function IFoodConnectionModal({
     setIsLoading(true)
 
     try {
-      // Use server action - verifier is retrieved server-side from DB
       // Tokens are stored server-side (encrypted in OAuth session), NOT returned to client
       const data = await exchangeIFoodAuthCode(storeId, authorizationCode.trim())
 
       setMerchants(data.merchants)
 
       if (data.merchants.length === 1) {
-        setSelectedMerchantId(data.merchants[0].id)
+        setSelectedMerchant(data.merchants[0])
       }
 
       setStep('selectMerchant')
@@ -139,8 +144,12 @@ export function IFoodConnectionModal({
     }
   }
 
-  const handleConnectMerchant = async () => {
-    if (!selectedMerchantId) {
+  const handleSelectMerchant = (merchant: Merchant) => {
+    setSelectedMerchant(merchant)
+  }
+
+  const handleContinueToCatalogs = async () => {
+    if (!selectedMerchant) {
       toast.error('Por favor, selecione um restaurante')
       return
     }
@@ -148,15 +157,58 @@ export function IFoodConnectionModal({
     setIsLoading(true)
 
     try {
-      // TODO: This will be replaced with completeIFoodConnection (feature #20)
-      // which reads tokens from the OAuth session server-side and creates the integration.
-      // For now, show a placeholder message.
-      toast.info('Funcionalidade em desenvolvimento. Selecao de catalogo sera adicionada em breve.')
-      handleOpenChange(false)
+      // Fetch catalogs using tokens from OAuth session
+      const data = await getMerchantCatalogs(storeId, selectedMerchant.id)
+
+      setCatalogs(data.catalogs)
+
+      if (data.catalogs.length === 1) {
+        setSelectedCatalog(data.catalogs[0])
+      }
+
+      setStep('selectCatalog')
+      toast.success('Catalogos carregados! Selecione qual deseja usar.')
     } catch (error) {
-      console.error('Error connecting merchant:', error)
+      console.error('Error fetching catalogs:', error)
       toast.error(
-        error instanceof Error ? error.message : 'Erro ao conectar restaurante.'
+        error instanceof Error
+          ? error.message
+          : 'Erro ao carregar catalogos. Tente novamente.'
+      )
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSelectCatalog = (catalog: Catalog) => {
+    setSelectedCatalog(catalog)
+  }
+
+  const handleCompleteConnection = async () => {
+    if (!selectedMerchant || !selectedCatalog) {
+      toast.error('Por favor, selecione um restaurante e um catalogo')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // Complete the connection - tokens are read from OAuth session server-side
+      await completeIFoodConnection(
+        storeId,
+        selectedMerchant.id,
+        selectedCatalog.id,
+        selectedCatalog.name,
+        selectedMerchant.name
+      )
+
+      toast.success('iFood conectado com sucesso!')
+      handleOpenChange(false)
+      onSuccess()
+    } catch (error) {
+      console.error('Error completing connection:', error)
+      toast.error(
+        error instanceof Error ? error.message : 'Erro ao conectar. Tente novamente.'
       )
     } finally {
       setIsLoading(false)
@@ -255,7 +307,7 @@ export function IFoodConnectionModal({
                   </h3>
                   <p className="mt-1 text-sm text-blue-700">
                     Apos autorizar no portal, voce recebera um codigo de
-                    autorizacao. Cole-o abaixo para finalizar a conexao.
+                    autorizacao. Cole-o abaixo para continuar.
                   </p>
 
                   <form onSubmit={handleSubmitAuthCode} className="mt-3 space-y-3">
@@ -319,8 +371,8 @@ export function IFoodConnectionModal({
                           type="radio"
                           name="merchant"
                           value={merchant.id}
-                          checked={selectedMerchantId === merchant.id}
-                          onChange={(e) => setSelectedMerchantId(e.target.value)}
+                          checked={selectedMerchant?.id === merchant.id}
+                          onChange={() => handleSelectMerchant(merchant)}
                           className="h-4 w-4 text-green-600"
                         />
                         <div className="flex-1">
@@ -339,10 +391,87 @@ export function IFoodConnectionModal({
 
                   <div className="mt-4 flex gap-2">
                     <Button
-                      onClick={handleConnectMerchant}
-                      disabled={!selectedMerchantId || isLoading}
+                      onClick={handleContinueToCatalogs}
+                      disabled={!selectedMerchant || isLoading}
                     >
-                      {isLoading ? 'Conectando...' : 'Conectar Restaurante'}
+                      {isLoading ? 'Carregando...' : 'Continuar'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenChange(false)}
+                      disabled={isLoading}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : step === 'selectCatalog' ? (
+          <div className="space-y-4">
+            {/* Step 5: Select catalog */}
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
+                  5
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-green-900">
+                    Selecione o catalogo
+                  </h3>
+                  <p className="mt-1 text-sm text-green-700">
+                    {catalogs.length === 1
+                      ? 'Confirme o catalogo para sincronizar:'
+                      : 'Selecione qual catalogo deseja sincronizar com o sistema:'}
+                  </p>
+
+                  <div className="mt-3 space-y-2">
+                    {catalogs.map((catalog) => (
+                      <label
+                        key={catalog.id}
+                        className="flex cursor-pointer items-center gap-3 rounded-md border border-green-300 bg-white p-3 transition-colors hover:bg-green-50"
+                      >
+                        <input
+                          type="radio"
+                          name="catalog"
+                          value={catalog.id}
+                          checked={selectedCatalog?.id === catalog.id}
+                          onChange={() => handleSelectCatalog(catalog)}
+                          className="h-4 w-4 text-green-600"
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">
+                            {catalog.name}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {catalog.type} - {catalog.status}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {catalogs.length === 0 && (
+                    <div className="mt-3 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                      Nenhum catalogo encontrado para este restaurante. Verifique se
+                      o cardapio esta configurado no iFood.
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      onClick={handleCompleteConnection}
+                      disabled={!selectedCatalog || isLoading}
+                    >
+                      {isLoading ? 'Conectando...' : 'Conectar'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setStep('selectMerchant')}
+                      disabled={isLoading}
+                    >
+                      Voltar
                     </Button>
                     <Button
                       variant="outline"
