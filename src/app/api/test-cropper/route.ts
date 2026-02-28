@@ -57,6 +57,29 @@ export const GET = async () => {
     </ul>
   </div>
 
+  <div class="feature-section">
+    <div class="info">
+      <h2>Feature: #70 - Integrate image cropper into menu item image upload</h2>
+      <p>The cropper is now integrated into the menu item creation/update form:</p>
+    </div>
+
+    <ul class="feature-list">
+      <li><strong>File Selection Intercepted:</strong> When user selects image, cropper modal opens automatically</li>
+      <li><strong>Cropper Modal Opens:</strong> Shows ImageCropperModal with selected file</li>
+      <li><strong>Upload on Confirm:</strong> Cropped image uploaded to UploadThing via handleCropComplete()</li>
+      <li><strong>Cancel Handling:</strong> Returns to file selection state via handleCropCancel()</li>
+      <li><strong>Loading State:</strong> Shows upload progress bar during UploadThing upload</li>
+    </ul>
+
+    <h3>Integration Details</h3>
+    <ul>
+      <li>Form location: <code>src/features/menu/components/create-or-update-item/create-or-update-item-form.tsx</code></li>
+      <li>Props added to SingleFileUploader: <code>enableCropper={true} cropperAspectRatio={1}</code></li>
+      <li>Aspect ratio: 1:1 (square) for menu item images</li>
+      <li>Cropper is also enabled for category images (cropperAspectRatio={16/9})</li>
+    </ul>
+  </div>
+
   <h3>Implementation Details</h3>
   <ul>
     <li>Located at: <code>src/shared/image-cropper-modal.tsx</code></li>
