@@ -1160,3 +1160,58 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #23, #24, #25)
+
+### Completed Features
+
+**Feature #23: Modal shows inline error with retry when authorization code exchange fails** - PASSING
+- Added `authCodeError` state for inline error messages
+- Display error below authorization code input with red styling
+- Clear error when user starts typing in the input
+- Clear error on successful exchange
+- Added aria attributes for accessibility (aria-invalid, aria-describedby)
+- Input border turns red when error is present
+- User stays on Step 1 and can retry with new code
+
+**Feature #24: Modal shows inline error with retry when connection completion fails** - PASSING
+- Added `connectionError` state for inline error messages
+- Display error on catalog selection step with "Tentar Novamente" button text
+- Clear error when user changes catalog selection
+- Clear error when going back to merchant selection
+- Preserve merchant and catalog selections on error for easy retry
+- All existing selections remain intact - user just clicks retry
+
+**Feature #25: Modal Step 1 displays userCode from initiateIFoodOAuth with copy button and portal link** - PASSING (Already Implemented)
+- Verified via code review:
+  - Loading state: "Iniciando conexao..." while API loads
+  - userCode displayed prominently in mono font
+  - "Copiar" button uses navigator.clipboard.writeText
+  - "Abrir Portal do Parceiro" button uses window.open(url, '_blank')
+  - Authorization code input field present with placeholder
+  - "Validar Codigo" submit button present
+- All required elements verified in ifood-connection-modal.tsx
+
+### Technical Notes
+- Refactored OAuth initiation to use useEffect instead of render-time call
+- Added initiatedRef to prevent duplicate API calls on rapid clicks or StrictMode
+- Test page updated with "Use Real Modal" toggle for testing error handling
+- All changes follow existing codebase patterns
+
+### Code Quality
+- No "as unknown as" patterns: 0 matches
+- TypeScript compiles without errors
+- All new state variables properly reset in resetState callback
+
+### Current Status
+- 78/102 features passing (76.5%)
+
+### Session Summary
+- Completed 3 features: #23, #24, #25
+- Feature #23: Inline error handling for auth code exchange
+- Feature #24: Inline error handling for connection completion
+- Feature #25: Verified existing Step 1 implementation (already complete)
+
+### Next Steps
+- Continue with remaining features in the backlog
+
