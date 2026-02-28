@@ -18,6 +18,7 @@ import {
   updateCartItemAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
+import { CartItem, CartPayment } from '@/features/pos/types'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { dispatchToast } from '@/shared/lib/toast'
@@ -103,13 +104,13 @@ export const useCart = (salesChannel: SalesChannel) => {
   }, [selectedStoreId, cartSessionItems, setStockValidationErrors])
 
   const createOrderMutation = useMutation({
-    mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
-      if (
-        !selectedStoreId ||
-        !cartSessionItems?.length ||
-        !cartSessionPayments?.length
-      )
+    mutationFn: async ({
+      counterId,
+      counterName,
+    }: CreateOrderParams) => {
+      if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) {
         return
+      }
 
       const orderItems = cartSessionItems.map((cartItem, index) => ({
         index,
@@ -141,9 +142,9 @@ export const useCart = (salesChannel: SalesChannel) => {
       }))
 
       const newOrder = await createOrder({
-        storeId: selectedStoreId!,
+        storeId,
         items: orderItems,
-        totalPrice: formatValueToCurrency({ value: cartSessionTotal }),
+        totalPrice: formatValueToCurrency({ value: totalPrice }),
         salesChannel: salesChannel,
         type: 'INDOOR',
         status: 'COMPLETED',
@@ -158,10 +159,12 @@ export const useCart = (salesChannel: SalesChannel) => {
       dispatchToast({ message: `Erro ao criar pedido`, type: 'error' })
     },
     onSuccess: newOrder => {
-      dispatchToast({
-        message: `Pedido '#${newOrder?.displayId}' criado com sucesso`,
-        type: 'success',
-      })
+      if (newOrder?.displayId) {
+        dispatchToast({
+          message: `Pedido '#${newOrder.displayId}' criado com sucesso`,
+          type: 'success',
+        })
+      }
       clearCart()
     },
   })

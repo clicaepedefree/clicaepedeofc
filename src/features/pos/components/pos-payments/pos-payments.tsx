@@ -1,4 +1,5 @@
 import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
+import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import {
   formatValueToCurrency,
@@ -9,6 +10,7 @@ import { TabsContent, TabsWithIcons } from '@/shared/tabs-with-icons'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
+import { useAtom } from 'jotai'
 import { AlertTriangle, ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
 import { useEffect } from 'react'
 import { useCart } from '../../hooks/use-cart'
@@ -63,11 +65,14 @@ export const PosPayments = ({
   const {
     createOrder,
     addPayment,
+    cartSessionItems,
     cartSessionPayments,
+    cartSessionTotal,
     validateStock,
     stockValidationErrors,
     hasStockErrors,
   } = useCart('POS')
+  const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { activeCounterId, activeCounterName } = useCounters()
   const {
     printOrderReceipt,
@@ -98,9 +103,17 @@ export const PosPayments = ({
     addPayment(payment)
 
     if (paymentAmount >= amountLeftToPay) {
+      // Include the new payment in the payments array to avoid closure issues
+      // (addPayment updates Jotai state, but mutation closure has stale values)
+      const allPayments = [...(cartSessionPayments ?? []), payment]
+
       const newOrder = await createOrder({
         counterId: activeCounterId!,
         counterName: activeCounterName!,
+        items: cartSessionItems ?? [],
+        payments: allPayments,
+        totalPrice: cartSessionTotal,
+        storeId: selectedStoreId!,
       })
 
       // Print order receipt after successful order creation
