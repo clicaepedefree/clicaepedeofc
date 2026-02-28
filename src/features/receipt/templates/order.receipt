@@ -22,7 +22,7 @@ _Itens
 |  {{quantity}} x {{unitPrice}} |{{totalPrice}} |
 {{#options}}
 {w:auto}
-|    + {{optionName}} ({{optionQuantity}}x) |
+|    + {{optionName}} ({{optionQuantity}}x){{#optionPrice}} {{optionPrice}}{{/optionPrice}} |
 {{/options}}
 {{#comment}}
 {w:auto}
@@ -36,6 +36,7 @@ _Itens
 -
 
 {w:*,*}
+|Subtotal: |{{subtotal}} |
 {{#discount}}
 |Desconto: |-{{discount}} |
 {{/discount}}

@@ -39,9 +39,10 @@ type FormattedOrderTemplateInput = {
     quantity: string | number
     unitPrice: string
     totalPrice: string
-    options?: Array<{ optionName: string; optionQuantity: string | number }>
+    options?: Array<{ optionName: string; optionQuantity: string | number; optionPrice?: string }>
     comment?: string | null
   }>
+  subtotal: string
   discount?: string
   totalPrice: string
   payments: Array<{
@@ -62,6 +63,7 @@ export type OrderTemplateInput = {
   orderType: string
   posCounterName?: string | null
   items: OrderTemplateItem[]
+  subtotal?: string | number
   discount?: string | number | null
   totalPrice: string | number
   payments: OrderTemplatePayment[]
@@ -86,6 +88,22 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
         })
       : undefined
 
+    // Calculate subtotal: if provided use it, otherwise calculate as totalPrice + discount
+    let subtotalValue: string | number
+    if (data.subtotal !== undefined) {
+      subtotalValue = data.subtotal
+    } else if (data.discount) {
+      const totalDecimal = new Decimal(data.totalPrice.toString())
+      const discountDecimal = new Decimal(data.discount.toString())
+      subtotalValue = totalDecimal.plus(discountDecimal).toString()
+    } else {
+      subtotalValue = data.totalPrice
+    }
+    const formattedSubtotal = formatValueToCurrency({
+      value: subtotalValue,
+      includeCurrencySymbol: true,
+    })
+
     const formattedItems = data.items.map(item => {
       const formattedUnitPrice = formatValueToCurrency({
         value: item.unitPrice,
@@ -98,6 +116,12 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       const formattedOptions = item.options?.map(option => ({
         optionName: option.optionName,
         optionQuantity: option.optionQuantity,
+        optionPrice: option.optionPrice
+          ? formatValueToCurrency({
+              value: option.optionPrice,
+              includeCurrencySymbol: true,
+            })
+          : undefined,
       }))
 
       return {
@@ -148,6 +172,7 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       ...data,
       createdAt: formattedDate,
       orderType: formattedOrderType,
+      subtotal: formattedSubtotal,
       totalPrice: formattedTotalPrice,
       discount: formattedDiscount,
       items: formattedItems,
