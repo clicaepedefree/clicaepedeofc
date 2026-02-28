@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Feature #16 Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow: auto; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .success { color: green; }
+        .error { color: red; }
+        h2 { margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <h1>Feature #16: iFood Connection Data Verification</h1>
+    <p>This page tests that completeIFoodConnection stores data correctly in ifood_integrations table.</p>
+
+    <div>
+        <button onclick="checkConnection()">1. Check Current Connection</button>
+        <button onclick="createTestConnection()">2. Create Test Connection</button>
+        <button onclick="verifyData()">3. Verify Stored Data</button>
+        <button onclick="deleteConnection()">4. Clean Up</button>
+    </div>
+
+    <h2>Results:</h2>
+    <div id="results"></div>
+
+    <h2>Verification Checklist:</h2>
+    <ul id="checklist">
+        <li id="check-merchant">merchant_id field contains selected merchant's ID</li>
+        <li id="check-catalog-id">catalog_id field contains selected catalog's ID</li>
+        <li id="check-catalog-name">catalog_name field contains selected catalog's display name</li>
+        <li id="check-merchant-name">merchant_name field contains merchant display name</li>
+        <li id="check-status">status field is 'connected'</li>
+        <li id="check-token">access_token is encrypted (not plaintext)</li>
+        <li id="check-refresh">refresh_token is encrypted (not plaintext)</li>
+        <li id="check-expires">token_expires_at is set</li>
+    </ul>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+
+        function log(message, isError = false) {
+            const p = document.createElement('pre');
+            p.className = isError ? 'error' : '';
+            p.textContent = typeof message === 'object' ? JSON.stringify(message, null, 2) : message;
+            resultsDiv.appendChild(p);
+        }
+
+        function checkItem(id, passed) {
+            const item = document.getElementById(id);
+            if (passed) {
+                item.innerHTML = '✅ ' + item.textContent;
+                item.style.color = 'green';
+            } else {
+                item.innerHTML = '❌ ' + item.textContent;
+                item.style.color = 'red';
+            }
+        }
+
+        async function checkConnection() {
+            resultsDiv.innerHTML = '';
+            try {
+                const res = await fetch('/api/test-ifood-connection-persistence');
+                const data = await res.json();
+                log('GET /api/test-ifood-connection-persistence:');
+                log(data);
+            } catch (e) {
+                log('Error: ' + e, true);
+            }
+        }
+
+        async function createTestConnection() {
+            resultsDiv.innerHTML = '';
+            try {
+                const res = await fetch('/api/test-ifood-connection-persistence', { method: 'POST' });
+                const data = await res.json();
+                log('POST /api/test-ifood-connection-persistence (Create):');
+                log(data);
+                if (data.success) {
+                    log('✅ Test connection created successfully!', false);
+                }
+            } catch (e) {
+                log('Error: ' + e, true);
+            }
+        }
+
+        async function verifyData() {
+            resultsDiv.innerHTML = '';
+            try {
+                const res = await fetch('/api/test-ifood-connection-persistence');
+                const data = await res.json();
+                log('Verification Results:');
+                log(data);
+
+                if (data.success && data.hasConnection && data.connection) {
+                    const conn = data.connection;
+
+                    // Verify all required fields
+                    checkItem('check-merchant', conn.merchantId && conn.merchantId.startsWith('test-merchant-'));
+                    checkItem('check-catalog-id', conn.catalogId && conn.catalogId.startsWith('test-catalog-'));
+                    checkItem('check-catalog-name', conn.catalogName === 'Cardapio Principal');
+                    checkItem('check-merchant-name', conn.merchantName === 'Loja Teste iFood');
+                    checkItem('check-status', conn.status === 'connected');
+                    checkItem('check-token', conn.hasAccessToken === true);
+                    checkItem('check-refresh', conn.hasRefreshToken === true);
+                    checkItem('check-expires', conn.tokenExpiresAt !== null);
+
+                    log('\n✅ All verifications complete!');
+                } else {
+                    log('No connection found. Create one first with button #2.', true);
+                }
+            } catch (e) {
+                log('Error: ' + e, true);
+            }
+        }
+
+        async function deleteConnection() {
+            resultsDiv.innerHTML = '';
+            try {
+                const res = await fetch('/api/test-ifood-connection-persistence', { method: 'DELETE' });
+                const data = await res.json();
+                log('DELETE /api/test-ifood-connection-persistence:');
+                log(data);
+                if (data.success) {
+                    log('✅ Test connection deleted successfully!');
+                }
+            } catch (e) {
+                log('Error: ' + e, true);
+            }
+        }
+    </script>
+</body>
+</html>
