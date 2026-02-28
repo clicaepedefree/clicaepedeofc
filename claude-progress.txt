@@ -531,3 +531,55 @@
 
 ### Next Steps
 - Continue with remaining features
+
+## Session: 2026-02-28 (Agent Batch #77, #78, #79)
+
+### Completed Features
+
+**Feature #77: Block payment submission when items are out of stock** - PASSING
+- Stock validation already implemented by prior agents in features #74-#76
+- `validateStock()` in `useCart` hook checks stock before payment screen
+- `handlePaymentsClick` validates stock before opening payment view
+- Payments button disabled when `hasStockErrors` is true
+- Stock error banner shows in checkout with:
+  - List of unavailable items
+  - Requested vs available quantities
+  - "Remover indisponiveis" button to clear out-of-stock items
+- Payment components (CashPayment, CardPayment) accept `disabled` prop
+- Individual cart items show out-of-stock warning with red highlighting
+
+**Feature #78: Block NF emission when items are out of stock** - PASSING
+- Added stock validation to `generateNfce` in fiscal/api.ts
+- Before NF emission, fetches order items from database by orderId
+- Validates stock availability using `checkStockAvailability`
+- Throws `OutOfStockError` if any items are unavailable
+- Prevents fiscal invoice emission for out-of-stock items
+- Error includes item details (name, requested qty, available qty)
+
+**Feature #79: Show clear indication of unavailable items in error** - PASSING
+- Verified existing implementation meets all requirements:
+  - Error banner lists each unavailable item by name
+  - Shows "solicitado X, disponivel Y" format
+  - Individual cart items show "Apenas X disponivel" or "Item indisponivel"
+  - Items with stock issues have red background/border highlighting
+  - Warning icon (AlertTriangle) displayed on affected items
+- `checkStockAvailability` in order/db.ts aggregates quantities by itemId
+- No scroll-to-item needed - visual highlighting is sufficient
+
+### Technical Implementation
+- Stock validation: `checkStockAvailability` in src/features/order/db.ts
+- Stock errors: `OutOfStockError` class in src/shared/errors/out-of-stock-error.ts
+- POS state: Added `stockValidationErrorsAtom`, `hasStockErrorsAtom` in src/features/pos/state.ts
+- NF blocking: Added stock check in `generateNfce` in src/features/fiscal/api.ts
+
+### Current Status
+- 41/102 features passing (40.2%)
+
+### Session Summary
+- Completed 3 features: #77, #78, #79
+- Feature #77: Stock validation blocking implemented (mostly by prior agents)
+- Feature #78: Added stock validation to NF emission
+- Feature #79: Verified existing error display implementation
+
+### Next Steps
+- Continue with remaining features in backlog
