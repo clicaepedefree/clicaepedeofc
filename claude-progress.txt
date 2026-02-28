@@ -487,13 +487,47 @@
 - CurrencyInput has no truncation classes
 - Input uses `w-full` to fill container space
 
+## Session: 2026-02-28 (Agent Batch #80, #81, #94)
+
+### Completed Features
+
+**Feature #80: Allow user to remove or modify out-of-stock items** - PASSING
+- Verified existing implementation from features #74-#76:
+  - `PosCartItem` has `isOutOfStock` and `availableQuantity` props
+  - Red highlighting with `bg-destructive/10 border border-destructive/30`
+  - Warning message shows available quantity
+  - Remove and quantity buttons remain functional on highlighted items
+- `handleRemoveUnavailableItems` function removes all out-of-stock items
+- "Remover indisponiveis" button in error panel for quick removal
+- Cart updates immediately via Jotai atoms (reactive state)
+
+**Feature #81: Clear out-of-stock error when issues resolved** - PASSING
+- `useCart` hook monitors `cartSessionItems` changes via useEffect
+- `clearStockErrors()` called when cart items change
+- Warning banner (`hasStockErrors`) conditionally rendered
+- Item highlighting (`isOutOfStock`) cleared when errors cleared
+- Payment button re-enabled when `hasStockErrors` becomes false
+
+**Feature #94: Handle 404 errors appropriately per domain** - PASSING
+- Created `src/app/not-found.tsx` with subdomain detection
+- Uses `getSubdomainContext()` from `@/shared/lib/subdomain`
+- Admin subdomain shows:
+  - "Pagina nao encontrada" title
+  - Admin-specific message mentioning panel
+  - Dashboard and POS navigation links
+- Public domain shows:
+  - Simpler message
+  - "Voltar para a pagina inicial" link
+- `log404Error()` function logs to console for monitoring
+- Error code and support contact info displayed
+
 ### Current Status
 - 40/102 features passing (39.2%)
 
 ### Session Summary
-- Completed 3 features: #73, #82, #83
-- Feature #73: Verified and added test page for mobile-responsive cropper
-- Features #82 and #83: Fixed option row input spacing in one commit
+- Completed 3 features: #80, #81, #94
+- Features #80-#81: Verified existing out-of-stock handling implementation
+- Feature #94: Created domain-aware 404 page
 
 ### Next Steps
 - Continue with remaining features
