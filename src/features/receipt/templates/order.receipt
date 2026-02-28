@@ -59,13 +59,15 @@ _Pagamentos
 | Pagamento pendente |
 {{/payments}}
 -
-{{#customerName}}
+{{#hasCustomerInfo}}
 
 {w:auto}
 _Cliente
 -
 {w:*,*}
+{{#customerName}}
 |{{customerName}} |
+{{/customerName}}
 {{#customerPhone}}
 |Tel: {{customerPhone}} |
 {{/customerPhone}}
@@ -73,7 +75,7 @@ _Cliente
 |{{customerAddress}} |
 {{/customerAddress}}
 -
-{{/customerName}}
+{{/hasCustomerInfo}}
 
 {w:auto}
 |Obrigado pela preferencia!

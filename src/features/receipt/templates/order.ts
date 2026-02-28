@@ -51,6 +51,7 @@ type FormattedOrderTemplateInput = {
     changeFor?: string
     changeValue?: string
   }>
+  hasCustomerInfo?: boolean
   customerName?: string | null
   customerPhone?: string | null
   customerAddress?: string | null
@@ -168,6 +169,9 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       }
     })
 
+    // Check if any customer info is provided
+    const hasCustomerInfo = Boolean(data.customerName || data.customerPhone || data.customerAddress)
+
     return {
       ...data,
       createdAt: formattedDate,
@@ -177,6 +181,7 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       discount: formattedDiscount,
       items: formattedItems,
       payments: formattedPayments,
+      hasCustomerInfo,
     } as unknown as OrderTemplateInput
   },
 })

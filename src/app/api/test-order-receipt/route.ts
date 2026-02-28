@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { OrderTemplate } from '@/features/receipt/templates/order'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Get test scenario from URL params
+    const url = new URL(request.url)
+    const scenario = url.searchParams.get('scenario') || 'full'
+
     // Test data with various items and options
     const testOrderData = {
       storeName: 'Restaurante Teste',
@@ -54,9 +58,18 @@ export async function GET() {
         { method: 'CASH', value: 50.00, changeFor: 60.00 },
         { method: 'PIX', value: 13.80 },
       ],
-      customerName: 'Joao Silva',
-      customerPhone: '(11) 99999-9999',
-      customerAddress: 'Rua das Flores, 123 - Centro',
+      // Customer info based on scenario
+      ...(scenario === 'full' ? {
+        customerName: 'Joao Silva',
+        customerPhone: '(11) 99999-9999',
+        customerAddress: 'Rua das Flores, 123 - Centro',
+      } : scenario === 'phone-only' ? {
+        customerPhone: '(11) 99999-9999',
+      } : scenario === 'address-only' ? {
+        customerAddress: 'Rua das Flores, 123 - Centro',
+      } : scenario === 'name-only' ? {
+        customerName: 'Joao Silva',
+      } : {}), // 'none' scenario - no customer info
     }
 
     // Render the receipt template
