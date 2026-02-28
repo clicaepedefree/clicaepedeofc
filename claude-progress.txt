@@ -402,3 +402,53 @@
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+### Session: 2026-02-28 (continued - Agent 2)
+
+**Feature #2: Database schema applied correctly with new tables and columns** - PASSING
+- Verified ifood_oauth_sessions table exists with all 8 columns:
+  - id, store_id, user_code, authorization_code_verifier, access_token, refresh_token, expires_at, created_at
+- Verified ifood_integrations table has 14 columns including new ones:
+  - catalog_id, catalog_name, merchant_name (all nullable)
+- Foreign key constraint verified: ifood_oauth_sessions.store_id → stores.id
+- Created /api/apply-migration endpoint to apply schema changes
+- Schema persists across server restart (verified)
+- No mock data patterns found
+
+**Feature #10: Conectar button opens connection modal instead of navigating** - PASSING
+- Created IFoodConnectionModal component (src/features/ifood/components/ifood-connection-modal.tsx)
+- Multi-step OAuth flow in modal:
+  - Step 1: Display userCode with copy button
+  - Step 2: Link to iFood Partner Portal
+  - Step 3: Enter authorization code
+  - Step 4: Select merchant (after token exchange)
+- Modified IFoodConnectionCard to:
+  - Open modal via setIsModalOpen(true) instead of router.push()
+  - URL stays on /settings/integracoes when modal opens
+- Uses Dialog component from shared/dialog.tsx
+
+**Feature #17: initiateIFoodOAuth server action creates session and returns userCode and verificationUrl** - PASSING
+- Created initiateIFoodOAuth server action in src/features/ifood/api.ts:
+  - Has 'use server' directive
+  - Accepts storeId, validates admin permissions
+  - Calls iFood API to generate userCode
+  - Stores session in ifood_oauth_sessions table
+  - Returns ONLY { userCode, verificationUrl } - no sensitive data
+- authorizationCodeVerifier stored server-side, never exposed to client
+- Added OAuth session CRUD functions to db.ts:
+  - createIFoodOAuthSession (deletes existing first)
+  - getIFoodOAuthSession
+  - getIFoodOAuthSessionByUserCode
+  - updateIFoodOAuthSession
+  - deleteIFoodOAuthSession
+- Updated modal to use server action instead of API route
+- Session expires after ~10 minutes (from iFood expiresIn)
+
+### Current Status
+- 33/102 features passing (32.4%)
+- Server running on localhost:3000
+
+### Next Steps
+- Continue with remaining iFood OAuth flow features
+- Complete exchange token server action
+- Test end-to-end OAuth flow with authentication
