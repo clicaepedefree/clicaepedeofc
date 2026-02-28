@@ -1001,3 +1001,56 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #7, #8, #9)
+
+### Completed Features
+
+**Feature #7: OAuth tokens never returned to frontend in any API response** - PASSING
+- Verified all server actions in src/features/ifood/api.ts return safe data:
+  - initiateIFoodOAuth → returns ONLY { userCode, verificationUrl }
+  - exchangeIFoodAuthCode → returns ONLY { merchants }
+  - getMerchantCatalogs → returns ONLY { catalogs }
+  - completeIFoodConnection → returns ONLY { success: true }
+  - getIFoodConnectionStatus → returns ONLY { id, storeId, merchantId, status, lastSyncAt, tokenExpiresAt }
+- Legacy insecure API routes were already deleted:
+  - /api/integrations/ifood/exchange-token
+  - /api/integrations/ifood/initiate
+  - /api/integrations/ifood/connect
+  - /app/(admin)/settings/integracoes/ifood/authorize
+- Grep search confirmed no token-returning patterns in remaining API routes
+
+**Feature #8: authorizationCodeVerifier stored server-side only, never in client code** - PASSING
+- Searched all files in src/features/ifood/components/ for verifier patterns - NO MATCHES
+- Searched all files in src/features/ifood/hooks/ for verifier patterns - NO MATCHES
+- authorizationCodeVerifier only appears in server-side files:
+  - src/features/ifood/api.ts (has 'use server')
+  - src/services/ifood/index.ts (service class)
+  - src/app/api/test-ifood-oauth/route.ts (API route)
+  - src/services/db/schema/ifood-oauth-sessions.ts (DB schema)
+- None of the 'use client' files contain verifier references
+- Verifier created and consumed entirely within server actions
+
+**Feature #9: OAuth session tokens encrypted at rest using AES-256-GCM** - PASSING
+- Verified lib/encryption.ts uses AES-256-GCM algorithm (line 17)
+- IFOOD_TOKEN_ENCRYPTION_KEY environment variable required (lines 3-6)
+- Key length validated as 32 bytes / 64 hex characters (lines 10-14)
+- Token encryption verified in api.ts:
+  - Lines 117-118: encrypt(tokens.accessToken), encrypt(tokens.refreshToken) when storing
+  - Lines 164, 301, 306: decrypt() when reading for API calls
+  - Lines 311-312, 362-363: encrypt() for refreshed tokens
+- Encrypted format: iv:authTag:encryptedData (3 parts separated by :)
+- Test endpoint verifies tokens are stored in encrypted format
+
+### Technical Notes
+- All OAuth tokens stay server-side throughout the entire flow
+- New modal (ifood-connection-modal.tsx) uses secure server actions
+- Legacy routes were already removed in previous sessions
+- Test endpoint /api/test-ifood-oauth verifies encryption format without exposing tokens
+
+### Current Status
+- 67/102 features passing (65.7%)
+- Session completed 3 features: #7, #8, #9
+
+### Next Steps
+- Continue with remaining features in the backlog

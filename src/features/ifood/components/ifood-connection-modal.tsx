@@ -52,6 +52,7 @@ export function IFoodConnectionModal({
   const [userCode, setUserCode] = useState('')
   const [verificationUrl, setVerificationUrl] = useState('')
   const [authorizationCode, setAuthorizationCode] = useState('')
+  const [authCodeError, setAuthCodeError] = useState<string | null>(null)
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null)
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
@@ -63,6 +64,7 @@ export function IFoodConnectionModal({
     setUserCode('')
     setVerificationUrl('')
     setAuthorizationCode('')
+    setAuthCodeError(null)
     setMerchants([])
     setSelectedMerchant(null)
     setCatalogs([])
@@ -114,11 +116,12 @@ export function IFoodConnectionModal({
     e.preventDefault()
 
     if (!authorizationCode.trim()) {
-      toast.error('Por favor, insira o codigo de autorizacao')
+      setAuthCodeError('Por favor, insira o codigo de autorizacao')
       return
     }
 
     setIsLoading(true)
+    setAuthCodeError(null) // Clear any previous error before attempting
 
     try {
       // Tokens are stored server-side (encrypted in OAuth session), NOT returned to client
@@ -130,15 +133,16 @@ export function IFoodConnectionModal({
         setSelectedMerchant(data.merchants[0])
       }
 
+      setAuthCodeError(null) // Clear error on success
       setStep('selectMerchant')
       toast.success('Codigo validado! Selecione o restaurante para conectar.')
     } catch (error) {
       console.error('Error exchanging token:', error)
-      toast.error(
+      const errorMessage =
         error instanceof Error
           ? error.message
           : 'Erro ao validar codigo. Verifique o codigo de autorizacao.'
-      )
+      setAuthCodeError(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -318,12 +322,29 @@ export function IFoodConnectionModal({
                       <Input
                         type="text"
                         value={authorizationCode}
-                        onChange={(e) => setAuthorizationCode(e.target.value)}
+                        onChange={(e) => {
+                          setAuthorizationCode(e.target.value)
+                          if (authCodeError) {
+                            setAuthCodeError(null) // Clear error when user starts typing
+                          }
+                        }}
                         placeholder="Cole o codigo aqui..."
                         disabled={isLoading}
-                        className="mt-1 font-mono"
+                        className={`mt-1 font-mono ${authCodeError ? 'border-red-500 focus:ring-red-500' : ''}`}
+                        aria-invalid={!!authCodeError}
+                        aria-describedby={authCodeError ? 'auth-code-error' : undefined}
                       />
                     </Label>
+
+                    {authCodeError && (
+                      <div
+                        id="auth-code-error"
+                        className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2"
+                        role="alert"
+                      >
+                        {authCodeError}
+                      </div>
+                    )}
 
                     <div className="flex gap-2">
                       <Button type="submit" disabled={isLoading}>
