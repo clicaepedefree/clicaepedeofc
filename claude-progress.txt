@@ -267,3 +267,44 @@
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+**Feature #68: Allow zoom/scale adjustment in image cropper** - PASSING
+- Enhanced ImageCropperModal with zoom functionality:
+  - Added zoom slider (range input) between +/- buttons
+  - Configurable MIN_ZOOM (0.5x) and MAX_ZOOM (3x) constants
+  - Real-time canvas updates via drawCanvas()
+  - Pinch-to-zoom support for touch devices via getTouchDistance()
+  - Zoom level indicator showing percentage (e.g., "150%")
+  - Mouse wheel zoom support via onWheel handler
+  - Reset button to return to 100% and center image
+- No mock data patterns found
+- Zero console errors
+
+**Feature #69: Show preview of cropped result before upload** - PASSING
+- Added preview section to ImageCropperModal:
+  - Separate previewCanvasRef for preview display
+  - drawPreview() function updates on every crop/zoom/position change
+  - Preview scaled to PREVIEW_MAX_SIZE (100px) maintaining aspect ratio
+  - Shows output dimensions (e.g., "Tamanho: 400×400 px")
+  - Preview section displayed below zoom controls
+  - Uses same crop calculations as final export for accuracy
+- Preview updates in real-time as user adjusts crop
+- No mock data patterns found
+
+**Feature #70: Integrate image cropper into menu item image upload** - PASSING
+- Enabled cropper in menu item creation/update form:
+  - Added enableCropper={true} and cropperAspectRatio={1} to SingleFileUploader
+  - File selection intercepted - cropper modal opens automatically
+  - Cropped image uploaded to UploadThing on confirm
+  - Cancel returns to file selection state
+  - Loading state shows upload progress
+- Category form already had cropper enabled (cropperAspectRatio={16/9})
+- No code changes needed in SingleFileUploader - all logic was already implemented
+
+### Current Status
+- 25/102 features passing (24.5%)
+- Image cropper functionality complete with zoom, preview, and menu integration
+
+### Next Steps
+- Continue with remaining features
+- Check for any blocked features due to dependencies
