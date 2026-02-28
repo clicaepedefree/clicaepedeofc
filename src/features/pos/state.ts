@@ -1,4 +1,5 @@
 import { CartItem, CartItemOption, CartPayment, CartSession } from '@/features/pos/types'
+import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
@@ -147,4 +148,16 @@ export const amountLeftToPayAtom = atom(get => {
   const amountPaid = get(amountPaidAtom)
 
   return cartSessionTotal - amountPaid
+})
+
+// Stock validation state
+export const stockValidationErrorsAtom = atom<OutOfStockItem[]>([])
+
+export const hasStockErrorsAtom = atom(get => {
+  const stockErrors = get(stockValidationErrorsAtom)
+  return stockErrors.length > 0
+})
+
+export const clearStockErrorsAtom = atom(null, (_, set) => {
+  set(stockValidationErrorsAtom, [])
 })

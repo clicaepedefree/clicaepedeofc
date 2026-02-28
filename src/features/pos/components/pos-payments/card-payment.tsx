@@ -19,6 +19,7 @@ import { MealVoucherOperatorSelector } from '../meal-voucher-operator-selector'
 type CardPaymentProps = {
   amountLeftToPay: number
   onPaymentAdded?(payment: CartPayment): Promise<void>
+  disabled?: boolean
 }
 
 type CardType = (typeof cardTypes)[number]
@@ -35,7 +36,7 @@ const cardOperatorSelectorByType: Record<CardType, CardOperatorSelector> = {
   MEAL_VOUCHER: MealVoucherOperatorSelector as CardOperatorSelector,
 }
 
-export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProps) => {
+export const CardPayment = ({ amountLeftToPay, onPaymentAdded, disabled }: CardPaymentProps) => {
   const form = useForm({
     defaultValues: {
       type: 'PREPAID',
@@ -181,7 +182,7 @@ export const CardPayment = ({ amountLeftToPay, onPaymentAdded }: CardPaymentProp
       <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
         {([canSubmitPayment, isSubmittingOrder]) => (
           <div className="space-y-2">
-            <Button type="submit" disabled={!canSubmitPayment || !cardBrand} isLoading={isSubmittingOrder}>
+            <Button type="submit" disabled={!canSubmitPayment || !cardBrand || disabled} isLoading={isSubmittingOrder}>
               {!isSubmittingOrder && (!isPaymentTotalAmount ? 'Adicionar pagamento' : 'Finalizar pedido')}
               {isSubmittingOrder && 'Finalizando pedido...'}
             </Button>

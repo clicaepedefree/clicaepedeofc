@@ -1,4 +1,4 @@
-import { createOrder } from '@/features/order/api'
+import { createOrder, validateCartStock } from '@/features/order/api'
 import { SalesChannel } from '@/features/order/types'
 import {
   addItemToCartAtom,
@@ -9,9 +9,12 @@ import {
   cartSessionPaymentsAtom,
   cartSessionTotalAtom,
   clearCartAtom,
+  clearStockErrorsAtom,
+  hasStockErrorsAtom,
   isUsingPaymentScreenAtom,
   removeItemFromCartAtom,
   resetPaymentsAtom,
+  stockValidationErrorsAtom,
   updateCartItemAtom,
   updateItemQuantityAtom,
 } from '@/features/pos/state'
@@ -20,7 +23,7 @@ import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 type CreateOrderParams = {
   counterId: number
@@ -44,6 +47,11 @@ export const useCart = (salesChannel: SalesChannel) => {
   )
   const [amountPaid] = useAtom(amountPaidAtom)
   const [amountLeftToPay] = useAtom(amountLeftToPayAtom)
+  const [stockValidationErrors, setStockValidationErrors] = useAtom(
+    stockValidationErrorsAtom
+  )
+  const [hasStockErrors] = useAtom(hasStockErrorsAtom)
+  const [, clearStockErrors] = useAtom(clearStockErrorsAtom)
 
   useEffect(() => {
     if (!selectedStoreId || !cartSessionItems?.length) return
@@ -66,6 +74,33 @@ export const useCart = (salesChannel: SalesChannel) => {
       setIsUsingPaymentScreen(false)
     }
   }, [cartSessionItems])
+
+  // Clear stock errors when cart items change (user might resolve issues)
+  useEffect(() => {
+    if (stockValidationErrors.length > 0) {
+      clearStockErrors()
+    }
+  }, [cartSessionItems])
+
+  // Validate stock availability for cart items
+  const validateStock = useCallback(async () => {
+    if (!selectedStoreId || !cartSessionItems?.length) {
+      return true // No items to validate
+    }
+
+    const items = cartSessionItems.map(item => ({
+      itemId: item.itemId,
+      quantity: item.quantity,
+    }))
+
+    const outOfStockItems = await validateCartStock({
+      storeId: selectedStoreId,
+      items,
+    })
+
+    setStockValidationErrors(outOfStockItems)
+    return outOfStockItems.length === 0
+  }, [selectedStoreId, cartSessionItems, setStockValidationErrors])
 
   const createOrderMutation = useMutation({
     mutationFn: async ({ counterId, counterName }: CreateOrderParams) => {
@@ -146,5 +181,10 @@ export const useCart = (salesChannel: SalesChannel) => {
     setIsUsingPaymentScreen,
     amountPaid,
     amountLeftToPay,
+    // Stock validation
+    validateStock,
+    stockValidationErrors,
+    hasStockErrors,
+    clearStockErrors,
   }
 }

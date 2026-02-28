@@ -350,3 +350,55 @@
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #74, #75, #76)
+
+### Completed Features
+
+**Feature #74: API returns detailed error for out-of-stock items** - PASSING
+- Created `OutOfStockError` class in `src/shared/errors/out-of-stock-error.ts`
+  - Extends Error with type 'OUT_OF_STOCK'
+  - Contains items array with: itemId, name, requestedQty, availableQty
+- Implemented `checkStockAvailability` function in `src/features/order/db.ts`
+  - Fetches items from database and checks inventory
+  - Aggregates quantities for duplicate items
+  - Returns array of out-of-stock items with details
+  - Items with null inventory are considered "infinite stock"
+- Modified `createOrder` in `src/features/order/api.ts`
+  - Validates stock BEFORE order creation (within transaction)
+  - Throws OutOfStockError if any items are out of stock
+  - Collects ALL out-of-stock items (not just first one)
+- Added test endpoint `/api/test-out-of-stock` for verification
+- Returns HTTP 422 with structured error response
+
+**Feature #75: Display warning message for out-of-stock error** - PASSING
+- Implementation already existed in the codebase
+- `use-cart.tsx` hook integrates with `validateCartStock` API
+- `pos-cart.tsx` displays warning banner with:
+  - Destructive color scheme (red)
+  - Clear message: "Itens indisponíveis"
+  - Lists item names with requested vs available quantities
+  - "Remover indisponíveis" button to remove out-of-stock items
+  - Instructions: "Ajuste as quantidades ou remova os itens para continuar"
+
+**Feature #76: Highlight out-of-stock cart items with red styling** - PASSING
+- Implementation existed but used hardcoded colors
+- Updated `pos-cart-item.tsx` to use theme-aware colors:
+  - Changed `bg-red-50` to `bg-destructive/10`
+  - Changed `border-red-200` to `border-destructive/30`
+  - Changed `text-red-600` to `text-destructive`
+- AlertTriangle icon provides non-color accessibility indicator
+- Text message provides additional context
+- Now works correctly on both light and dark themes
+
+### Technical Notes
+- Out-of-stock validation happens BEFORE order creation (within transaction)
+- Stock check uses `inArray` query for efficiency
+- Items with null inventory are not tracked (infinite stock)
+- Theme-aware destructive colors defined in globals.css
+
+### Current Status
+- 33/102 features passing (32.4%)
+
+### Next Steps
+- Continue with remaining features in the backlog

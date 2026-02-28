@@ -9,7 +9,7 @@ import { TabsContent, TabsWithIcons } from '@/shared/tabs-with-icons'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
-import { ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
 import { useEffect } from 'react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
@@ -60,7 +60,14 @@ export const PosPayments = ({
   amountLeftToPay = 0,
   onClose,
 }: PosPaymentsProps) => {
-  const { createOrder, addPayment, cartSessionPayments } = useCart('POS')
+  const {
+    createOrder,
+    addPayment,
+    cartSessionPayments,
+    validateStock,
+    stockValidationErrors,
+    hasStockErrors,
+  } = useCart('POS')
   const { activeCounterId, activeCounterName } = useCounters()
   const {
     printOrderReceipt,
@@ -77,6 +84,16 @@ export const PosPayments = ({
   }, [printError, showPrintErrorToast])
 
   const onPaymentAdded = async (payment: CartPayment) => {
+    // Validate stock before processing payment
+    const isStockValid = await validateStock()
+    if (!isStockValid) {
+      dispatchToast({
+        message: 'Alguns itens estão indisponíveis. Ajuste o pedido para continuar.',
+        type: 'error',
+      })
+      return
+    }
+
     const paymentAmount = getValueFromCurrencyString(payment.value)
     addPayment(payment)
 
@@ -164,16 +181,39 @@ export const PosPayments = ({
         tabs={paymentTabs}
         footer={paymentsFooter}
       >
+        {hasStockErrors && (
+          <div className="bg-destructive/10 border-b border-destructive/30 p-3">
+            <div className="flex items-center gap-2 text-destructive mb-2">
+              <AlertTriangle size={18} />
+              <Body variant={200} className="font-semibold text-inherit">
+                Itens indisponiveis no estoque
+              </Body>
+            </div>
+            <ul className="text-sm text-destructive/90 space-y-1">
+              {stockValidationErrors.map(error => (
+                <li key={error.itemId}>
+                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponivel{' '}
+                  {error.availableQty ?? 0}
+                </li>
+              ))}
+            </ul>
+            <Body variant={200} className="text-destructive/80 mt-2">
+              Retorne ao atendimento para ajustar as quantidades.
+            </Body>
+          </div>
+        )}
         <TabsContent value={'cash'}>
           <CashPayment
             amountLeftToPay={amountLeftToPay}
             onPaymentAdded={onPaymentAdded}
+            disabled={hasStockErrors}
           />
         </TabsContent>
         <TabsContent value={'card'}>
           <CardPayment
             amountLeftToPay={amountLeftToPay}
             onPaymentAdded={onPaymentAdded}
+            disabled={hasStockErrors}
           />
         </TabsContent>
         <TabsContent value={'pix'}>PIX</TabsContent>

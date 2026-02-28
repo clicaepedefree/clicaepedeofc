@@ -4,9 +4,10 @@ import { CartItem, CartItemOption } from '@/features/pos/types'
 import { Button } from '@/shared/button'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Separator } from '@/shared/separator'
+import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
-import { CircleDollarSign, ShoppingBag } from 'lucide-react'
-import { Fragment, useCallback, useMemo, useState } from 'react'
+import { AlertTriangle, CircleDollarSign, ShoppingBag, Trash2 } from 'lucide-react'
+import { Fragment, useCallback, useMemo, useState, useTransition } from 'react'
 import { useCounters } from '../hooks/use-counters'
 import { OptionGroupSelectorModal } from './option-group-selector/option-group-selector-modal'
 import { PosCartItem } from './pos-cart-item'
@@ -26,11 +27,15 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
     clearCart,
     isUsingPaymentScreen,
     setIsUsingPaymentScreen,
+    validateStock,
+    stockValidationErrors,
+    hasStockErrors,
   } = useCart('POS')
 
   const { activeCounterId, activeCounterName } = useCounters()
 
   const [editingItem, setEditingItem] = useState<EditingCartItem | null>(null)
+  const [isValidatingStock, startValidation] = useTransition()
 
   const editingMenuItem = useMemo(() => {
     if (!editingItem) return null
@@ -52,6 +57,29 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
   const hasCartItems = !!cartSessionItems?.length
   const hasSelectedCounter = !!activeCounterId && !!activeCounterName
 
+  const handlePaymentsClick = useCallback(() => {
+    startValidation(async () => {
+      const isStockValid = await validateStock()
+      if (isStockValid) {
+        setIsUsingPaymentScreen(true)
+      }
+    })
+  }, [validateStock, setIsUsingPaymentScreen])
+
+  const handleRemoveUnavailableItems = useCallback(() => {
+    if (!cartSessionItems?.length || !stockValidationErrors.length) return
+
+    // Get indices of out-of-stock items (in reverse order to avoid index shifting issues)
+    const outOfStockItemIds = new Set(stockValidationErrors.map(err => err.itemId))
+    const indicesToRemove = cartSessionItems
+      .map((item, index) => outOfStockItemIds.has(item.itemId) ? index : -1)
+      .filter(index => index !== -1)
+      .reverse()
+
+    // Remove each item
+    indicesToRemove.forEach(index => removeItemFromCart(index))
+  }, [cartSessionItems, stockValidationErrors, removeItemFromCart])
+
   return (
     <div className="relative bg-white w-full border rounded-md h-full overflow-y-scroll flex flex-col">
       <div className="sticky top-0 left-0 p-4 bg-accent text-center flex justify-center items-center gap-2 border-b z-20">
@@ -68,17 +96,22 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
         </div>
       )}
       <div className="self-stretch grow">
-        {cartSessionItems?.map((item, index) => (
-          <Fragment key={index}>
-            <PosCartItem
-              item={item}
-              onUpdateQuantity={quantity => updateItemQuantity({ index, quantity })}
-              onDelete={() => removeItemFromCart(index)}
-              onEditOptions={() => setEditingItem({ index, item })}
-            />
-            {index < cartSessionItems.length - 1 && <Separator orientation="horizontal" className="mx-3 my-1.5" />}
-          </Fragment>
-        ))}
+        {cartSessionItems?.map((item, index) => {
+          const stockError = stockValidationErrors.find(err => err.itemId === item.itemId)
+          return (
+            <Fragment key={index}>
+              <PosCartItem
+                item={item}
+                onUpdateQuantity={quantity => updateItemQuantity({ index, quantity })}
+                onDelete={() => removeItemFromCart(index)}
+                onEditOptions={() => setEditingItem({ index, item })}
+                isOutOfStock={!!stockError}
+                availableQuantity={stockError?.availableQty}
+              />
+              {index < cartSessionItems.length - 1 && <Separator orientation="horizontal" className="mx-3 my-1.5" />}
+            </Fragment>
+          )
+        })}
       </div>
       <div className="sticky float-end bottom-0 left-0 w-full p-2 space-y-2 bg-accent border-t z-20">
         <div className="flex items-center justify-between w-full px-1 ">
@@ -87,6 +120,38 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
             {formatValueToCurrency({ value: cartSessionTotal, includeCurrencySymbol: true })}
           </LargeText>
         </div>
+        {hasStockErrors && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-md p-3">
+            <div className="flex items-center gap-2 text-destructive mb-2">
+              <AlertTriangle size={18} />
+              <Body variant={200} className="font-semibold text-inherit">
+                Itens indisponiveis
+              </Body>
+            </div>
+            <ul className="text-sm text-destructive/90 space-y-1">
+              {stockValidationErrors.map(error => (
+                <li key={error.itemId}>
+                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponivel{' '}
+                  {error.availableQty ?? 0}
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center justify-between mt-3">
+              <Body variant={200} className="text-destructive/80">
+                Ajuste as quantidades ou remova os itens para continuar.
+              </Body>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleRemoveUnavailableItems}
+                className="flex items-center gap-1.5 shrink-0"
+              >
+                <Trash2 size={14} />
+                Remover indisponiveis
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between w-full gap-3">
           <Button
             variant="outline"
@@ -101,10 +166,10 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
             variant="default"
             size="xl"
             className="grow"
-            onClick={() => setIsUsingPaymentScreen(true)}
-            disabled={!hasCartItems || !hasSelectedCounter || isUsingPaymentScreen}
+            onClick={handlePaymentsClick}
+            disabled={!hasCartItems || !hasSelectedCounter || isUsingPaymentScreen || isValidatingStock || hasStockErrors}
           >
-            Pagamentos
+            {isValidatingStock ? 'Verificando...' : 'Pagamentos'}
           </Button>
         </div>
       </div>
