@@ -1373,3 +1373,59 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining 16 features
+
+## Session: 2026-02-28 (Agent Batch #36, #37, #38)
+
+### Completed Features
+
+**Feature #36: Conectar button prevents multiple modal instances from opening** - PASSING
+- Verified existing implementation uses proper React patterns:
+  - Modal is a single controlled component with `open={isModalOpen}` prop
+  - `useEffect` with `initiatedRef` prevents multiple API calls
+  - Button has `disabled={isModalOpen}` to prevent rapid clicks
+  - `resetState()` clears `initiatedRef` when modal closes
+- Implementation prevents:
+  - Multiple modal instances (only one rendered)
+  - Stacked/overlapping modals (controlled via `open` prop)
+  - Multiple initiateIFoodOAuth API calls (useEffect + ref guard)
+- Code follows React best practices for side effects
+
+**Feature #37: OAuth session record deleted from database after successful connection completion** - PASSING
+- Created test endpoint `/api/test-oauth-session-cleanup` to verify cleanup
+- Verified `completeIFoodConnection` (api.ts line 232):
+  - Gets OAuth session with tokens
+  - Creates/updates ifood_integrations record
+  - Deletes OAuth session via `deleteIFoodOAuthSession(storeId)`
+- Test results:
+  - Session created with tokens: ✅
+  - Session deleted after complete: ✅
+  - Integration created: ✅
+  - No orphaned sessions: ✅
+
+**Feature #38: Disconnecting iFood account correctly updates integration status for reconnection** - PASSING
+- Created test endpoint `/api/test-ifood-disconnect` to verify flow
+- Verified `disconnectIFoodAccount` (api.ts line 260):
+  - Deletes integration record via `deleteIFoodIntegration(storeId)`
+  - UI shows "disconnected" when record doesn't exist
+  - "Conectar" button reappears for reconnection
+- Test results:
+  - Started with connected state: ✅
+  - Disconnect deleted record: ✅
+  - Reconnection allowed: ✅
+  - New connection works: ✅
+
+### Code Quality
+- No "as unknown as" patterns: 0 matches
+- TypeScript compiles without errors in src/
+- All test endpoints follow existing patterns
+
+### Current Status
+- 89/102 features passing (87.3%)
+
+### Session Summary
+- Completed 3 features: #36, #37, #38
+- All features related to iFood OAuth flow idempotency and data cleanup
+- Added test endpoints for verifying database operations
+
+### Next Steps
+- Continue with remaining 13 features in the backlog
