@@ -1215,3 +1215,61 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 ### Next Steps
 - Continue with remaining features in the backlog
 
+
+## Session: 2026-02-28 (Agent Batch #26, #27, #28)
+
+### Completed Features
+
+**Feature #26: Modal Step 2 renders merchant radio buttons from exchangeIFoodCode response** - PASSING
+- Removed auto-selection of single merchant (was pre-selecting if only one merchant)
+- Verified merchant selection UI works correctly:
+  - Step 2 (selectMerchant) displayed after successful code exchange
+  - Loading state shown during exchangeIFoodAuthCode API call
+  - Each merchant rendered as radio button with name displayed
+  - Radio behavior ensures only one merchant selected at a time
+  - Continue button disabled until merchant selected
+  - No merchant pre-selected by default
+- Created test page at /test-merchant-selection for UI verification
+
+**Feature #27: Modal Step 3 renders catalog radio buttons from getMerchantCatalogs response** - PASSING
+- Removed auto-selection of single catalog (was pre-selecting if only one catalog)
+- Verified catalog selection UI works correctly:
+  - Step 3 (selectCatalog) displayed after merchant selection
+  - Loading state shown during getMerchantCatalogs API call
+  - Each catalog rendered as radio button with name, type, and status displayed
+  - Radio behavior ensures only one catalog selected at a time
+  - Connect button disabled until catalog selected
+  - No catalog pre-selected by default
+- Created test page at /test-catalog-selection for UI verification
+
+**Feature #28: Connection card status refreshes after successful modal completion** - PASSING
+- Verified React Query refetch mechanism:
+  - handleConnectionSuccess() calls refetch() on useIFoodConnection hook
+  - Modal passes onSuccess prop to trigger refetch after completion
+  - Card updates to connected state without page refresh
+- Verified UI updates correctly:
+  - Status badge changes from "Desconectado" to "Conectado"
+  - Catalog name and merchant name displayed on card
+  - "Conectar" button replaced with "Desconectar" and "Gerenciar Cardapio"
+  - Refetch count increases (proving no page refresh needed)
+- Created test page at /test-connection-refresh for flow verification
+
+### Technical Implementation
+- Removed auto-selection logic from ifood-connection-modal.tsx:
+  - Merchants: `setSelectedMerchant(null)` instead of auto-selecting single merchant
+  - Catalogs: `setSelectedCatalog(null)` instead of auto-selecting single catalog
+- React Query cache invalidation via refetch() ensures no page refresh needed
+- All test pages added to public routes in middleware.ts
+
+### Current Status
+- 79/102 features passing (77.5%)
+
+### Session Summary
+- Completed 3 features: #26, #27, #28
+- All features related to iFood connection modal UI/UX
+- Removed auto-selection behavior per feature specs
+- Verified React Query cache invalidation works correctly
+- Zero console errors across all tests
+
+### Next Steps
+- Continue with remaining features in the backlog
