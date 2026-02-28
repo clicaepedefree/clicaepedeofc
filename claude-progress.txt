@@ -1273,3 +1273,57 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #29, #30, #32)
+
+### Completed Features
+
+**Feature #29: iFood connection status persists after page refresh** - PASSING
+- Updated `getIFoodConnectionStatus` in api.ts to return catalogName and merchantName
+- Updated `ifood-connection-card.tsx` to display catalogName and merchantName
+- Created test endpoint `/api/test-ifood-connection-persistence` for verification
+- Created test page `/test-ifood-persistence` for browser verification
+- Verified with browser automation:
+  - Connection data loads from database on page load
+  - Connected state shows "Conectado" badge
+  - Catalog name displays correctly: "Cardapio Principal"
+  - Merchant name displays correctly: "Loja Teste iFood"
+  - Data persists after page refresh (Load Count resets, data stays)
+  - Zero console errors
+
+**Feature #30: Modal state resets to Step 1 with clean fields when reopened after close** - PASSING
+- Verified code implementation:
+  - `resetState()` function clears ALL state variables (step, userCode, authorizationCode, merchants, catalogs, etc.)
+  - `handleOpenChange(false)` calls `resetState()` when modal closes
+  - On reopen, `initiateConnection()` is called because `!userCode && step === 'userCode'`
+- Tested with browser automation:
+  - Opened modal -> Step 1 visible with userCode
+  - Closed modal -> Close Count incremented
+  - Reopened modal -> Back at Step 1 with fresh state
+  - Zero console errors related to modal behavior
+
+**Feature #32: Old /api/integrations/ifood/initiate API route returns 404** - PASSING
+- Verified file `src/app/api/integrations/ifood/initiate/route.ts` does NOT exist
+- Verified POST request to `/api/integrations/ifood/initiate` returns HTTP 404
+- Verified no code references this deprecated route (grep found no matches)
+- Directory structure confirms only `/callback` route remains (and it's empty)
+
+### Technical Notes
+- Test endpoints added to public routes in middleware.ts
+- Test page created at `/test-ifood-persistence` for persistence verification
+- All API changes use proper TypeScript typing (no `as unknown as`)
+- TypeScript compiles without errors
+
+### Current Status
+- Features #29, #30, #32 all passing
+- Code quality checks passed (no `as unknown as`, TypeScript OK)
+
+### Session Summary
+- Completed 3 features: #29, #30, #32
+- Feature #29: Enhanced API to return catalog info, verified persistence
+- Feature #30: Verified modal state reset behavior through code and testing
+- Feature #32: Verified deprecated API route returns 404
+- Zero console errors across all tests
+
+### Next Steps
+- Continue with remaining features in the backlog
