@@ -16,6 +16,7 @@ import {
 } from '@/shared/dialog'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
+import { LoadingSpinner } from '@/shared/spinner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -246,7 +247,8 @@ export function IFoodConnectionModal({
         </DialogHeader>
 
         {isLoading && !userCode ? (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex flex-col items-center justify-center py-8 gap-3">
+            <LoadingSpinner size={32} />
             <p className="text-gray-500">Iniciando conexao...</p>
           </div>
         ) : step === 'userCode' || step === 'authCode' ? (
