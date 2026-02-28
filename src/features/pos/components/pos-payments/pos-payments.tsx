@@ -1,3 +1,4 @@
+import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
 import { Button } from '@/shared/button'
 import {
   formatValueToCurrency,
@@ -9,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
+import { useEffect } from 'react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
 import { CartPayment } from '../../types'
@@ -60,16 +62,35 @@ export const PosPayments = ({
 }: PosPaymentsProps) => {
   const { createOrder, addPayment, cartSessionPayments } = useCart('POS')
   const { activeCounterId, activeCounterName } = useCounters()
+  const {
+    printOrderReceipt,
+    ReceiptContent,
+    printError,
+    showPrintErrorToast,
+  } = useOrderReceipt()
+
+  // Show error toast with retry option when print error occurs
+  useEffect(() => {
+    if (printError) {
+      showPrintErrorToast()
+    }
+  }, [printError, showPrintErrorToast])
 
   const onPaymentAdded = async (payment: CartPayment) => {
     const paymentAmount = getValueFromCurrencyString(payment.value)
     addPayment(payment)
 
     if (paymentAmount >= amountLeftToPay) {
-      await createOrder({
+      const newOrder = await createOrder({
         counterId: activeCounterId!,
         counterName: activeCounterName!,
       })
+
+      // Print order receipt after successful order creation
+      // Error handling is done gracefully - order is already saved
+      if (newOrder?.receipt) {
+        printOrderReceipt(newOrder.receipt, newOrder.displayId)
+      }
       return
     }
 
@@ -135,26 +156,29 @@ export const PosPayments = ({
   )
 
   return (
-    <TabsWithIcons
-      className="relative bg-white w-full h-full rounded-xl border"
-      headerClassName=" bg-bottom"
-      triggerClassName="[&>svg]:h-7 [&>svg]:w-7 "
-      tabs={paymentTabs}
-      footer={paymentsFooter}
-    >
-      <TabsContent value={'cash'}>
-        <CashPayment
-          amountLeftToPay={amountLeftToPay}
-          onPaymentAdded={onPaymentAdded}
-        />
-      </TabsContent>
-      <TabsContent value={'card'}>
-        <CardPayment
-          amountLeftToPay={amountLeftToPay}
-          onPaymentAdded={onPaymentAdded}
-        />
-      </TabsContent>
-      <TabsContent value={'pix'}>PIX</TabsContent>
-    </TabsWithIcons>
+    <>
+      <TabsWithIcons
+        className="relative bg-white w-full h-full rounded-xl border"
+        headerClassName=" bg-bottom"
+        triggerClassName="[&>svg]:h-7 [&>svg]:w-7 "
+        tabs={paymentTabs}
+        footer={paymentsFooter}
+      >
+        <TabsContent value={'cash'}>
+          <CashPayment
+            amountLeftToPay={amountLeftToPay}
+            onPaymentAdded={onPaymentAdded}
+          />
+        </TabsContent>
+        <TabsContent value={'card'}>
+          <CardPayment
+            amountLeftToPay={amountLeftToPay}
+            onPaymentAdded={onPaymentAdded}
+          />
+        </TabsContent>
+        <TabsContent value={'pix'}>PIX</TabsContent>
+      </TabsWithIcons>
+      {ReceiptContent}
+    </>
   )
 }

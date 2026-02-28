@@ -9,9 +9,11 @@ import {
   updateOrderItemInventoryOnDb,
 } from '@/features/order/db'
 import { NewOrder } from '@/features/order/types'
+import { OrderTemplate } from '@/features/receipt/templates/order'
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
-import { ordersTable } from '@/services/db/schema'
+import { ordersTable, storesTable } from '@/services/db/schema'
+import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { desc, eq } from 'drizzle-orm'
 
 export const createOrder = async (newOrder: NewOrder) => {
@@ -60,7 +62,7 @@ export const createOrder = async (newOrder: NewOrder) => {
         })
       }
 
-      createdOrderItems.push(createdOrderItem)
+      createdOrderItems.push({ ...createdOrderItem, options: options ?? [] })
     }
 
     const createdOrderPaymentsPromises = newOrder.payments.map(
@@ -72,10 +74,53 @@ export const createOrder = async (newOrder: NewOrder) => {
     )
 
     const createdOrderPayments = await Promise.all(createdOrderPaymentsPromises)
+
+    // Fetch store name for receipt
+    const [store] = await tx
+      .select({ name: storesTable.name })
+      .from(storesTable)
+      .where(eq(storesTable.id, newOrder.storeId))
+
+    // Generate order receipt
+    const receiptItems = createdOrderItems.map(item => ({
+      itemName: item.itemName,
+      quantity: Number(item.quantity),
+      unitPrice: getValueFromCurrencyString(item.price),
+      totalPrice: getValueFromCurrencyString(item.price) * Number(item.quantity) +
+        (item.options ?? []).reduce(
+          (sum, opt) => sum + getValueFromCurrencyString(opt.price ?? '0') * Number(opt.quantity),
+          0
+        ) * Number(item.quantity),
+      options: (item.options ?? []).map(opt => ({
+        optionName: opt.optionName,
+        optionQuantity: Number(opt.quantity),
+        optionPrice: opt.price ? getValueFromCurrencyString(opt.price) : undefined,
+      })),
+      comment: item.comment,
+    }))
+
+    const receiptPayments = createdOrderPayments.map(payment => ({
+      method: payment.method,
+      value: getValueFromCurrencyString(payment.value),
+      changeFor: payment.changeFor ? getValueFromCurrencyString(payment.changeFor) : null,
+    }))
+
+    const orderReceipt = await OrderTemplate.render({
+      storeName: store?.name,
+      displayId: createdOrder.displayId,
+      createdAt: createdOrder.createdAt,
+      orderType: createdOrder.type,
+      posCounterName: createdOrder.posCounterName,
+      items: receiptItems,
+      totalPrice: getValueFromCurrencyString(createdOrder.totalPrice),
+      payments: receiptPayments,
+    })
+
     return {
       ...createdOrder,
       items: createdOrderItems,
       payments: createdOrderPayments,
+      receipt: orderReceipt,
     }
   })
 }
