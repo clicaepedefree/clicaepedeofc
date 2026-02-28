@@ -10,15 +10,50 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-order-reprint(.*)',
   '/api/test-cropper(.*)',
   '/api/schema-check(.*)',
+  '/api/apply-migration(.*)',
   '/unauthorized(.*)',
 ])
+
+/**
+ * Detects if the request is coming from the admin subdomain.
+ * Handles various formats:
+ * - admin.domain.com
+ * - admin.localhost:3000
+ * - admin.127.0.0.1:3000
+ */
+function detectAdminSubdomain(hostname: string): boolean {
+  // Remove port if present
+  const hostWithoutPort = hostname.split(':')[0]
+
+  // Check if hostname starts with 'admin.'
+  return hostWithoutPort.startsWith('admin.')
+}
+
+/**
+ * Extracts subdomain context from the request.
+ * Returns 'admin' for admin subdomain, 'public' otherwise.
+ */
+function getSubdomainContext(request: Request): 'admin' | 'public' {
+  const hostname = request.headers.get('host') ?? ''
+  return detectAdminSubdomain(hostname) ? 'admin' : 'public'
+}
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
     await auth.protect()
   }
 
-  return NextResponse.next()
+  // Detect subdomain context
+  const subdomainContext = getSubdomainContext(request)
+
+  // Create response with subdomain context header
+  const response = NextResponse.next()
+
+  // Set header to indicate subdomain context
+  // This can be read by the app for conditional rendering
+  response.headers.set('x-subdomain-context', subdomainContext)
+
+  return response
 })
 
 export const config = {
