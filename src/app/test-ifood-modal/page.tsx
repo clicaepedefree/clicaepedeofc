@@ -117,9 +117,10 @@ export default function TestIFoodModalPage() {
                   )}
                 </div>
                 {isConnected ? (
-                  <p className="mt-1 text-sm text-gray-500">
-                    Merchant ID: mock-merchant-123
-                  </p>
+                  <div className="mt-2 space-y-1 text-sm text-gray-500">
+                    <p><b>Loja:</b> Restaurante Exemplo</p>
+                    <p><b>Cardápio:</b> Menu Principal</p>
+                  </div>
                 ) : (
                   <p className="mt-1 text-sm text-gray-500">
                     Conecte sua conta do iFood para sincronizar o cardápio.
