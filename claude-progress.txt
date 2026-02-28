@@ -724,3 +724,59 @@
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #18, #19, #20)
+
+### Completed Features
+
+**Feature #18: exchangeIFoodCode server action exchanges authorization code and returns merchant list** - PASSING
+- Modified `exchangeIFoodAuthCode` in `src/features/ifood/api.ts`:
+  - Reads `authorizationCodeVerifier` from `ifood_oauth_sessions` table (never from client)
+  - Calls `IFoodService.exchangeCodeForTokens()` with the stored verifier
+  - Stores encrypted tokens in OAuth session using `encrypt()` and `updateIFoodOAuthSession()`
+  - Returns ONLY `{ merchants }` - no tokens in response
+  - Error handling for expired/missing sessions
+- Tokens are AES-256-GCM encrypted (format: iv:authTag:encryptedData)
+- Updated modal to not expect tokens from this function
+
+**Feature #19: getMerchantCatalogs server action returns available catalogs for selected merchant** - PASSING
+- Created `getMerchantCatalogs` server action in `src/features/ifood/api.ts`:
+  - Reads encrypted tokens from OAuth session (never from client)
+  - Calls `IFoodService.getMerchantCatalogs(merchantId)`
+  - Returns ONLY `{ catalogs }` - no tokens in response
+  - Error handling for expired session and missing tokens
+- Added `getMerchantCatalogs` method to `IFoodService`:
+  - Endpoint: `/catalog/v2.0/merchants/{merchantId}/catalogs`
+  - Returns catalogs with id, name, status, type fields
+- Added `IFoodCatalog` type to `src/services/ifood/types.ts`
+
+**Feature #20: completeIFoodConnection finalizes connection, stores data, and deletes OAuth session** - PASSING
+- Created `completeIFoodConnection` server action in `src/features/ifood/api.ts`:
+  - Reads encrypted tokens from OAuth session
+  - Uses `upsertIFoodIntegration` (handles both create and update)
+  - Stores: merchantId, catalogId, catalogName, merchantName
+  - Tokens remain encrypted (copied from OAuth session)
+  - Status set to 'connected'
+  - OAuth session deleted after successful creation
+  - Returns `{ success: true }` - no tokens exposed
+- Created `upsertIFoodIntegration` function in `src/features/ifood/db.ts`:
+  - Uses `onConflictDoUpdate` on storeId unique constraint
+  - Prevents duplicate records when called multiple times
+- Updated modal with 5-step flow:
+  1. Display userCode
+  2. Open iFood portal
+  3. Enter authorization code
+  4. Select merchant → fetch catalogs
+  5. Select catalog → complete connection
+
+### Technical Notes
+- All tokens stay server-side and are never exposed to the client
+- OAuth session is temporary storage during the connection flow
+- Final tokens are stored in ifood_integrations table (encrypted)
+- upsert pattern prevents duplicate integration records
+
+### Current Status
+- 53/102 features passing (52.0%)
+
+### Next Steps
+- Continue with remaining features
