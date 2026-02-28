@@ -43,17 +43,45 @@ cd clica_pedidos_app
 
 ### 2. Set up environment variables
 
-Create a `.env.local` file with:
+Copy the example environment file and fill in your values:
+
+```bash
+cp .env.example .env.local
+```
+
+**Required variables:**
 
 ```env
+# Database
 POSTGRES_URL=postgresql://...
+
+# Authentication (Clerk)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
-NEXT_PUBLIC_IFOOD_CLIENT_ID=...
-IFOOD_CLIENT_SECRET=...
-ENCRYPTION_KEY=...
+
+# File Uploads
 UPLOADTHING_TOKEN=...
 ```
+
+**Domain configuration (optional - defaults work for local dev):**
+
+```env
+# Main application domain (default: localhost)
+NEXT_PUBLIC_APP_DOMAIN=localhost
+
+# Admin subdomain prefix (default: admin)
+NEXT_PUBLIC_ADMIN_SUBDOMAIN=admin
+```
+
+**For production, set these to your actual domain:**
+
+```env
+NEXT_PUBLIC_APP_DOMAIN=clicapedidos.com.br
+NEXT_PUBLIC_ADMIN_SUBDOMAIN=admin
+# Results in admin panel at: https://admin.clicapedidos.com.br
+```
+
+See `.env.example` for a complete list of all available variables.
 
 ### 3. Run the setup script
 

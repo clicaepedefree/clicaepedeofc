@@ -78,11 +78,28 @@ export default clerkMiddleware(async (auth, request) => {
   if (isAdminSubdomain && isMainDomainOnlyRoute(request)) {
     const mainDomain = stripAdminSubdomain(hostname)
     const protocol = getProtocol(hostname)
-    const absoluteRedirectUrl = `${protocol}://${mainDomain}${url.pathname}${url.search}`
+    const absoluteUrl = `${protocol}://${mainDomain}${url.pathname}${url.search}`
 
-    // Return a Response object directly to ensure the Location header is preserved
-    // Next.js middleware can normalize NextResponse redirects, so we use Response
-    return Response.redirect(absoluteRedirectUrl, 307)
+    // Use HTML redirect to ensure cross-subdomain redirect works correctly
+    // Next.js normalizes Location headers, so we use a client-side redirect
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="refresh" content="0;url=${absoluteUrl}">
+  <script>window.location.href="${absoluteUrl}";</script>
+</head>
+<body>
+  <p>Redirecionando para <a href="${absoluteUrl}">${absoluteUrl}</a>...</p>
+</body>
+</html>`
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    })
   }
 
   // Handle protected routes
@@ -96,7 +113,7 @@ export default clerkMiddleware(async (auth, request) => {
         // User is not authenticated on admin subdomain
         // Redirect to main domain login with return URL back to admin subdomain
         const signInUrl = buildMainDomainSignInUrl(hostname, url)
-        return Response.redirect(signInUrl, 307)
+        return NextResponse.redirect(new URL(signInUrl), 307)
       }
       // User is authenticated, continue
     } else {

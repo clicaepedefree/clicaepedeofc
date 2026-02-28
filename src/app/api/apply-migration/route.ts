@@ -1,20 +1,32 @@
 import { db } from '@/services/db'
 import { sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
+
+// Zod schema for EXISTS query validation
+const ExistsResultSchema = z.object({
+  exists: z.boolean(),
+})
+
+// Helper to safely get first row's exists value
+function getExistsResult(raw: unknown): boolean {
+  const result = z.array(ExistsResultSchema).safeParse(raw)
+  return result.success && result.data.length > 0 && result.data[0].exists
+}
 
 export async function POST() {
   try {
     // Check if ifood_oauth_sessions table already exists
-    const checkTable = await db.execute(sql`
+    const checkTableRaw = await db.execute(sql`
       SELECT EXISTS (
         SELECT FROM information_schema.tables
         WHERE table_name = 'ifood_oauth_sessions'
       )
-    `) as unknown as Array<{ exists: boolean }>
+    `)
 
-    if (checkTable[0]?.exists) {
+    if (getExistsResult(checkTableRaw)) {
       return NextResponse.json({
         success: true,
         message: 'Migration already applied - ifood_oauth_sessions table exists',
@@ -36,38 +48,38 @@ export async function POST() {
     `)
 
     // Add catalog_id column to ifood_integrations if not exists
-    const checkCatalogId = await db.execute(sql`
+    const checkCatalogIdRaw = await db.execute(sql`
       SELECT EXISTS (
         SELECT FROM information_schema.columns
         WHERE table_name = 'ifood_integrations' AND column_name = 'catalog_id'
       )
-    `) as unknown as Array<{ exists: boolean }>
+    `)
 
-    if (!checkCatalogId[0]?.exists) {
+    if (!getExistsResult(checkCatalogIdRaw)) {
       await db.execute(sql`ALTER TABLE "ifood_integrations" ADD COLUMN "catalog_id" text`)
     }
 
     // Add catalog_name column to ifood_integrations if not exists
-    const checkCatalogName = await db.execute(sql`
+    const checkCatalogNameRaw = await db.execute(sql`
       SELECT EXISTS (
         SELECT FROM information_schema.columns
         WHERE table_name = 'ifood_integrations' AND column_name = 'catalog_name'
       )
-    `) as unknown as Array<{ exists: boolean }>
+    `)
 
-    if (!checkCatalogName[0]?.exists) {
+    if (!getExistsResult(checkCatalogNameRaw)) {
       await db.execute(sql`ALTER TABLE "ifood_integrations" ADD COLUMN "catalog_name" text`)
     }
 
     // Add merchant_name column to ifood_integrations if not exists
-    const checkMerchantName = await db.execute(sql`
+    const checkMerchantNameRaw = await db.execute(sql`
       SELECT EXISTS (
         SELECT FROM information_schema.columns
         WHERE table_name = 'ifood_integrations' AND column_name = 'merchant_name'
       )
-    `) as unknown as Array<{ exists: boolean }>
+    `)
 
-    if (!checkMerchantName[0]?.exists) {
+    if (!getExistsResult(checkMerchantNameRaw)) {
       await db.execute(sql`ALTER TABLE "ifood_integrations" ADD COLUMN "merchant_name" text`)
     }
 

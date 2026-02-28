@@ -16,7 +16,15 @@ import {
 } from '@/services/db/schema/store-fiscal-configs'
 import { DbSession } from '@/services/db/types'
 import { and, desc, eq, sql } from 'drizzle-orm'
+import { z } from 'zod'
 import type { ReservedInvoiceNumber } from './types'
+
+// Zod schema for fiscal config query result validation
+const FiscalConfigRowSchema = z.object({
+  id: z.number(),
+  nfce_series: z.number(),
+  next_nfce_number: z.number(),
+})
 
 export const getFiscalConfigByStoreId = async (
   storeId: number
@@ -77,22 +85,14 @@ export const reserveNextInvoiceNumber = async ({
   customerCpf: string | null
   dbSession: DbSession
 }): Promise<ReservedInvoiceNumber> => {
-  const lockedConfigResult = await dbSession.execute<{
-    id: number
-    nfce_series: number
-    next_nfce_number: number
-  }>(
+  const lockedConfigResult = await dbSession.execute(
     sql`SELECT id, nfce_series, next_nfce_number
         FROM store_fiscal_configs
         WHERE store_id = ${storeId}
         FOR UPDATE`
   )
 
-  const lockedConfigRows = lockedConfigResult as unknown as Array<{
-    id: number
-    nfce_series: number
-    next_nfce_number: number
-  }>
+  const lockedConfigRows = z.array(FiscalConfigRowSchema).parse(lockedConfigResult)
 
   if (lockedConfigRows.length === 0) {
     throw new Error(`Fiscal config not found for store ${storeId}`)
