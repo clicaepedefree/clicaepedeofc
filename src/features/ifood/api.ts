@@ -5,11 +5,123 @@ import { IFoodService } from '@/services/ifood'
 import { validateUserPermissionsForStore } from '../store/api'
 import {
   createIFoodIntegration,
+  createIFoodOAuthSession,
   deleteIFoodIntegration,
+  deleteIFoodOAuthSession,
   getIFoodIntegration,
+  getIFoodOAuthSession,
   updateIFoodIntegration,
 } from './db'
 import { listMenuItems } from '../menu/api'
+
+const IFOOD_API_BASE_URL =
+  process.env.IFOOD_API_BASE_URL || 'https://merchant-api.ifood.com.br'
+const IFOOD_CLIENT_ID = process.env.NEXT_PUBLIC_IFOOD_CLIENT_ID
+
+interface UserCodeResponse {
+  userCode: string
+  authorizationCodeVerifier: string
+  verificationUrl: string
+  verificationUrlComplete: string
+  expiresIn: number
+}
+
+/**
+ * Initiates iFood OAuth flow by generating a userCode and storing session server-side.
+ * Returns only userCode and verificationUrl - sensitive data stays server-side.
+ */
+export const initiateIFoodOAuth = async (storeId: number) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  if (!IFOOD_CLIENT_ID) {
+    throw new Error('iFood client ID not configured')
+  }
+
+  // Call iFood API to generate userCode
+  const response = await fetch(
+    `${IFOOD_API_BASE_URL}/authentication/v1.0/oauth/userCode`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        clientId: IFOOD_CLIENT_ID,
+      }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('iFood userCode generation failed:', errorText)
+    throw new Error('Failed to generate user code')
+  }
+
+  const data: UserCodeResponse = await response.json()
+
+  // Store session in database with 10 minute expiry
+  // The authorizationCodeVerifier is stored server-side only and NEVER returned to client
+  const expiresAt = new Date(Date.now() + data.expiresIn * 1000)
+
+  await createIFoodOAuthSession({
+    storeId,
+    userCode: data.userCode,
+    authorizationCodeVerifier: data.authorizationCodeVerifier,
+    expiresAt,
+  })
+
+  // Return ONLY the userCode and verificationUrl - no sensitive data
+  return {
+    userCode: data.userCode,
+    verificationUrl: data.verificationUrlComplete,
+  }
+}
+
+/**
+ * Exchange authorization code for tokens using the server-stored verifier.
+ * The verifier is retrieved from DB (never exposed to client) and used for the exchange.
+ * Returns tokens and available merchants for selection.
+ */
+export const exchangeIFoodAuthCode = async (
+  storeId: number,
+  authorizationCode: string
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  // Get the stored OAuth session (contains the verifier)
+  const session = await getIFoodOAuthSession(storeId)
+
+  if (!session) {
+    throw new Error('OAuth session not found. Please restart the connection process.')
+  }
+
+  // Check if session has expired
+  if (new Date() > new Date(session.expiresAt)) {
+    // Clean up expired session
+    await deleteIFoodOAuthSession(storeId)
+    throw new Error('OAuth session expired. Please restart the connection process.')
+  }
+
+  // Exchange the code using the server-stored verifier
+  const tokens = await IFoodService.exchangeCodeForTokens(
+    authorizationCode,
+    session.authorizationCodeVerifier
+  )
+
+  // Get available merchants
+  const service = new IFoodService({ accessToken: tokens.accessToken })
+  const merchants = await service.getMerchants()
+
+  // Clean up the OAuth session (it's no longer needed)
+  await deleteIFoodOAuthSession(storeId)
+
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresIn: tokens.expiresIn,
+    merchants,
+  }
+}
 
 export const connectIFoodAccountWithCode = async (
   storeId: number,

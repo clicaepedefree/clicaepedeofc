@@ -1,5 +1,6 @@
 'use client'
 
+import { initiateIFoodOAuth } from '@/features/ifood/api'
 import { Button } from '@/shared/button'
 import {
   Dialog,
@@ -10,7 +11,6 @@ import {
 } from '@/shared/dialog'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
-import { useRouter } from 'next/navigation'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -35,12 +35,10 @@ export function IFoodConnectionModal({
   storeId,
   onSuccess,
 }: IFoodConnectionModalProps) {
-  const router = useRouter()
   const [step, setStep] = useState<Step>('userCode')
   const [isLoading, setIsLoading] = useState(false)
   const [userCode, setUserCode] = useState('')
   const [verificationUrl, setVerificationUrl] = useState('')
-  const [authorizationCodeVerifier, setAuthorizationCodeVerifier] = useState('')
   const [authorizationCode, setAuthorizationCode] = useState('')
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [selectedMerchantId, setSelectedMerchantId] = useState('')
@@ -55,7 +53,6 @@ export function IFoodConnectionModal({
     setIsLoading(false)
     setUserCode('')
     setVerificationUrl('')
-    setAuthorizationCodeVerifier('')
     setAuthorizationCode('')
     setMerchants([])
     setSelectedMerchantId('')
@@ -69,24 +66,15 @@ export function IFoodConnectionModal({
     onOpenChange(newOpen)
   }
 
-  // Step 1: Initiate OAuth and get userCode
+  // Step 1: Initiate OAuth and get userCode using server action
+  // The authorizationCodeVerifier is stored server-side and never exposed to the client
   const initiateConnection = useCallback(async () => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/integrations/ifood/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeId }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to initiate OAuth flow')
-      }
-
-      const data = await response.json()
+      // Use server action - verifier is stored server-side automatically
+      const data = await initiateIFoodOAuth(storeId)
       setUserCode(data.userCode)
-      setVerificationUrl(data.verificationUrlComplete)
-      setAuthorizationCodeVerifier(data.authorizationCodeVerifier)
+      setVerificationUrl(data.verificationUrl)
     } catch (error) {
       console.error('Error initiating iFood connection:', error)
       toast.error('Erro ao iniciar conexao com iFood')
