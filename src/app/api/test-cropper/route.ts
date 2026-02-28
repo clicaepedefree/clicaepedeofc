@@ -7,12 +7,13 @@ export const GET = async () => {
 <head>
   <title>Image Cropper Test</title>
   <style>
-    body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+    body { font-family: system-ui; max-width: 700px; margin: 50px auto; padding: 20px; }
     h1 { color: #333; }
     .info { background: #f0f0f0; padding: 15px; border-radius: 8px; margin: 20px 0; }
     .feature-list { list-style: none; padding: 0; }
     .feature-list li { padding: 8px 0; border-bottom: 1px solid #e0e0e0; }
     .feature-list li:before { content: "✅ "; }
+    .feature-section { margin-top: 30px; border-top: 2px solid #ddd; padding-top: 20px; }
   </style>
 </head>
 <body>
@@ -32,6 +33,29 @@ export const GET = async () => {
     <li><strong>Mouse Wheel Zoom:</strong> Scroll wheel zooms in/out on the canvas</li>
     <li><strong>Reset Button:</strong> Returns zoom to 100% and centers image</li>
   </ul>
+
+  <div class="feature-section">
+    <div class="info">
+      <h2>Feature: #69 - Show preview of cropped result before upload</h2>
+      <p>Added a preview section to show the final cropped result before confirming:</p>
+    </div>
+
+    <ul class="feature-list">
+      <li><strong>Preview Canvas:</strong> Separate canvas (previewCanvasRef) displays cropped result</li>
+      <li><strong>Real-time Updates:</strong> Preview updates via drawPreview() on every crop/zoom/position change</li>
+      <li><strong>Output Dimensions:</strong> Shows final output size (e.g., "Tamanho: 400×400 px")</li>
+      <li><strong>Preview Section:</strong> Displayed below zoom controls with label "Pré-visualização"</li>
+      <li><strong>Accurate Representation:</strong> Uses same crop calculations as final export</li>
+    </ul>
+
+    <h3>Preview Implementation</h3>
+    <ul>
+      <li>PREVIEW_MAX_SIZE: 100px maximum dimension for preview display</li>
+      <li>Maintains aspect ratio of crop area</li>
+      <li>Uses same source coordinates as handleCrop() for accuracy</li>
+      <li>Renders in bg-muted/50 section with border and rounded corners</li>
+    </ul>
+  </div>
 
   <h3>Implementation Details</h3>
   <ul>

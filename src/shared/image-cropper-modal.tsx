@@ -14,13 +14,6 @@ import { LoadingSpinner } from '@/shared/spinner'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-interface CropArea {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
 // Zoom configuration
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
@@ -28,6 +21,12 @@ const ZOOM_STEP = 0.1
 
 // Preview configuration
 const PREVIEW_MAX_SIZE = 100 // Maximum preview dimension in pixels
+
+// Responsive canvas dimensions
+const MOBILE_BREAKPOINT = 640 // matches Tailwind's sm breakpoint
+const CANVAS_MAX_WIDTH = 400
+const CANVAS_MAX_HEIGHT = 300
+const CANVAS_MOBILE_PADDING = 32 // 16px padding on each side
 
 interface ImageCropperModalProps {
   open: boolean
@@ -47,6 +46,7 @@ export const ImageCropperModal = ({
   onCancel,
 }: ImageCropperModalProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [imageElement, setImageElement] = useState<HTMLImageElement | null>(null)
@@ -59,6 +59,37 @@ export const ImageCropperModal = ({
 
   // Pinch-to-zoom state
   const [lastPinchDistance, setLastPinchDistance] = useState<number | null>(null)
+
+  // Responsive canvas dimensions
+  const [canvasDimensions, setCanvasDimensions] = useState({
+    width: CANVAS_MAX_WIDTH,
+    height: CANVAS_MAX_HEIGHT
+  })
+  const [isMobile, setIsMobile] = useState(false)
+
+  // Calculate responsive canvas dimensions based on viewport
+  useEffect(() => {
+    const updateDimensions = () => {
+      const viewportWidth = window.innerWidth
+      const isMobileViewport = viewportWidth < MOBILE_BREAKPOINT
+      setIsMobile(isMobileViewport)
+
+      if (isMobileViewport) {
+        // On mobile, use available viewport width minus padding
+        const availableWidth = viewportWidth - CANVAS_MOBILE_PADDING
+        const canvasWidth = Math.min(availableWidth, CANVAS_MAX_WIDTH)
+        const canvasHeight = Math.round(canvasWidth * (CANVAS_MAX_HEIGHT / CANVAS_MAX_WIDTH))
+        setCanvasDimensions({ width: canvasWidth, height: canvasHeight })
+      } else {
+        // On desktop, use fixed dimensions
+        setCanvasDimensions({ width: CANVAS_MAX_WIDTH, height: CANVAS_MAX_HEIGHT })
+      }
+    }
+
+    updateDimensions()
+    window.addEventListener('resize', updateDimensions)
+    return () => window.removeEventListener('resize', updateDimensions)
+  }, [])
 
   // Load image when file changes
   useEffect(() => {
@@ -89,8 +120,8 @@ export const ImageCropperModal = ({
   useEffect(() => {
     if (!containerRef.current) return
 
-    const containerWidth = 400 // Fixed width for the crop area
-    const containerHeight = 300 // Fixed height for the container
+    const containerWidth = canvasDimensions.width
+    const containerHeight = canvasDimensions.height
 
     let cropWidth: number
     let cropHeight: number
@@ -104,7 +135,7 @@ export const ImageCropperModal = ({
     }
 
     setCropSize({ width: cropWidth, height: cropHeight })
-  }, [aspectRatio, open])
+  }, [aspectRatio, open, canvasDimensions])
 
   // Draw canvas
   const drawCanvas = useCallback(() => {
@@ -112,8 +143,8 @@ export const ImageCropperModal = ({
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx || !imageElement) return
 
-    const containerWidth = 400
-    const containerHeight = 300
+    const containerWidth = canvasDimensions.width
+    const containerHeight = canvasDimensions.height
 
     canvas.width = containerWidth
     canvas.height = containerHeight
@@ -155,8 +186,8 @@ export const ImageCropperModal = ({
     ctx.lineWidth = 2
     ctx.strokeRect(cropX, cropY, cropSize.width, cropSize.height)
 
-    // Draw corner handles
-    const handleSize = 10
+    // Draw corner handles - larger on mobile for touch
+    const handleSize = isMobile ? 14 : 10
     ctx.fillStyle = '#ffffff'
     // Top-left
     ctx.fillRect(cropX - handleSize / 2, cropY - handleSize / 2, handleSize, handleSize)
@@ -166,11 +197,76 @@ export const ImageCropperModal = ({
     ctx.fillRect(cropX - handleSize / 2, cropY + cropSize.height - handleSize / 2, handleSize, handleSize)
     // Bottom-right
     ctx.fillRect(cropX + cropSize.width - handleSize / 2, cropY + cropSize.height - handleSize / 2, handleSize, handleSize)
-  }, [imageElement, scale, position, cropSize])
+  }, [imageElement, scale, position, cropSize, canvasDimensions, isMobile])
 
   useEffect(() => {
     drawCanvas()
   }, [drawCanvas])
+
+  // Draw preview canvas - shows cropped result in real-time
+  const drawPreview = useCallback(() => {
+    const previewCanvas = previewCanvasRef.current
+    const previewCtx = previewCanvas?.getContext('2d')
+    if (!previewCanvas || !previewCtx || !imageElement) return
+
+    const containerWidth = canvasDimensions.width
+    const containerHeight = canvasDimensions.height
+
+    // Calculate crop area in canvas coordinates
+    const cropX = (containerWidth - cropSize.width) / 2
+    const cropY = (containerHeight - cropSize.height) / 2
+
+    // Calculate scaled image dimensions and position
+    const scaledWidth = imageElement.width * scale
+    const scaledHeight = imageElement.height * scale
+    const imageX = (containerWidth - scaledWidth) / 2 + position.x
+    const imageY = (containerHeight - scaledHeight) / 2 + position.y
+
+    // Convert crop area to original image coordinates
+    const sourceX = (cropX - imageX) / scale
+    const sourceY = (cropY - imageY) / scale
+    const sourceWidth = cropSize.width / scale
+    const sourceHeight = cropSize.height / scale
+
+    // Calculate preview size (scale down to fit within PREVIEW_MAX_SIZE while maintaining aspect ratio)
+    // Use smaller preview on mobile
+    const maxPreviewSize = isMobile ? 70 : PREVIEW_MAX_SIZE
+    let previewWidth: number
+    let previewHeight: number
+    if (cropSize.width >= cropSize.height) {
+      previewWidth = maxPreviewSize
+      previewHeight = maxPreviewSize * (cropSize.height / cropSize.width)
+    } else {
+      previewHeight = maxPreviewSize
+      previewWidth = maxPreviewSize * (cropSize.width / cropSize.height)
+    }
+
+    // Set canvas dimensions
+    previewCanvas.width = previewWidth
+    previewCanvas.height = previewHeight
+
+    // Draw background
+    previewCtx.fillStyle = '#f0f0f0'
+    previewCtx.fillRect(0, 0, previewWidth, previewHeight)
+
+    // Draw cropped image preview
+    previewCtx.drawImage(
+      imageElement,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      previewWidth,
+      previewHeight
+    )
+  }, [imageElement, scale, position, cropSize, canvasDimensions, isMobile])
+
+  // Update preview whenever crop parameters change
+  useEffect(() => {
+    drawPreview()
+  }, [drawPreview])
 
   // Handle mouse/touch events
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -272,8 +368,8 @@ export const ImageCropperModal = ({
     setIsProcessing(true)
 
     try {
-      const containerWidth = 400
-      const containerHeight = 300
+      const containerWidth = canvasDimensions.width
+      const containerHeight = canvasDimensions.height
 
       // Calculate crop area in canvas coordinates
       const cropX = (containerWidth - cropSize.width) / 2
@@ -439,6 +535,24 @@ export const ImageCropperModal = ({
               </Button>
             </div>
           </div>
+
+          {/* Preview section */}
+          {imageElement && (
+            <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+              <div className="flex-shrink-0">
+                <div className="text-xs text-muted-foreground mb-1">Pré-visualização:</div>
+                <div className="border border-border rounded overflow-hidden bg-white" style={{ maxWidth: PREVIEW_MAX_SIZE, maxHeight: PREVIEW_MAX_SIZE }}>
+                  <canvas ref={previewCanvasRef} className="block" />
+                </div>
+              </div>
+              <div className="flex-1 text-sm text-muted-foreground">
+                <p>Esta é uma prévia do resultado final.</p>
+                <p className="text-xs mt-1">
+                  Tamanho: {Math.round(cropSize.width * 2)}×{Math.round(cropSize.height * 2)} px
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
