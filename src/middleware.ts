@@ -20,6 +20,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-ifood-disconnect(.*)',
   '/api/test-oauth-session-expiry(.*)',
   '/api/test-concurrent-oauth(.*)',
+  '/api/test-modal-performance(.*)',
   '/api/test-feature-16-verify(.*)',
   '/api/schema-check(.*)',
   '/api/apply-migration(.*)',

@@ -60,6 +60,7 @@ export function IFoodConnectionModal({
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
   const [selectedCatalog, setSelectedCatalog] = useState<Catalog | null>(null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  const [initiationError, setInitiationError] = useState<string | null>(null)
 
   // Ref to track if OAuth initiation has been triggered for the current modal session
   const initiatedRef = useRef(false)
@@ -76,6 +77,7 @@ export function IFoodConnectionModal({
     setCatalogs([])
     setSelectedCatalog(null)
     setConnectionError(null)
+    setInitiationError(null)
     initiatedRef.current = false // Reset initiation flag on modal close
   }, [])
 
@@ -89,18 +91,31 @@ export function IFoodConnectionModal({
   // Step 1: Initiate OAuth and get userCode using server action
   const initiateConnection = useCallback(async () => {
     setIsLoading(true)
+    setInitiationError(null) // Clear any previous error
     try {
       const data = await initiateIFoodOAuth(storeId)
       setUserCode(data.userCode)
       setVerificationUrl(data.verificationUrl)
+      setInitiationError(null) // Clear error on success
     } catch (error) {
       console.error('Error initiating iFood connection:', error)
-      toast.error('Erro ao iniciar conexao com iFood')
-      handleOpenChange(false)
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao iniciar conexao com iFood. O servico do iFood pode estar indisponivel.'
+      setInitiationError(errorMessage)
+      // Modal stays open for retry - do NOT call handleOpenChange(false)
     } finally {
       setIsLoading(false)
     }
   }, [storeId])
+
+  // Retry initiation after error
+  const handleRetryInitiation = () => {
+    initiatedRef.current = false // Allow re-initiation
+    setInitiationError(null)
+    initiateConnection()
+  }
 
   // Call initiateConnection when modal opens - using useEffect to avoid side effects in render
   // The initiatedRef ensures we only call the API once per modal session, preventing
