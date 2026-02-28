@@ -452,20 +452,26 @@ export const ImageCropperModal = ({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className={cn(
+        'max-h-[90vh] overflow-y-auto',
+        // Responsive max-width: full width on mobile, limited on larger screens
+        'w-full max-w-[calc(100%-1rem)] sm:max-w-[500px]'
+      )}>
         <DialogHeader>
           <DialogTitle>Recortar imagem</DialogTitle>
-          <DialogDescription>
-            Arraste a imagem para posicioná-la. Use os controles de zoom para ajustar.
+          <DialogDescription className={cn(isMobile && 'text-xs')}>
+            {isMobile
+              ? 'Arraste para posicionar. Use dois dedos para zoom.'
+              : 'Arraste a imagem para posicioná-la. Use os controles de zoom para ajustar.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          {/* Canvas container */}
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* Canvas container - responsive height based on canvas dimensions */}
           <div
             ref={containerRef}
-            className="relative overflow-hidden rounded-lg bg-neutral-900 flex items-center justify-center"
-            style={{ height: '300px' }}
+            className="relative overflow-hidden rounded-lg bg-neutral-900 flex items-center justify-center touch-none"
+            style={{ height: canvasDimensions.height }}
           >
             <canvas
               ref={canvasRef}
@@ -482,9 +488,9 @@ export const ImageCropperModal = ({
           </div>
 
           {/* Zoom controls */}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:gap-3">
             {/* Zoom slider */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <Button
                 type="button"
                 variant="outline"
@@ -492,8 +498,12 @@ export const ImageCropperModal = ({
                 onClick={handleZoomOut}
                 disabled={scale <= MIN_ZOOM}
                 aria-label="Diminuir zoom"
+                className={cn(
+                  // Larger touch targets on mobile (min 44px)
+                  isMobile && 'h-11 w-11'
+                )}
               >
-                <Minus className="h-4 w-4" />
+                <Minus className={cn('h-4 w-4', isMobile && 'h-5 w-5')} />
               </Button>
               <div className="flex-1 flex items-center gap-2">
                 <input
@@ -503,7 +513,13 @@ export const ImageCropperModal = ({
                   step={ZOOM_STEP}
                   value={scale}
                   onChange={handleSliderChange}
-                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer"
+                  className={cn(
+                    'w-full bg-muted rounded-lg appearance-none cursor-pointer accent-primary',
+                    // Larger slider track and thumb on mobile
+                    isMobile
+                      ? 'h-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer'
+                      : 'h-2 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer'
+                  )}
                   aria-label="Ajustar zoom"
                 />
               </div>
@@ -514,56 +530,84 @@ export const ImageCropperModal = ({
                 onClick={handleZoomIn}
                 disabled={scale >= MAX_ZOOM}
                 aria-label="Aumentar zoom"
+                className={cn(
+                  // Larger touch targets on mobile (min 44px)
+                  isMobile && 'h-11 w-11'
+                )}
               >
-                <Plus className="h-4 w-4" />
+                <Plus className={cn('h-4 w-4', isMobile && 'h-5 w-5')} />
               </Button>
             </div>
             {/* Zoom level indicator and reset */}
             <div className="flex items-center justify-center gap-2">
-              <span className="text-sm text-muted-foreground min-w-[60px] text-center font-medium">
+              <span className={cn(
+                'text-muted-foreground min-w-[50px] text-center font-medium',
+                isMobile ? 'text-xs' : 'text-sm'
+              )}>
                 {Math.round(scale * 100)}%
               </span>
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                size={isMobile ? 'default' : 'sm'}
                 onClick={handleReset}
-                className="gap-1"
+                className={cn('gap-1', isMobile && 'h-10 px-4')}
               >
-                <RotateCcw className="h-3 w-3" />
+                <RotateCcw className={cn(isMobile ? 'h-4 w-4' : 'h-3 w-3')} />
                 Resetar
               </Button>
             </div>
           </div>
 
-          {/* Preview section */}
+          {/* Preview section - simplified on mobile */}
           {imageElement && (
-            <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+            <div className={cn(
+              'flex items-center gap-3 p-2 sm:p-3 bg-muted/50 rounded-lg',
+              isMobile ? 'flex-row' : 'gap-4'
+            )}>
               <div className="flex-shrink-0">
                 <div className="text-xs text-muted-foreground mb-1">Pré-visualização:</div>
-                <div className="border border-border rounded overflow-hidden bg-white" style={{ maxWidth: PREVIEW_MAX_SIZE, maxHeight: PREVIEW_MAX_SIZE }}>
+                <div
+                  className="border border-border rounded overflow-hidden bg-white"
+                  style={{
+                    maxWidth: isMobile ? 70 : PREVIEW_MAX_SIZE,
+                    maxHeight: isMobile ? 70 : PREVIEW_MAX_SIZE
+                  }}
+                >
                   <canvas ref={previewCanvasRef} className="block" />
                 </div>
               </div>
-              <div className="flex-1 text-sm text-muted-foreground">
-                <p>Esta é uma prévia do resultado final.</p>
+              <div className="flex-1 text-muted-foreground">
+                <p className={cn(isMobile ? 'text-xs' : 'text-sm')}>
+                  {isMobile ? 'Prévia do resultado' : 'Esta é uma prévia do resultado final.'}
+                </p>
                 <p className="text-xs mt-1">
-                  Tamanho: {Math.round(cropSize.width * 2)}×{Math.round(cropSize.height * 2)} px
+                  {Math.round(cropSize.width * 2)}×{Math.round(cropSize.height * 2)} px
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={handleCancel}>
+        <DialogFooter className={cn(isMobile && 'gap-2')}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleCancel}
+            className={cn(isMobile && 'h-12 text-base flex-1')}
+          >
             Cancelar
           </Button>
-          <Button type="button" onClick={handleCrop} disabled={isProcessing || !imageElement}>
+          <Button
+            type="button"
+            onClick={handleCrop}
+            disabled={isProcessing || !imageElement}
+            className={cn(isMobile && 'h-12 text-base flex-1')}
+          >
             {isProcessing ? (
               <>
-                <LoadingSpinner size={16} className="mr-2" />
-                Processando...
+                <LoadingSpinner size={isMobile ? 18 : 16} className="mr-2" />
+                {isMobile ? 'Processando' : 'Processando...'}
               </>
             ) : (
               'Confirmar'

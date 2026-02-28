@@ -221,3 +221,49 @@
 
 ### Next Steps
 - Continue with core functionality features
+
+## Session: 2026-02-28 (Agent Batch #71, #72, #86)
+
+### Completed Features
+
+**Feature #71: Integrate image cropper into category image upload** - PASSING
+- Created `src/shared/image-cropper-modal.tsx` component using native Canvas API
+- Added `enableCropper` and `cropperAspectRatio` props to `SingleFileUploader`
+- Updated category form (`create-or-update-category-form.tsx`) with `enableCropper={true}`
+- Cropper features:
+  - Drag-to-position image within crop area
+  - Zoom controls (buttons, slider, mouse wheel)
+  - Pinch-to-zoom for touch devices
+  - Reset button to restore defaults
+  - Converts cropped image to JPEG with 90% quality
+
+**Feature #72: Implement cancel and confirm actions for image cropper** - PASSING
+- Cancel button closes modal without uploading
+- Confirm button triggers crop and upload
+- Added `LoadingSpinner` component during processing
+- Button disabled while processing
+- Handle Escape key to cancel via Radix Dialog integration
+- Fixed potential double onCancel call by centralizing close logic in handleOpenChange
+
+**Feature #86: Configure Next.js middleware for subdomain detection** - PASSING
+- Added `detectAdminSubdomain` function to parse hostname
+- Added `getSubdomainContext` to extract subdomain context from request
+- Set `x-subdomain-context` header for downstream consumption
+- Created `src/shared/lib/subdomain.ts` utility:
+  - `getSubdomainContext()` - async function for server components
+  - `isAdminSubdomain()` - async helper for server components
+  - `isAdminSubdomainClient()` - sync helper for client components
+- Middleware runs on all paths except static files (already configured)
+
+### Technical Notes
+- Image cropper uses native Canvas API (no external dependencies)
+- Subdomain detection works with various hostname formats:
+  - admin.domain.com
+  - admin.localhost:3000
+  - admin.127.0.0.1:3000
+
+### Current Status
+- 23/102 features passing (22.5%)
+
+### Next Steps
+- Continue with remaining features in the backlog
