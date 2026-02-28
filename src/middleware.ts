@@ -56,13 +56,21 @@ function getProtocol(hostname: string): string {
  * Builds a sign-in URL on the main domain with proper redirect back to admin subdomain.
  * This ensures authentication happens on the main domain where cookies are set,
  * then redirects back to the requested page on the admin subdomain.
+ *
+ * Note: We rebuild the return URL using hostname from headers because request.url
+ * might be normalized by Next.js and not contain the correct subdomain.
  */
-function buildMainDomainSignInUrl(hostname: string, originalUrl: URL): string {
+function buildMainDomainSignInUrl(
+  hostname: string,
+  pathname: string,
+  search: string
+): string {
   const mainDomain = stripAdminSubdomain(hostname)
   const protocol = getProtocol(hostname)
 
   // Build the full URL of where the user wanted to go (on admin subdomain)
-  const returnUrl = originalUrl.toString()
+  // Using hostname from headers to ensure correct subdomain is included
+  const returnUrl = `${protocol}://${hostname}${pathname}${search}`
 
   // Redirect to login on main domain with redirect_url pointing back to admin subdomain
   return `${protocol}://${mainDomain}/login?redirect_url=${encodeURIComponent(returnUrl)}`
@@ -112,8 +120,28 @@ export default clerkMiddleware(async (auth, request) => {
       if (!userId) {
         // User is not authenticated on admin subdomain
         // Redirect to main domain login with return URL back to admin subdomain
-        const signInUrl = buildMainDomainSignInUrl(hostname, url)
-        return NextResponse.redirect(new URL(signInUrl), 307)
+        const signInUrl = buildMainDomainSignInUrl(hostname, url.pathname, url.search)
+
+        // Use HTML redirect to ensure cross-subdomain redirect works correctly
+        // Next.js normalizes Location headers, so we use a client-side redirect
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="refresh" content="0;url=${signInUrl}">
+  <script>window.location.href="${signInUrl}";</script>
+</head>
+<body>
+  <p>Redirecionando para login...</p>
+</body>
+</html>`
+
+        return new NextResponse(html, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        })
       }
       // User is authenticated, continue
     } else {

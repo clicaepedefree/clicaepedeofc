@@ -154,10 +154,16 @@ export class IFoodService {
   /**
    * Get merchant's complete menu catalog
    * Returns normalized menu structure
+   * @param merchantId - The iFood merchant ID
+   * @param catalogId - The catalog ID to fetch menu from (stored in ifood_integrations)
    */
-  async getMerchantMenu(merchantId: string): Promise<IFoodMenu> {
+  async getMerchantMenu(merchantId: string, catalogId: string): Promise<IFoodMenu> {
+    if (!catalogId) {
+      throw new Error('Catalog ID is required')
+    }
+
     const data = await this.request<IFoodAPICatalogResponse>(
-      `/catalog/v2.0/merchants/${merchantId}/catalogs/ffca0022-eb43-4205-9a1b-73a72f8e3f95/sellableItems`
+      `/catalog/v2.0/merchants/${merchantId}/catalogs/${catalogId}/sellableItems`
     )
 
     // Normalize the response to our format

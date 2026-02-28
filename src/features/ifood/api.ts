@@ -288,6 +288,11 @@ export const fetchIFoodMenu = async (storeId: number) => {
     throw new Error('iFood integration not found for this store')
   }
 
+  // Validate catalogId exists (should have been set during connection)
+  if (!integration.catalogId) {
+    throw new Error('Catalog ID not configured. Please reconnect iFood and select a catalog.')
+  }
+
   // Check if token needs refresh
   const now = new Date()
   const expiresAt = new Date(integration.tokenExpiresAt)
@@ -312,7 +317,8 @@ export const fetchIFoodMenu = async (storeId: number) => {
   }
 
   const service = new IFoodService({ accessToken })
-  const menu = await service.getMerchantMenu(integration.merchantId)
+  // Use catalogId from the database instead of hardcoded value
+  const menu = await service.getMerchantMenu(integration.merchantId, integration.catalogId)
 
   // Update last sync timestamp
   await updateIFoodIntegration(storeId, {
