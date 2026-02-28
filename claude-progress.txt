@@ -853,3 +853,104 @@
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #95, #96, #97)
+
+### Completed Features
+
+**Feature #95: Environment variable configuration for domains** - PASSING
+- Created `src/shared/lib/domain-config.ts` with environment-based domain settings:
+  - `NEXT_PUBLIC_APP_DOMAIN` - Main application domain (default: localhost)
+  - `NEXT_PUBLIC_ADMIN_SUBDOMAIN` - Admin subdomain prefix (default: admin)
+  - Helper functions: `getAppDomain()`, `getAdminSubdomain()`, `isAdminHostname()`, `stripAdminSubdomain()`
+- Updated `src/middleware.ts` to use domain-config functions
+- Updated `next.config.ts` CORS configuration to use environment variables
+- Created `.env.example` with comprehensive documentation
+- Updated README with domain configuration instructions
+
+**Feature #96: Document subdomain setup for deployment** - PASSING
+- Added "Production Deployment" section to README.md covering:
+  - Environment variables for production
+  - DNS configuration examples (Vercel, self-hosted)
+  - Vercel deployment step-by-step
+  - Clerk authentication setup for subdomains
+  - SSL/TLS certificate setup
+  - Troubleshooting section
+- Created detailed `docs/DEPLOYMENT.md` with:
+  - Architecture overview
+  - Pre-deployment checklist
+  - Docker and Nginx configuration examples
+  - PM2 process manager setup
+  - Post-deployment verification steps
+  - Complete troubleshooting guide
+
+**Feature #97: Test subdomain routing end-to-end** - PASSING
+- Tested via browser automation (playwright-cli):
+  - Admin subdomain redirects unauthenticated users to main domain login ✅
+  - Redirect URL preserves admin subdomain path for post-login redirect ✅
+  - POS route on admin subdomain works correctly ✅
+  - Menu route on main domain works correctly ✅
+  - Main-domain-only routes redirect from admin subdomain ✅
+  - API health endpoint works on both domains ✅
+  - No JavaScript console errors related to subdomain routing ✅
+- Console warnings are only Clerk deprecation notices (not subdomain-related)
+
+### Technical Notes
+- Domain configuration is now fully environment-driven
+- Middleware uses imported functions from domain-config.ts
+- CORS is automatically configured based on environment variables
+- All subdomain detection is centralized in domain-config.ts
+
+### Current Status
+- 60/102 features passing (58.8%)
+
+### Session Summary
+- Completed 3 features: #95, #96, #97
+- All features related to subdomain configuration and documentation
+- Zero console errors across all tests
+- Created comprehensive deployment documentation
+
+### Next Steps
+- Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #101, #102)
+
+### Completed Features
+
+**Feature #101: Remove 'as unknown as' Type Assertions** - PASSING
+- Verified previous agents already fixed all 8 instances of `as unknown as` pattern:
+  - src/app/api/schema-check/route.ts (3 instances) - Using Zod validation
+  - src/app/api/apply-migration/route.ts (4 instances) - Using Zod validation with helper function
+  - src/features/fiscal/db.ts (1 instance) - Using Zod schema validation
+- All instances now use `z.array(Schema).parse(raw)` instead of `as unknown as Array<...>`
+- Verified TypeScript compiles correctly (no errors in src/ files)
+- Application runs successfully on localhost:3000
+
+**Feature #102: Add Validation Agent Code Quality Checklist** - PASSING
+- Updated .autoforge/prompts/testing_prompt.md with:
+  - PRE-COMPLETION CODE QUALITY CHECKLIST (MANDATORY) section
+  - 4 rules: No unused types, No duplicate types, No `as unknown as`, TypeScript compiles
+  - Detailed examples of violations and how to catch them
+  - Quick Validation Script for one-command verification
+  - Updated IMPORTANT REMINDERS to reference checklist
+- Updated .autoforge/prompts/coding_prompt.md with:
+  - STEP 4.5: PRE-COMPLETION CODE QUALITY VALIDATION (MANDATORY)
+  - Quick validation commands before marking features as passing
+- Updated CLAUDE.md with:
+  - Enhanced Validation Checklist (MANDATORY) section
+  - Added TypeScript compilation requirement
+  - Added explicit commands to run
+
+### Technical Notes
+- .autoforge/prompts/ files are gitignored, so changes are not versioned
+- CLAUDE.md changes were already committed by a previous agent
+- Feature #101 code changes were also already committed
+
+### Current Status
+- 54/102 features passing (52.9%)
+
+### Session Summary
+- Verified and marked features #101 and #102 as passing
+- Both features had already been implemented by previous agents
+- Confirmed all code quality standards are documented and enforced
+
