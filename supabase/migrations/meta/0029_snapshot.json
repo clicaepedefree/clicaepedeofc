@@ -1,6 +1,6 @@
 {
-  "id": "5ab2e07a-7f97-4429-8a04-ada5d16d8382",
-  "prevId": "e76b25ff-141f-4edd-8fcc-1034c5f21db1",
+  "id": "3d946ca5-70b5-4511-8197-9cf2cec428de",
+  "prevId": "5ab2e07a-7f97-4429-8a04-ada5d16d8382",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -435,6 +435,24 @@
           "notNull": true,
           "default": "'connected'"
         },
+        "catalog_id": {
+          "name": "catalog_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "catalog_name": {
+          "name": "catalog_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchant_name": {
+          "name": "merchant_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_sync_at": {
           "name": "last_sync_at",
           "type": "timestamp",
@@ -488,6 +506,82 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ifood_oauth_sessions": {
+      "name": "ifood_oauth_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "store_id": {
+          "name": "store_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_code": {
+          "name": "user_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authorization_code_verifier": {
+          "name": "authorization_code_verifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ifood_oauth_sessions_store_id_stores_id_fk": {
+          "name": "ifood_oauth_sessions_store_id_stores_id_fk",
+          "tableFrom": "ifood_oauth_sessions",
+          "tableTo": "stores",
+          "columnsFrom": [
+            "store_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -773,6 +867,184 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.option_groups": {
+      "name": "option_groups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "store_id": {
+          "name": "store_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_quantity": {
+          "name": "min_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "max_quantity": {
+          "name": "max_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "option_groups_store_id_stores_id_fk": {
+          "name": "option_groups_store_id_stores_id_fk",
+          "tableFrom": "option_groups",
+          "tableTo": "stores",
+          "columnsFrom": [
+            "store_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.options": {
+      "name": "options",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "option_group_id": {
+          "name": "option_group_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price": {
+          "name": "price",
+          "type": "numeric(19, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "original_price": {
+          "name": "original_price",
+          "type": "numeric(19, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "min_quantity": {
+          "name": "min_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "max_quantity": {
+          "name": "max_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "index": {
+          "name": "index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "options_option_group_id_option_groups_id_fk": {
+          "name": "options_option_group_id_option_groups_id_fk",
+          "tableFrom": "options",
+          "tableTo": "option_groups",
+          "columnsFrom": [
+            "option_group_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "options_item_id_items_id_fk": {
+          "name": "options_item_id_items_id_fk",
+          "tableFrom": "options",
+          "tableTo": "items",
+          "columnsFrom": [
+            "item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.menu_categories": {
       "name": "menu_categories",
       "schema": "",
@@ -992,184 +1264,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.option_groups": {
-      "name": "option_groups",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "store_id": {
-          "name": "store_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "min_quantity": {
-          "name": "min_quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "max_quantity": {
-          "name": "max_quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "option_groups_store_id_stores_id_fk": {
-          "name": "option_groups_store_id_stores_id_fk",
-          "tableFrom": "option_groups",
-          "tableTo": "stores",
-          "columnsFrom": [
-            "store_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.options": {
-      "name": "options",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "option_group_id": {
-          "name": "option_group_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "price": {
-          "name": "price",
-          "type": "numeric(19, 4)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "original_price": {
-          "name": "original_price",
-          "type": "numeric(19, 4)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "min_quantity": {
-          "name": "min_quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "max_quantity": {
-          "name": "max_quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "index": {
-          "name": "index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "options_option_group_id_option_groups_id_fk": {
-          "name": "options_option_group_id_option_groups_id_fk",
-          "tableFrom": "options",
-          "tableTo": "option_groups",
-          "columnsFrom": [
-            "option_group_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "options_item_id_items_id_fk": {
-          "name": "options_item_id_items_id_fk",
-          "tableFrom": "options",
-          "tableTo": "items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.order_item_options": {
       "name": "order_item_options",
       "schema": "",
@@ -1370,6 +1464,98 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.order_payments": {
+      "name": "order_payments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(19, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "card_brand": {
+          "name": "card_brand",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "change_for": {
+          "name": "change_for",
+          "type": "numeric(19, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_payments_order_id_orders_id_fk": {
+          "name": "order_payments_order_id_orders_id_fk",
+          "tableFrom": "order_payments",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "change_for_required_for_cash": {
+          "name": "change_for_required_for_cash",
+          "value": "\"order_payments\".\"method\" != 'CASH' OR (\"order_payments\".\"change_for\" IS NULL OR \"order_payments\".\"change_for\" >= \"order_payments\".\"value\")"
+        },
+        "card_brand_required_for_card": {
+          "name": "card_brand_required_for_card",
+          "value": "\"order_payments\".\"method\" NOT IN ('CREDIT', 'DEBIT', 'MEAL_VOUCHER', 'FOOD_VOUCHER') OR (\"order_payments\".\"card_brand\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.orders": {
       "name": "orders",
       "schema": "",
@@ -1474,204 +1660,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.service_invoices": {
-      "name": "service_invoices",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "store_id": {
-          "name": "store_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_id": {
-          "name": "order_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "type": {
-          "name": "type",
-          "type": "service_invoice_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'NFCE'"
-        },
-        "series": {
-          "name": "series",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "invoice_number": {
-          "name": "invoice_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "nfeio_invoice_id": {
-          "name": "nfeio_invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "service_invoice_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "customer_cpf": {
-          "name": "customer_cpf",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pdf_url": {
-          "name": "pdf_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "xml_url": {
-          "name": "xml_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error_message": {
-          "name": "error_message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "service_invoices_store_id_stores_id_fk": {
-          "name": "service_invoices_store_id_stores_id_fk",
-          "tableFrom": "service_invoices",
-          "tableTo": "stores",
-          "columnsFrom": [
-            "store_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "service_invoices_order_id_orders_id_fk": {
-          "name": "service_invoices_order_id_orders_id_fk",
-          "tableFrom": "service_invoices",
-          "tableTo": "orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.store_auto_emission_payment_methods": {
-      "name": "store_auto_emission_payment_methods",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "store_id": {
-          "name": "store_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payment_method": {
-          "name": "payment_method",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "store_auto_emission_payment_methods_store_id_stores_id_fk": {
-          "name": "store_auto_emission_payment_methods_store_id_stores_id_fk",
-          "tableFrom": "store_auto_emission_payment_methods",
-          "tableTo": "stores",
-          "columnsFrom": [
-            "store_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "store_auto_emission_payment_methods_store_method_unique": {
-          "name": "store_auto_emission_payment_methods_store_method_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "store_id",
-            "payment_method"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -1835,230 +1823,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.store_fiscal_configs": {
-      "name": "store_fiscal_configs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "store_id": {
-          "name": "store_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "nfeio_api_key": {
-          "name": "nfeio_api_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "nfeio_company_id": {
-          "name": "nfeio_company_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "environment": {
-          "name": "environment",
-          "type": "nfeio_environment",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'sandbox'"
-        },
-        "status": {
-          "name": "status",
-          "type": "fiscal_config_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending_setup'"
-        },
-        "federal_tax_number": {
-          "name": "federal_tax_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "trade_name": {
-          "name": "trade_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_regime": {
-          "name": "tax_regime",
-          "type": "tax_regime",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_street": {
-          "name": "address_street",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_number": {
-          "name": "address_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_complement": {
-          "name": "address_complement",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_neighborhood": {
-          "name": "address_neighborhood",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_city": {
-          "name": "address_city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_state": {
-          "name": "address_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_postal_code": {
-          "name": "address_postal_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_city_code": {
-          "name": "address_city_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state_registration": {
-          "name": "state_registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "municipal_registration": {
-          "name": "municipal_registration",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "csc_id": {
-          "name": "csc_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "csc_code": {
-          "name": "csc_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "nfce_series": {
-          "name": "nfce_series",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "next_nfce_number": {
-          "name": "next_nfce_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "accountant_email": {
-          "name": "accountant_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "certificate_valid_until": {
-          "name": "certificate_valid_until",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "CURRENT_TIMESTAMP"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "store_fiscal_configs_store_id_stores_id_fk": {
-          "name": "store_fiscal_configs_store_id_stores_id_fk",
-          "tableFrom": "store_fiscal_configs",
-          "tableTo": "stores",
-          "columnsFrom": [
-            "store_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "store_fiscal_configs_store_id_unique": {
-          "name": "store_fiscal_configs_store_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "store_id"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2417,8 +2181,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.order_payments": {
-      "name": "order_payments",
+    "public.service_invoices": {
+      "name": "service_invoices",
       "schema": "",
       "columns": {
         "id": {
@@ -2427,39 +2191,73 @@
           "primaryKey": true,
           "notNull": true
         },
+        "store_id": {
+          "name": "store_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "order_id": {
           "name": "order_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "value": {
-          "name": "value",
-          "type": "numeric(19, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
         "type": {
           "name": "type",
-          "type": "text",
+          "type": "service_invoice_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NFCE'"
+        },
+        "series": {
+          "name": "series",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "method": {
-          "name": "method",
-          "type": "text",
+        "invoice_number": {
+          "name": "invoice_number",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "card_brand": {
-          "name": "card_brand",
+        "nfeio_invoice_id": {
+          "name": "nfeio_invoice_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "change_for": {
-          "name": "change_for",
-          "type": "numeric(19, 4)",
+        "status": {
+          "name": "status",
+          "type": "service_invoice_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "customer_cpf": {
+          "name": "customer_cpf",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_url": {
+          "name": "pdf_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "xml_url": {
+          "name": "xml_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -2480,9 +2278,22 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "order_payments_order_id_orders_id_fk": {
-          "name": "order_payments_order_id_orders_id_fk",
-          "tableFrom": "order_payments",
+        "service_invoices_store_id_stores_id_fk": {
+          "name": "service_invoices_store_id_stores_id_fk",
+          "tableFrom": "service_invoices",
+          "tableTo": "stores",
+          "columnsFrom": [
+            "store_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "service_invoices_order_id_orders_id_fk": {
+          "name": "service_invoices_order_id_orders_id_fk",
+          "tableFrom": "service_invoices",
           "tableTo": "orders",
           "columnsFrom": [
             "order_id"
@@ -2490,23 +2301,306 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "change_for_required_for_cash": {
-          "name": "change_for_required_for_cash",
-          "value": "\"order_payments\".\"method\" != 'CASH' OR (\"order_payments\".\"change_for\" IS NULL OR \"order_payments\".\"change_for\" >= \"order_payments\".\"value\")"
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.store_auto_emission_payment_methods": {
+      "name": "store_auto_emission_payment_methods",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
         },
-        "card_brand_required_for_card": {
-          "name": "card_brand_required_for_card",
-          "value": "\"order_payments\".\"method\" NOT IN ('CREDIT', 'DEBIT', 'MEAL_VOUCHER', 'FOOD_VOUCHER') OR (\"order_payments\".\"card_brand\" IS NOT NULL)"
+        "store_id": {
+          "name": "store_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
         }
       },
+      "indexes": {},
+      "foreignKeys": {
+        "store_auto_emission_payment_methods_store_id_stores_id_fk": {
+          "name": "store_auto_emission_payment_methods_store_id_stores_id_fk",
+          "tableFrom": "store_auto_emission_payment_methods",
+          "tableTo": "stores",
+          "columnsFrom": [
+            "store_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "store_auto_emission_payment_methods_store_method_unique": {
+          "name": "store_auto_emission_payment_methods_store_method_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "store_id",
+            "payment_method"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.store_fiscal_configs": {
+      "name": "store_fiscal_configs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "store_id": {
+          "name": "store_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nfeio_api_key": {
+          "name": "nfeio_api_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nfeio_company_id": {
+          "name": "nfeio_company_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "environment": {
+          "name": "environment",
+          "type": "nfeio_environment",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'sandbox'"
+        },
+        "status": {
+          "name": "status",
+          "type": "fiscal_config_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending_setup'"
+        },
+        "federal_tax_number": {
+          "name": "federal_tax_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trade_name": {
+          "name": "trade_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tax_regime": {
+          "name": "tax_regime",
+          "type": "tax_regime",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_street": {
+          "name": "address_street",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_number": {
+          "name": "address_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_complement": {
+          "name": "address_complement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_neighborhood": {
+          "name": "address_neighborhood",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_city": {
+          "name": "address_city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_state": {
+          "name": "address_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_postal_code": {
+          "name": "address_postal_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_city_code": {
+          "name": "address_city_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state_registration": {
+          "name": "state_registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "municipal_registration": {
+          "name": "municipal_registration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csc_id": {
+          "name": "csc_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "csc_code": {
+          "name": "csc_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nfce_series": {
+          "name": "nfce_series",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "next_nfce_number": {
+          "name": "next_nfce_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "accountant_email": {
+          "name": "accountant_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "certificate_valid_until": {
+          "name": "certificate_valid_until",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "store_fiscal_configs_store_id_stores_id_fk": {
+          "name": "store_fiscal_configs_store_id_stores_id_fk",
+          "tableFrom": "store_fiscal_configs",
+          "tableTo": "stores",
+          "columnsFrom": [
+            "store_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "store_fiscal_configs_store_id_unique": {
+          "name": "store_fiscal_configs_store_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "store_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.stores_legal_entity": {
@@ -2665,24 +2759,6 @@
     }
   },
   "enums": {
-    "public.fiscal_config_status": {
-      "name": "fiscal_config_status",
-      "schema": "public",
-      "values": [
-        "pending_setup",
-        "pending_certificate",
-        "active",
-        "error"
-      ]
-    },
-    "public.nfeio_environment": {
-      "name": "nfeio_environment",
-      "schema": "public",
-      "values": [
-        "sandbox",
-        "production"
-      ]
-    },
     "public.service_invoice_status": {
       "name": "service_invoice_status",
       "schema": "public",
@@ -2699,6 +2775,24 @@
       "schema": "public",
       "values": [
         "NFCE"
+      ]
+    },
+    "public.fiscal_config_status": {
+      "name": "fiscal_config_status",
+      "schema": "public",
+      "values": [
+        "pending_setup",
+        "pending_certificate",
+        "active",
+        "error"
+      ]
+    },
+    "public.nfeio_environment": {
+      "name": "nfeio_environment",
+      "schema": "public",
+      "values": [
+        "sandbox",
+        "production"
       ]
     },
     "public.tax_regime": {

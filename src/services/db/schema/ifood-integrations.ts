@@ -17,6 +17,9 @@ export const ifoodIntegrationsTable = pgTable('ifood_integrations', {
   })
     .notNull()
     .default('connected'),
+  catalogId: text('catalog_id'), // Selected iFood catalog ID (nullable)
+  catalogName: text('catalog_name'), // Selected catalog display name (nullable)
+  merchantName: text('merchant_name'), // Merchant display name (nullable, for UI)
   lastSyncAt: timestamp('last_sync_at'),
   syncErrors: jsonb('sync_errors'),
   createdAt,
