@@ -780,3 +780,40 @@
 
 ### Next Steps
 - Continue with remaining features
+
+## Session: 2026-02-28 (Agent Batch #90, #92, #93)
+
+### Completed Features
+
+**Feature #90: Preserve existing path-based routing** - PASSING
+- Verified existing routes remain functional on main domain
+- Protected routes redirect to /login correctly
+- Both path-based and subdomain-based routing work interchangeably
+- Documentation already exists in README (from feature #87)
+
+**Feature #92: Configure appropriate headers for subdomain** - PASSING
+- Added security headers to next.config.ts:
+  - X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+  - Referrer-Policy, Cross-Origin-Opener-Policy
+- Added CORS headers for API routes with subdomain support
+- UploadThing routes work correctly with headers
+
+**Feature #93: Non-admin routes remain on main domain** - PASSING
+- Identified main-domain-only routes: /, /login, /admin-onboarding, /unauthorized, /test-*
+- Non-admin routes accessed from admin subdomain redirect to main domain
+- Uses HTML-based redirect for cross-subdomain compatibility
+- Admin routes redirect unauthenticated users to main domain login with return URL
+- Updated README with route-domain mapping table
+
+### Technical Notes
+- Cross-subdomain redirects require HTML-based approach due to Next.js header normalization
+- domain-config.ts provides centralized hostname detection
+- Middleware handles subdomain detection and route-based redirects
+
+### Current Status
+- 45/102 features passing (44.1%)
+
+### Session Summary
+- Completed 3 features: #90, #92, #93
+- All features related to subdomain/domain routing configuration
+- Zero console errors across all tests

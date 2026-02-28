@@ -229,6 +229,210 @@ Supported hostname formats:
 - `admin.127.0.0.1:3000` (alternative)
 - `admin.yourdomain.com` (production)
 
+## Production Deployment
+
+This section covers deploying Clica Pedidos with subdomain routing to production.
+
+### Environment Variables for Production
+
+Set these environment variables in your hosting platform:
+
+```env
+# Required - Domain Configuration
+NEXT_PUBLIC_APP_DOMAIN=clicapedidos.com.br
+NEXT_PUBLIC_ADMIN_SUBDOMAIN=admin
+
+# Required - Database
+POSTGRES_URL=postgresql://user:pass@host:5432/database
+
+# Required - Authentication (Clerk)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx
+CLERK_SECRET_KEY=sk_live_xxx
+
+# Required - File Uploads
+UPLOADTHING_TOKEN=xxx
+
+# iFood Integration (if enabled)
+NEXT_PUBLIC_IFOOD_CLIENT_ID=xxx
+IFOOD_CLIENT_SECRET=xxx
+IFOOD_REDIRECT_URI=https://clicapedidos.com.br/api/integrations/ifood/callback
+IFOOD_TOKEN_ENCRYPTION_KEY=xxx
+
+# NFe Integration (if enabled)
+NFE_IO_API_KEY=xxx
+```
+
+### DNS Configuration
+
+Configure DNS records for both your main domain and admin subdomain:
+
+| Type | Host | Value | TTL |
+|------|------|-------|-----|
+| A/CNAME | @ | Your hosting IP/domain | 300 |
+| A/CNAME | admin | Your hosting IP/domain | 300 |
+
+**Example for Vercel:**
+
+```
+# Main domain
+CNAME @ cname.vercel-dns.com
+
+# Admin subdomain
+CNAME admin cname.vercel-dns.com
+```
+
+**Example for self-hosted (with IP 203.0.113.10):**
+
+```
+A @ 203.0.113.10
+A admin 203.0.113.10
+```
+
+### Vercel Deployment
+
+#### 1. Connect Repository
+
+Link your GitHub/GitLab repository to Vercel.
+
+#### 2. Configure Domains
+
+In Project Settings > Domains, add both:
+- `clicapedidos.com.br` (main domain)
+- `admin.clicapedidos.com.br` (admin subdomain)
+
+Both domains should point to the same Vercel project.
+
+#### 3. Environment Variables
+
+In Project Settings > Environment Variables, add all required variables.
+
+**Important:** Use different values for Preview vs Production:
+- `NEXT_PUBLIC_APP_DOMAIN=preview-xxx.vercel.app` (Preview)
+- `NEXT_PUBLIC_APP_DOMAIN=clicapedidos.com.br` (Production)
+
+#### 4. Wildcard Domain (Optional)
+
+For multi-tenant subdomain support (e.g., `store1.clicapedidos.com.br`):
+
+1. Add `*.clicapedidos.com.br` to Vercel domains
+2. Configure DNS:
+   ```
+   CNAME * cname.vercel-dns.com
+   ```
+
+### Clerk Configuration
+
+Configure Clerk to work with subdomains:
+
+#### 1. Add Domains in Clerk Dashboard
+
+Go to Clerk Dashboard > Domains and add:
+- `clicapedidos.com.br`
+- `admin.clicapedidos.com.br`
+
+#### 2. Configure Cookie Settings
+
+In Clerk Dashboard > Sessions, set:
+- **Session token cookie domain:** `.clicapedidos.com.br` (note the leading dot)
+
+This allows session cookies to be shared across subdomains.
+
+#### 3. Redirect URLs
+
+Configure redirect URLs in Clerk Dashboard > Paths:
+- Sign-in URL: `/login`
+- After sign-in: `/dashboard`
+- After sign-up: `/admin-onboarding`
+
+### Other Hosting Platforms
+
+#### AWS Amplify
+
+1. Configure domains in Amplify Console > Domain Management
+2. Add both main domain and admin subdomain
+3. Set environment variables in App Settings > Environment Variables
+
+#### Railway
+
+1. Configure custom domains in Settings > Domains
+2. Add both domains pointing to the same service
+3. Set environment variables in Variables tab
+
+#### DigitalOcean App Platform
+
+1. Add domains in Settings > Domains
+2. Configure both main and admin subdomain
+3. Set environment variables in App-Level Environment Variables
+
+### SSL/TLS Certificates
+
+Most platforms (Vercel, Railway, etc.) automatically provision SSL certificates for custom domains. If self-hosting:
+
+1. Use Let's Encrypt with certbot
+2. Generate certificates for both domains:
+   ```bash
+   certbot --nginx -d clicapedidos.com.br -d admin.clicapedidos.com.br
+   ```
+3. Or use a wildcard certificate:
+   ```bash
+   certbot --nginx -d clicapedidos.com.br -d *.clicapedidos.com.br
+   ```
+
+### Deployment Troubleshooting
+
+#### Admin subdomain redirects to main domain login
+
+**Cause:** Clerk cookies not shared across subdomains.
+
+**Solution:** Ensure cookie domain in Clerk is set to `.yourdomain.com` (with leading dot).
+
+#### CORS errors when calling API from admin subdomain
+
+**Cause:** CORS headers not configured correctly.
+
+**Solution:** Verify `NEXT_PUBLIC_APP_DOMAIN` and `NEXT_PUBLIC_ADMIN_SUBDOMAIN` are set correctly. The `next.config.ts` automatically configures CORS based on these values.
+
+#### Subdomain not resolving
+
+**Cause:** DNS not propagated or misconfigured.
+
+**Solutions:**
+1. Check DNS propagation: `dig admin.yourdomain.com`
+2. Verify DNS records point to your hosting
+3. Wait for DNS propagation (up to 48 hours, typically 5-30 minutes)
+
+#### "Invalid host header" error
+
+**Cause:** Next.js rejecting requests from unexpected hostnames.
+
+**Solution:** Ensure all domains are properly configured in your hosting platform and that your middleware doesn't block the hostname.
+
+#### Authentication fails on admin subdomain
+
+**Cause:** Cross-subdomain auth not configured.
+
+**Solutions:**
+1. Verify Clerk cookie domain includes subdomain (`.yourdomain.com`)
+2. Check that both domains are added to Clerk dashboard
+3. Ensure `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` matches the domain configuration
+
+### Health Checks
+
+After deployment, verify:
+
+1. **Main domain loads:** `https://clicapedidos.com.br`
+2. **Admin subdomain loads:** `https://admin.clicapedidos.com.br`
+3. **API health endpoint:** `https://clicapedidos.com.br/api/health`
+4. **Authentication works on both domains**
+5. **Session persists when navigating between domains**
+
+### Monitoring
+
+Set up monitoring for both domains:
+- Uptime monitoring (Pingdom, UptimeRobot, etc.)
+- Error tracking (Sentry, LogRocket, etc.)
+- Performance monitoring (Vercel Analytics, PostHog, etc.)
+
 ## Current Development: iFood Connection Flow Improvements
 
 The current development focus is improving the iFood integration connection flow:
