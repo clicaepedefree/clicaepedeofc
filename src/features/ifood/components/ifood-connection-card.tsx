@@ -98,7 +98,7 @@ export function IFoodConnectionCard() {
           </div>
 
           {isConnected && connection && (
-            <div className="mt-2 space-y-2 text-sm text-gray-600">
+            <div className="mt-2 space-y-1 text-sm text-gray-600">
               {connection.merchantName && (
                 <p>
                   <b>Loja:</b> {connection.merchantName}
@@ -107,15 +107,6 @@ export function IFoodConnectionCard() {
               {connection.catalogName && (
                 <p>
                   <b>Cardápio:</b> {connection.catalogName}
-                </p>
-              )}
-              <p>
-                <b>Merchant ID:</b> {connection.merchantId}
-              </p>
-              {connection.lastSyncAt && (
-                <p>
-                  <b>Última sincronização:</b>{' '}
-                  {new Date(connection.lastSyncAt).toLocaleString('pt-BR')}
                 </p>
               )}
             </div>
@@ -144,7 +135,7 @@ export function IFoodConnectionCard() {
               </Button>
             </>
           ) : (
-            <Button variant="default" onClick={handleConnect}>
+            <Button variant="default" onClick={handleConnect} disabled={isModalOpen}>
               Conectar
             </Button>
           )}
