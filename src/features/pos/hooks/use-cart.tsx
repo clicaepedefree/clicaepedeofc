@@ -29,6 +29,10 @@ import { useCallback, useEffect } from 'react'
 type CreateOrderParams = {
   counterId: number
   counterName: string
+  items?: CartItem[]
+  payments?: CartPayment[]
+  totalPrice?: number
+  storeId?: number
 }
 
 export const useCart = (salesChannel: SalesChannel) => {
@@ -107,12 +111,21 @@ export const useCart = (salesChannel: SalesChannel) => {
     mutationFn: async ({
       counterId,
       counterName,
+      items,
+      payments,
+      totalPrice,
+      storeId,
     }: CreateOrderParams) => {
-      if (!selectedStoreId || !cartSessionItems?.length || !cartSessionPayments?.length) {
+      const effectiveStoreId = storeId ?? selectedStoreId
+      const effectiveItems = items ?? cartSessionItems
+      const effectivePayments = payments ?? cartSessionPayments
+      const effectiveTotal = totalPrice ?? cartSessionTotal
+
+      if (!effectiveStoreId || !effectiveItems?.length || !effectivePayments?.length) {
         return
       }
 
-      const orderItems = cartSessionItems.map((cartItem, index) => ({
+      const orderItems = effectiveItems.map((cartItem, index) => ({
         index,
         itemId: cartItem.itemId,
         quantity: cartItem.quantity.toString(),
@@ -133,7 +146,7 @@ export const useCart = (salesChannel: SalesChannel) => {
         })),
       }))
 
-      const orderPayments = cartSessionPayments.map(payment => ({
+      const orderPayments = effectivePayments.map(payment => ({
         type: payment.type,
         value: payment.value,
         method: payment.method,
@@ -142,9 +155,9 @@ export const useCart = (salesChannel: SalesChannel) => {
       }))
 
       const newOrder = await createOrder({
-        storeId,
+        storeId: effectiveStoreId!,
         items: orderItems,
-        totalPrice: formatValueToCurrency({ value: totalPrice }),
+        totalPrice: formatValueToCurrency({ value: effectiveTotal }),
         salesChannel: salesChannel,
         type: 'INDOOR',
         status: 'COMPLETED',
