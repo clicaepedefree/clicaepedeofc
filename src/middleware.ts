@@ -10,6 +10,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-order-reprint(.*)',
   '/api/test-out-of-stock(.*)',
   '/api/test-cropper(.*)',
+  '/api/test-ifood-oauth(.*)',
   '/api/schema-check(.*)',
   '/api/apply-migration(.*)',
   '/unauthorized(.*)',
