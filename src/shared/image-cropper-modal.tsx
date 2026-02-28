@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/shared/dialog'
 import { cn } from '@/shared/lib/utils'
+import { LoadingSpinner } from '@/shared/spinner'
 import { Minus, Plus, RotateCcw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -24,6 +25,9 @@ interface CropArea {
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.1
+
+// Preview configuration
+const PREVIEW_MAX_SIZE = 100 // Maximum preview dimension in pixels
 
 interface ImageCropperModalProps {
   open: boolean
@@ -336,13 +340,22 @@ export const ImageCropperModal = ({
     }
   }
 
+  // Handle dialog close (e.g., from Escape key, clicking outside, or Cancel button)
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      // Dialog is being closed, call onCancel to reset state
+      onCancel()
+    }
+    onOpenChange(isOpen)
+  }
+
   const handleCancel = () => {
-    onCancel()
+    // Just close the dialog - handleOpenChange will call onCancel
     onOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Recortar imagem</DialogTitle>
@@ -433,7 +446,14 @@ export const ImageCropperModal = ({
             Cancelar
           </Button>
           <Button type="button" onClick={handleCrop} disabled={isProcessing || !imageElement}>
-            {isProcessing ? 'Processando...' : 'Confirmar'}
+            {isProcessing ? (
+              <>
+                <LoadingSpinner size={16} className="mr-2" />
+                Processando...
+              </>
+            ) : (
+              'Confirmar'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
