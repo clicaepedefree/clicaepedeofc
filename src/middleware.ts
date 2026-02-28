@@ -22,6 +22,8 @@ const isPublicRoute = createRouteMatcher([
   '/test-cropper-interactive(.*)',
   '/test-ifood-modal(.*)',
   '/test-merchant-selection(.*)',
+  '/test-catalog-selection(.*)',
+  '/test-ifood-persistence(.*)',
 ])
 
 /**
