@@ -1,6 +1,6 @@
 'use client'
 
-import { initiateIFoodOAuth } from '@/features/ifood/api'
+import { exchangeIFoodAuthCode, initiateIFoodOAuth } from '@/features/ifood/api'
 import { Button } from '@/shared/button'
 import {
   Dialog,
@@ -120,21 +120,8 @@ export function IFoodConnectionModal({
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/integrations/ifood/exchange-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          authorizationCode: authorizationCode.trim(),
-          authorizationCodeVerifier,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to exchange token')
-      }
-
-      const data = await response.json()
+      // Use server action - verifier is retrieved server-side from DB
+      const data = await exchangeIFoodAuthCode(storeId, authorizationCode.trim())
 
       setTokens({
         accessToken: data.accessToken,

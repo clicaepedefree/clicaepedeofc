@@ -2,8 +2,12 @@
 
 import { decrypt, encrypt } from '@/lib/encryption'
 import { db } from '@/services/db'
+import { orderItemsTable, ordersTable } from '@/services/db/schema'
 import { NfeIoService } from '@/services/nfeio'
+import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
+import { eq } from 'drizzle-orm'
 import type { NfeFlagCard } from 'nfe-io'
+import { checkStockAvailability } from '../order/db'
 import { validateUserPermissionsForStore } from '../store/api'
 import {
   createAutoEmissionMethod,
@@ -311,6 +315,33 @@ export const generateNfce = async (
     MEAL_VOUCHER: 'MealVouchers',
     FOOD_VOUCHER: 'FoodVouchers',
   } as const
+
+  // Validate stock availability before emitting NF
+  // Fetch order items from database to get itemIds
+  const orderItems = await db
+    .select({
+      itemId: orderItemsTable.itemId,
+      quantity: orderItemsTable.quantity,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .where(eq(ordersTable.id, orderId))
+
+  if (orderItems.length > 0) {
+    const itemsToCheck = orderItems.map(item => ({
+      itemId: item.itemId,
+      quantity: Number(item.quantity),
+    }))
+
+    const outOfStockItems = await checkStockAvailability({
+      items: itemsToCheck,
+      dbSession: db,
+    })
+
+    if (outOfStockItems.length > 0) {
+      throw new OutOfStockError(outOfStockItems)
+    }
+  }
 
   let lastError: Error | null = null
   let invoice: ServiceInvoice | null = null
