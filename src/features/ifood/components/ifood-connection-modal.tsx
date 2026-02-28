@@ -16,7 +16,7 @@ import {
 } from '@/shared/dialog'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 interface IFoodConnectionModalProps {
@@ -59,6 +59,9 @@ export function IFoodConnectionModal({
   const [selectedCatalog, setSelectedCatalog] = useState<Catalog | null>(null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
 
+  // Ref to track if OAuth initiation has been triggered for the current modal session
+  const initiatedRef = useRef(false)
+
   const resetState = useCallback(() => {
     setStep('userCode')
     setIsLoading(false)
@@ -71,6 +74,7 @@ export function IFoodConnectionModal({
     setCatalogs([])
     setSelectedCatalog(null)
     setConnectionError(null)
+    initiatedRef.current = false // Reset initiation flag on modal close
   }, [])
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -96,10 +100,15 @@ export function IFoodConnectionModal({
     }
   }, [storeId])
 
-  // Call initiateConnection when modal opens
-  if (open && !userCode && !isLoading && step === 'userCode') {
-    initiateConnection()
-  }
+  // Call initiateConnection when modal opens - using useEffect to avoid side effects in render
+  // The initiatedRef ensures we only call the API once per modal session, preventing
+  // duplicate API calls from rapid clicks or React StrictMode double-renders
+  useEffect(() => {
+    if (open && !initiatedRef.current && step === 'userCode') {
+      initiatedRef.current = true
+      initiateConnection()
+    }
+  }, [open, step, initiateConnection])
 
   const handleCopyUserCode = () => {
     if (userCode) {
