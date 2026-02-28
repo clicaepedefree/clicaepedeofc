@@ -3,7 +3,7 @@ import { ifoodOAuthSessionsTable } from '@/services/db/schema/ifood-oauth-sessio
 import { ifoodIntegrationsTable } from '@/services/db/schema/ifood-integrations'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { encrypt } from '@/shared/lib/encryption'
+import { encrypt } from '@/lib/encryption'
 
 export const dynamic = 'force-dynamic'
 
