@@ -97,6 +97,25 @@
 - Template follows same pattern as working counter receipts (open-counter.receipt, close-counter.receipt)
 - Code passes lint check without errors
 
+**Feature #59: Include order items with details in receipt** - PASSING
+- Verified order receipt template includes comprehensive items section:
+  - Item name displayed on its own line
+  - Quantity × unit price and line total: `|  {{quantity}} x {{unitPrice}} |{{totalPrice}} |`
+  - Options indented with +: `|    + {{optionName}} ({{optionQuantity}}x){{#optionPrice}} {{optionPrice}}{{/optionPrice}} |`
+  - Comments displayed: `|    Obs: {{comment}} |`
+- TypeScript module correctly processes items:
+  - Formats unit prices and totals with currency symbols
+  - Formats option prices when provided (optional field)
+  - Preserves comments for display
+- Created test endpoint `/api/test-order-receipt` to verify rendering
+- Verified via browser automation (playwright-cli):
+  - Multiple items render correctly (X-Burguer, Batata Frita, Refrigerante, Pizza)
+  - Various quantities display properly (1x, 2x)
+  - Options with prices show price (Bacon Extra R$5,00)
+  - Options without prices show only name and quantity (Azeitona Extra (1x))
+  - Comments display correctly (Obs: Sem cebola, Obs: Bem assada)
+- No mock data patterns found in receipt feature
+
 **Feature #60: Include order totals in receipt** - PASSING
 - Added totals section to receipt template (order.receipt lines 38-43):
   - Line 39: `|Subtotal: |{{subtotal}} |` - Displays subtotal of all items
@@ -111,7 +130,7 @@
 - App compiles and loads correctly (verified via playwright-cli)
 
 ### Current Status
-- 8/97 features passing (8.2%)
+- 9/97 features passing (9.3%)
 
 ### Next Steps
 - Continue with core functionality features
