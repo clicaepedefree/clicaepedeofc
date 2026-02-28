@@ -128,10 +128,8 @@ export function IFoodConnectionModal({
       const data = await exchangeIFoodAuthCode(storeId, authorizationCode.trim())
 
       setMerchants(data.merchants)
-
-      if (data.merchants.length === 1) {
-        setSelectedMerchant(data.merchants[0])
-      }
+      // No merchant is pre-selected by default - user must explicitly select
+      setSelectedMerchant(null)
 
       setAuthCodeError(null) // Clear error on success
       setStep('selectMerchant')

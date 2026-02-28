@@ -1,5 +1,6 @@
 'use client'
 
+import { IFoodConnectionModal } from '@/features/ifood/components/ifood-connection-modal'
 import { Button } from '@/shared/button'
 import {
   Dialog,
@@ -28,11 +29,17 @@ export default function TestIFoodModalPage() {
   const [isConnected, setIsConnected] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [disconnectCalled, setDisconnectCalled] = useState(false)
+  const [useRealModal, setUseRealModal] = useState(false)
+  const [realModalOpen, setRealModalOpen] = useState(false)
 
   const handleConnect = () => {
     // This is what happens in the real IFoodConnectionCard
     // Instead of router.push('/authorize'), it now sets modal state
-    setIsModalOpen(true)
+    if (useRealModal) {
+      setRealModalOpen(true)
+    } else {
+      setIsModalOpen(true)
+    }
     setOpenCount(prev => prev + 1)
   }
 
@@ -72,7 +79,7 @@ export default function TestIFoodModalPage() {
 
         <div className="space-y-4">
           {/* Toggle between connected/disconnected states */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant={!isConnected ? 'default' : 'outline'}
               onClick={() => setIsConnected(false)}
@@ -84,6 +91,12 @@ export default function TestIFoodModalPage() {
               onClick={() => { setIsConnected(true); setDisconnectCalled(false); }}
             >
               Connected State
+            </Button>
+            <Button
+              variant={useRealModal ? 'default' : 'outline'}
+              onClick={() => setUseRealModal(!useRealModal)}
+            >
+              {useRealModal ? 'Using Real Modal' : 'Use Real Modal (Test #23)'}
             </Button>
           </div>
 
@@ -143,7 +156,8 @@ export default function TestIFoodModalPage() {
               <strong>Current URL:</strong> {typeof window !== 'undefined' ? window.location.pathname : '/test-ifood-modal'}
             </p>
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>Modal State:</strong> {isModalOpen ? 'OPEN' : 'CLOSED'}
+              <strong>Modal State:</strong> {(useRealModal ? realModalOpen : isModalOpen) ? 'OPEN' : 'CLOSED'}
+              {useRealModal && ' (Real Modal)'}
             </p>
             <p className="text-sm text-blue-800 dark:text-blue-200">
               <strong>Open Count:</strong> {openCount}
@@ -188,6 +202,24 @@ export default function TestIFoodModalPage() {
             </ul>
           </div>
         </div>
+
+        {/* Real IFoodConnectionModal for testing Feature #23 (inline error handling) */}
+        {useRealModal && (
+          <IFoodConnectionModal
+            open={realModalOpen}
+            onOpenChange={(open) => {
+              setRealModalOpen(open)
+              if (!open) {
+                setCloseCount(prev => prev + 1)
+              }
+            }}
+            storeId={1} // Mock storeId - will fail OAuth but show error handling
+            onSuccess={() => {
+              setIsConnected(true)
+              setRealModalOpen(false)
+            }}
+          />
+        )}
 
         {/* Mock Modal that simulates the real IFoodConnectionModal structure */}
         <Dialog open={isModalOpen} onOpenChange={handleModalClose}>
