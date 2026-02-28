@@ -1,6 +1,58 @@
 # Claude Code Progress Notes - Clica Pedidos
 # ============================================
 
+## Session: 2026-02-28 (Agent Batch #44, #50, #51)
+
+### Completed Features
+
+**Feature #44: Catalog selection required before confirming connection** - PASSING
+- Verified iFood connection modal has proper form validation
+- Using test page at `/test-catalog-selection`:
+  - Progressed to Step 3 (catalog selection)
+  - Verified "Conectar" button is DISABLED when no catalog is selected (`[disabled]` attribute)
+  - Selected "Menu Principal" catalog
+  - Verified button becomes enabled (`[cursor=pointer]`)
+  - Connection proceeded successfully (alert confirmation)
+- No code changes needed - validation already implemented in ifood-connection-modal.tsx
+
+**Feature #50: Connection modal has role=dialog, aria-labelledby, focus trapping, and ESC close** - PASSING
+- Verified accessibility features using browser automation:
+  - Modal has `role="dialog"` (confirmed in snapshot as `dialog "Conectar iFood"`)
+  - `aria-labelledby` points to "Conectar iFood" title heading
+  - Focus moves inside modal when opened ("Copiar" button was [active])
+  - Focus trap working: Tab cycles through modal elements only (Copiar → Abrir Portal → Cancelar → Close → back to Copiar)
+  - ESC closes the modal (Modal State: CLOSED, Close Count: 1)
+  - Radix UI Dialog provides all accessibility features out of the box
+- No code changes needed - using @radix-ui/react-dialog which handles ARIA attributes
+
+**Feature #51: Merchant and catalog radio groups support keyboard navigation** - PASSING
+- Verified keyboard navigation using browser automation at `/test-catalog-selection`:
+  - Tab moves focus to radio group (first radio [active])
+  - Arrow Down moves to next option AND selects it ([checked] [active])
+  - Arrow Up moves to previous option AND selects it
+  - Arrow Right/Left also work for horizontal navigation
+  - Tab exits radio group to next focusable element ("Conectar" button)
+- Native HTML radio inputs (`<input type="radio">`) provide keyboard navigation by default
+- No code changes needed - using native form elements
+
+### Technical Notes
+- All three features were accessibility/validation verification tasks
+- iFood connection modal uses Radix UI Dialog with native radio inputs
+- Test pages available: `/test-catalog-selection`, `/test-ifood-modal`
+- Zero console errors during testing
+- Code quality checks: No `as unknown as` patterns, TypeScript compiles without errors
+
+### Current Status
+- 95/102 features passing (93.1%)
+
+### Session Summary
+- Completed 3 features: #44, #50, #51
+- All were verification features - no code changes required
+- iFood connection modal accessibility fully verified
+
+### Next Steps
+- Continue with remaining 7 features
+
 ## Session: 2026-02-28
 
 ### Completed Features
