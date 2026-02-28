@@ -36,3 +36,7 @@ next-env.d.ts
 
 
 .experiments
+
+.playwright-cli/
+.playwright/
+.autoforge
