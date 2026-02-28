@@ -15,6 +15,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/apply-migration(.*)',
   '/unauthorized(.*)',
   '/test-cropper-interactive(.*)',
+  '/test-ifood-modal(.*)',
 ])
 
 /**

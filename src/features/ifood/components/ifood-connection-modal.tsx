@@ -42,11 +42,7 @@ export function IFoodConnectionModal({
   const [authorizationCode, setAuthorizationCode] = useState('')
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [selectedMerchantId, setSelectedMerchantId] = useState('')
-  const [tokens, setTokens] = useState<{
-    accessToken: string
-    refreshToken: string
-    expiresIn: number
-  } | null>(null)
+  // Tokens are now stored server-side in the OAuth session - not exposed to client
 
   const resetState = useCallback(() => {
     setStep('userCode')
@@ -56,7 +52,6 @@ export function IFoodConnectionModal({
     setAuthorizationCode('')
     setMerchants([])
     setSelectedMerchantId('')
-    setTokens(null)
   }, [])
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -121,13 +116,8 @@ export function IFoodConnectionModal({
 
     try {
       // Use server action - verifier is retrieved server-side from DB
+      // Tokens are stored server-side (encrypted in OAuth session), NOT returned to client
       const data = await exchangeIFoodAuthCode(storeId, authorizationCode.trim())
-
-      setTokens({
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        expiresIn: data.expiresIn,
-      })
 
       setMerchants(data.merchants)
 

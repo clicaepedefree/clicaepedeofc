@@ -141,6 +141,47 @@ bun run db
 bun run lint
 ```
 
+### Routing and Access Methods
+
+The app supports both **path-based** and **subdomain-based** routing. Both methods are fully functional and can be used interchangeably:
+
+**Path-based routing (default):**
+- `http://localhost:3000/dashboard` - Dashboard
+- `http://localhost:3000/pos` - Point of Sale
+- `http://localhost:3000/menu` - Menu Management
+- `http://localhost:3000/settings` - Settings
+
+**Subdomain-based routing:**
+- `http://admin.localhost:3000/dashboard` - Dashboard (admin subdomain)
+- `http://admin.localhost:3000/pos` - Point of Sale (admin subdomain)
+
+Both access methods work identically:
+- Authentication via Clerk works on both
+- All routes remain functional
+- Session persists across both methods
+- The subdomain context is detected automatically for conditional rendering
+
+Modern browsers (Chrome 73+, Firefox, Safari) automatically resolve `*.localhost` to `127.0.0.1`, so no hosts file configuration is needed for subdomain testing.
+
+**Troubleshooting:**
+
+If `admin.localhost` doesn't resolve in your browser, add this to your hosts file:
+
+```bash
+# macOS/Linux: /etc/hosts
+# Windows: C:\Windows\System32\drivers\etc\hosts
+127.0.0.1 admin.localhost
+```
+
+**How it works:**
+
+The middleware (`src/middleware.ts`) detects subdomain context from the request hostname and sets an `x-subdomain-context` header. Components can read this via `getSubdomainContext()` from `@/shared/lib/subdomain`.
+
+Supported hostname formats:
+- `admin.localhost:3000` (development)
+- `admin.127.0.0.1:3000` (alternative)
+- `admin.yourdomain.com` (production)
+
 ## Current Development: iFood Connection Flow Improvements
 
 The current development focus is improving the iFood integration connection flow:

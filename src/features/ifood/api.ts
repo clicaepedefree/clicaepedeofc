@@ -11,6 +11,7 @@ import {
   getIFoodIntegration,
   getIFoodOAuthSession,
   updateIFoodIntegration,
+  updateIFoodOAuthSession,
 } from './db'
 import { listMenuItems } from '../menu/api'
 
@@ -80,7 +81,8 @@ export const initiateIFoodOAuth = async (storeId: number) => {
 /**
  * Exchange authorization code for tokens using the server-stored verifier.
  * The verifier is retrieved from DB (never exposed to client) and used for the exchange.
- * Returns tokens and available merchants for selection.
+ * Tokens are encrypted and stored in the OAuth session (never exposed to client).
+ * Returns only available merchants for selection - no tokens in response.
  */
 export const exchangeIFoodAuthCode = async (
   storeId: number,
@@ -108,19 +110,19 @@ export const exchangeIFoodAuthCode = async (
     session.authorizationCodeVerifier
   )
 
+  // Store encrypted tokens in the OAuth session for the next steps
+  // Tokens stay server-side and are NEVER sent to the client
+  await updateIFoodOAuthSession(storeId, {
+    accessToken: encrypt(tokens.accessToken),
+    refreshToken: encrypt(tokens.refreshToken),
+  })
+
   // Get available merchants
   const service = new IFoodService({ accessToken: tokens.accessToken })
   const merchants = await service.getMerchants()
 
-  // Clean up the OAuth session (it's no longer needed)
-  await deleteIFoodOAuthSession(storeId)
-
-  return {
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    expiresIn: tokens.expiresIn,
-    merchants,
-  }
+  // Return ONLY merchants - no tokens in response
+  return { merchants }
 }
 
 export const connectIFoodAccountWithCode = async (
