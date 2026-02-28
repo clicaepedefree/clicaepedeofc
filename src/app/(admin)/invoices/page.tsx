@@ -30,6 +30,14 @@ type OrderWithDetails = Awaited<ReturnType<typeof listOrders>>[number]
 export default function InvoicesPage() {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
 
+  // Move receipt hook to page level so ReceiptContent renders outside the table
+  const {
+    printOrderReceipt,
+    ReceiptContent,
+    printError,
+    showPrintErrorToast,
+  } = useOrderReceipt()
+
   const result = useQuery({
     enabled: !!selectedStoreId,
     queryKey: ordersCacheKey(selectedStoreId),
@@ -60,24 +68,39 @@ export default function InvoicesPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {result.data?.map(order => <OrderRow key={order.id} order={order} />)}
+          {result.data?.map(order => (
+            <OrderRow
+              key={order.id}
+              order={order}
+              printOrderReceipt={printOrderReceipt}
+              printError={printError}
+              showPrintErrorToast={showPrintErrorToast}
+            />
+          ))}
         </TableBody>
       </Table>
+      {/* ReceiptContent must be outside the table to avoid invalid HTML (div inside tbody) */}
+      {ReceiptContent}
     </>
   )
 }
 
-const OrderRow = ({ order }: { order: OrderWithDetails }) => {
+type OrderRowProps = {
+  order: OrderWithDetails
+  printOrderReceipt: (receiptSvg: string, orderDisplayId?: string | number) => void
+  printError: Error | null
+  showPrintErrorToast: (orderDisplayId?: string | number) => void
+}
+
+const OrderRow = ({
+  order,
+  printOrderReceipt,
+  printError,
+  showPrintErrorToast,
+}: OrderRowProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
   const hasItems = order.items && order.items.length > 0
-
-  const {
-    printOrderReceipt,
-    ReceiptContent,
-    printError,
-    showPrintErrorToast,
-  } = useOrderReceipt()
 
   // Show error toast with retry option when print error occurs
   useEffect(() => {
@@ -215,7 +238,6 @@ const OrderRow = ({ order }: { order: OrderWithDetails }) => {
           </TableCell>
         </TableRow>
       )}
-      {ReceiptContent}
     </>
   )
 }
