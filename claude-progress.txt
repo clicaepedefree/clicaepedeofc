@@ -1,0 +1,30 @@
+# Claude Code Progress Notes - Clica Pedidos
+# ============================================
+
+## Session: 2026-02-28
+
+### Completed Features
+
+**Feature #1: Database connection established** - PASSING
+- Created `/api/health` endpoint at `src/app/api/health/route.ts`
+- Endpoint executes `SELECT 1` query to verify database connectivity
+- Returns JSON response with:
+  - status: "healthy" or "unhealthy"
+  - database.status: "connected" or "disconnected"
+  - database.responseTime: latency in ms
+  - timestamp and version
+- Added `/api/health(.*)` to public routes in middleware.ts
+- Verified with curl - returns 200 OK with database connected status
+
+### Technical Notes
+- Database: PostgreSQL via Drizzle ORM + postgres-js driver
+- Auth: Clerk middleware protects all routes except public routes list
+- Server: Next.js 15.5.7 with Turbopack on port 3000
+- Package manager: Bun (but npm also works for dev server)
+
+### Current Status
+- 1/97 features passing (1.0%)
+
+### Next Steps
+- Continue with remaining features
+- Focus on infrastructure and core functionality first
