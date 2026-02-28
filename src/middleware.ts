@@ -19,6 +19,20 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 /**
+ * Routes that should only be served from the main domain, not the admin subdomain.
+ * These are public or non-admin routes.
+ *
+ * Routes NOT in this list (admin routes) can be accessed from both domains.
+ */
+const isMainDomainOnlyRoute = createRouteMatcher([
+  '/', // Root page
+  '/login(.*)', // Login pages
+  '/admin-onboarding(.*)', // Onboarding
+  '/unauthorized(.*)', // Unauthorized page
+  '/test-(.*)', // Test/dev pages
+])
+
+/**
  * Detects if the request is coming from the admin subdomain.
  * Handles various formats:
  * - admin.domain.com
@@ -42,7 +56,41 @@ function getSubdomainContext(request: Request): 'admin' | 'public' {
   return detectAdminSubdomain(hostname) ? 'admin' : 'public'
 }
 
+/**
+ * Removes the 'admin.' prefix from a hostname to get the main domain.
+ * @example
+ * getMainDomain('admin.localhost:3000') // 'localhost:3000'
+ * getMainDomain('admin.example.com') // 'example.com'
+ */
+function getMainDomain(hostname: string): string {
+  if (hostname.startsWith('admin.')) {
+    return hostname.slice(6) // Remove 'admin.' prefix
+  }
+  return hostname
+}
+
 export default clerkMiddleware(async (auth, request) => {
+  const hostname = request.headers.get('host') ?? ''
+  const isAdminSubdomain = detectAdminSubdomain(hostname)
+  const url = new URL(request.url)
+
+  // Redirect main-domain-only routes from admin subdomain to main domain
+  // This ensures public/non-admin routes are only served from the main domain
+  if (isAdminSubdomain && isMainDomainOnlyRoute(request)) {
+    const mainDomain = getMainDomain(hostname)
+    // Use request URL's protocol, or default to http for localhost
+    const protocol = hostname.includes('localhost') ? 'http' : 'https'
+    const absoluteRedirectUrl = `${protocol}://${mainDomain}${url.pathname}${url.search}`
+
+    // Create redirect response manually to ensure absolute URL is used
+    return new NextResponse(null, {
+      status: 307,
+      headers: {
+        Location: absoluteRedirectUrl,
+      },
+    })
+  }
+
   if (!isPublicRoute(request)) {
     await auth.protect()
   }
