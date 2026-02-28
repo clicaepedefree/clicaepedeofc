@@ -97,8 +97,21 @@
 - Template follows same pattern as working counter receipts (open-counter.receipt, close-counter.receipt)
 - Code passes lint check without errors
 
+**Feature #60: Include order totals in receipt** - PASSING
+- Added totals section to receipt template (order.receipt lines 38-43):
+  - Line 39: `|Subtotal: |{{subtotal}} |` - Displays subtotal of all items
+  - Lines 40-42: Discount displayed conditionally with negative sign (`-{{discount}}`)
+  - Line 43: `|_TOTAL: |_{{totalPrice}} |` - Final total prominently displayed with underscores
+- Updated TypeScript module (order.ts) with subtotal calculation:
+  - Added `subtotal` to input types (optional field)
+  - Calculates subtotal: uses provided value, or totalPrice + discount, or totalPrice
+  - Uses Decimal.js for precise arithmetic
+- All values formatted with R$ currency symbol via `formatValueToCurrency({ includeCurrencySymbol: true })`
+- No mock data patterns found in receipt feature
+- App compiles and loads correctly (verified via playwright-cli)
+
 ### Current Status
-- 7/97 features passing (7.2%)
+- 8/97 features passing (8.2%)
 
 ### Next Steps
 - Continue with core functionality features
