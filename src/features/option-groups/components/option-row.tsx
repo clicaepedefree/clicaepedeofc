@@ -87,7 +87,7 @@ export const OptionRow = ({
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 sm:grid sm:grid-cols-[auto_auto_1fr_auto_auto_auto] sm:gap-2 sm:items-end',
+        'flex flex-col gap-2 sm:grid sm:grid-cols-[auto_auto_1fr_auto_auto_auto] sm:gap-3 sm:items-end',
         className
       )}
     >
@@ -155,8 +155,8 @@ export const OptionRow = ({
       </Label>
 
       {/* Price and quantity - horizontal on mobile */}
-      <div className="flex gap-2 items-end">
-        <div className="flex-1 sm:w-28">
+      <div className="flex gap-3 items-end">
+        <div className="flex-1 sm:flex-none sm:w-36">
           <CurrencyInput
             label="Preço"
             value={value.price}
@@ -171,7 +171,7 @@ export const OptionRow = ({
             onSetIncluded={() => onChange({ ...value, price: '0' })}
           />
         </div>
-        <Label className="flex-1 sm:w-auto">
+        <Label className="flex-1 sm:flex-none sm:w-24">
           Qtd máx.
           <Input
             type="number"
@@ -180,7 +180,7 @@ export const OptionRow = ({
             onChange={(e) =>
               onChange({ ...value, maxQuantity: Number(e.target.value) || 1 })
             }
-            className="w-full sm:w-20"
+            className="w-full"
             error={error?.maxQuantity}
           />
         </Label>
