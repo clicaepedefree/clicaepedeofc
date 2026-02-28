@@ -6,21 +6,17 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 /**
- * Test endpoint to verify initiateIFoodOAuth server action behavior.
- * This is for testing only - verifies the session creation and return values.
+ * Test endpoint to verify iFood OAuth server action behavior.
+ * Verifies:
+ * - Feature #17: initiateIFoodOAuth creates session with userCode/verifier
+ * - Feature #18: exchangeIFoodAuthCode stores encrypted tokens in session
  */
 export async function GET() {
   try {
     // Use a test store ID (the first store in the database)
     const testStoreId = 1
 
-    // Get session before (if any)
-    const sessionBefore = await db
-      .select()
-      .from(ifoodOAuthSessionsTable)
-      .where(eq(ifoodOAuthSessionsTable.storeId, testStoreId))
-
-    // Get session after - if exists, verify the data
+    // Get session if exists
     const [currentSession] = await db
       .select()
       .from(ifoodOAuthSessionsTable)
@@ -32,6 +28,8 @@ export async function GET() {
         message: 'No session found - server action needs to be called first',
         verification: {
           sessionExists: false,
+          feature17: { passed: false, reason: 'No session exists' },
+          feature18: { passed: false, reason: 'No session exists' },
         },
       })
     }
@@ -41,22 +39,49 @@ export async function GET() {
     const expiresAt = new Date(currentSession.expiresAt)
     const minutesUntilExpiry = (expiresAt.getTime() - now.getTime()) / 1000 / 60
 
-    const verification = {
-      sessionExists: true,
+    // Feature #17 verification: initiateIFoodOAuth
+    const feature17 = {
+      passed: !!(currentSession.userCode && currentSession.authorizationCodeVerifier),
       hasUserCode: !!currentSession.userCode && currentSession.userCode.length > 0,
       hasVerifier: !!currentSession.authorizationCodeVerifier && currentSession.authorizationCodeVerifier.length > 0,
+      userCode: currentSession.userCode,
+      verifierLength: currentSession.authorizationCodeVerifier?.length || 0,
+    }
+
+    // Feature #18 verification: exchangeIFoodAuthCode stores encrypted tokens
+    const hasAccessToken = !!currentSession.accessToken && currentSession.accessToken.length > 0
+    const hasRefreshToken = !!currentSession.refreshToken && currentSession.refreshToken.length > 0
+    const tokensAreEncrypted = hasAccessToken &&
+      currentSession.accessToken.includes(':') && // AES-GCM format: iv:authTag:encrypted
+      currentSession.accessToken.split(':').length === 3
+
+    const feature18 = {
+      passed: hasAccessToken && hasRefreshToken && tokensAreEncrypted,
+      hasAccessToken,
+      hasRefreshToken,
+      tokensAreEncrypted,
+      accessTokenLength: currentSession.accessToken?.length || 0,
+      refreshTokenLength: currentSession.refreshToken?.length || 0,
+      // The tokens should be encrypted in format: iv:authTag:encrypted (3 parts separated by :)
+      accessTokenFormat: hasAccessToken ?
+        `${currentSession.accessToken.split(':').length} parts (expected 3)` : 'N/A',
+    }
+
+    const verification = {
+      sessionExists: true,
+      storeId: currentSession.storeId,
       hasExpiresAt: !!currentSession.expiresAt,
       minutesUntilExpiry: Math.round(minutesUntilExpiry * 10) / 10,
       isExpiryWithin10Minutes: minutesUntilExpiry > 0 && minutesUntilExpiry <= 10,
-      storeId: currentSession.storeId,
-      userCode: currentSession.userCode,
-      // Verifier should exist but we don't expose it
-      verifierLength: currentSession.authorizationCodeVerifier?.length || 0,
+      feature17,
+      feature18,
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Session found and verified',
+      message: feature18.passed
+        ? 'Session found with encrypted tokens (Feature #18 verified)'
+        : 'Session found but tokens not yet stored (Feature #17 only)',
       verification,
     })
   } catch (error) {

@@ -145,35 +145,14 @@ export function IFoodConnectionModal({
       return
     }
 
-    if (!tokens) {
-      toast.error('Sessao expirada. Por favor, tente conectar novamente.')
-      handleOpenChange(false)
-      return
-    }
-
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/integrations/ifood/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storeId,
-          merchantId: selectedMerchantId,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresIn: tokens.expiresIn,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to connect merchant')
-      }
-
-      toast.success('iFood conectado com sucesso!')
+      // TODO: This will be replaced with completeIFoodConnection (feature #20)
+      // which reads tokens from the OAuth session server-side and creates the integration.
+      // For now, show a placeholder message.
+      toast.info('Funcionalidade em desenvolvimento. Selecao de catalogo sera adicionada em breve.')
       handleOpenChange(false)
-      onSuccess()
     } catch (error) {
       console.error('Error connecting merchant:', error)
       toast.error(
