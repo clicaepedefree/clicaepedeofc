@@ -1054,3 +1054,65 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #13, #14, #15)
+
+### Completed Features
+
+**Feature #13: ifood_oauth_sessions table exists with all required columns and correct types** - PASSING
+- Verified via /api/schema-check endpoint which queries information_schema
+- All 8 columns verified:
+  - id: integer (primary key)
+  - store_id: integer, NOT NULL
+  - user_code: text, NOT NULL
+  - authorization_code_verifier: text, NOT NULL
+  - access_token: text, NULLABLE
+  - refresh_token: text, NULLABLE
+  - expires_at: timestamp with time zone, NOT NULL
+  - created_at: timestamp with time zone, NOT NULL
+- Foreign key constraint verified: store_id references stores(id)
+
+**Feature #14: catalogId and catalogName columns exist in ifood_integrations as nullable text** - PASSING
+- Verified via /api/schema-check endpoint:
+  - catalog_id: text, is_nullable: YES
+  - catalog_name: text, is_nullable: YES
+  - merchant_name: text, is_nullable: YES (bonus column)
+- Verified via /api/test-catalog-id endpoint:
+  - Existing integration (storeId: 3) has catalog_id = null, catalog_name = null
+  - Confirms existing records are unaffected by schema change
+- Drizzle schema verified in ifood-integrations.ts
+
+**Feature #15: OAuth session record created in database when initiateIFoodOAuth is called** - PASSING
+- Created /api/test-oauth-session-create endpoint to test database insertion
+- All verification steps passed:
+  - step1_countBefore: 0
+  - step2_sessionInserted: true
+  - step3_countAfter: 1
+  - step4_newRowInserted: true
+  - step5_correctStoreId: true (storeId = 3)
+  - step6_userCodePopulated: true
+  - step7_verifierPopulated: true (verifierLength = 20)
+  - step8_accessTokenNull: true
+  - step9_refreshTokenNull: true
+  - step10_expiresAtSet: true
+  - step10_expiresAtApprox10Min: true
+  - step11_createdAtSet: true
+  - step11_createdAtRecent: true
+- Added endpoint to public routes in middleware.ts
+
+### Technical Notes
+- Schema verification uses information_schema queries via Drizzle ORM
+- Test endpoints clean up after themselves to avoid test data pollution
+- All features are database schema/data verification features
+
+### Current Status
+- 69/102 features passing (67.6%)
+
+### Session Summary
+- Completed 3 features: #13, #14, #15
+- All features verified database schema and data persistence
+- Created test endpoint for OAuth session creation verification
+- Zero console errors, all code quality checks pass
+
+### Next Steps
+- Continue with remaining features in the backlog
