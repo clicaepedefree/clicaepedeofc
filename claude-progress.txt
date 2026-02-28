@@ -88,8 +88,17 @@
 - Exports OrderTemplate for use in printing
 - TypeScript compiles without errors (verified with --skipLibCheck)
 
+**Feature #58: Include order number and timestamp in receipt** - PASSING
+- Verified order receipt template (created in #56) includes all header elements:
+  - Order displayId: `PEDIDO #{{displayId}}` (line 6)
+  - Creation date: `|Data: |{{{createdAt}}} |` with DD/MM/YYYY HH:mm format (line 9)
+  - Store name in header: `|^^{{storeName}}` with large text formatting (lines 1-4)
+- Preprocessing in order.ts formats date correctly using `formatDate(data.createdAt, 'DD/MM/YYYY HH:mm')`
+- Template follows same pattern as working counter receipts (open-counter.receipt, close-counter.receipt)
+- Code passes lint check without errors
+
 ### Current Status
-- 6/97 features passing (6.2%)
+- 7/97 features passing (7.2%)
 
 ### Next Steps
 - Continue with core functionality features
