@@ -164,8 +164,25 @@
   - `?scenario=none` - no Cliente section (receipt shorter)
 - No mock data patterns found in receipt feature
 
+**Feature #63: Trigger order print after successful order placement** - PASSING
+- Modified `src/features/order/api.ts` to generate receipt after order creation:
+  - Fetches store name from database for receipt header
+  - Transforms order items to receipt format (itemName, quantity, unitPrice, totalPrice, options, comment)
+  - Transforms order payments to receipt format (method, value, changeFor)
+  - Calls `OrderTemplate.render()` to generate SVG receipt
+  - Returns receipt SVG along with order data
+- Modified `src/features/pos/components/pos-payments/pos-payments.tsx`:
+  - Uses `useOrderReceipt` hook (wrapper around `useReceipt` with error handling)
+  - After `createOrder` succeeds, calls `printOrderReceipt(newOrder.receipt, newOrder.displayId)`
+  - Renders `ReceiptContent` in component JSX for print trigger
+  - Error handling with retry option via toast notification
+- Uses same printer configuration as counter receipts (via `useReceipt` hook)
+- Graceful error handling - print failures don't block order flow
+- No mock data patterns in order, pos, or receipt features
+- Implementation verified via code review (commit 58ca7a7)
+
 ### Current Status
-- 11/97 features passing (11.3%)
+- 13/102 features passing (12.7%)
 
 ### Next Steps
 - Continue with core functionality features
