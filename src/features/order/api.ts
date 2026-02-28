@@ -1,6 +1,7 @@
 'use server'
 
 import {
+  checkStockAvailability,
   createOrderItemOnDb,
   createOrderItemOptionsOnDb,
   createOrderOnDb,
@@ -13,6 +14,7 @@ import { OrderTemplate } from '@/features/receipt/templates/order'
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 import { ordersTable, storesTable } from '@/services/db/schema'
+import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { desc, eq } from 'drizzle-orm'
 
@@ -20,6 +22,21 @@ export const createOrder = async (newOrder: NewOrder) => {
   await validateUserPermissionsForStore(newOrder.storeId, 'admin')
 
   return await db.transaction(async tx => {
+    // Check stock availability for all items before creating order
+    const itemsToCheck = newOrder.items.map(item => ({
+      itemId: item.itemId,
+      quantity: Number(item.quantity),
+    }))
+
+    const outOfStockItems = await checkStockAvailability({
+      items: itemsToCheck,
+      dbSession: tx,
+    })
+
+    if (outOfStockItems.length > 0) {
+      throw new OutOfStockError(outOfStockItems)
+    }
+
     const nextOrderDisplayId = await getNextOrderDisplayIdForStore({
       storeId: newOrder.storeId,
       dbSession: tx,
@@ -146,6 +163,24 @@ export const listOrders = async (storeId: number) => {
  * Generates a receipt for an existing order.
  * Used for reprinting order receipts.
  */
+/**
+ * Validates stock availability for cart items before payment.
+ * Returns out-of-stock items if any, or empty array if all items are available.
+ */
+export const validateCartStock = async (params: {
+  storeId: number
+  items: { itemId: number; quantity: number }[]
+}) => {
+  await validateUserPermissionsForStore(params.storeId, 'admin')
+
+  const outOfStockItems = await checkStockAvailability({
+    items: params.items,
+    dbSession: db,
+  })
+
+  return outOfStockItems
+}
+
 export const generateOrderReceipt = async (orderId: number) => {
   // Fetch order with all related data
   const order = await db.query.ordersTable.findFirst({

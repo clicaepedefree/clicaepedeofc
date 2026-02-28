@@ -8,10 +8,12 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-persistence(.*)',
   '/api/test-order-receipt(.*)',
   '/api/test-order-reprint(.*)',
+  '/api/test-out-of-stock(.*)',
   '/api/test-cropper(.*)',
   '/api/schema-check(.*)',
   '/api/apply-migration(.*)',
   '/unauthorized(.*)',
+  '/test-cropper-interactive(.*)',
 ])
 
 /**
