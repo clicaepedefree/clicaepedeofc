@@ -181,8 +181,43 @@
 - No mock data patterns in order, pos, or receipt features
 - Implementation verified via code review (commit 58ca7a7)
 
+**Feature #65: Support order reprint functionality** - PASSING
+- Added generateOrderReceipt server action in src/features/order/api.ts
+- Fetches order with items, options, and payments from database
+- Transforms data to receipt format and generates SVG using OrderTemplate
+- Updated src/app/(admin)/invoices/page.tsx with:
+  - "Acoes" column header in table
+  - "Imprimir" button with Printer icon on each order row
+  - Print functionality using useOrderReceipt hook
+  - Success/error toast notifications
+- Added test endpoint /api/test-order-reprint for verification
+- Verified via curl - returns valid SVG receipt for existing orders
+- No mock data patterns found
+
+**Feature #66: Add image cropper component with square aspect ratio** - PASSING
+- Component already exists at src/shared/image-cropper-modal.tsx
+- Uses native HTML5 Canvas (no external library needed)
+- Default aspect ratio of 1:1 (square) via aspectRatio prop
+- Accepts imageFile: File | null as prop
+- Returns cropped file via onCropComplete: (croppedFile: File) => void
+- Integrated with SingleFileUploader via enableCropper and cropperAspectRatio props
+- Full features: drag, zoom (mouse wheel, pinch, slider), reset, corner handles
+
+**Feature #67: Allow drag to reposition image within crop area** - PASSING
+- Drag/pan functionality implemented in ImageCropperModal:
+  - Mouse handlers: handleMouseDown, handleMouseMove, handleMouseUp
+  - Touch handlers: handleTouchStart, handleTouchMove, handleTouchEnd
+- Visual feedback: cursor changes from cursor-move to cursor-grabbing during drag
+- Touch support includes pinch-to-zoom for mobile devices
+- State management via position, isDragging, dragStart states
+
 ### Current Status
-- 13/102 features passing (12.7%)
+- 20/102 features passing (19.6%)
+
+### Session Summary
+- Completed 3 features: #65, #66, #67
+- Feature #65: Implemented order reprint functionality from scratch
+- Features #66 and #67: Verified existing implementation meets all requirements
 
 ### Next Steps
 - Continue with core functionality features
