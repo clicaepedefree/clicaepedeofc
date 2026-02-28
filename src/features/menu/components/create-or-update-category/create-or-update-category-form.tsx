@@ -130,6 +130,8 @@ export const CreateOrUpdateCategoryForm = ({
               }}
               className={cn('row-span-full')}
               error={field.state.meta.errors[0]?.message}
+              enableCropper={true}
+              cropperAspectRatio={1}
             />
           )}
         </form.Field>

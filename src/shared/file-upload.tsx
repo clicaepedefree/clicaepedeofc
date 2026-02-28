@@ -1,6 +1,7 @@
 'use client'
 import { FilesManagerRouterService } from '@/services/files-manager'
 import { Button } from '@/shared/button'
+import { ImageCropperModal } from '@/shared/image-cropper-modal'
 import { cn } from '@/shared/lib/utils'
 import { Progress } from '@/shared/progress'
 import { LargeText } from '@/shared/typography/large-text'
@@ -29,6 +30,8 @@ interface SingleFileUploadedProps<Target extends UploadTarget> {
   onUploadBegin?(files?: File[]): void
   className?: string
   error?: string
+  enableCropper?: boolean
+  cropperAspectRatio?: number
 }
 
 export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'>({
@@ -42,9 +45,13 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
   onUploadBegin,
   className,
   error,
+  enableCropper = false,
+  cropperAspectRatio = 1,
 }: SingleFileUploadedProps<Target> & { storeId: number }) => {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isImageLoaded, setIsImageLoaded] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [isCropperOpen, setIsCropperOpen] = useState(false)
 
   const { startUpload, routeConfig, isUploading } = useUploadThing(target, {
     onBeforeUploadBegin: files => {
@@ -56,11 +63,34 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
     onClientUploadComplete: ([updatedFile]) => onFileUploaded(updatedFile),
   })
 
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop: files => {
+  const handleFilesSelected = (files: File[]) => {
+    if (files.length === 0) return
+
+    const file = files[0]
+    if (enableCropper && file.type.startsWith('image/')) {
+      // Open cropper modal for images
+      setPendingFile(file)
+      setIsCropperOpen(true)
+    } else {
+      // Upload directly without cropping
       // @ts-ignore
       startUpload(files, { storeId, tag: fileTag })
-    },
+    }
+  }
+
+  const handleCropComplete = (croppedFile: File) => {
+    setPendingFile(null)
+    // @ts-ignore
+    startUpload([croppedFile], { storeId, tag: fileTag })
+  }
+
+  const handleCropCancel = () => {
+    setPendingFile(null)
+    setIsCropperOpen(false)
+  }
+
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop: handleFilesSelected,
     accept: generateClientDropzoneAccept(generatePermittedFileTypes(routeConfig).fileTypes),
     multiple: false,
   })
@@ -139,6 +169,16 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
         </>
       )}
       <input {...getInputProps()} disabled={isUploading} />
+      {enableCropper && (
+        <ImageCropperModal
+          open={isCropperOpen}
+          onOpenChange={setIsCropperOpen}
+          imageFile={pendingFile}
+          aspectRatio={cropperAspectRatio}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
+      )}
     </div>
   )
 }

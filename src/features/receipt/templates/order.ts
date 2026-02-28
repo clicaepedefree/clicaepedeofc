@@ -25,36 +25,10 @@ export type OrderTemplatePayment = {
   method: string
   value: string | number
   changeFor?: string | number | null
-}
-
-// Internal type for preprocessed/formatted template data
-type FormattedOrderTemplateInput = {
-  storeName?: string | null
-  displayId: string
-  createdAt: string
-  orderType: string
-  posCounterName?: string | null
-  items: Array<{
-    itemName: string
-    quantity: string | number
-    unitPrice: string
-    totalPrice: string
-    options?: Array<{ optionName: string; optionQuantity: string | number; optionPrice?: string }>
-    comment?: string | null
-  }>
-  subtotal: string
-  discount?: string
-  totalPrice: string
-  payments: Array<{
-    paymentMethod: string
-    paymentValue: string
-    changeFor?: string
-    changeValue?: string
-  }>
-  hasCustomerInfo?: boolean
-  customerName?: string | null
-  customerPhone?: string | null
-  customerAddress?: string | null
+  // Formatted fields for template rendering (populated by preprocessing)
+  paymentMethod?: string
+  paymentValue?: string
+  changeValue?: string
 }
 
 export type OrderTemplateInput = {
@@ -162,6 +136,8 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       }
 
       return {
+        method: payment.method,
+        value: payment.value,
         paymentMethod: getPaymentMethodName(payment.method),
         paymentValue: formattedPaymentValue,
         changeFor: formattedChangeFor,
@@ -182,6 +158,6 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       items: formattedItems,
       payments: formattedPayments,
       hasCustomerInfo,
-    } as unknown as OrderTemplateInput
+    }
   },
 })
