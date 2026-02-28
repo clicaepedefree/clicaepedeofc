@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/test-out-of-stock(.*)',
   '/api/test-cropper(.*)',
   '/api/test-ifood-oauth(.*)',
+  '/api/test-ifood-connection-persistence(.*)',
   '/api/test-auth-status(.*)',
   '/api/test-catalog-id(.*)',
   '/api/test-oauth-session-create(.*)',
@@ -20,6 +21,7 @@ const isPublicRoute = createRouteMatcher([
   '/unauthorized(.*)',
   '/test-cropper-interactive(.*)',
   '/test-ifood-modal(.*)',
+  '/test-merchant-selection(.*)',
 ])
 
 /**

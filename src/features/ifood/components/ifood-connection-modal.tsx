@@ -57,6 +57,7 @@ export function IFoodConnectionModal({
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null)
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
   const [selectedCatalog, setSelectedCatalog] = useState<Catalog | null>(null)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
 
   const resetState = useCallback(() => {
     setStep('userCode')
@@ -69,6 +70,7 @@ export function IFoodConnectionModal({
     setSelectedMerchant(null)
     setCatalogs([])
     setSelectedCatalog(null)
+    setConnectionError(null)
   }, [])
 
   const handleOpenChange = (newOpen: boolean) => {

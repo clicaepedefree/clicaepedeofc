@@ -99,6 +99,16 @@ export function IFoodConnectionCard() {
 
           {isConnected && connection && (
             <div className="mt-2 space-y-2 text-sm text-gray-600">
+              {connection.merchantName && (
+                <p>
+                  <b>Loja:</b> {connection.merchantName}
+                </p>
+              )}
+              {connection.catalogName && (
+                <p>
+                  <b>Cardápio:</b> {connection.catalogName}
+                </p>
+              )}
               <p>
                 <b>Merchant ID:</b> {connection.merchantId}
               </p>
