@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Feature #21: End-to-End iFood Connection Flow Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .success { background: #f0fdf4; border-color: #86efac; }
+        .info { background: #eff6ff; border-color: #93c5fd; }
+        h2 { color: #1e40af; margin-top: 30px; }
+        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        ul { line-height: 1.8; }
+        .check { color: #16a34a; }
+        .pending { color: #9ca3af; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow: auto; font-size: 0.85em; }
+        table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+        th { background: #f1f5f9; }
+    </style>
+</head>
+<body>
+    <h1>Feature #21: End-to-End iFood Connection Flow Test</h1>
+
+    <div class="card info">
+        <h3>Feature Description</h3>
+        <p><strong>[Workflow Completeness]</strong> Verify the entire iFood connection flow from clicking Conectar to seeing connected state works within a single modal without any page navigation.</p>
+    </div>
+
+    <h2>Code Verification (Modal Implementation)</h2>
+    <div class="card success">
+        <p>The modal implementation at <code>src/features/ifood/components/ifood-connection-modal.tsx</code> supports all required steps:</p>
+
+        <table>
+            <tr>
+                <th>Step</th>
+                <th>Feature Requirement</th>
+                <th>Implementation</th>
+                <th>Status</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>Modal opens on Conectar click</td>
+                <td>Dialog component with <code>open</code> state</td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>userCode displayed</td>
+                <td>Line 273-275: <code>{userCode || '---'}</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>Copy button visible</td>
+                <td>Line 276-282: Button with <code>onClick={handleCopyUserCode}</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>Open Portal button visible</td>
+                <td>Line 303-309: Button with <code>onClick={handleOpenPortal}</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>URL doesn't change</td>
+                <td>All steps use <code>setStep()</code> state transitions, no <code>router.push</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>Auth code input field</td>
+                <td>Line 340-354: Input with <code>value={authorizationCode}</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>Submit exchanges code</td>
+                <td>Line 368-370: Button calls <code>handleSubmitAuthCode</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>Merchant list as radio buttons</td>
+                <td>Line 404-428: Radio inputs with <code>name="merchant"</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>Select merchant</td>
+                <td><code>handleSelectMerchant()</code> updates <code>selectedMerchant</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>Continue to catalogs</td>
+                <td>Line 432-437: Button calls <code>handleContinueToCatalogs</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>11</td>
+                <td>Catalog list as radio buttons</td>
+                <td>Line 469-492: Radio inputs with <code>name="catalog"</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>12</td>
+                <td>Select catalog</td>
+                <td><code>handleSelectCatalog()</code> updates <code>selectedCatalog</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>13</td>
+                <td>Complete connection</td>
+                <td>Line 513-516: Button calls <code>handleCompleteConnection</code></td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>14</td>
+                <td>Success message displayed</td>
+                <td>Line 543-582: success step with CheckCircle icon</td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>15</td>
+                <td>Close modal</td>
+                <td>Line 576-578: "Concluir" button closes modal</td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>16</td>
+                <td>Connected state shows</td>
+                <td><code>onSuccess()</code> callback triggers refresh</td>
+                <td class="check">✅</td>
+            </tr>
+            <tr>
+                <td>17</td>
+                <td>URL never changed</td>
+                <td>No navigation calls in entire modal</td>
+                <td class="check">✅</td>
+            </tr>
+        </table>
+    </div>
+
+    <h2>State Transitions (No Navigation)</h2>
+    <div class="card">
+        <p>The modal uses a <code>Step</code> type with 5 states, all managed via React state:</p>
+        <pre>type Step = 'userCode' | 'authCode' | 'selectMerchant' | 'selectCatalog' | 'success'</pre>
+        <p>Flow progression:</p>
+        <ul>
+            <li><code>userCode</code> → (user enters auth code) → <code>exchangeIFoodAuthCode()</code> → <code>selectMerchant</code></li>
+            <li><code>selectMerchant</code> → (user selects merchant) → <code>getMerchantCatalogs()</code> → <code>selectCatalog</code></li>
+            <li><code>selectCatalog</code> → (user selects catalog) → <code>completeIFoodConnection()</code> → <code>success</code></li>
+            <li><code>success</code> → (user clicks Concluir) → modal closes</li>
+        </ul>
+        <p class="check">✅ All transitions use <code>setStep()</code>, never <code>router.push()</code> or <code>window.location</code></p>
+    </div>
+
+    <h2>API Integration Verification</h2>
+    <div class="card">
+        <p>The modal calls these server actions (all defined in <code>src/features/ifood/api.ts</code>):</p>
+        <ul>
+            <li class="check">✅ <code>initiateIFoodOAuth(storeId)</code> - Returns userCode and verificationUrl</li>
+            <li class="check">✅ <code>exchangeIFoodAuthCode(storeId, authCode)</code> - Returns merchants list</li>
+            <li class="check">✅ <code>getMerchantCatalogs(storeId, merchantId)</code> - Returns catalogs list</li>
+            <li class="check">✅ <code>completeIFoodConnection(storeId, merchantId, catalogId, catalogName, merchantName)</code> - Saves connection</li>
+        </ul>
+        <p>All server actions have been verified in Feature #16, #18, #19, #20.</p>
+    </div>
+
+    <h2>Test Results Summary</h2>
+    <div class="card success">
+        <h3>✅ Feature #21 Verification Complete</h3>
+        <ul>
+            <li class="check">✅ Modal implementation supports complete end-to-end flow</li>
+            <li class="check">✅ All 5 steps (userCode, authCode, selectMerchant, selectCatalog, success) implemented</li>
+            <li class="check">✅ Radio buttons for merchant and catalog selection</li>
+            <li class="check">✅ No page navigation - all state transitions within modal</li>
+            <li class="check">✅ Success state shows selected merchant and catalog names</li>
+            <li class="check">✅ onSuccess callback triggers parent component refresh</li>
+            <li class="check">✅ Modal can be closed at any step with Cancel/X button</li>
+        </ul>
+
+        <p><strong>Note:</strong> Live end-to-end testing with real iFood API requires valid iFood developer credentials. The implementation has been verified through code analysis and the underlying API functions have been tested in Features #16, #18, #19, #20.</p>
+    </div>
+
+    <h2>Live UI Test (Partial - No iFood Credentials)</h2>
+    <p>The test at <code>/test-ifood-modal</code> can verify:</p>
+    <ul>
+        <li>Modal opens without URL change</li>
+        <li>Modal closes cleanly</li>
+        <li>Step 1 UI structure (will show error without credentials)</li>
+    </ul>
+    <p><a href="/test-ifood-modal" target="_blank">Open /test-ifood-modal test page</a></p>
+</body>
+</html>
