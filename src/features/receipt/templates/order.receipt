@@ -1,0 +1,78 @@
+{{#storeName}}
+{w:auto}
+|^^{{storeName}}
+{{/storeName}}
+-
+PEDIDO #{{displayId}}
+-
+{w:*,*}
+|Data: |{{{createdAt}}} |
+|Tipo: |{{orderType}} |
+{{#posCounterName}}
+|Caixa: |{{posCounterName}} |
+{{/posCounterName}}
+
+{w:auto}
+_Itens
+-
+{{#items}}
+{w:*,*}
+|{{itemName}} |
+{w:12,*,*}
+|  {{quantity}} x {{unitPrice}} |{{totalPrice}} |
+{{#options}}
+{w:auto}
+|    + {{optionName}} ({{optionQuantity}}x) |
+{{/options}}
+{{#comment}}
+{w:auto}
+|    Obs: {{comment}} |
+{{/comment}}
+{{/items}}
+{{^items}}
+{w:auto}
+| Nenhum item |
+{{/items}}
+-
+
+{w:*,*}
+{{#discount}}
+|Desconto: |-{{discount}} |
+{{/discount}}
+|_TOTAL: |_{{totalPrice}} |
+-
+
+{w:auto}
+_Pagamentos
+-
+{{#payments}}
+{w:*,*}
+|{{paymentMethod}} |{{paymentValue}} |
+{{#changeFor}}
+|  Troco para: |{{changeFor}} |
+|  Troco: |{{changeValue}} |
+{{/changeFor}}
+{{/payments}}
+{{^payments}}
+{w:auto}
+| Pagamento pendente |
+{{/payments}}
+-
+{{#customerName}}
+
+{w:auto}
+_Cliente
+-
+{w:*,*}
+|{{customerName}} |
+{{#customerPhone}}
+|Tel: {{customerPhone}} |
+{{/customerPhone}}
+{{#customerAddress}}
+|{{customerAddress}} |
+{{/customerAddress}}
+-
+{{/customerName}}
+
+{w:auto}
+|Obrigado pela preferencia!
