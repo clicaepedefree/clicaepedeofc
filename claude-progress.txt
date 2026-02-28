@@ -308,3 +308,45 @@
 ### Next Steps
 - Continue with remaining features
 - Check for any blocked features due to dependencies
+
+## Session: 2026-02-28 (Agent Batch #98, #99, #100)
+
+### Completed Features
+
+**Feature #98: Update Agent Instructions for Code Quality Standards** - PASSING
+- Added "Code Quality Standards" section to CLAUDE.md with three rules:
+  1. Rule 1: No Unused Types - only define types that are actually used
+  2. Rule 2: Reuse Existing Types - search codebase before creating new types
+  3. Rule 3: No 'as unknown as <Type>' assertions - use proper type narrowing
+- Added validation checklist for coding agents
+- Updated .autoforge/prompts/coding_prompt.md with mandatory standards section
+- Updated .autoforge/prompts/testing_prompt.md with validation checklist
+
+**Feature #99: Fix Unused Types in Codebase** - PASSING
+- Audited all feature type files for unused type definitions
+- Removed unused types:
+  - store/types.ts: `Store` (alias to SelectStore, never imported)
+  - order/types.ts: `Order`, `OrderPayment` (aliases never imported)
+  - option-groups/types.ts: `OptionGroup`, `NewItemOfferingOptionGroup`
+  - fiscal/types.ts: `NewStoreFiscalConfig`, `NewServiceInvoice`, `StoreAutoEmissionPaymentMethod`, `NewStoreAutoEmissionPaymentMethod`, `FiscalConfigStatus`, `ServiceInvoiceStatus`, `ServiceInvoiceType`
+- Cleaned up unused imports in type files
+
+**Feature #100: Fix Duplicate Types - Consolidate to Reuse Existing** - PASSING
+- Audited codebase for duplicate or redundant type definitions
+- Removed duplicate types:
+  - pos/types.ts: `CartPaymentMethod` (duplicate of `PaymentMethod` from order/types, also unused)
+  - pos/components/pos-payments/payments-list.tsx: removed unused `CartPaymentMethod` import
+- Analyzed and intentionally kept:
+  - Simple aliases (Category = SelectCategory, etc.) serve as feature-level APIs
+  - CartPayment = NewOrderPayment provides semantic context
+
+### Technical Notes
+- Code quality standards documented in versioned CLAUDE.md
+- Agent prompt files (.autoforge/prompts/) updated but not versioned (gitignored)
+- Build error in check-schema.ts is pre-existing and unrelated to changes
+
+### Current Status
+- 26/102 features passing (25.5%)
+
+### Next Steps
+- Continue with remaining features in the backlog
