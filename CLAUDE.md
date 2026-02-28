@@ -253,12 +253,26 @@ const UserProfileSchema = z.object({ id: z.string(), name: z.string() })
 const data = UserProfileSchema.parse(response.data)
 ```
 
-### Validation Checklist
+### Validation Checklist (MANDATORY)
 
-Before marking any feature as passing, validate:
+⚠️ **Before marking ANY feature as passing, run these validation commands:**
 
-1. **No unused types:** Run `grep -r "export type\|export interface" src/features/<feature>/` and verify each type is imported elsewhere
-2. **No duplicate types:** Search for existing types before defining new ones with `grep -r "type.*<TypeName>" src/`
-3. **No double casting:** Run `grep -r "as unknown as" src/` - any hits must be fixed
+```bash
+# 1. Check for 'as unknown as' pattern (must return 0 results)
+grep -r "as unknown as" src/
 
-**Code with `as unknown as` patterns should NOT be marked as passing until fixed.**
+# 2. Verify TypeScript compiles without errors in src/
+npx tsc --noEmit 2>&1 | grep -E "^src/" | head -20
+
+# 3. Verify no unused types in modified files
+grep -r "export type\|export interface" src/features/<feature>/
+# Then verify each type is imported elsewhere
+```
+
+**Validation Requirements:**
+1. **No unused types:** Each exported type must be imported somewhere
+2. **No duplicate types:** Search existing types before defining new ones
+3. **No double casting:** `grep -r "as unknown as" src/` must return 0 results
+4. **TypeScript compiles:** No errors in src/ files
+
+**Code that violates ANY of these rules should NOT be marked as passing until fixed.**

@@ -817,3 +817,39 @@
 - Completed 3 features: #90, #92, #93
 - All features related to subdomain/domain routing configuration
 - Zero console errors across all tests
+
+## Session: 2026-02-28 (Agent Batch #91)
+
+### Completed Features
+
+**Feature #91: Handle authentication session across subdomains** - PASSING
+- Implemented cross-subdomain authentication handling in middleware
+- Key changes to `src/middleware.ts`:
+  - Added `buildMainDomainSignInUrl()` to construct login URLs with return URL
+  - On admin subdomain, use `auth()` manually instead of `auth.protect()` to avoid redirect loop
+  - If unauthenticated on admin subdomain, redirect to main domain `/login` with `redirect_url` parameter
+  - Use HTML-based redirects (meta refresh + JavaScript) to ensure cross-subdomain redirects work correctly
+  - Main-domain-only routes (`/login`, `/admin-onboarding`, etc.) redirect from admin subdomain to main domain
+- Created `/api/test-auth-status` endpoint for testing auth status across subdomains
+- Verified redirect flow:
+  - `admin.localhost:3000/dashboard` → `localhost:3000/login?redirect_url=http%3A%2F%2Fadmin.localhost%3A3000%2Fdashboard`
+  - After login, user is redirected back to the admin subdomain
+- Logout works correctly: `afterSignOutUrl: '/login'` redirects to main domain via middleware
+- Session persistence handled by Clerk's cookie configuration (documented in README)
+
+### Technical Notes
+- HTML redirects used instead of HTTP 307 to avoid Next.js normalizing Location headers
+- Return URL built using `hostname` from headers (not `request.url`) to preserve subdomain
+- For production, Clerk Dashboard must be configured with cookie domain `.yourdomain.com` (leading dot)
+
+### Implementation Summary
+1. **Redirect loop fixed**: Previously, accessing admin subdomain caused infinite redirects because Clerk would redirect to `/login` on the same subdomain
+2. **Cross-subdomain redirect**: Unauthenticated requests to admin subdomain now properly redirect to main domain login
+3. **Return URL preserved**: After login, user is redirected back to their original destination on admin subdomain
+4. **Logout flow**: Logout on admin subdomain correctly redirects through main domain
+
+### Current Status
+- 46/102 features passing (45.1%)
+
+### Next Steps
+- Continue with remaining features in the backlog
