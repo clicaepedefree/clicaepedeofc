@@ -1116,3 +1116,47 @@ Feature #91 marked as PASSING - Cross-subdomain authentication working correctly
 
 ### Next Steps
 - Continue with remaining features in the backlog
+
+## Session: 2026-02-28 (Agent Batch #33, #34, #35)
+
+### Completed Features
+
+**Feature #33: Old /api/integrations/ifood/exchange-token API route returns 404** - PASSING
+- Verified file src/app/api/integrations/ifood/exchange-token/route.ts does NOT exist
+- POST request to /api/integrations/ifood/exchange-token returns 404 (Not Found)
+- No "exchange-token" references found in src/ directory
+- Route was properly deleted as part of the OAuth refactor
+
+**Feature #34: Old /api/integrations/ifood/connect API route returns 404** - PASSING
+- Verified file src/app/api/integrations/ifood/connect/route.ts does NOT exist
+- POST request to /api/integrations/ifood/connect returns 404 (Not Found)
+- No "ifood/connect" references found in src/ directory
+- iFood API directory only contains /callback route
+
+**Feature #35: Submit button disabled during authorization code exchange to prevent double submission** - PASSING
+- Verified in ifood-connection-modal.tsx:
+  - Line 348: `<Button type="submit" disabled={isLoading}>` - Button disabled during loading
+  - Line 349: Shows "Validando..." loading text
+  - Line 123: `setIsLoading(true)` before API call
+  - Line 145: `setIsLoading(false)` in finally block
+  - Line 330: Input field also disabled during loading
+- Implementation correctly prevents double submission:
+  - Button becomes disabled immediately when clicked
+  - Only ONE exchangeIFoodCode request possible
+  - Button returns to normal after completion or error
+
+### Technical Notes
+- Features #33 and #34 are verification features - confirming deprecated routes were removed
+- Feature #35 was code verification - the implementation was already correct
+- All features related to iFood OAuth security improvements
+
+### Current Status
+- 74/102 features passing (72.5%)
+
+### Session Summary
+- Completed 3 features: #33, #34, #35
+- Zero code changes needed - all verification features
+- Code quality checks pass (no 'as unknown as', TypeScript OK)
+
+### Next Steps
+- Continue with remaining features in the backlog
