@@ -147,8 +147,25 @@
 - No mock data patterns found in receipt feature
 - No console errors
 
+**Feature #62: Include customer information in receipt when provided** - PASSING
+- Updated order receipt template (order.receipt) to use `{{#hasCustomerInfo}}` wrapper
+- Added `hasCustomerInfo` computed field in TypeScript (order.ts) that checks if ANY of:
+  - customerName, customerPhone, or customerAddress is provided
+- Customer section now shows when any customer info exists (not just customerName)
+- Each field conditionally displayed:
+  - customerName: `|{{customerName}} |`
+  - customerPhone: `|Tel: {{customerPhone}} |`
+  - customerAddress: `|{{customerAddress}} |`
+- Customer section completely hidden when no customer info provided
+- Tested with multiple scenarios via test endpoint:
+  - `?scenario=full` - all fields display
+  - `?scenario=phone-only` - shows Cliente section with only phone
+  - `?scenario=address-only` - shows Cliente section with only address
+  - `?scenario=none` - no Cliente section (receipt shorter)
+- No mock data patterns found in receipt feature
+
 ### Current Status
-- 10/97 features passing (10.3%)
+- 11/97 features passing (11.3%)
 
 ### Next Steps
 - Continue with core functionality features
