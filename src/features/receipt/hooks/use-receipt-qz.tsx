@@ -1,6 +1,6 @@
 'use client'
 
-import { usePrintToQZTray } from '@/features/qz-tray/hooks/use-qz-print'
+import { usePrintToQZTray } from '@/features/qz-tray/hooks/use-print-to-qz-tray'
 import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { useReceipt } from './use-receipt'

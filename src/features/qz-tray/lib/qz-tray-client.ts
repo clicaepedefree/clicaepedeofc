@@ -81,19 +81,8 @@ class QzTrayClient {
   private async configureSigning(): Promise<void> {
     if (!this.qz || this.signingConfigured) return
 
-    // Check if signing is configured on the server
-    const signingAvailable = await isSigningConfigured()
-
-    if (!signingAvailable) {
-      console.log(
-        '[QzTrayClient] Signing not configured. QZ Tray will show confirmation dialogs. ' +
-          'To enable silent printing, generate certificates via QZ Tray > Advanced > Site Manager.'
-      )
-      this.signingConfigured = true // Mark as configured (even though disabled) to avoid retry
-      return
-    }
-
-    // Set certificate promise - fetches the public certificate
+    // ALWAYS set up certificate promise - this is required even for unsigned mode
+    // The certificate is public and can always be served
     this.qz.security.setCertificatePromise(resolve => {
       fetch('/qz-tray/certificate.txt', { cache: 'no-store' })
         .then(response => {
@@ -109,6 +98,7 @@ class QzTrayClient {
         })
         .then(cert => {
           if (cert) resolve(cert)
+          else resolve('') // Ensure we always resolve
         })
         .catch(error => {
           console.warn('[QzTrayClient] Failed to load certificate:', error)
@@ -116,27 +106,56 @@ class QzTrayClient {
         })
     })
 
-    // Set signature promise - calls server action to sign with private key
+    // Check if signing is configured on the server (requires private key)
+    const signingAvailable = await isSigningConfigured()
+
+    // Set signature algorithm to match our server-side signing (SHA512)
+    if (signingAvailable) {
+      this.qz.security.setSignatureAlgorithm('SHA512')
+    }
+
+    // ALWAYS set up signature promise to handle both cases:
+    // - If private key available: sign the request for silent printing
+    // - If no private key: resolve with empty string (QZ Tray will show permission dialog)
     this.qz.security.setSignaturePromise(toSign => {
       return (resolve, reject) => {
+        if (!signingAvailable) {
+          // No private key - resolve with empty signature
+          // This tells QZ Tray that signing is not available
+          console.log('[QzTrayClient] No private key, skipping signature')
+          resolve('')
+          return
+        }
+
+        console.log('[QzTrayClient] Signing request with SHA512...')
         signQzMessage(toSign)
           .then(signature => {
             if (signature) {
+              console.log('[QzTrayClient] Signature generated successfully')
               resolve(signature)
             } else {
-              // Signing returned null - not configured
-              reject(new Error('Signing not configured'))
+              // Signing returned null - resolve with empty (don't reject)
+              console.warn('[QzTrayClient] Signing returned null, using empty signature')
+              resolve('')
             }
           })
           .catch(error => {
             console.warn('[QzTrayClient] Signing failed:', error)
-            reject(error)
+            // Resolve with empty instead of rejecting to allow fallback to dialog
+            resolve('')
           })
       }
     })
 
     this.signingConfigured = true
-    console.log('[QzTrayClient] Signing configured for silent printing')
+    if (signingAvailable) {
+      console.log('[QzTrayClient] Full signing configured for silent printing')
+    } else {
+      console.log(
+        '[QzTrayClient] Certificate configured. No private key available - ' +
+          'QZ Tray will show confirmation dialogs for each print.'
+      )
+    }
   }
 
   /**
@@ -194,14 +213,21 @@ class QzTrayClient {
       throw new Error('Not connected to QZ Tray')
     }
 
-    const result = await this.qz.printers.find()
+    try {
+      const result = await this.qz.printers.find()
 
-    // find() returns a single string if one printer, array if multiple
-    if (typeof result === 'string') {
-      return [result]
+      // find() returns a single string if one printer, array if multiple
+      if (typeof result === 'string') {
+        return [result]
+      }
+
+      return result
+    } catch (error) {
+      // Connection may be in transitional state (closing/closed)
+      // This is expected during disconnect - return empty array
+      console.log('[QzTrayClient] getPrinters failed (connection may be closing):', error)
+      return []
     }
-
-    return result
   }
 
   /**
@@ -236,13 +262,19 @@ class QzTrayClient {
   }
 
   /**
-   * Print an image (SVG, PNG, etc.)
-   * Used for receipt printing since receipts are SVG-based
+   * Print an image (PNG, JPG, etc.)
+   * Used for receipt printing - receives PNG base64 data
    */
   async printImage(printerName: string, imageData: string): Promise<void> {
     if (!this.qz || !this.isConnected()) {
       throw new Error('Not connected to QZ Tray')
     }
+
+    console.log('[QzTrayClient] printImage called', {
+      printerName,
+      imageDataLength: imageData?.length ?? 0,
+      imageDataPreview: imageData?.substring(0, 50) + '...',
+    })
 
     const config: PrinterConfig = this.qz.configs.create(printerName, {
       scaleContent: true,
@@ -258,6 +290,7 @@ class QzTrayClient {
     ]
 
     await this.qz.print(config, data)
+    console.log('[QzTrayClient] printImage completed successfully')
   }
 
   /**
@@ -282,6 +315,12 @@ class QzTrayClient {
       throw new Error('Not connected to QZ Tray')
     }
 
+    console.log('[QzTrayClient] printHtml called', {
+      printerName,
+      htmlLength: html?.length ?? 0,
+      htmlPreview: html?.substring(0, 100) + '...',
+    })
+
     const config: PrinterConfig = this.qz.configs.create(printerName, {
       scaleContent: true,
     })
@@ -296,6 +335,7 @@ class QzTrayClient {
     ]
 
     await this.qz.print(config, data)
+    console.log('[QzTrayClient] printHtml completed successfully')
   }
 
   /**

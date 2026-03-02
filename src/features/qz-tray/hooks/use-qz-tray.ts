@@ -1,5 +1,6 @@
 'use client'
 
+import { OrderTemplate, OrderTemplateInput } from '@/features/receipt/templates/order'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useCallback, useEffect, useRef } from 'react'
 import { getQzTrayClient } from '../lib/qz-tray-client'
@@ -15,6 +16,61 @@ import {
   setSelectedPrinterAtom,
 } from '../state'
 import { QzTrayConnectionStatus } from '../types'
+
+/**
+ * Test order data for QZ Tray test print.
+ * Uses realistic, complex data to validate the full receipt rendering pipeline.
+ */
+const TEST_ORDER: OrderTemplateInput = {
+  storeName: 'Restaurante Exemplo',
+  displayId: 'TESTE-001',
+  createdAt: new Date(),
+  orderType: 'DINE_IN',
+  posCounterName: 'Caixa 01',
+  items: [
+    {
+      itemName: 'X-Tudo Especial',
+      quantity: 2,
+      unitPrice: 32.9,
+      totalPrice: 65.8,
+      options: [
+        { optionName: 'Queijo Extra', optionQuantity: 2, optionPrice: 4.0 },
+        { optionName: 'Bacon Crocante', optionQuantity: 1, optionPrice: 6.0 },
+      ],
+      comment: 'Sem cebola, ponto da carne bem passado',
+    },
+    {
+      itemName: 'Batata Frita Grande',
+      quantity: 1,
+      unitPrice: 18.0,
+      totalPrice: 18.0,
+      options: [{ optionName: 'Cheddar e Bacon', optionQuantity: 1, optionPrice: 8.0 }],
+    },
+    {
+      itemName: 'Refrigerante Lata 350ml',
+      quantity: 3,
+      unitPrice: 6.0,
+      totalPrice: 18.0,
+    },
+    {
+      itemName: 'Milk Shake Chocolate 500ml',
+      quantity: 1,
+      unitPrice: 16.0,
+      totalPrice: 16.0,
+      comment: 'Com chantilly',
+    },
+  ],
+  subtotal: 135.8,
+  discount: 10.0,
+  totalPrice: 125.8,
+  payments: [
+    { method: 'CASH', value: 75.8, changeFor: 100.0 },
+    { method: 'CREDIT_CARD', value: 50.0 },
+  ],
+  customerName: 'Joao da Silva',
+  customerPhone: '(11) 99999-8888',
+  customerAddress: 'Rua das Flores, 123 - Centro',
+}
 
 /**
  * Hook for managing QZ Tray connection state.
@@ -120,31 +176,99 @@ export function useQzTray() {
   )
 
   /**
-   * Print a test page
+   * Convert SVG string to PNG base64 for QZ Tray printing.
+   * QZ Tray requires raster images (PNG), not vector (SVG).
+   */
+  const svgToPngBase64 = useCallback(async (svg: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'))
+          return
+        }
+
+        // White background for transparency
+        ctx.fillStyle = 'white'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(img, 0, 0)
+
+        // Export as PNG base64
+        const dataUrl = canvas.toDataURL('image/png')
+        const base64 = dataUrl.split(',')[1]
+
+        console.log('[svgToPngBase64] Converted SVG to PNG', {
+          svgLength: svg.length,
+          canvasSize: `${canvas.width}x${canvas.height}`,
+          base64Length: base64.length,
+        })
+
+        resolve(base64)
+      }
+
+      img.onerror = e => {
+        console.error('[svgToPngBase64] Failed to load SVG', e)
+        reject(new Error('Failed to load SVG image'))
+      }
+
+      // Load SVG as data URL
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    })
+  }, [])
+
+  /**
+   * Print a test page using a realistic order receipt.
+   * Uses the OrderTemplate to generate a full receipt with test data.
    */
   const printTest = useCallback(async () => {
     const client = getQzTrayClient()
     const printerName = preferences.selectedPrinterName
 
-    if (!client.isConnected() || !printerName) {
-      throw new Error('Not connected or no printer selected')
+    if (!printerName) {
+      throw new Error('No printer selected')
     }
 
-    // Print a simple test HTML
-    await client.printHtml(
-      printerName,
-      `
-      <html>
-        <body style="font-family: sans-serif; text-align: center; padding: 20px;">
-          <h2>QZ Tray Test Print</h2>
-          <p>Printer: ${printerName}</p>
-          <p>Date: ${new Date().toLocaleString('pt-BR')}</p>
-          <p style="color: green;">Connection successful!</p>
-        </body>
-      </html>
-    `
-    )
-  }, [preferences.selectedPrinterName])
+    // Ensure connection is active
+    if (!client.isConnected()) {
+      console.log('[printTest] Not connected, attempting to reconnect...')
+      try {
+        await client.connect()
+      } catch (connectError) {
+        throw new Error('Failed to connect to QZ Tray. Please check if QZ Tray is running.')
+      }
+    }
+
+    try {
+      // Generate receipt SVG using OrderTemplate with test data
+      // Update the timestamp to current time for each test print
+      const testOrderWithCurrentTime = {
+        ...TEST_ORDER,
+        createdAt: new Date(),
+      }
+      const receiptSvg = await OrderTemplate.render(testOrderWithCurrentTime)
+
+      // Convert SVG to PNG base64 for QZ Tray
+      const base64 = await svgToPngBase64(receiptSvg)
+
+      console.log('[printTest] Sending test receipt', { base64Length: base64.length })
+      await client.printImage(printerName, base64)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Print failed'
+      console.error('[printTest] Error:', errorMessage)
+      if (errorMessage.includes('Connection closed')) {
+        throw new Error(
+          'QZ Tray rejected the request. Please whitelist localhost in QZ Tray Site Manager (Right-click QZ Tray → Advanced → Site Manager).'
+        )
+      }
+      throw error
+    }
+  }, [preferences.selectedPrinterName, svgToPngBase64])
 
   // Set up connection closed callback
   useEffect(() => {

@@ -1,27 +1,24 @@
 -----BEGIN CERTIFICATE-----
-REPLACE THIS WITH YOUR GENERATED CERTIFICATE
-
-=== SETUP INSTRUCTIONS (for app developer) ===
-
-1. Open QZ Tray on your computer (system tray icon)
-2. Go to Advanced > Site Manager
-3. Click the + button to create a new certificate
-4. A folder "QZ Tray Demo Cert" will appear on your Desktop
-5. Copy the ENTIRE contents of digital-certificate.txt here
-6. Copy the private-key.pem contents to your server's environment variable:
-   QZ_TRAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-   (Replace actual newlines with \n)
-
-=== USER SETUP (for your customers) ===
-
-Once you've set up the certificate, your users need to:
-1. Install QZ Tray from https://qz.io/download/
-2. Download this certificate file from your app
-3. Import it into QZ Tray:
-   - Open QZ Tray > Advanced > Site Manager
-   - Click the + button
-   - Select "Browse" and choose this certificate file
-   - Click "Trust" or "Allow"
-
-After this one-time setup, printing works silently!
+MIIECzCCAvOgAwIBAgIGAZysafHsMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDMwMTAyMzkxMFoXDTQ2MDMwMTAyMzkxMFowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCV
+kUJWV/5yRwilXUAYwXXolkITtx14nqwXrPl7I7nat43qSXcODQVH+rgWx65Nr3xG
+Ax4lW4CCw0gdNIsnvZiSaibUyjYZPvVfNd0VVTxhhEi076HvhPVKcZ1RxTtgJ/F5
+95KEOBt8OQyjfsOUThIH5uaP6FmAUdnfEponCv3Q0iaG+JPTmq3C693hQBelmKNK
+IOD4UjykKzDWBMKjmO7bZxVUAlM5DsnU0N/dxOsPi6unMBNzunAG8K/62vtFigDX
+gdbxpvbAVH4TzUp0wR02NadeK96wCnD/Ax14ZafwERCHUP8mrzbTVvehVHdWsB+W
+MkfpuY9xyH1gJf78xc49AgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBSDJcHNlnT6PCXSkrpbzUzGjBdWHTANBgkq
+hkiG9w0BAQsFAAOCAQEANYDUEdWk3RU4tm4lCj5Jr+BCtICAkqhvvTwBB6Ot5H46
+Up4urpjMNU8wcD84Eb+GAtbmUPcUMZUli76ZRzAD+crvteRli0a+S1XVV6rjJ7eK
+65zfLsjpFC5O5dn8GnZ/nX7QYYn6R976HH68A14H995vMmiZauHY+65SV25gh93Q
+LbPiBeBANv2lM6BCDFUwbju5p13u+UIV2ONwFGoZhI/HHnrTADHCn0MqrsvNjY9J
+ZFY0hyrweZfnlu30foDd73HCSWHlJvE6Dm9iNGd0CZ8D+xb59INS7fMrtw5De8bF
+yoS2AqYBmJrisp1YgflP+w7iFkSytN2/6dPNrI6VlQ==
 -----END CERTIFICATE-----
