@@ -75,6 +75,7 @@ export const listCategories = async ({
           createdAt: false,
           updatedAt: false,
         },
+        orderBy: [itemOfferingsTable.index],
         with: {
           item: {
             columns: { imageId: false },
@@ -84,7 +85,7 @@ export const listCategories = async ({
       },
     },
     where: eq(categoriesTable.storeId, storeId),
-    orderBy: [categoriesTable.index, itemOfferingsTable.index],
+    orderBy: [categoriesTable.index],
   })
 
   if (!includeItems) {
