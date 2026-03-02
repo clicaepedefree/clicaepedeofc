@@ -40,7 +40,6 @@ export const CloseCounterForm = ({
     counterId: counter.id,
     counterSessionId: counter.currentSession?.id,
   })
-  const { isPrinting, printReceipt, ReceiptContent } = useReceipt()
 
   const form = useForm({
     defaultValues: {
@@ -64,18 +63,27 @@ export const CloseCounterForm = ({
         closeNotes: value.closeNotes,
       })
 
-      form.reset()
-      onSuccess?.()
       if (closedSession?.closeReceipt) {
         printReceipt(closedSession.closeReceipt)
+        // onPrintEnd callback will handle form.reset() and onSuccess()
+      } else {
+        // No receipt to print, close immediately
+        form.reset()
+        onSuccess?.()
       }
-      return
+    },
+  })
+
+  const { isPrinting, printReceipt, ReceiptContent } = useReceipt({
+    onPrintEnd: () => {
+      form.reset()
+      onSuccess?.()
     },
   })
 
   const footerActions = (
-    <form.Subscribe selector={state => [state.canSubmit]}>
-      {([canSubmit]) => (
+    <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
+      {([canSubmit, isSubmitting]) => (
         <div
           className={cn('grid grid-cols-2 gap-2 justify-around', {
             'mt-8': !FooterContainerComponent,
@@ -94,8 +102,8 @@ export const CloseCounterForm = ({
           </Button>
           <Button
             type="submit"
-            isLoading={isPrinting}
-            disabled={!canSubmit || isPrinting}
+            isLoading={isSubmitting || isPrinting}
+            disabled={!canSubmit || isSubmitting || isPrinting}
             onClick={form.handleSubmit}
           >
             {`Fechar caixa '${counter.name}'`}
