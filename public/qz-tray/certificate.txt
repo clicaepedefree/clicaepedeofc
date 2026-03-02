@@ -1,0 +1,27 @@
+-----BEGIN CERTIFICATE-----
+REPLACE THIS WITH YOUR GENERATED CERTIFICATE
+
+=== SETUP INSTRUCTIONS (for app developer) ===
+
+1. Open QZ Tray on your computer (system tray icon)
+2. Go to Advanced > Site Manager
+3. Click the + button to create a new certificate
+4. A folder "QZ Tray Demo Cert" will appear on your Desktop
+5. Copy the ENTIRE contents of digital-certificate.txt here
+6. Copy the private-key.pem contents to your server's environment variable:
+   QZ_TRAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+   (Replace actual newlines with \n)
+
+=== USER SETUP (for your customers) ===
+
+Once you've set up the certificate, your users need to:
+1. Install QZ Tray from https://qz.io/download/
+2. Download this certificate file from your app
+3. Import it into QZ Tray:
+   - Open QZ Tray > Advanced > Site Manager
+   - Click the + button
+   - Select "Browse" and choose this certificate file
+   - Click "Trust" or "Allow"
+
+After this one-time setup, printing works silently!
+-----END CERTIFICATE-----

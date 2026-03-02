@@ -1,6 +1,7 @@
 'use client'
 
-import { useReceipt } from '@/features/receipt/hooks/use-receipt'
+import { shouldUseQzTrayPrintingAtom } from '@/features/qz-tray/state'
+import { useReceiptWithQz } from '@/features/receipt/hooks/use-receipt-qz'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { CurrencyInput } from '@/shared/currency-input'
@@ -8,8 +9,11 @@ import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
 import { Textarea } from '@/shared/textarea'
+import { Body } from '@/shared/typography/body'
+import { SmallText } from '@/shared/typography/small-text'
 import { useForm } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
+import { AlertTriangle, CheckCircle2, ExternalLink } from 'lucide-react'
 import { z } from 'zod'
 import { openCounter } from '../../api'
 import { openCounterSchema } from '../../form-validation/counter.schema'
@@ -31,7 +35,8 @@ export const OpenCounterForm = ({
   FooterContainerComponent,
 }: OpenCounterFormProps) => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
-  const { isPrinting, printReceipt, ReceiptContent } = useReceipt()
+  const [shouldUseQzTrayPrinting] = useAtom(shouldUseQzTrayPrintingAtom)
+  const { isPrinting, printReceipt, ReceiptContent } = useReceiptWithQz()
 
   const form = useForm({
     defaultValues: {
@@ -111,6 +116,38 @@ export const OpenCounterForm = ({
           className
         )}
       >
+        {/* QZ Tray print status indicator */}
+        {shouldUseQzTrayPrinting ? (
+          <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+            <CheckCircle2 className="h-4 w-4" />
+            <SmallText>QZ Tray conectado</SmallText>
+          </div>
+        ) : (
+          <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-amber-800 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <Body variant={200} fontWeight="medium">
+                  QZ Tray não está conectado
+                </Body>
+                <Body variant={200} fontWeight="regular" className="mt-1">
+                  Os recibos serão impressos pelo navegador. Para impressão
+                  automática,{' '}
+                  <a
+                    href="/settings/integracoes"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:no-underline inline-flex items-center gap-1"
+                  >
+                    conecte o QZ Tray
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Body>
+              </div>
+            </div>
+          </div>
+        )}
+
         <form.Field name="openAmount">
           {field => (
             <CurrencyInput
