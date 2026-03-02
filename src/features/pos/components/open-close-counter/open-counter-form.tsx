@@ -61,18 +61,8 @@ export const OpenCounterForm = ({
       })
 
       if (openedSession?.openReceipt) {
-        printReceipt(openedSession.openReceipt)
-        // onPrintEnd callback will handle form.reset() and onSuccess()
-      } else {
-        // No receipt to print, close immediately
-        form.reset()
-        onSuccess?.()
+        await printReceipt(openedSession.openReceipt)
       }
-    },
-  })
-
-  const { isPrinting, printReceipt, ReceiptContent } = useReceipt({
-    onPrintEnd: () => {
       form.reset()
       onSuccess?.()
     },
