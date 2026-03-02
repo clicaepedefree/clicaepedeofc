@@ -40,3 +40,5 @@ next-env.d.ts
 .playwright-cli/
 .playwright/
 .autoforge
+# clerk configuration (can include secrets)
+/.clerk/
