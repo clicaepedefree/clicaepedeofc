@@ -1,4 +1,4 @@
-import { addStoreFile } from '@/features/store/api'
+import { insertStoreFile } from '@/features/store/db'
 import { fileAuthMiddleware } from '@/services/files-manager/auth-middleware'
 import { baseFileInputForUpload } from '@/services/files-manager/base-file-input'
 import { createUploadthing, type FileRouter } from 'uploadthing/next'
@@ -24,7 +24,7 @@ export const filesManagerRouterService = {
     .input(baseFileInputForUpload)
     .middleware(({ input }) => fileAuthMiddleware({ input }))
     .onUploadComplete(async ({ metadata, file: uploadedFile }) => {
-      const createdFile = await addStoreFile({
+      const createdFile = await insertStoreFile({
         storeId: metadata.storeId,
         creatorId: metadata.userId,
         provider: 'uploadthing',

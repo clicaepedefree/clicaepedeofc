@@ -1,6 +1,11 @@
 'use server'
 import { db } from '@/services/db'
+import {
+  InsertStoreFile,
+  storeFilesTable,
+} from '@/services/db/schema/store-files'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
+import { getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq } from 'drizzle-orm'
 
 export const isUserAdminOfAnyStore = async (userId: string) => {
@@ -30,4 +35,18 @@ export const getUserStorePermissions = async (
     )
 
   return userStoreRole
+}
+
+export const insertStoreFile = async (values: InsertStoreFile) => {
+  const storeFilesColumns = getTableColumnsWithExclusions(storeFilesTable, [
+    storeFilesTable.createdAt,
+    storeFilesTable.updatedAt,
+  ])
+
+  const [createdFile] = await db
+    .insert(storeFilesTable)
+    .values(values)
+    .returning({ ...storeFilesColumns })
+
+  return createdFile
 }

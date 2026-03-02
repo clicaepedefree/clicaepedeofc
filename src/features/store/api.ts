@@ -1,19 +1,17 @@
 'use server'
 import {
   getUserStorePermissions,
+  insertStoreFile,
   isUserAdminOfAnyStore,
 } from '@/features/store/db'
 import { requireAuth } from '@/services/auth'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
-import {
-  InsertStoreFile,
-  storeFilesTable,
-} from '@/services/db/schema/store-files'
+import { InsertStoreFile } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
-import { coalesce, getTableColumnsWithExclusions } from '@/services/db/utils'
+import { coalesce } from '@/services/db/utils'
 import { and, eq, getTableColumns } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
@@ -89,16 +87,7 @@ export const addStoreFile = async (values: InsertStoreFile) => {
       message: 'Criador do arquivo não é o mesmo usuário',
     })
 
-  const storeFilesColumns = getTableColumnsWithExclusions(storeFilesTable, [
-    storeFilesTable.createdAt,
-    storeFilesTable.updatedAt,
-  ])
-
-  const [createdFile] = await db
-    .insert(storeFilesTable)
-    .values(values)
-    .returning({ ...storeFilesColumns })
-  return createdFile
+  return insertStoreFile(values)
 }
 
 export const validateAdminAccess = async () => {

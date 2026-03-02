@@ -60,7 +60,14 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
     },
     onUploadProgress: setUploadProgress,
     onUploadError,
-    onClientUploadComplete: ([updatedFile]) => onFileUploaded(updatedFile),
+    onClientUploadComplete: ([updatedFile]) => {
+      if (!updatedFile?.serverData?.id || !updatedFile?.serverData?.url) {
+        onUploadError?.(new Error('Upload concluído, mas os dados do servidor estão ausentes'))
+        return
+      }
+
+      onFileUploaded(updatedFile)
+    },
   })
 
   const handleFilesSelected = (files: File[]) => {
