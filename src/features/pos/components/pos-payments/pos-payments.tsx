@@ -1,4 +1,4 @@
-import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
+import { useReceiptWithQz } from '@/features/receipt/hooks/use-receipt-qz'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import {
@@ -12,7 +12,6 @@ import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { useAtom } from 'jotai'
 import { AlertTriangle, ArrowLeft, Banknote, CreditCard, Info } from 'lucide-react'
-import { useEffect } from 'react'
 import { useCart } from '../../hooks/use-cart'
 import { useCounters } from '../../hooks/use-counters'
 import { CartPayment } from '../../types'
@@ -75,18 +74,9 @@ export const PosPayments = ({
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { activeCounterId, activeCounterName } = useCounters()
   const {
-    printOrderReceipt,
+    printReceipt,
     ReceiptContent,
-    printError,
-    showPrintErrorToast,
-  } = useOrderReceipt()
-
-  // Show error toast with retry option when print error occurs
-  useEffect(() => {
-    if (printError) {
-      showPrintErrorToast()
-    }
-  }, [printError, showPrintErrorToast])
+  } = useReceiptWithQz()
 
   const onPaymentAdded = async (payment: CartPayment) => {
     // Validate stock before processing payment
@@ -119,7 +109,7 @@ export const PosPayments = ({
       // Print order receipt after successful order creation
       // Error handling is done gracefully - order is already saved
       if (newOrder?.receipt) {
-        printOrderReceipt(newOrder.receipt, newOrder.displayId)
+        printReceipt(newOrder.receipt, newOrder.displayId)
       }
       return
     }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useReceipt } from '@/features/receipt/hooks/use-receipt'
+import { useReceiptWithQz } from '@/features/receipt/hooks/use-receipt-qz'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
@@ -40,7 +40,7 @@ export const CloseCounterForm = ({
     counterId: counter.id,
     counterSessionId: counter.currentSession?.id,
   })
-  const { isPrinting, printReceipt, ReceiptContent } = useReceipt()
+  const { isPrinting, printReceipt, ReceiptContent } = useReceiptWithQz()
 
   const form = useForm({
     defaultValues: {

@@ -11,7 +11,7 @@ import {
 
 import { generateOrderReceipt, listOrders } from '@/features/order/api'
 import { ordersCacheKey } from '@/features/order/cache-keys'
-import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
+import { useReceiptWithQz } from '@/features/receipt/hooks/use-receipt-qz'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
@@ -22,7 +22,7 @@ import { LargeText } from '@/shared/typography/large-text'
 import { useQuery } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
 type OrderWithDetails = Awaited<ReturnType<typeof listOrders>>[number]
@@ -32,11 +32,9 @@ export default function InvoicesPage() {
 
   // Move receipt hook to page level so ReceiptContent renders outside the table
   const {
-    printOrderReceipt,
+    printReceipt,
     ReceiptContent,
-    printError,
-    showPrintErrorToast,
-  } = useOrderReceipt()
+  } = useReceiptWithQz()
 
   const result = useQuery({
     enabled: !!selectedStoreId,
@@ -72,9 +70,7 @@ export default function InvoicesPage() {
             <OrderRow
               key={order.id}
               order={order}
-              printOrderReceipt={printOrderReceipt}
-              printError={printError}
-              showPrintErrorToast={showPrintErrorToast}
+              printReceipt={printReceipt}
             />
           ))}
         </TableBody>
@@ -87,27 +83,16 @@ export default function InvoicesPage() {
 
 type OrderRowProps = {
   order: OrderWithDetails
-  printOrderReceipt: (receiptSvg: string, orderDisplayId?: string | number) => void
-  printError: Error | null
-  showPrintErrorToast: (orderDisplayId?: string | number) => void
+  printReceipt: (receiptSvg: string, orderDisplayId?: string | number) => Promise<boolean>
 }
 
 const OrderRow = ({
   order,
-  printOrderReceipt,
-  printError,
-  showPrintErrorToast,
+  printReceipt,
 }: OrderRowProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
   const hasItems = order.items && order.items.length > 0
-
-  // Show error toast with retry option when print error occurs
-  useEffect(() => {
-    if (printError) {
-      showPrintErrorToast(order.displayId)
-    }
-  }, [printError, showPrintErrorToast, order.displayId])
 
   const handlePrint = useCallback(
     async (e: React.MouseEvent) => {
@@ -116,20 +101,22 @@ const OrderRow = ({
 
       try {
         const result = await generateOrderReceipt(order.id)
-        printOrderReceipt(result.receipt, result.displayId)
-        toast.success('Recibo enviado para impressão', {
-          description: `Pedido #${order.displayId}`,
-          richColors: true,
-          position: 'top-center',
-          duration: 3000,
-        })
+        const printed = await printReceipt(result.receipt, result.displayId)
+        if (printed) {
+          toast.success('Recibo enviado para impressao', {
+            description: `Pedido #${order.displayId}`,
+            richColors: true,
+            position: 'top-center',
+            duration: 3000,
+          })
+        }
       } catch (error) {
         console.error('[Order Reprint Error]', error)
         toast.error('Erro ao reimprimir recibo', {
           description:
             error instanceof Error
               ? error.message
-              : 'Não foi possível gerar o recibo do pedido.',
+              : 'Nao foi possivel gerar o recibo do pedido.',
           richColors: true,
           position: 'top-center',
           duration: 5000,
@@ -138,7 +125,7 @@ const OrderRow = ({
         setIsPrinting(false)
       }
     },
-    [order.id, order.displayId, printOrderReceipt]
+    [order.id, order.displayId, printReceipt]
   )
 
   return (

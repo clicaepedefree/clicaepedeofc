@@ -9,6 +9,7 @@ import { PosMenuItemsList } from '@/features/pos/components/pos-menu-items-list'
 import { PosPayments } from '@/features/pos/components/pos-payments/pos-payments'
 import { useCart } from '@/features/pos/hooks/use-cart'
 import { useCounters } from '@/features/pos/hooks/use-counters'
+import { QzTrayStatusIndicator } from '@/features/qz-tray/components/qz-tray-status-indicator'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Button } from '@/shared/button'
 import { dispatchToast } from '@/shared/lib/toast'
@@ -73,6 +74,7 @@ export default function CounterPage({}) {
             />
           )}
           {isFetching && <LoadingSpinner />}
+          <QzTrayStatusIndicator />
         </Headline>
         {activeCounter.currentSession?.status === 'OPEN' && (
           <CloseCounterAction
