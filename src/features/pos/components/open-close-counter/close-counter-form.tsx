@@ -64,18 +64,17 @@ export const CloseCounterForm = ({
         closeNotes: value.closeNotes,
       })
 
+      if (closedSession?.closeReceipt) {
+        await printReceipt(closedSession.closeReceipt)
+      }
       form.reset()
       onSuccess?.()
-      if (closedSession?.closeReceipt) {
-        printReceipt(closedSession.closeReceipt)
-      }
-      return
     },
   })
 
   const footerActions = (
-    <form.Subscribe selector={state => [state.canSubmit]}>
-      {([canSubmit]) => (
+    <form.Subscribe selector={state => [state.canSubmit, state.isSubmitting]}>
+      {([canSubmit, isSubmitting]) => (
         <div
           className={cn('grid grid-cols-2 gap-2 justify-around', {
             'mt-8': !FooterContainerComponent,
@@ -94,8 +93,8 @@ export const CloseCounterForm = ({
           </Button>
           <Button
             type="submit"
-            isLoading={isPrinting}
-            disabled={!canSubmit || isPrinting}
+            isLoading={isSubmitting || isPrinting}
+            disabled={!canSubmit || isSubmitting || isPrinting}
             onClick={form.handleSubmit}
           >
             {`Fechar caixa '${counter.name}'`}
