@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import { LinkOptionGroupsModal } from '@/features/option-groups/components/link-option-groups-modal'
 import { Button } from '@/shared/button'
 import { DeleteButton } from '@/shared/buttons/delete-button'
@@ -19,11 +20,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { Badge } from '@/shared/badge'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
 import { Edit, ListChecks } from 'lucide-react'
+import { useTextTruncated } from '@/shared/hooks/use-text-truncated'
 import { useItem } from '../../hooks/use-item'
 import { BaseCategory, ItemOfferingWithImage } from '../../types'
 import { UpdateItemAction } from '../create-or-update-item/update-item-action'
@@ -42,11 +45,18 @@ export const ItemOfferingsTable = ({
   const hasOfferings = itemOfferings.length > 0
 
   return (
-    <Table className="table-auto overflow-x-scroll">
+    <Table className="table-fixed">
+      <colgroup>
+        <col style={{ width: '350px', maxWidth: '350px' }} />
+        <col style={{ width: '100px' }} />
+        <col style={{ width: '120px' }} />
+        <col style={{ width: '140px' }} />
+        <col style={{ width: '100px' }} />
+      </colgroup>
       <TableHeader>
         {firstRowAction && (
           <TableRow className="hover:bg-unset">
-            <TableCell className="px-0 m-0" colSpan={50}>
+            <TableCell className="px-0 m-0" colSpan={5}>
               {firstRowAction}
             </TableCell>
           </TableRow>
@@ -85,14 +95,41 @@ const ItemOfferingRow = ({
   onItemUpdated?(): void
 }) => {
   const { deleteItem, isDeleting, onItemUpdated: onUpdateItem } = useItem()
+  const textRef = useRef<HTMLSpanElement>(null)
+  const isItemNameTruncated = useTextTruncated(textRef, [item.name])
+
+  const itemNameElement = (
+    <span
+      ref={textRef}
+      className="text-sm font-semibold cursor-default block flex-1 min-w-0 overflow-hidden"
+      style={{
+        display: '-webkit-box',
+        WebkitLineClamp: 3,
+        WebkitBoxOrient: 'vertical',
+      }}
+    >
+      {item.name}
+    </span>
+  )
 
   return (
     <TableRow>
-      <TableCell className="w-fit flex items-center  justify-baseline gap-1 sm:gap-4 flex-wrap sm:flex-nowrap ">
-        <ImageWithPlaceholder image={item.image} alt={item.name} />
-        <LargeText variant="sm" className="text-wrap line-clamp-2 pr-2 md:pr-8">
-          {item.name}
-        </LargeText>
+      <TableCell className="!whitespace-normal overflow-hidden align-middle">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="shrink-0">
+            <ImageWithPlaceholder image={item.image} alt={item.name} />
+          </div>
+          {isItemNameTruncated ? (
+            <Tooltip>
+              <TooltipTrigger asChild>{itemNameElement}</TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[300px]">
+                {item.name}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            itemNameElement
+          )}
+        </div>
       </TableCell>
       <TableCell className="max-w-24 w-fit place-items-center space-y-2 text-center">
         {item.inventory !== null && (
@@ -108,21 +145,23 @@ const ItemOfferingRow = ({
           <Body className=" text-wrap text-center">Estoque desativado</Body>
         )}
       </TableCell>
-      <TableCell className="max-w-24 w-fit place-items-center space-y-2">
-        {item.originalPrice && (
-          <SmallText className="line-through text-xs">
-            {formatValueToCurrency({
-              value: item.originalPrice,
-              includeCurrencySymbol: true,
-            })}
-          </SmallText>
-        )}
-        <CurrencyInput
-          className="w-fit"
-          inputClassName="min-w-[58px] sm:min-w-[80px] sm:max-w-[100px] text-xs sm:text-normal disabled:opacity-100"
-          value={item.price}
-          disabled
-        />
+      <TableCell className="max-w-24 w-fit">
+        <div className="flex flex-col items-center gap-1">
+          {item.originalPrice && (
+            <SmallText className="line-through text-xs text-center">
+              {formatValueToCurrency({
+                value: item.originalPrice,
+                includeCurrencySymbol: true,
+              })}
+            </SmallText>
+          )}
+          <CurrencyInput
+            className="w-fit"
+            inputClassName="min-w-[58px] sm:min-w-[80px] sm:max-w-[100px] text-xs sm:text-normal disabled:opacity-100"
+            value={item.price}
+            disabled
+          />
+        </div>
       </TableCell>
       <TableCell className="place-items-center">
         <Label size="sm" className="gap-1 items-center">
