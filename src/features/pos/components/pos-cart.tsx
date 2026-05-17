@@ -81,10 +81,10 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
   }, [cartSessionItems, stockValidationErrors, removeItemFromCart])
 
   return (
-    <div className="relative bg-white w-full border rounded-md h-full overflow-y-scroll flex flex-col">
-      <div className="sticky top-0 left-0 p-4 bg-accent text-center flex justify-center items-center gap-2 border-b z-20">
+    <div className="relative flex h-full min-h-[28rem] w-full flex-col overflow-y-auto rounded-lg border bg-white shadow-sm">
+      <div className="sticky left-0 top-0 z-20 flex items-center justify-center gap-2 border-b bg-white/95 p-4 text-center font-medium backdrop-blur">
         <ShoppingBag />
-        CHECKOUT
+        Pedido
       </div>
       {isUsingPaymentScreen && (
         <div className="absolute h-full w-full flex items-center justify-center">
@@ -113,7 +113,7 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
           )
         })}
       </div>
-      <div className="sticky float-end bottom-0 left-0 w-full p-2 space-y-2 bg-accent border-t z-20">
+      <div className="sticky bottom-0 left-0 z-20 w-full space-y-2 border-t bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className="flex items-center justify-between w-full px-1 ">
           <LargeText variant="lg">Total:</LargeText>
           <LargeText variant="lg">
@@ -125,13 +125,13 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
             <div className="flex items-center gap-2 text-destructive mb-2">
               <AlertTriangle size={18} />
               <Body variant={200} className="font-semibold text-inherit">
-                Itens indisponiveis
+                Itens indisponíveis
               </Body>
             </div>
             <ul className="text-sm text-destructive/90 space-y-1">
               {stockValidationErrors.map(error => (
                 <li key={error.itemId}>
-                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponivel{' '}
+                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponível{' '}
                   {error.availableQty ?? 0}
                 </li>
               ))}
@@ -147,7 +147,7 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
                 className="flex items-center gap-1.5 shrink-0"
               >
                 <Trash2 size={14} />
-                Remover indisponiveis
+                Remover indisponíveis
               </Button>
             </div>
           </div>

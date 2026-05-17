@@ -69,7 +69,7 @@ If the user asks you to modify code, explain that you're a project assistant and
 
   <prerequisites>
     <environment_setup>
-      - Node.js 20+ / Bun runtime
+      - Node.js 22.17.1+ / Bun runtime
       - PostgreSQL database (Supabase)
       - Clerk account for authentication
       - iFood API credentials (NEXT_PUBLIC_IFOOD_CLIENT_ID, IFOOD_CLIENT_SECRET)

@@ -59,7 +59,7 @@ export const listCategories = async ({
 }: {
   storeId: number
   includeItems?: boolean
-}) => {
+}): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
   const categoriesWithItems = await db.query.categoriesTable.findMany({
@@ -270,7 +270,7 @@ export const deleteItem = async (itemId: number, storeId: number) => {
     .where(and(eq(itemsTable.id, itemId), eq(itemsTable.storeId, storeId)))
 }
 
-export const listMenuItems = async ({ storeId }: { storeId: number }) => {
+export const listMenuItems = async ({ storeId }: { storeId: number }): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'admin')
   const categoryImagesTable = alias(storeFilesTable, 'categoryImages')
   const menuItems = await db

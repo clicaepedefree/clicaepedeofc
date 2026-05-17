@@ -9,6 +9,7 @@ set -e
 #
 # Prerequisites:
 #   - Bun runtime (https://bun.sh)
+#   - Node.js >= 22.17.1
 #   - PostgreSQL database (Supabase)
 #   - .env.local file with required environment variables
 #
@@ -18,7 +19,7 @@ set -e
 #   CLERK_SECRET_KEY      - Clerk auth secret key
 #   NEXT_PUBLIC_IFOOD_CLIENT_ID - iFood OAuth client ID
 #   IFOOD_CLIENT_SECRET   - iFood OAuth client secret
-#   ENCRYPTION_KEY        - AES-256-GCM encryption key for token storage
+#   IFOOD_TOKEN_ENCRYPTION_KEY - AES-256-GCM encryption key for token storage
 #   UPLOADTHING_TOKEN     - UploadThing file upload credentials
 # ============================================================
 
@@ -40,10 +41,25 @@ if ! command -v bun &> /dev/null; then
 fi
 echo "  Bun: $(bun --version)"
 
-# Check for Node.js (needed by some tools)
-if command -v node &> /dev/null; then
-    echo "  Node.js: $(node --version)"
+# Check for Node.js (needed by Next.js and supporting tools)
+if ! command -v node &> /dev/null; then
+    echo "ERROR: Node.js is not installed."
+    echo "Install Node.js 22.17.1 or newer."
+    exit 1
 fi
+
+NODE_VERSION="$(node --version)"
+NODE_MAJOR="$(echo "$NODE_VERSION" | sed 's/^v//' | cut -d. -f1)"
+NODE_MINOR="$(echo "$NODE_VERSION" | sed 's/^v//' | cut -d. -f2)"
+NODE_PATCH="$(echo "$NODE_VERSION" | sed 's/^v//' | cut -d. -f3)"
+
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 17 ]; } || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -eq 17 ] && [ "$NODE_PATCH" -lt 1 ]; }; then
+    echo "ERROR: Node.js $NODE_VERSION is not supported."
+    echo "Install Node.js 22.17.1 or newer."
+    exit 1
+fi
+
+echo "  Node.js: $NODE_VERSION"
 
 # Check for .env.local
 if [ ! -f .env.local ]; then

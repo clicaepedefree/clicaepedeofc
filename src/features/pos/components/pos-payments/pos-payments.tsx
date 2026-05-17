@@ -189,13 +189,13 @@ export const PosPayments = ({
             <div className="flex items-center gap-2 text-destructive mb-2">
               <AlertTriangle size={18} />
               <Body variant={200} className="font-semibold text-inherit">
-                Itens indisponiveis no estoque
+                Itens indisponíveis no estoque
               </Body>
             </div>
             <ul className="text-sm text-destructive/90 space-y-1">
               {stockValidationErrors.map(error => (
                 <li key={error.itemId}>
-                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponivel{' '}
+                  <strong>{error.name}</strong>: solicitado {error.requestedQty}, disponível{' '}
                   {error.availableQty ?? 0}
                 </li>
               ))}

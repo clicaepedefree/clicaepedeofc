@@ -10,7 +10,7 @@ export const getRevenueSummary = async (
   storeId: number,
   startDate?: string,
   endDate?: string
-) => {
+): Promise<any> => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
   const orderCreatedAtWithTimezone = sql<Date>`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`

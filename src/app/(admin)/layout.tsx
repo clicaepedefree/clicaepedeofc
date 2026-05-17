@@ -91,7 +91,7 @@ export default async function AdminLayout({
         <SidebarInset>
           <AdminHeader />
           <PostHogProvider>
-            <div className="bg-slate-50 h-full overflow-y-scroll">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
               {children}
             </div>
           </PostHogProvider>

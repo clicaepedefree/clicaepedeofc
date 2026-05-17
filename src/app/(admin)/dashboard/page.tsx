@@ -22,9 +22,9 @@ export default function Page() {
   return (
     <>
       <AdminPageInfo pageInfo={{ title: 'Dashboard' }} />
-      <div className="p-4 max-w-[inherit]">
-        <div className="flex items-center justify-between gap-4 w-full mb-4">
-          <div className="min-w-52">
+      <div className="w-full max-w-[inherit] space-y-4 p-4 md:p-6">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-full sm:w-64">
             <Combobox
               options={[...reportPeriodsOptions]}
               value={selectedPeriod}
@@ -41,9 +41,9 @@ export default function Page() {
           </div>
         </div>
         <>
-          <div className="grid auto-rows-min gap-4 md:grid-cols-3 mb-4">
+          <div className="mb-4 grid auto-rows-min gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Card className="@container/card w-full">
-              <CardHeader className="w-fit">
+              <CardHeader>
                 <CardDescription>Receita Total</CardDescription>
                 <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
                   {formatValueToCurrency({

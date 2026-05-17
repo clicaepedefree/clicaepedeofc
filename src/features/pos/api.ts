@@ -24,7 +24,7 @@ import {
   updateOpenCounterReceiptForSessionOnDb,
 } from './db'
 
-export const listCounters = async (storeId: number) => {
+export const listCounters = async (storeId: number): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await listStoreCountersOnDb({ storeId })

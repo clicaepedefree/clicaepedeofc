@@ -13,7 +13,12 @@ export const PosCategoryFilter = ({
   onClick?: () => void
 }) => {
   return (
-    <div key={category.id} className="flex flex-col items-center justify-start text-center" onClick={onClick}>
+    <button
+      key={category.id}
+      type="button"
+      className="flex min-w-20 flex-col items-center justify-start rounded-lg text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50"
+      onClick={onClick}
+    >
       <ImageWithPlaceholder
         image={category.imageUrl ? { url: category.imageUrl } : undefined}
         alt={category.name}
@@ -24,6 +29,6 @@ export const PosCategoryFilter = ({
       <Body variant={200} className={cn({ 'text-primary': isSelected })}>
         {category.name}
       </Body>
-    </div>
+    </button>
   )
 }

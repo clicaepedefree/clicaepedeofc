@@ -116,7 +116,7 @@ export const deleteOptionGroup = async (id: number, storeId: number) => {
   await deleteOptionGroupOnDb({ id, storeId, dbSession: db })
 }
 
-export const listOptionGroups = async (storeId: number) => {
+export const listOptionGroups = async (storeId: number): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await getOptionGroupsByStoreId({ storeId })
