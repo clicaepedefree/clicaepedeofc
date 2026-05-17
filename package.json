@@ -2,11 +2,15 @@
   "name": "clica_pedidos_app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.17.1"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "bun test",
     "db": "drizzle-kit studio & open https://local.drizzle.studio",
     "db:sync-prod": "bash scripts/sync-prod-data.sh"
   },

@@ -28,6 +28,7 @@ A modern, multi-tenant Point of Sale (POS) system for restaurants and retail bus
 ## Prerequisites
 
 - [Bun](https://bun.sh) runtime
+- Node.js 22.17.1 or newer
 - PostgreSQL database (Supabase recommended)
 - [Clerk](https://clerk.dev) account for authentication
 - iFood API credentials (for iFood integration)

@@ -59,11 +59,11 @@ export default function CounterPage({}) {
     return <PageLoadingSpinner />
 
   return (
-    <div className="col-span-2 flex flex-col items-start gap-4 overflow-y-scroll h-full p-4">
-      <div className="flex items-center justify-between w-full">
+    <div className="col-span-2 flex h-full min-h-0 flex-col items-start gap-4 overflow-y-auto p-4 md:p-6">
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Headline
           variant={300}
-          className="flex items-center text-nowrap gap-4 w-56"
+          className="flex flex-wrap items-center gap-3 sm:flex-nowrap"
         >
           Caixa:
           {counters && (
@@ -109,7 +109,7 @@ export default function CounterPage({}) {
                 <User size={16} className="font-bold" />
                 {activeCounter.currentSession.operatorName}
               </span>{' '}
-              é o operator da sessão ativa
+              é o operador da sessão ativa
             </>
           </Body>
           <Body
@@ -137,7 +137,7 @@ export default function CounterPage({}) {
       )}
 
       {canOperateActiveCounter && isCounterOpen && (
-        <div className="grid grid-cols-[1fr_1fr] lg:grid-cols-[2fr_1fr] w-full gap-4 h-[inherit] items-start overflow-y-hidden">
+        <div className="grid min-h-0 w-full grid-cols-1 items-start gap-4 overflow-visible xl:grid-cols-[2fr_1fr] xl:overflow-hidden">
           {isUsingPaymentScreen && (
             <PosPayments
               onClose={() => setIsUsingPaymentScreen(false)}
@@ -151,7 +151,9 @@ export default function CounterPage({}) {
               categories={categories ?? []}
             />
           )}
-          {hasMenuItems && <PosCart key={selectedStoreId} menuItems={menuItems ?? []} />}
+          {hasMenuItems && (
+            <PosCart key={selectedStoreId} menuItems={menuItems ?? []} />
+          )}
         </div>
       )}
     </div>

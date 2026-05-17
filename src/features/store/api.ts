@@ -17,7 +17,7 @@ import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
 import { UserStoreRole } from './types'
 
-export const getAvailableStores = async () => {
+export const getAvailableStores = async (): Promise<any[]> => {
   const user = await requireAuth()
 
   return await db
@@ -32,7 +32,7 @@ export const getAvailableStores = async () => {
     )
 }
 
-export const getStoreConfigurations = async (storeId: number) => {
+export const getStoreConfigurations = async (storeId: number): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await db

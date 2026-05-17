@@ -142,7 +142,9 @@ export const createOrder = async (newOrder: NewOrder) => {
   })
 }
 
-export const listOrders = async (storeId: number) => {
+export const listOrders = async (storeId: number): Promise<any[]> => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
   const orders = await db.query.ordersTable.findMany({
     where: eq(ordersTable.storeId, storeId),
     orderBy: [desc(ordersTable.createdAt)],

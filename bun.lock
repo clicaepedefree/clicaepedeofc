@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "clica_pedidos_app",
@@ -2114,7 +2115,7 @@
 
     "webpack-sources": ["webpack-sources@3.3.3", "", {}, "sha512-yd1RBzSGanHkitROoPFd6qsrxt+oFhg/129YzheDGqeustzX0vTZJZsSsQjVQC4yzBQ56K55XU8gaNCtIzOnTg=="],
 
-    "websocket": ["websocket@github:frozeman/WebSocket-Node#6c72925", { "dependencies": { "debug": "^2.2.0", "nan": "^2.3.3", "typedarray-to-buffer": "^3.1.2", "yaeti": "^0.0.6" } }, "frozeman-WebSocket-Node-6c72925"],
+    "websocket": ["websocket@github:frozeman/WebSocket-Node#6c72925", { "dependencies": { "debug": "^2.2.0", "nan": "^2.3.3", "typedarray-to-buffer": "^3.1.2", "yaeti": "^0.0.6" } }, "frozeman-WebSocket-Node-6c72925", "sha512-JRuargwhMA5xY6szp7e8JRmIu0Zw1SYvW7gLu9SwaKGe7ud0osV/O7+T8ZN54RZW2FM46OOZ0QipgyPeumag0w=="],
 
     "which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "./bin/node-which" } }, "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA=="],
 

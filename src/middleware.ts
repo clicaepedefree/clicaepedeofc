@@ -6,33 +6,7 @@ const isPublicRoute = createRouteMatcher([
   '/login(.*)',
   '/api/files(.*)',
   '/api/health(.*)',
-  '/api/test-persistence(.*)',
-  '/api/test-order-receipt(.*)',
-  '/api/test-order-reprint(.*)',
-  '/api/test-out-of-stock(.*)',
-  '/api/test-cropper(.*)',
-  '/api/test-ifood-oauth(.*)',
-  '/api/test-ifood-connection-persistence(.*)',
-  '/api/test-auth-status(.*)',
-  '/api/test-catalog-id(.*)',
-  '/api/test-oauth-session-create(.*)',
-  '/api/test-oauth-session-cleanup(.*)',
-  '/api/test-ifood-disconnect(.*)',
-  '/api/test-oauth-session-expiry(.*)',
-  '/api/test-concurrent-oauth(.*)',
-  '/api/test-modal-performance(.*)',
-  '/api/test-feature-16-verify(.*)',
-  '/api/schema-check(.*)',
-  '/api/apply-migration(.*)',
   '/unauthorized(.*)',
-  '/test-cropper-interactive(.*)',
-  '/test-ifood-modal(.*)',
-  '/test-merchant-selection(.*)',
-  '/test-catalog-selection(.*)',
-  '/test-connection-refresh(.*)',
-  '/test-ifood-persistence(.*)',
-  '/test-option-row(.*)',
-  '/test-invoices-table(.*)',
 ])
 
 /**
@@ -46,7 +20,6 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
   '/unauthorized(.*)', // Unauthorized page
-  '/test-(.*)', // Test/dev pages
 ])
 
 /**
@@ -92,7 +65,7 @@ function buildMainDomainSignInUrl(
   return `${protocol}://${mainDomain}/login?redirect_url=${encodeURIComponent(returnUrl)}`
 }
 
-export default clerkMiddleware(async (auth, request) => {
+const appMiddleware = clerkMiddleware(async (auth, request) => {
   const hostname = request.headers.get('host') ?? ''
   const isAdminSubdomain = isAdminHostname(hostname)
   const url = new URL(request.url)
@@ -178,6 +151,8 @@ export default clerkMiddleware(async (auth, request) => {
 
   return response
 })
+
+export default appMiddleware
 
 export const config = {
   matcher: [

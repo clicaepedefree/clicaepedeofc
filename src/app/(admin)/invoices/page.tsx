@@ -187,7 +187,7 @@ const OrderRow = ({
           <TableCell colSpan={7} className="bg-muted/30 p-0">
             <div className="px-6 py-3">
               <div className="space-y-2">
-                {order.items.map(item => (
+                {order.items.map((item: any) => (
                   <div key={item.id} className="flex flex-col gap-1">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">
@@ -202,7 +202,7 @@ const OrderRow = ({
                     </div>
                     {item.options && item.options.length > 0 && (
                       <div className="ml-4 space-y-0.5">
-                        {item.options.map(option => (
+                        {item.options.map((option: any) => (
                           <OptionItemLine
                             key={option.id}
                             name={option.optionName}

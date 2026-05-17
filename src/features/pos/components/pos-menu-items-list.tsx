@@ -59,7 +59,7 @@ export const PosMenuItemsList = ({
   }, [menuItems, selectedCategoryId])
 
   return (
-    <div className="w-full overflow-x-hidden h-full">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-x-hidden">
       <Combobox<MenuItem>
         options={menuItems}
         customOptionLabelComponent={(option, searchText) => (
@@ -116,14 +116,14 @@ export const PosMenuItemsList = ({
           }
         }}
         placeholder="Pesquise um item (nome, descrição, código de barras)"
-        searchPlaceholder="Buscar items"
+        searchPlaceholder="Buscar itens"
         noResultMessage="Nenhum item encontrado"
         disableUnselectingOption
         customIcon={Search}
         hideOptionsOnEmptyInput
       />
       {!!categories.length && (
-        <div className="w-full flex items-start gap-10 overflow-x-scroll pb-6 mt-4">
+        <div className="mt-4 flex w-full items-start gap-4 overflow-x-auto pb-4 sm:gap-6">
           {categoriesWithAllOption.map(category => (
             <PosCategoryFilter
               key={category.id?.toString() ?? ''}
@@ -135,7 +135,7 @@ export const PosMenuItemsList = ({
         </div>
       )}
       <Separator className="mb-4" />
-      <div className="grid gap-x-4 gap-y-3 lg:gap-x-5 lg:gap-y-4 justify-center w-full grid-cols-[repeat(auto-fill,minmax(18rem,1fr))] overflow-y-scroll">
+      <div className="grid min-h-0 w-full grow grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] justify-center gap-x-4 gap-y-3 overflow-y-auto lg:gap-x-5 lg:gap-y-4">
         {menuItemsFilteredByCategory?.map((item, index) => (
           <MenuItemPOS
             key={index}
