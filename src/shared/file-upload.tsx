@@ -1,30 +1,27 @@
 'use client'
-import { FilesManagerRouterService } from '@/services/files-manager'
 import { Button } from '@/shared/button'
 import { ImageCropperModal } from '@/shared/image-cropper-modal'
 import { cn } from '@/shared/lib/utils'
 import { Progress } from '@/shared/progress'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallDescription } from '@/shared/typography/small-description'
-import { generateReactHelpers, useDropzone } from '@uploadthing/react'
 import { ImageOff, ImageUp, Trash2 } from 'lucide-react'
 import Image from 'next/image'
-import { useEffect, useState } from 'react'
-import { generateClientDropzoneAccept, generatePermittedFileTypes } from 'uploadthing/client'
-import { ClientUploadedFileData, inferEndpointOutput } from 'uploadthing/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-export const { useUploadThing } = generateReactHelpers<FilesManagerRouterService>({ url: '/api/files' })
+export type UploadTarget = 'imageUploader'
+export type UploadedFile = {
+  serverData: {
+    id: number
+    url: string
+  }
+}
 
-export type UploadTarget = keyof FilesManagerRouterService
-export type UploadedFile<Target extends UploadTarget = 'imageUploader'> = ClientUploadedFileData<
-  inferEndpointOutput<FilesManagerRouterService[Target]>
->
-
-interface SingleFileUploadedProps<Target extends UploadTarget> {
-  target?: Target
+interface SingleFileUploadedProps {
+  target?: UploadTarget
   fileUrl?: string | null
   fileTag?: string
-  onFileUploaded(file: UploadedFile<Target>): void
+  onFileUploaded(file: UploadedFile): void
   onUploadError?(error: Error): void
   onFileDeleted?(): void
   onUploadBegin?(files?: File[]): void
@@ -34,8 +31,7 @@ interface SingleFileUploadedProps<Target extends UploadTarget> {
   cropperAspectRatio?: number
 }
 
-export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'>({
-  target = 'imageUploader' as Target,
+export const SingleFileUploader = ({
   storeId,
   fileUrl,
   fileTag,
@@ -47,48 +43,92 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
   error,
   enableCropper = false,
   cropperAspectRatio = 1,
-}: SingleFileUploadedProps<Target> & { storeId: number }) => {
+}: SingleFileUploadedProps & { storeId: number }) => {
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [isUploading, setIsUploading] = useState(false)
   const [isImageLoaded, setIsImageLoaded] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [isCropperOpen, setIsCropperOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const { startUpload, routeConfig, isUploading } = useUploadThing(target, {
-    onBeforeUploadBegin: files => {
-      onUploadBegin?.()
-      return files
-    },
-    onUploadProgress: setUploadProgress,
-    onUploadError,
-    onClientUploadComplete: ([updatedFile]) => {
-      if (!updatedFile?.serverData?.id || !updatedFile?.serverData?.url) {
-        onUploadError?.(new Error('Upload concluído, mas os dados do servidor estão ausentes'))
-        return
+  const uploadFile = useCallback(
+    async (file: File) => {
+      onUploadBegin?.([file])
+      setUploadProgress(15)
+      setIsUploading(true)
+
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('storeId', String(storeId))
+        if (fileTag) {
+          formData.append('tag', fileTag)
+        }
+
+        setUploadProgress(45)
+        const response = await fetch('/api/files', {
+          method: 'POST',
+          body: formData,
+        })
+        const payload = await response.json()
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Erro ao fazer upload do arquivo')
+        }
+
+        if (!payload.serverData?.id || !payload.serverData?.url) {
+          throw new Error('Upload concluido, mas os dados do servidor estao ausentes')
+        }
+
+        setUploadProgress(100)
+        onFileUploaded(payload)
+      } catch (caughtError) {
+        onUploadError?.(
+          caughtError instanceof Error
+            ? caughtError
+            : new Error('Erro ao fazer upload do arquivo')
+        )
+      } finally {
+        setIsUploading(false)
+        setUploadProgress(0)
+        if (inputRef.current) {
+          inputRef.current.value = ''
+        }
       }
-
-      onFileUploaded(updatedFile)
     },
-  })
+    [fileTag, onFileUploaded, onUploadBegin, onUploadError, storeId]
+  )
 
   const handleFilesSelected = (files: File[]) => {
-    if (files.length === 0) return
+    if (files.length === 0 || isUploading) return
 
     const file = files[0]
-    if (enableCropper && file.type.startsWith('image/')) {
-      // Open cropper modal for images
+    if (!file.type.startsWith('image/')) {
+      onUploadError?.(new Error('Formato de imagem nao suportado'))
+      return
+    }
+
+    if (enableCropper) {
       setPendingFile(file)
       setIsCropperOpen(true)
-    } else {
-      // Upload directly without cropping
-      // @ts-ignore
-      startUpload(files, { storeId, tag: fileTag })
+      return
     }
+
+    void uploadFile(file)
+  }
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    handleFilesSelected(Array.from(event.dataTransfer.files))
+  }
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleFilesSelected(Array.from(event.target.files ?? []))
   }
 
   const handleCropComplete = (croppedFile: File) => {
     setPendingFile(null)
-    // @ts-ignore
-    startUpload([croppedFile], { storeId, tag: fileTag })
+    void uploadFile(croppedFile)
   }
 
   const handleCropCancel = () => {
@@ -96,11 +136,18 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
     setIsCropperOpen(false)
   }
 
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop: handleFilesSelected,
-    accept: generateClientDropzoneAccept(generatePermittedFileTypes(routeConfig).fileTypes),
-    multiple: false,
-  })
+  const handleOpenFileDialog = () => {
+    if (!isUploading) {
+      inputRef.current?.click()
+    }
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleOpenFileDialog()
+    }
+  }
 
   useEffect(() => {
     setIsImageLoaded(false)
@@ -111,7 +158,12 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
   return (
     <>
       <div
-        {...getRootProps()}
+        role="button"
+        tabIndex={0}
+        onClick={handleOpenFileDialog}
+        onKeyDown={handleKeyDown}
+        onDragOver={event => event.preventDefault()}
+        onDrop={handleDrop}
         className={cn(
           'flex flex-col items-center justify-center gap-4 m-2 border-dashed border border-gray-900/25 rounded-lg min-h-56 max-h-72 relative',
           className,
@@ -159,9 +211,9 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
             <ImageUp size={32} className="transition-all group-hover:text-primary/80 group-hover:scale-105" />
             <div className="flex flex-col items-center mt-2">
               <LargeText variant="sm" hoverBehavior="clickable" className="transition-colors group-hover:opacity-90">
-                Adicione ou arraste uma foto para cá!
+                Adicione ou arraste uma foto para ca!
               </LargeText>
-              <SmallDescription>Tamanho máximo: 4MB</SmallDescription>
+              <SmallDescription>Tamanho maximo: 4MB</SmallDescription>
             </div>
             {!isUploading && (
               <Button variant="secondary" isClickable className="group-hover:scale-105">
@@ -176,10 +228,15 @@ export const SingleFileUploader = <Target extends UploadTarget = 'imageUploader'
             )}
           </>
         )}
-        <input {...getInputProps()} disabled={isUploading} />
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          disabled={isUploading}
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
       </div>
-      {/* ImageCropperModal must be outside the dropzone div to prevent click events
-          from bubbling up and triggering the file selector when interacting with the cropper */}
       {enableCropper && (
         <ImageCropperModal
           open={isCropperOpen}
