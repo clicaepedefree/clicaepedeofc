@@ -32,6 +32,12 @@ const securityHeaders = [
   },
 ]
 
+const supabaseStorageUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  process.env.SUPABASE_URL ??
+  'https://kktmjjmkbbtbibzbpcqj.supabase.co'
+const supabaseStorageHostname = new URL(supabaseStorageUrl).hostname
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -39,6 +45,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'da6y2ze444.ufs.sh',
         pathname: '/f/*',
+      },
+      {
+        protocol: 'https',
+        hostname: supabaseStorageHostname,
+        pathname: '/storage/v1/object/public/store-files/**',
       },
     ],
   },

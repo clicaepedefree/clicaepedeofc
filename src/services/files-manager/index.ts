@@ -1,40 +1,135 @@
-import { insertStoreFile } from '@/features/store/db'
-import { fileAuthMiddleware } from '@/services/files-manager/auth-middleware'
-import { baseFileInputForUpload } from '@/services/files-manager/base-file-input'
-import { createUploadthing, type FileRouter } from 'uploadthing/next'
+import { addStoreFile } from '@/features/store/api'
+import { validateUserPermissionsForStore } from '@/features/store/api'
 
-const f = createUploadthing({
-  errorFormatter: error => {
-    const errorMessage = error.message.includes('FileSizeMismatch')
-      ? 'Arquivo muito grande'
-      : 'Erro ao fazer upload to arquivo'
-    return {
-      message: errorMessage,
-    }
-  },
-})
+export const STORE_FILES_BUCKET = 'store-files'
+export const MAX_IMAGE_UPLOAD_SIZE = 4 * 1024 * 1024
 
-export const filesManagerRouterService = {
-  imageUploader: f({
-    image: {
-      maxFileSize: '4MB',
-      maxFileCount: 1,
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+])
+
+export type UploadedStoreFile = {
+  id: number
+  url: string
+}
+
+export function assertValidImageFile(file: File) {
+  if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+    throw new Error('Formato de imagem nao suportado')
+  }
+
+  if (file.size > MAX_IMAGE_UPLOAD_SIZE) {
+    throw new Error('Arquivo muito grande')
+  }
+}
+
+function getSupabaseStorageConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Supabase Storage nao configurado')
+  }
+
+  return {
+    supabaseUrl: supabaseUrl.replace(/\/$/, ''),
+    serviceRoleKey,
+  }
+}
+
+function getFileExtension(file: File) {
+  const extensionByMimeType: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+  }
+
+  return extensionByMimeType[file.type] ?? 'bin'
+}
+
+function buildStorageObjectPath(storeId: number, file: File) {
+  const extension = getFileExtension(file)
+  const randomId = crypto.randomUUID()
+
+  return `stores/${storeId}/${randomId}.${extension}`
+}
+
+async function deleteStorageObject({
+  supabaseUrl,
+  serviceRoleKey,
+  objectPath,
+}: {
+  supabaseUrl: string
+  serviceRoleKey: string
+  objectPath: string
+}) {
+  await fetch(`${supabaseUrl}/storage/v1/object/${STORE_FILES_BUCKET}/${objectPath}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
     },
   })
-    .input(baseFileInputForUpload)
-    .middleware(({ input }) => fileAuthMiddleware({ input }))
-    .onUploadComplete(async ({ metadata, file: uploadedFile }) => {
-      const createdFile = await insertStoreFile({
-        storeId: metadata.storeId,
-        creatorId: metadata.userId,
-        provider: 'uploadthing',
-        type: uploadedFile.type,
-        url: uploadedFile.ufsUrl,
-        tag: metadata.tag,
-      })
-      return createdFile
-    }),
-} satisfies FileRouter
+}
 
-export type FilesManagerRouterService = typeof filesManagerRouterService
-export type FilesManagerSupportedEndpoints = keyof typeof filesManagerRouterService
+export async function uploadStoreImageFile({
+  file,
+  storeId,
+  tag,
+}: {
+  file: File
+  storeId: number
+  tag?: string
+}): Promise<UploadedStoreFile> {
+  assertValidImageFile(file)
+
+  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { supabaseUrl, serviceRoleKey } = getSupabaseStorageConfig()
+  const objectPath = buildStorageObjectPath(storeId, file)
+
+  const uploadResponse = await fetch(
+    `${supabaseUrl}/storage/v1/object/${STORE_FILES_BUCKET}/${objectPath}`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': file.type,
+        'Cache-Control': '3600',
+        'x-upsert': 'false',
+      },
+      body: file,
+    }
+  )
+
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text()
+    throw new Error(`Erro ao enviar arquivo para o Supabase Storage: ${errorText}`)
+  }
+
+  const publicUrl = `${supabaseUrl}/storage/v1/object/public/${STORE_FILES_BUCKET}/${objectPath}`
+  let createdFile: Awaited<ReturnType<typeof addStoreFile>>
+
+  try {
+    createdFile = await addStoreFile({
+      storeId,
+      creatorId: user.id,
+      provider: 'supabase-storage',
+      type: file.type,
+      url: publicUrl,
+      tag,
+    })
+  } catch (error) {
+    await deleteStorageObject({ supabaseUrl, serviceRoleKey, objectPath })
+    throw error
+  }
+
+  return {
+    id: createdFile.id,
+    url: createdFile.url,
+  }
+}

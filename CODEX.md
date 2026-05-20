@@ -54,7 +54,7 @@ If the user asks you to modify code, explain that you're a project assistant and
       <orm>Drizzle ORM 0.43.1 with drizzle-kit 0.31.1</orm>
       <database>PostgreSQL (Supabase hosted, postgres 3.4.5 driver)</database>
       <authentication>Clerk (@clerk/nextjs 6.37.1)</authentication>
-      <file_uploads>UploadThing 7.6.0</file_uploads>
+      <file_uploads>Supabase Storage</file_uploads>
       <encryption>AES-256-GCM for token storage (custom lib/encryption)</encryption>
       <receipts>receiptline 1.16.2</receipts>
       <templates>mustache 4.2.0</templates>
@@ -74,7 +74,7 @@ If the user asks you to modify code, explain that you're a project assistant and
       - Clerk account for authentication
       - iFood API credentials (NEXT_PUBLIC_IFOOD_CLIENT_ID, IFOOD_CLIENT_SECRET)
       - Encryption key for token storage (ENCRYPTION_KEY)
-      - UploadThing credentials for file uploads
+      - Supabase Storage credentials (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     </environment_setup>
   </prerequisites>
 

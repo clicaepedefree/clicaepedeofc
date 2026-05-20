@@ -20,7 +20,8 @@ set -e
 #   NEXT_PUBLIC_IFOOD_CLIENT_ID - iFood OAuth client ID
 #   IFOOD_CLIENT_SECRET   - iFood OAuth client secret
 #   IFOOD_TOKEN_ENCRYPTION_KEY - AES-256-GCM encryption key for token storage
-#   UPLOADTHING_TOKEN     - UploadThing file upload credentials
+#   SUPABASE_URL          - Supabase project URL for Storage uploads
+#   SUPABASE_SERVICE_ROLE_KEY - Server-only key for Supabase Storage uploads
 # ============================================================
 
 echo "============================================================"

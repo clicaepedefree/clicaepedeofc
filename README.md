@@ -60,8 +60,9 @@ POSTGRES_URL=postgresql://...
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 CLERK_SECRET_KEY=sk_...
 
-# File Uploads
-UPLOADTHING_TOKEN=...
+# Supabase Storage
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
 ```
 
 **Domain configuration (optional - defaults work for local dev):**
@@ -250,8 +251,9 @@ POSTGRES_URL=postgresql://user:pass@host:5432/database
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxx
 CLERK_SECRET_KEY=sk_live_xxx
 
-# Required - File Uploads
-UPLOADTHING_TOKEN=xxx
+# Required - Supabase Storage
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=xxx
 
 # iFood Integration (if enabled)
 NEXT_PUBLIC_IFOOD_CLIENT_ID=xxx

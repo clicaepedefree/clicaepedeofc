@@ -42,3 +42,6 @@ next-env.d.ts
 .autoforge
 # clerk configuration (can include secrets)
 /.clerk/
+
+# local Claude tool permissions
+.claude/settings.local.json
