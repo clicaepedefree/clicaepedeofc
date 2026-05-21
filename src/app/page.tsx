@@ -1,4 +1,5 @@
 import { getUserByClerkId } from '@/features/user/db'
+import { isUserAdminOfAnyStore } from '@/features/store/db'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 
@@ -25,6 +26,12 @@ export default async function Home() {
 
   if (!user) {
     // Authenticated but no user record - needs onboarding
+    redirect('/admin-onboarding')
+  }
+
+  const hasAdminStore = await isUserAdminOfAnyStore(user.id)
+
+  if (!hasAdminStore) {
     redirect('/admin-onboarding')
   }
 

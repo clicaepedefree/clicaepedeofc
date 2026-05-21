@@ -4,6 +4,7 @@ import { isAdminHostname, stripAdminSubdomain } from '@/shared/lib/domain-config
 
 const isPublicRoute = createRouteMatcher([
   '/login(.*)',
+  '/admin-onboarding(.*)',
   '/api/files(.*)',
   '/api/health(.*)',
   '/unauthorized(.*)',
@@ -101,11 +102,11 @@ const appMiddleware = clerkMiddleware(async (auth, request) => {
 
   // Handle protected routes
   if (!isPublicRoute(request)) {
+    const { userId } = await auth()
+
     // For admin subdomain, we need to check auth manually and redirect to main domain if not authenticated
     // This prevents the redirect loop where Clerk redirects to /login on the same subdomain
     if (isAdminSubdomain) {
-      const { userId } = await auth()
-
       if (!userId) {
         // User is not authenticated on admin subdomain
         // Redirect to main domain login with return URL back to admin subdomain
@@ -133,9 +134,13 @@ const appMiddleware = clerkMiddleware(async (auth, request) => {
         })
       }
       // User is authenticated, continue
-    } else {
-      // On main domain, use Clerk's default protection
-      await auth.protect()
+    } else if (!userId) {
+      const signInUrl = new URL('/login', request.url)
+      const returnUrl = `${url.pathname}${url.search}`
+
+      signInUrl.searchParams.set('redirect_url', returnUrl)
+
+      return NextResponse.redirect(signInUrl)
     }
   }
 

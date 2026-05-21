@@ -1,10 +1,13 @@
 'use server'
 
 import {
+  assertOptionGroupBelongsToStore,
   createOptionGroupOnDb,
   createOptionsOnDb,
   deleteOptionGroupOnDb,
   deleteOptionsByGroupIdOnDb,
+  assertOptionItemsBelongToStore,
+  assertOptionsBelongToOptionGroup,
   getOptionGroupsByItemOfferingId,
   getOptionGroupsByStoreId,
   replaceItemOfferingOptionGroupLinks,
@@ -24,6 +27,12 @@ export const createOptionGroup = async (data: NewOptionGroup) => {
   await validateUserPermissionsForStore(data.storeId, 'admin')
 
   return await db.transaction(async (tx) => {
+    await assertOptionItemsBelongToStore({
+      itemIds: data.options.map((opt) => opt.itemId),
+      storeId: data.storeId,
+      dbSession: tx,
+    })
+
     const group = await createOptionGroupOnDb({
       optionGroup: {
         storeId: data.storeId,
@@ -54,8 +63,15 @@ export const updateOptionGroup = async (data: UpdateOptionGroup) => {
   await validateUserPermissionsForStore(data.storeId, 'admin')
 
   return await db.transaction(async (tx) => {
+    await assertOptionGroupBelongsToStore({
+      optionGroupId: data.id,
+      storeId: data.storeId,
+      dbSession: tx,
+    })
+
     const group = await updateOptionGroupOnDb({
       id: data.id,
+      storeId: data.storeId,
       optionGroup: {
         name: data.name,
         minQuantity: data.minQuantity,
@@ -68,8 +84,21 @@ export const updateOptionGroup = async (data: UpdateOptionGroup) => {
       .filter((opt) => opt.id !== undefined)
       .map((opt) => opt.id as number)
 
+    await assertOptionItemsBelongToStore({
+      itemIds: data.options.map((opt) => opt.itemId),
+      storeId: data.storeId,
+      dbSession: tx,
+    })
+
+    await assertOptionsBelongToOptionGroup({
+      optionIds: existingOptionIds,
+      optionGroupId: data.id,
+      dbSession: tx,
+    })
+
     await deleteOptionsByGroupIdOnDb({
       optionGroupId: data.id,
+      storeId: data.storeId,
       excludeIds: existingOptionIds,
       dbSession: tx,
     })
@@ -78,6 +107,7 @@ export const updateOptionGroup = async (data: UpdateOptionGroup) => {
       if (opt.id) {
         await updateOptionOnDb({
           id: opt.id,
+          optionGroupId: data.id,
           option: {
             itemId: opt.itemId,
             price: opt.price,
@@ -128,7 +158,7 @@ export const listOptionGroupsByItemOffering = async (
 ) => {
   await validateUserPermissionsForStore(storeId, 'admin')
 
-  return await getOptionGroupsByItemOfferingId({ itemOfferingId })
+  return await getOptionGroupsByItemOfferingId({ itemOfferingId, storeId })
 }
 
 export const linkOptionGroupsToItemOffering = async (
@@ -146,6 +176,7 @@ export const linkOptionGroupsToItemOffering = async (
     await replaceItemOfferingOptionGroupLinks({
       itemOfferingId: data.itemOfferingId,
       links,
+      storeId: data.storeId,
       dbSession: tx,
     })
   })
@@ -161,6 +192,7 @@ export const unlinkOptionGroupFromOffering = async (
   await unlinkOptionGroupFromItemOffering({
     itemOfferingId,
     optionGroupId,
+    storeId,
     dbSession: db,
   })
 }

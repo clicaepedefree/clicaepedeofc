@@ -14,7 +14,9 @@ export const getValueFromCurrencyString = (value: string | number) => {
 
   if (!value) return 0
 
-  const cleanedValue = value.replace(baseCurrencyConfig.decimalSeparator, '.')
+  const cleanedValue = value
+    .replaceAll(baseCurrencyConfig.groupSeparator, '')
+    .replace(baseCurrencyConfig.decimalSeparator, '.')
 
   return parseFloat(cleanedValue)
 }

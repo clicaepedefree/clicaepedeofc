@@ -1,9 +1,15 @@
 'use server'
 import {
+  createStoreWithAdminPermission,
   getUserStorePermissions,
   insertStoreFile,
   isUserAdminOfAnyStore,
 } from '@/features/store/db'
+import {
+  onboardingStoreSchema,
+  type OnboardingStoreFormValues,
+} from '@/features/store/form-validation/onboarding-store-schema'
+import { finishUserOnboarding } from '@/features/user/api'
 import { requireAuth } from '@/services/auth'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
@@ -16,6 +22,12 @@ import { and, eq, getTableColumns } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
 import { UserStoreRole } from './types'
+
+type CreateFirstStoreResult =
+  | { success: true; storeId: number }
+  | { success: false; error: string }
+
+const USER_ALREADY_HAS_ADMIN_STORE_ERROR = 'USER_ALREADY_HAS_ADMIN_STORE'
 
 export const getAvailableStores = async (): Promise<any[]> => {
   const user = await requireAuth()
@@ -95,6 +107,76 @@ export const validateAdminAccess = async () => {
 
   const isAdmin = await isUserAdminOfAnyStore(user.id)
   if (!isAdmin) redirect('/unauthorized', RedirectType.replace)
+}
+
+export const createFirstStoreForCurrentUser = async (
+  values: OnboardingStoreFormValues
+): Promise<CreateFirstStoreResult> => {
+  const user = await requireAuth()
+  const parsedValues = onboardingStoreSchema.safeParse(values)
+
+  if (!parsedValues.success) {
+    return {
+      success: false,
+      error: parsedValues.error.issues[0]?.message ?? 'Dados invalidos',
+    }
+  }
+
+  const alreadyHasStore = await isUserAdminOfAnyStore(user.id)
+
+  if (alreadyHasStore) {
+    const stores = await getAvailableStores()
+    const firstStore = stores[0]
+
+    return {
+      success: true,
+      storeId: firstStore.id,
+    }
+  }
+
+  try {
+    const store = await createStoreWithAdminPermission({
+      userId: user.id,
+      store: parsedValues.data,
+    })
+
+    await finishUserOnboarding(user.id)
+
+    return { success: true, storeId: store.id }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === USER_ALREADY_HAS_ADMIN_STORE_ERROR
+    ) {
+      const stores = await getAvailableStores()
+      const firstStore = stores[0]
+
+      if (firstStore) return { success: true, storeId: firstStore.id }
+
+      return {
+        success: false,
+        error: 'Seu usuario ja administra uma loja.',
+      }
+    }
+
+    if (
+      error instanceof Error &&
+      (error.message.includes('stores_subdomain_unique') ||
+        error.message.includes('duplicate key'))
+    ) {
+      return {
+        success: false,
+        error: 'Esse endereco publico ja esta em uso. Tente outro nome.',
+      }
+    }
+
+    console.error('[Onboarding] Failed to create first store:', error)
+
+    return {
+      success: false,
+      error: 'Nao foi possivel criar a loja agora. Tente novamente.',
+    }
+  }
 }
 
 export const validateUserPermissionsForStore = async (

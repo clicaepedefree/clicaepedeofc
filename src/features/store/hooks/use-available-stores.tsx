@@ -10,17 +10,23 @@ export const useAvailableStores = () => {
   const result = useQuery({ queryKey: storesCacheKey(), queryFn: getAvailableStores })
   const [selectedStoreId, setSelectedStoreId] = useAtom(selectedStoreIdAtom)
 
+  const selectedStoreIsAvailable = !!result.data?.some(
+    store => store.id === selectedStoreId
+  )
+
   useEffect(() => {
-    if (selectedStoreId) return
+    if (!result.data?.length) return
+
+    if (selectedStoreIsAvailable) return
 
     const firstStore = result.data?.[0]
-    if (!firstStore) return
 
     setSelectedStoreId(firstStore.id)
-  }, [result.data, selectedStoreId, setSelectedStoreId])
+  }, [result.data, selectedStoreId, selectedStoreIsAvailable, setSelectedStoreId])
 
   return {
     stores: result.data,
+    selectedStoreIsAvailable,
     isLoading: result.isLoading,
     isError: result.isError,
   }

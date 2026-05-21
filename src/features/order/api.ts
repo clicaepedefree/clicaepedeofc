@@ -29,6 +29,7 @@ export const createOrder = async (newOrder: NewOrder) => {
     }))
 
     const outOfStockItems = await checkStockAvailability({
+      storeId: newOrder.storeId,
       items: itemsToCheck,
       dbSession: tx,
     })
@@ -50,12 +51,32 @@ export const createOrder = async (newOrder: NewOrder) => {
     const updateItemsInventoryPromises = newOrder.items.map(newOrderItem =>
       updateOrderItemInventoryOnDb({
         itemId: newOrderItem.itemId,
+        storeId: newOrder.storeId,
         quantity: Number(newOrderItem.quantity),
         dbSession: tx,
       })
     )
 
-    await Promise.all(updateItemsInventoryPromises)
+    const inventoryUpdates = await Promise.all(updateItemsInventoryPromises)
+
+    if (inventoryUpdates.some(wasUpdated => !wasUpdated)) {
+      const currentOutOfStockItems = await checkStockAvailability({
+        storeId: newOrder.storeId,
+        items: itemsToCheck,
+        dbSession: tx,
+      })
+
+      throw new OutOfStockError(
+        currentOutOfStockItems.length > 0
+          ? currentOutOfStockItems
+          : itemsToCheck.map(item => ({
+              itemId: item.itemId,
+              name: 'Item indisponivel',
+              requestedQty: item.quantity,
+              availableQty: 0,
+            }))
+      )
+    }
 
     const createdOrderItems = []
     for (const newOrderItem of newOrder.items) {
@@ -176,6 +197,7 @@ export const validateCartStock = async (params: {
   await validateUserPermissionsForStore(params.storeId, 'admin')
 
   const outOfStockItems = await checkStockAvailability({
+    storeId: params.storeId,
     items: params.items,
     dbSession: db,
   })

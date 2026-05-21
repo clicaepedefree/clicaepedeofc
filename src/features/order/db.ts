@@ -17,7 +17,7 @@ import { InsertOrder, ordersTable } from '@/services/db/schema/orders'
 import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
 import { DbSession } from '@/services/db/types'
 import { decrementColumnValue } from '@/services/db/utils/decrement-column-value'
-import { and, count, eq, inArray, sql } from 'drizzle-orm'
+import { and, count, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 
 export const getNextOrderDisplayIdForStore = async ({
   storeId,
@@ -90,17 +90,28 @@ export const createOrderPaymentOnDb = async ({
 
 export const updateOrderItemInventoryOnDb = async ({
   itemId,
+  storeId,
   quantity,
   dbSession,
 }: {
   itemId: number
+  storeId: number
   quantity: number
   dbSession: DbSession
 }) => {
-  await dbSession
+  const updatedItems = await dbSession
     .update(itemsTable)
     .set({ inventory: decrementColumnValue(itemsTable.inventory, quantity) })
-    .where(eq(itemsTable.id, itemId))
+    .where(
+      and(
+        eq(itemsTable.id, itemId),
+        eq(itemsTable.storeId, storeId),
+        or(isNull(itemsTable.inventory), gte(itemsTable.inventory, quantity))
+      )
+    )
+    .returning({ id: itemsTable.id })
+
+  return updatedItems.length > 0
 }
 
 export const createOrderItemOptionsOnDb = async ({
@@ -132,9 +143,11 @@ export type OrderItemQuantity = {
  * Items with null inventory are considered "infinite stock" (not tracked).
  */
 export const checkStockAvailability = async ({
+  storeId,
   items,
   dbSession,
 }: {
+  storeId: number
   items: OrderItemQuantity[]
   dbSession: DbSession
 }): Promise<OutOfStockItem[]> => {
@@ -151,7 +164,7 @@ export const checkStockAvailability = async ({
       inventory: itemsTable.inventory,
     })
     .from(itemsTable)
-    .where(inArray(itemsTable.id, itemIds))
+    .where(and(eq(itemsTable.storeId, storeId), inArray(itemsTable.id, itemIds)))
 
   // Create a map for quick lookups
   const itemMap = new Map<number, Pick<SelectItem, 'id' | 'name' | 'inventory'>>(
@@ -170,8 +183,15 @@ export const checkStockAvailability = async ({
   for (const [itemId, requestedQty] of requestedQuantities) {
     const dbItem = itemMap.get(itemId)
 
-    // If item doesn't exist in DB, skip (will be caught elsewhere)
-    if (!dbItem) continue
+    if (!dbItem) {
+      outOfStockItems.push({
+        itemId,
+        name: 'Item indisponivel',
+        requestedQty,
+        availableQty: 0,
+      })
+      continue
+    }
 
     // If inventory is null, item has infinite stock (not tracked)
     if (dbItem.inventory === null) continue

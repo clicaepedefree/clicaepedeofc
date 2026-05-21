@@ -1,6 +1,10 @@
-'use server'
+import 'server-only'
 
-import { clerkClient, User as ClerkUser } from '@clerk/nextjs/server'
+import {
+  clerkClient,
+  currentUser,
+  User as ClerkUser,
+} from '@clerk/nextjs/server'
 import { createOrUpdateUser } from './db'
 
 export const createOrUpdateUserFromLogin = async (clerkUser: ClerkUser) => {
@@ -22,11 +26,11 @@ export const createOrUpdateUserFromLogin = async (clerkUser: ClerkUser) => {
   return await createOrUpdateUser(userInfoToUpsert)
 }
 
-export const finishUserOnboarding = async (
-  clerkUser: ClerkUser,
-  userId: string
-) => {
+export const finishUserOnboarding = async (userId: string) => {
   // TODO accept admin invitations
+  const clerkUser = await currentUser()
+  if (!clerkUser) throw new Error('Clerk user not found')
+
   const client = await clerkClient()
 
   await client.users.updateUser(clerkUser.id, {
