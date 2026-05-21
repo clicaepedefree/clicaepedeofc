@@ -1,10 +1,26 @@
-import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import {
+  createdAt,
+  updatedAt,
+  baseTimestampColumnGenerator,
+} from '@/services/db/schema/utils'
 import { pgTable, serial, text } from 'drizzle-orm/pg-core'
+
+export const storeStatuses = [
+  'active',
+  'inactive',
+  'pending_recovery',
+  'archived',
+] as const
 
 export const storesTable = pgTable('stores', {
   id: serial('id').primaryKey(),
   subdomain: text('subdomain').unique().notNull(),
   name: text('name').notNull(),
+  status: text('status', { enum: storeStatuses }).notNull().default('active'),
+  statusReason: text('status_reason'),
+  statusUpdatedAt: baseTimestampColumnGenerator('status_updated_at')
+    .notNull()
+    .defaultNow(),
   createdAt,
   updatedAt,
 })

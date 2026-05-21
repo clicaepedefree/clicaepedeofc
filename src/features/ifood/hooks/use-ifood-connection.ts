@@ -5,20 +5,20 @@ import { useEffect } from 'react'
 import { getIFoodConnectionStatus } from '../api'
 
 export function useIFoodConnection(storeId: number) {
-  const query = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['ifood-connection', storeId],
     queryFn: () => getIFoodConnectionStatus(storeId),
     retry: 1,
   })
 
   useEffect(() => {
-    query.refetch()
-  }, [])
+    refetch()
+  }, [refetch])
 
   return {
-    connection: query.data,
-    isLoading: query.isLoading,
-    error: query.error,
-    refetch: query.refetch,
+    connection: data,
+    isLoading,
+    error,
+    refetch,
   }
 }

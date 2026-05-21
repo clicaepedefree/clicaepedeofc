@@ -4,6 +4,7 @@ import {
   createOrUpdateUserFromLogin,
   finishUserOnboarding,
 } from '@/features/user/api'
+import { getRecoverableStoresForCurrentUserEmail } from '@/features/store/api'
 import { isUserAdminOfAnyStore } from '@/features/store/db'
 import { AdminOnboardingForm } from '@/features/store/components/admin-onboarding-form'
 import { currentUser } from '@clerk/nextjs/server'
@@ -31,5 +32,7 @@ export default async function Onboarding() {
     redirect('/dashboard')
   }
 
-  return <AdminOnboardingForm />
+  const recoverableStores = await getRecoverableStoresForCurrentUserEmail()
+
+  return <AdminOnboardingForm recoverableStores={recoverableStores} />
 }

@@ -1,6 +1,7 @@
 'use server'
 import {
   createStoreWithAdminPermission,
+  getPendingRecoveryStoresByEmail,
   getUserStorePermissions,
   insertStoreFile,
   isUserAdminOfAnyStore,
@@ -10,7 +11,9 @@ import {
   type OnboardingStoreFormValues,
 } from '@/features/store/form-validation/onboarding-store-schema'
 import { finishUserOnboarding } from '@/features/user/api'
+import { shouldBlockStoreOperations } from '@/features/user/user-policy'
 import { requireAuth } from '@/services/auth'
+import { currentUser } from '@clerk/nextjs/server'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
@@ -18,7 +21,7 @@ import { InsertStoreFile } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
 import { coalesce } from '@/services/db/utils'
-import { and, eq, getTableColumns } from 'drizzle-orm'
+import { and, eq, getTableColumns, sql } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
 import { UserStoreRole } from './types'
@@ -39,9 +42,25 @@ export const getAvailableStores = async (): Promise<any[]> => {
       userStorePermissionsTable,
       and(
         eq(userStorePermissionsTable.storeId, storesTable.id),
-        eq(userStorePermissionsTable.userId, user.id)
+        eq(userStorePermissionsTable.userId, user.id),
+        sql`${userStorePermissionsTable.revokedAt} is null`,
+        eq(storesTable.status, 'active')
       )
     )
+}
+
+export const getRecoverableStoresForCurrentUserEmail = async () => {
+  const clerkUser = await currentUser()
+
+  if (!clerkUser) return []
+
+  const primaryEmailAddress = clerkUser.emailAddresses.find(
+    emailAddress => emailAddress.id === clerkUser.primaryEmailAddressId
+  )
+
+  if (!primaryEmailAddress) return []
+
+  return await getPendingRecoveryStoresByEmail(primaryEmailAddress.emailAddress)
 }
 
 export const getStoreConfigurations = async (storeId: number): Promise<any[]> => {
@@ -190,11 +209,14 @@ export const validateUserPermissionsForStore = async (
     storeId
   )
 
-  if (userPermissionsForStore?.role !== role)
+  if (
+    userPermissionsForStore?.permission.role !== role ||
+    shouldBlockStoreOperations(userPermissionsForStore.store.status)
+  )
     throw new PermissionsError({
       type: 'FORBIDDEN',
       message: 'Usuário não possui permissão para executar operação na loja',
     })
 
-  return { user, storePermissions: userPermissionsForStore }
+  return { user, storePermissions: userPermissionsForStore.permission }
 }

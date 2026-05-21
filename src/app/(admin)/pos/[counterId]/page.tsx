@@ -53,7 +53,7 @@ export default function CounterPage({}) {
     })
 
     router.replace(`/pos`)
-  }, [isLoading, activeCounterId])
+  }, [isLoading, isEnabled, activeCounterId, router])
 
   if (isLoading || !isEnabled || !activeCounterId || !activeCounter)
     return <PageLoadingSpinner />

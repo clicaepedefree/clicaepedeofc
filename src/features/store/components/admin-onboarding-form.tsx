@@ -11,7 +11,13 @@ import { Label } from '@/shared/label'
 import { dispatchToast } from '@/shared/lib/toast'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { useSetAtom } from 'jotai'
-import { Building2, CheckCircle2, Store, WandSparkles } from 'lucide-react'
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Store,
+  WandSparkles,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
 
@@ -27,7 +33,18 @@ const normalizeSubdomain = (value: string) =>
 
 type FormErrors = Partial<Record<keyof OnboardingStoreFormValues | 'root', string>>
 
-export function AdminOnboardingForm() {
+type RecoverableStore = {
+  id: number
+  name: string
+  subdomain: string
+  status: string
+}
+
+export function AdminOnboardingForm({
+  recoverableStores = [],
+}: {
+  recoverableStores?: RecoverableStore[]
+}) {
   const router = useRouter()
   const setSelectedStoreId = useSetAtom(selectedStoreIdAtom)
   const [isPending, startTransition] = useTransition()
@@ -151,6 +168,24 @@ export function AdminOnboardingForm() {
               </h2>
             </div>
           </div>
+
+          {recoverableStores.length > 0 && (
+            <div className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+              <div className="flex gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Existe uma loja pendente de recuperacao para este e-mail
+                  </p>
+                  <p className="text-sm leading-6 text-amber-900/80 dark:text-amber-100/80">
+                    Por seguranca, nao vinculamos a loja automaticamente a uma
+                    nova conta. Fale com o suporte da Clica e Pede para recuperar
+                    acesso ou crie uma nova loja abaixo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <Label className="gap-2">

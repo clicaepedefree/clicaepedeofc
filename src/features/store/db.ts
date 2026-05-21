@@ -6,6 +6,7 @@ import {
 } from '@/services/db/schema/store-files'
 import { InsertStore, storesTable } from '@/services/db/schema/stores'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
+import { usersTable } from '@/services/db/schema/users'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq, sql } from 'drizzle-orm'
 
@@ -22,15 +23,23 @@ function getUserStoreCreationLockKey(userId: string) {
 }
 
 export const isUserAdminOfAnyStore = async (userId: string) => {
-  const result = await db.$count(
-    userStorePermissionsTable,
-    and(
-      eq(userStorePermissionsTable.userId, userId),
-      eq(userStorePermissionsTable.role, 'admin')
+  const [store] = await db
+    .select({ id: storesTable.id })
+    .from(userStorePermissionsTable)
+    .innerJoin(storesTable, eq(storesTable.id, userStorePermissionsTable.storeId))
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .where(
+      and(
+        eq(userStorePermissionsTable.userId, userId),
+        eq(userStorePermissionsTable.role, 'admin'),
+        sql`${userStorePermissionsTable.revokedAt} is null`,
+        eq(storesTable.status, 'active'),
+        eq(usersTable.status, 'active')
+      )
     )
-  )
+    .limit(1)
 
-  return result > 0
+  return Boolean(store)
 }
 
 export const getUserStorePermissions = async (
@@ -38,16 +47,47 @@ export const getUserStorePermissions = async (
   storeId: number
 ) => {
   const [userStoreRole] = await db
-    .select()
+    .select({
+      permission: userStorePermissionsTable,
+      store: storesTable,
+    })
     .from(userStorePermissionsTable)
+    .innerJoin(storesTable, eq(storesTable.id, userStorePermissionsTable.storeId))
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
     .where(
       and(
         eq(userStorePermissionsTable.userId, userId),
-        eq(userStorePermissionsTable.storeId, storeId)
+        eq(userStorePermissionsTable.storeId, storeId),
+        sql`${userStorePermissionsTable.revokedAt} is null`,
+        eq(usersTable.status, 'active')
       )
     )
 
   return userStoreRole
+}
+
+export const getPendingRecoveryStoresByEmail = async (email: string) => {
+  return await db
+    .select({
+      id: storesTable.id,
+      name: storesTable.name,
+      subdomain: storesTable.subdomain,
+      status: storesTable.status,
+    })
+    .from(storesTable)
+    .innerJoin(
+      userStorePermissionsTable,
+      eq(userStorePermissionsTable.storeId, storesTable.id)
+    )
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .where(
+      and(
+        eq(storesTable.status, 'pending_recovery'),
+        eq(userStorePermissionsTable.role, 'admin'),
+        eq(usersTable.status, 'deleted'),
+        sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`
+      )
+    )
 }
 
 export const createStoreWithAdminPermission = async ({
@@ -68,7 +108,8 @@ export const createStoreWithAdminPermission = async ({
       .where(
         and(
           eq(userStorePermissionsTable.userId, userId),
-          eq(userStorePermissionsTable.role, 'admin')
+          eq(userStorePermissionsTable.role, 'admin'),
+          sql`${userStorePermissionsTable.revokedAt} is null`
         )
       )
       .limit(1)
