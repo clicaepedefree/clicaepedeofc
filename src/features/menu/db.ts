@@ -4,7 +4,7 @@ import { categoriesTable, InsertCategory } from '@/services/db/schema/categories
 import { InsertItemOffering, itemOfferingsTable } from '@/services/db/schema/item-offerings'
 import { InsertItem, itemsTable } from '@/services/db/schema/items'
 import { DbSession } from '@/services/db/types'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 
 export const createCategoryOnDb = async (newCategory: InsertCategory) => {
   const [createdCategory] = await db.insert(categoriesTable).values(newCategory).returning()
@@ -12,11 +12,16 @@ export const createCategoryOnDb = async (newCategory: InsertCategory) => {
   return createdCategory
 }
 
-export const updateCategoryOnDb = async (id: number, updatedCategoryData: InsertCategory) => {
+export const updateCategoryOnDb = async (
+  id: number,
+  storeId: number,
+  updatedCategoryData: InsertCategory
+) => {
+  const { storeId: _storeId, ...updatedCategoryColumns } = updatedCategoryData
   const [updatedCategory] = await db
     .update(categoriesTable)
-    .set(updatedCategoryData)
-    .where(eq(categoriesTable.id, id))
+    .set(updatedCategoryColumns)
+    .where(and(eq(categoriesTable.id, id), eq(categoriesTable.storeId, storeId)))
     .returning()
 
   return updatedCategory
@@ -54,6 +59,28 @@ export const getNextItemOfferingIndex = async ({
   return nextIndex
 }
 
+export const getCategoryIdsForStore = async ({
+  categoryIds,
+  storeId,
+  dbSession,
+}: {
+  categoryIds: number[]
+  storeId: number
+  dbSession: DbSession
+}) => {
+  if (categoryIds.length === 0) return []
+
+  return await dbSession
+    .select({ id: categoriesTable.id })
+    .from(categoriesTable)
+    .where(
+      and(
+        inArray(categoriesTable.id, categoryIds),
+        eq(categoriesTable.storeId, storeId)
+      )
+    )
+}
+
 export const createItemOnDb = async ({ newItem, dbSession }: { newItem: InsertItem; dbSession: DbSession }) => {
   const [createdItem] = await dbSession.insert(itemsTable).values(newItem).returning()
 
@@ -74,13 +101,20 @@ export const createItemOfferingOnDb = async ({
 
 export const updateItemOnDb = async ({
   updatedItem,
+  storeId,
   dbSession,
 }: {
   updatedItem: RequiredBy<InsertItem, 'id'>
+  storeId: number
   dbSession: DbSession
 }) => {
   const { id, ...updatedItemColumns } = updatedItem
-  const [item] = await dbSession.update(itemsTable).set(updatedItemColumns).where(eq(itemsTable.id, id)).returning()
+  const { storeId: _storeId, ...safeUpdatedItemColumns } = updatedItemColumns
+  const [item] = await dbSession
+    .update(itemsTable)
+    .set(safeUpdatedItemColumns)
+    .where(and(eq(itemsTable.id, id), eq(itemsTable.storeId, storeId)))
+    .returning()
 
   return item
 }

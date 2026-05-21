@@ -334,6 +334,7 @@ export const generateNfce = async (
     }))
 
     const outOfStockItems = await checkStockAvailability({
+      storeId,
       items: itemsToCheck,
       dbSession: db,
     })

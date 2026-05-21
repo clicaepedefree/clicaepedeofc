@@ -15,6 +15,10 @@ describe('currency formatter', () => {
     expect(getValueFromCurrencyString('12,50')).toBe(12.5)
   })
 
+  test('parses pt-BR values with thousand separators', () => {
+    expect(getValueFromCurrencyString('1.234,56')).toBe(1234.56)
+  })
+
   test('formats values with and without currency symbol', () => {
     expect(formatValueToCurrency({ value: 12.5 })).toBe('12.50')
     expect(

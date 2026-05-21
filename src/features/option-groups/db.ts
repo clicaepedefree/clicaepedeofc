@@ -5,6 +5,8 @@ import {
   InsertItemOfferingOptionGroup,
   itemOfferingOptionGroupsTable,
 } from '@/services/db/schema/item-offering-option-groups'
+import { itemOfferingsTable } from '@/services/db/schema/item-offerings'
+import { itemsTable } from '@/services/db/schema/items'
 import {
   InsertOptionGroup,
   optionGroupsTable,
@@ -32,17 +34,20 @@ export const createOptionGroupOnDb = async ({
 
 export const updateOptionGroupOnDb = async ({
   id,
+  storeId,
   optionGroup,
   dbSession,
 }: {
   id: number
+  storeId: number
   optionGroup: Partial<InsertOptionGroup>
   dbSession: DbSession
 }) => {
+  const { storeId: _storeId, ...optionGroupColumns } = optionGroup
   const [updated] = await dbSession
     .update(optionGroupsTable)
-    .set(optionGroup)
-    .where(eq(optionGroupsTable.id, id))
+    .set(optionGroupColumns)
+    .where(and(eq(optionGroupsTable.id, id), eq(optionGroupsTable.storeId, storeId)))
     .returning()
 
   return updated
@@ -98,17 +103,22 @@ export const createOptionsOnDb = async ({
 
 export const updateOptionOnDb = async ({
   id,
+  optionGroupId,
   option,
   dbSession,
 }: {
   id: number
+  optionGroupId: number
   option: Partial<InsertOption>
   dbSession: DbSession
 }) => {
+  const { optionGroupId: _optionGroupId, ...optionColumns } = option
   const [updated] = await dbSession
     .update(optionsTable)
-    .set(option)
-    .where(eq(optionsTable.id, id))
+    .set(optionColumns)
+    .where(
+      and(eq(optionsTable.id, id), eq(optionsTable.optionGroupId, optionGroupId))
+    )
     .returning()
 
   return updated
@@ -126,13 +136,17 @@ export const deleteOptionOnDb = async ({
 
 export const deleteOptionsByGroupIdOnDb = async ({
   optionGroupId,
+  storeId,
   excludeIds,
   dbSession,
 }: {
   optionGroupId: number
+  storeId: number
   excludeIds: number[]
   dbSession: DbSession
 }) => {
+  await assertOptionGroupBelongsToStore({ optionGroupId, storeId, dbSession })
+
   if (excludeIds.length > 0) {
     await dbSession
       .delete(optionsTable)
@@ -187,12 +201,17 @@ export const linkOptionGroupToItemOffering = async ({
 export const unlinkOptionGroupFromItemOffering = async ({
   itemOfferingId,
   optionGroupId,
+  storeId,
   dbSession,
 }: {
   itemOfferingId: number
   optionGroupId: number
+  storeId: number
   dbSession: DbSession
 }) => {
+  await assertItemOfferingBelongsToStore({ itemOfferingId, storeId, dbSession })
+  await assertOptionGroupBelongsToStore({ optionGroupId, storeId, dbSession })
+
   await dbSession
     .delete(itemOfferingOptionGroupsTable)
     .where(
@@ -206,12 +225,21 @@ export const unlinkOptionGroupFromItemOffering = async ({
 export const replaceItemOfferingOptionGroupLinks = async ({
   itemOfferingId,
   links,
+  storeId,
   dbSession,
 }: {
   itemOfferingId: number
   links: InsertItemOfferingOptionGroup[]
+  storeId: number
   dbSession: DbSession
 }) => {
+  await assertItemOfferingBelongsToStore({ itemOfferingId, storeId, dbSession })
+  await assertOptionGroupsBelongToStore({
+    optionGroupIds: links.map((link) => link.optionGroupId),
+    storeId,
+    dbSession,
+  })
+
   await dbSession
     .delete(itemOfferingOptionGroupsTable)
     .where(eq(itemOfferingOptionGroupsTable.itemOfferingId, itemOfferingId))
@@ -246,9 +274,17 @@ export const getOptionGroupsByStoreId = async ({
 
 export const getOptionGroupsByItemOfferingId = async ({
   itemOfferingId,
+  storeId,
 }: {
   itemOfferingId: number
+  storeId: number
 }) => {
+  await assertItemOfferingBelongsToStore({
+    itemOfferingId,
+    storeId,
+    dbSession: db,
+  })
+
   const junctionRows =
     await db.query.itemOfferingOptionGroupsTable.findMany({
       where: eq(
@@ -280,9 +316,19 @@ export const getOptionGroupsByItemOfferingId = async ({
 
 export const getOptionGroupsByItemOfferingIds = async ({
   itemOfferingIds,
+  storeId,
 }: {
   itemOfferingIds: number[]
+  storeId?: number
 }) => {
+  if (storeId !== undefined) {
+    await assertItemOfferingsBelongToStore({
+      itemOfferingIds,
+      storeId,
+      dbSession: db,
+    })
+  }
+
   const junctionRows =
     await db.query.itemOfferingOptionGroupsTable.findMany({
       where: inArray(
@@ -314,4 +360,149 @@ export const getOptionGroupsByItemOfferingIds = async ({
   }
 
   return grouped
+}
+
+export const assertOptionGroupBelongsToStore = async ({
+  optionGroupId,
+  storeId,
+  dbSession,
+}: {
+  optionGroupId: number
+  storeId: number
+  dbSession: DbSession
+}) => {
+  const rows = await dbSession
+    .select({ id: optionGroupsTable.id })
+    .from(optionGroupsTable)
+    .where(
+      and(
+        eq(optionGroupsTable.id, optionGroupId),
+        eq(optionGroupsTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!rows[0]) {
+    throw new Error('Option group does not belong to the validated store')
+  }
+}
+
+export const assertOptionGroupsBelongToStore = async ({
+  optionGroupIds,
+  storeId,
+  dbSession,
+}: {
+  optionGroupIds: number[]
+  storeId: number
+  dbSession: DbSession
+}) => {
+  const uniqueIds = [...new Set(optionGroupIds)]
+  if (uniqueIds.length === 0) return
+
+  const rows = await dbSession
+    .select({ id: optionGroupsTable.id })
+    .from(optionGroupsTable)
+    .where(
+      and(
+        inArray(optionGroupsTable.id, uniqueIds),
+        eq(optionGroupsTable.storeId, storeId)
+      )
+    )
+
+  if (rows.length !== uniqueIds.length) {
+    throw new Error('All option groups must belong to the validated store')
+  }
+}
+
+export const assertOptionItemsBelongToStore = async ({
+  itemIds,
+  storeId,
+  dbSession,
+}: {
+  itemIds: number[]
+  storeId: number
+  dbSession: DbSession
+}) => {
+  const uniqueIds = [...new Set(itemIds)]
+  if (uniqueIds.length === 0) return
+
+  const rows = await dbSession
+    .select({ id: itemsTable.id })
+    .from(itemsTable)
+    .where(and(inArray(itemsTable.id, uniqueIds), eq(itemsTable.storeId, storeId)))
+
+  if (rows.length !== uniqueIds.length) {
+    throw new Error('All option items must belong to the validated store')
+  }
+}
+
+export const assertOptionsBelongToOptionGroup = async ({
+  optionIds,
+  optionGroupId,
+  dbSession,
+}: {
+  optionIds: number[]
+  optionGroupId: number
+  dbSession: DbSession
+}) => {
+  const uniqueIds = [...new Set(optionIds)]
+  if (uniqueIds.length === 0) return
+
+  const rows = await dbSession
+    .select({ id: optionsTable.id })
+    .from(optionsTable)
+    .where(
+      and(
+        inArray(optionsTable.id, uniqueIds),
+        eq(optionsTable.optionGroupId, optionGroupId)
+      )
+    )
+
+  if (rows.length !== uniqueIds.length) {
+    throw new Error('All options must belong to the option group being updated')
+  }
+}
+
+export const assertItemOfferingBelongsToStore = async ({
+  itemOfferingId,
+  storeId,
+  dbSession,
+}: {
+  itemOfferingId: number
+  storeId: number
+  dbSession: DbSession
+}) => {
+  await assertItemOfferingsBelongToStore({
+    itemOfferingIds: [itemOfferingId],
+    storeId,
+    dbSession,
+  })
+}
+
+export const assertItemOfferingsBelongToStore = async ({
+  itemOfferingIds,
+  storeId,
+  dbSession,
+}: {
+  itemOfferingIds: number[]
+  storeId: number
+  dbSession: DbSession
+}) => {
+  const uniqueIds = [...new Set(itemOfferingIds)]
+  if (uniqueIds.length === 0) return
+
+  const rows = await dbSession
+    .select({ id: itemOfferingsTable.id })
+    .from(itemOfferingsTable)
+    .innerJoin(itemsTable, eq(itemsTable.id, itemOfferingsTable.itemId))
+    .where(
+      and(
+        inArray(itemOfferingsTable.id, uniqueIds),
+        eq(itemsTable.storeId, storeId)
+      )
+    )
+
+  if (rows.length !== uniqueIds.length) {
+    throw new Error('All item offerings must belong to the validated store')
+  }
 }

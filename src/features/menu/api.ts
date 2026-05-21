@@ -4,6 +4,7 @@ import {
   createCategoryOnDb,
   createItemOfferingOnDb,
   createItemOnDb,
+  getCategoryIdsForStore,
   getNextCategoryIndex,
   getNextItemOfferingIndex,
   updateCategoryOnDb,
@@ -11,6 +12,7 @@ import {
 } from '@/features/menu/db'
 import { NewCategory, NewItem } from '@/features/menu/types'
 import {
+  assertOptionGroupsBelongToStore,
   getOptionGroupsByItemOfferingIds,
   replaceItemOfferingOptionGroupLinks,
 } from '@/features/option-groups/db'
@@ -28,6 +30,7 @@ import {
   baseStoreFileRelationalQuery,
   storeFilesTable,
 } from '@/services/db/schema/store-files'
+import { DbSession } from '@/services/db/types'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
 import { and, eq } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
@@ -50,7 +53,7 @@ export const updateCategory = async (
   const storeId = updatedCategory.storeId
   await validateUserPermissionsForStore(storeId, 'admin')
 
-  return await updateCategoryOnDb(updatedCategory.id, updatedCategory)
+  return await updateCategoryOnDb(updatedCategory.id, storeId, updatedCategory)
 }
 
 export const listCategories = async ({
@@ -102,6 +105,7 @@ export const listCategories = async ({
     allItemOfferingIds.length > 0
       ? await getOptionGroupsByItemOfferingIds({
           itemOfferingIds: allItemOfferingIds,
+          storeId,
         })
       : {}
 
@@ -146,6 +150,17 @@ export const createItem = async (
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await db.transaction(async tx => {
+    await assertCategoriesBelongToStore({
+      categoryIds: newItem.offerings.map((offering) => offering.categoryId),
+      storeId,
+      dbSession: tx,
+    })
+    await assertOptionGroupsBelongToStore({
+      optionGroupIds: newItem.optionGroupIds ?? [],
+      storeId,
+      dbSession: tx,
+    })
+
     const item = await createItemOnDb({ newItem, dbSession: tx })
 
     let firstOfferingId: number | null = null
@@ -174,6 +189,7 @@ export const createItem = async (
       await replaceItemOfferingOptionGroupLinks({
         itemOfferingId: firstOfferingId,
         links,
+        storeId,
         dbSession: tx,
       })
     }
@@ -193,9 +209,22 @@ export const updateItem = async (
   await validateUserPermissionsForStore(storeId, 'admin')
 
   return await db.transaction(async tx => {
-    const currentItemOfferings = await tx.query.itemOfferingsTable.findMany({
-      where: eq(itemOfferingsTable.itemId, updatedItem.id),
+    await assertCategoriesBelongToStore({
+      categoryIds: updatedItem.offerings.map((offering) => offering.categoryId),
+      storeId,
+      dbSession: tx,
     })
+
+    const currentItemOfferings = await tx
+      .select({ categoryId: itemOfferingsTable.categoryId })
+      .from(itemOfferingsTable)
+      .innerJoin(itemsTable, eq(itemsTable.id, itemOfferingsTable.itemId))
+      .where(
+        and(
+          eq(itemOfferingsTable.itemId, updatedItem.id),
+          eq(itemsTable.storeId, storeId)
+        )
+      )
 
     const currentOfferingsIds = currentItemOfferings.map(
       itemOffering => itemOffering.categoryId
@@ -203,8 +232,13 @@ export const updateItem = async (
 
     const updatedItemRow = await updateItemOnDb({
       updatedItem: updatedItem,
+      storeId,
       dbSession: tx,
     })
+
+    if (!updatedItemRow) {
+      throw new Error('Item does not belong to the validated store')
+    }
 
     for (const itemOffering of updatedItem.offerings) {
       const isNewItemOffering = !currentOfferingsIds.includes(
@@ -314,7 +348,7 @@ export const listMenuItems = async ({ storeId }: { storeId: number }): Promise<a
 
   const optionGroupsByOffering =
     itemOfferingIds.length > 0
-      ? await getOptionGroupsByItemOfferingIds({ itemOfferingIds })
+      ? await getOptionGroupsByItemOfferingIds({ itemOfferingIds, storeId })
       : {}
 
   const menuItemsWithOptionGroups = menuItems.map(item => ({
@@ -323,4 +357,25 @@ export const listMenuItems = async ({ storeId }: { storeId: number }): Promise<a
   }))
 
   return menuItemsWithOptionGroups
+}
+
+const assertCategoriesBelongToStore = async ({
+  categoryIds,
+  storeId,
+  dbSession,
+}: {
+  categoryIds: number[]
+  storeId: number
+  dbSession: DbSession
+}) => {
+  const uniqueCategoryIds = [...new Set(categoryIds)]
+  const rows = await getCategoryIdsForStore({
+    categoryIds: uniqueCategoryIds,
+    storeId,
+    dbSession,
+  })
+
+  if (rows.length !== uniqueCategoryIds.length) {
+    throw new Error('All item offering categories must belong to the validated store')
+  }
 }

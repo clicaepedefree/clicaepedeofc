@@ -6,14 +6,37 @@ import { usersTable } from '@/services/db/schema'
 import { eq } from 'drizzle-orm'
 
 export const createOrUpdateUser = async (userInfo: InsertUser) => {
-  const [createdOrUpdatedUser] = await db
-    .insert(usersTable)
-    .values(userInfo)
-    .onConflictDoUpdate({
-      target: [usersTable.clerkId],
-      set: userInfo,
-    })
-    .returning()
+  const [existingUserByClerkId] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.clerkId, userInfo.clerkId))
+
+  if (existingUserByClerkId) {
+    const [updatedUser] = await db
+      .update(usersTable)
+      .set(userInfo)
+      .where(eq(usersTable.id, existingUserByClerkId.id))
+      .returning()
+
+    return updatedUser
+  }
+
+  const [existingUserByEmail] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, userInfo.email))
+
+  if (existingUserByEmail) {
+    const [updatedUser] = await db
+      .update(usersTable)
+      .set(userInfo)
+      .where(eq(usersTable.id, existingUserByEmail.id))
+      .returning()
+
+    return updatedUser
+  }
+
+  const [createdOrUpdatedUser] = await db.insert(usersTable).values(userInfo).returning()
 
   return createdOrUpdatedUser
 }

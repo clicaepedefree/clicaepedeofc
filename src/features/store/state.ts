@@ -1,2 +1,8 @@
-import { atom } from 'jotai'
-export const selectedStoreIdAtom = atom<number | null>(null)
+import { atomWithStorage } from 'jotai/utils'
+
+export const selectedStoreIdAtom = atomWithStorage<number | null>(
+  'selectedStoreId',
+  null,
+  undefined,
+  { getOnInit: true }
+)

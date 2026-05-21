@@ -2,7 +2,10 @@ import { z } from 'zod'
 
 export const optionSchema = z.object({
   id: z.number().optional(),
-  itemId: z.number({ required_error: 'Selecione um item' }),
+  itemId: z
+    .number({ required_error: 'Selecione um item' })
+    .int('Selecione um item valido')
+    .positive('Selecione um item'),
   itemName: z.string().optional(),
   price: z.string().default('0'),
   originalPrice: z.union([z.string(), z.null()]).default(null),
