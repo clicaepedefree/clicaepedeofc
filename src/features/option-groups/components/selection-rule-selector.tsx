@@ -88,7 +88,7 @@ export const SelectionRuleSelector = ({
 }: SelectionRuleSelectorProps) => {
   const initialPreset = useMemo(
     () => detectPreset(minQuantity, maxQuantity),
-    []
+    [minQuantity, maxQuantity]
   )
   const [selectedPreset, setSelectedPreset] =
     useState<SelectionRulePreset>(initialPreset)

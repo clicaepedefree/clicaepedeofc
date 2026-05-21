@@ -8,6 +8,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Provider as JotaiProvider } from 'jotai'
 import { Inter } from 'next/font/google'
+import { ThemeProvider } from 'next-themes'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -21,15 +22,17 @@ export default function Providers({
   const queryClient = getQueryClient()
 
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <body
         className={cn(inter.className, 'h-dvh text-foreground', bodyClassName)}
       >
-        <QueryClientProvider client={queryClient}>
-          <Toaster />
-          <JotaiProvider>{children}</JotaiProvider>
-          <ReactQueryDevtools />
-        </QueryClientProvider>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <QueryClientProvider client={queryClient}>
+            <Toaster />
+            <JotaiProvider>{children}</JotaiProvider>
+            <ReactQueryDevtools />
+          </QueryClientProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

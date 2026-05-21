@@ -18,7 +18,11 @@ export const useReceipt = (options?: UseReceiptOptions) => {
 
   const updateReceiptContent = async (receiptSvg: string) => {
     const receiptImageComponent = receiptSvg ? (
-      <img src={`data:image/svg+xml;utf8,${encodeURIComponent(receiptSvg)}`} />
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`data:image/svg+xml;utf8,${encodeURIComponent(receiptSvg)}`}
+        alt=""
+      />
     ) : null
 
     setReceiptImage(receiptImageComponent)

@@ -62,12 +62,14 @@ export const useCart = (salesChannel: SalesChannel) => {
     if (!selectedStoreId || !cartSessionItems?.length) return
 
     const cartItemsIndexesToRemove = cartSessionItems
-      .filter(cartItem => cartItem.storeId !== selectedStoreId)
-      .map((_, index) => index)
+      .map((cartItem, index) =>
+        cartItem.storeId !== selectedStoreId ? index : null
+      )
+      .filter((index): index is number => index !== null)
       .reverse()
 
     cartItemsIndexesToRemove.forEach(index => removeItemFromCart(index))
-  }, [selectedStoreId])
+  }, [cartSessionItems, removeItemFromCart, selectedStoreId])
 
   useEffect(() => {
     if (cartSessionItems?.length) return
@@ -78,14 +80,20 @@ export const useCart = (salesChannel: SalesChannel) => {
     if (isUsingPaymentScreen) {
       setIsUsingPaymentScreen(false)
     }
-  }, [cartSessionItems])
+  }, [
+    cartSessionItems,
+    cartSessionPayments,
+    isUsingPaymentScreen,
+    resetPayments,
+    setIsUsingPaymentScreen,
+  ])
 
   // Clear stock errors when cart items change (user might resolve issues)
   useEffect(() => {
     if (stockValidationErrors.length > 0) {
       clearStockErrors()
     }
-  }, [cartSessionItems])
+  }, [cartSessionItems, clearStockErrors, stockValidationErrors.length])
 
   // Validate stock availability for cart items
   const validateStock = useCallback(async () => {

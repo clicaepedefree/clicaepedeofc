@@ -1,6 +1,7 @@
 import '@/app/globals.css'
 import { AdminPageTitle } from '@/features/admin/components/admin-page-title'
 import { StoreSelector } from '@/features/store/components/store-selector'
+import { DarkModeToggle } from '@/features/theme/components/dark-mode-toggle'
 import { UserProfile } from '@/features/user/components/userProfile'
 import {
   Breadcrumb,
@@ -15,7 +16,7 @@ import { SignInButton, SignUpButton, SignedOut } from '@clerk/nextjs'
 
 export const AdminHeader = () => {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b bg-background/95 px-4 backdrop-blur">
       <div className="flex items-center gap-2">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mr-2 h-4" />
@@ -29,7 +30,8 @@ export const AdminHeader = () => {
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      <div>
+      <div className="flex items-center gap-2">
+        <DarkModeToggle />
         <SignedOut>
           <SignInButton>
             <Button variant="outline">Entrar</Button>

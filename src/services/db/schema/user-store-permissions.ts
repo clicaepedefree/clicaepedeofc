@@ -1,4 +1,8 @@
-import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import {
+  createdAt,
+  updatedAt,
+  baseTimestampColumnGenerator,
+} from '@/services/db/schema/utils'
 import { integer, pgTable, primaryKey, text, uuid } from 'drizzle-orm/pg-core'
 import { storesTable } from './stores'
 import { usersTable } from './users'
@@ -13,6 +17,8 @@ export const userStorePermissionsTable = pgTable(
       .notNull()
       .references(() => storesTable.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['admin'] }).notNull(),
+    revokedAt: baseTimestampColumnGenerator('revoked_at'),
+    revokedReason: text('revoked_reason'),
     createdAt,
     updatedAt,
   },

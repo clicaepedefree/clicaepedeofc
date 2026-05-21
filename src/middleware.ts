@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   '/admin-onboarding(.*)',
   '/api/files(.*)',
   '/api/health(.*)',
+  '/api/webhooks/clerk(.*)',
   '/unauthorized(.*)',
 ])
 
