@@ -18,7 +18,7 @@ export const MenuItemPOS = ({ item, onClick }: MenuItemPOSProps) => {
     <div
       key={item.id}
       className={cn(
-        'group/menu-item relative flex h-full min-h-24 cursor-pointer items-center justify-between overflow-hidden rounded-lg border bg-white shadow-sm transition-all',
+        'group/menu-item relative flex h-full min-h-24 cursor-pointer items-center justify-between overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm transition-all',
         {
           'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md':
             !isItemUnavailable,
@@ -38,7 +38,7 @@ export const MenuItemPOS = ({ item, onClick }: MenuItemPOSProps) => {
       <Body
         variant={300}
         fontWeight="regular"
-        className="absolute right-0 top-0 max-w-32 truncate rounded-bl-md bg-primary/10 px-2 py-0.5 text-slate-500"
+        className="absolute right-0 top-0 max-w-32 truncate rounded-bl-md bg-primary/10 px-2 py-0.5 text-muted-foreground"
       >
         {item.category.name}
       </Body>
@@ -74,7 +74,7 @@ export const MenuItemPOS = ({ item, onClick }: MenuItemPOSProps) => {
         <Body
           variant={200}
           fontWeight="regular"
-          className={cn('text-neutral-600', {
+          className={cn('text-muted-foreground', {
             'group-hover/menu-item:text-white': !isItemUnavailable,
           })}
         >

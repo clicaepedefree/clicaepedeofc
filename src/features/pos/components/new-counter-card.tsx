@@ -31,7 +31,7 @@ export const NewCounterCard = ({
     <div
       ref={ref}
       className={cn(
-        'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 rounded-lg bg-white cursor-pointer min-w-68 border-l-8'
+        'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 rounded-lg bg-card text-card-foreground cursor-pointer min-w-68 border-l-8'
       )}
     >
       <Monitor size={20} />

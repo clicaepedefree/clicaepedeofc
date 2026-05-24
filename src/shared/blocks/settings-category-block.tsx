@@ -11,7 +11,7 @@ export const SettingsCategoryBlock = ({
   contentClassName?: string
 }) => {
   return (
-    <div className="bg-white border-1 rounded-xl p-4">
+    <div className="bg-card text-card-foreground border-1 rounded-xl p-4">
       <div className="border-b py-2 px-4 mb-4">
         <Headline variant={500} fontWeight="medium" className="text-primary">
           {title}

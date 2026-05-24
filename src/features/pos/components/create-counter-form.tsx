@@ -53,7 +53,7 @@ export const CreateCounterForm = ({
                     type="submit"
                     disabled={!canSubmit}
                     className={cn(
-                      'border not-disabled:border-primary bg-white text-primary hover:bg-primary/80 hover:text-white rounded-sm',
+                      'border not-disabled:border-primary bg-card text-primary hover:bg-primary/80 hover:text-white rounded-sm',
                       { 'border-0 p-1': isSubmitting }
                     )}
                   >
