@@ -1,5 +1,8 @@
 import { canUseInternalRole, requireInternalOperator } from '@/features/internal-operations/access'
-import { InternalStoresTable } from '@/features/internal-operations/components/internal-stores-table'
+import {
+  InternalStoresTable,
+  type SerializableInternalStoreListItem,
+} from '@/features/internal-operations/components/internal-stores-table'
 import { getInternalStoreStatusCounts, getRecentInternalAuditLogs, listInternalStores, parseStoreStatus, type InternalStoreStatus } from '@/features/internal-operations/db'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
@@ -53,6 +56,20 @@ const buildStatusHref = ({
   const query = params.toString()
   return query ? `/internal/stores?${query}` : '/internal/stores'
 }
+
+const serializeStoresForClient = (
+  stores: Awaited<ReturnType<typeof listInternalStores>>
+): SerializableInternalStoreListItem[] =>
+  stores.map(store => ({
+    ...store,
+    statusUpdatedAt: store.statusUpdatedAt.toISOString(),
+    createdAt: store.createdAt.toISOString(),
+    updatedAt: store.updatedAt.toISOString(),
+    admins: store.admins.map(admin => ({
+      ...admin,
+      revokedAt: admin.revokedAt?.toISOString() ?? null,
+    })),
+  }))
 
 export default async function InternalStoresPage({
   searchParams,
@@ -166,7 +183,7 @@ export default async function InternalStoresPage({
         </div>
 
         <InternalStoresTable
-          stores={stores}
+          stores={serializeStoresForClient(stores)}
           canReactivate={canReactivate}
           canArchive={canArchive}
         />

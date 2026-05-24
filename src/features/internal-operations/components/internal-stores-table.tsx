@@ -14,9 +14,23 @@ import { Textarea } from '@/shared/textarea'
 import { Archive, RotateCcw } from 'lucide-react'
 
 type InternalStoresTableProps = {
-  stores: InternalStoreListItem[]
+  stores: SerializableInternalStoreListItem[]
   canReactivate: boolean
   canArchive: boolean
+}
+
+export type SerializableInternalStoreListItem = Omit<
+  InternalStoreListItem,
+  'statusUpdatedAt' | 'createdAt' | 'updatedAt' | 'admins'
+> & {
+  statusUpdatedAt: string
+  createdAt: string
+  updatedAt: string
+  admins: Array<
+    Omit<InternalStoreListItem['admins'][number], 'revokedAt'> & {
+      revokedAt: string | null
+    }
+  >
 }
 
 const statusLabel: Record<InternalStoreListItem['status'], string> = {
@@ -45,7 +59,7 @@ const formatDateTime = (date: Date | string | null) => {
   }).format(new Date(date))
 }
 
-const getPrimaryAdminEmail = (store: InternalStoreListItem) => {
+const getPrimaryAdminEmail = (store: SerializableInternalStoreListItem) => {
   const activeAdmin = store.admins.find(admin => !admin.revokedAt)
   return activeAdmin?.email ?? store.admins[0]?.email ?? ''
 }
