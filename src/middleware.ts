@@ -21,6 +21,7 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/', // Root page
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
+  '/internal(.*)', // Internal Clica e Pede operations
   '/unauthorized(.*)', // Unauthorized page
 ])
 
