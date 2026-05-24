@@ -54,7 +54,7 @@ const BaseCounterCard = ({
       variant="ghost"
       {...props}
       className={cn(
-        'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 border-l-8 rounded-lg bg-white hover:scale-105 hover:shadow-lg cursor-pointer min-w-68',
+        'flex flex-col gap-2 justify-center items-center min-h-32 p-2 border-2 border-l-8 rounded-lg bg-card text-card-foreground hover:scale-105 hover:shadow-lg cursor-pointer min-w-68',
         {
           'border-green-700/80': !counter.isInService,
           'border-destructive/60': counter.isInService,

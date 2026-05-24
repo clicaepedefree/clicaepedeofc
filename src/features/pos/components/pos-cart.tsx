@@ -81,8 +81,8 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
   }, [cartSessionItems, stockValidationErrors, removeItemFromCart])
 
   return (
-    <div className="relative flex h-full min-h-[28rem] w-full flex-col overflow-y-auto rounded-lg border bg-white shadow-sm">
-      <div className="sticky left-0 top-0 z-20 flex items-center justify-center gap-2 border-b bg-white/95 p-4 text-center font-medium backdrop-blur">
+    <div className="relative flex h-full min-h-[28rem] w-full flex-col overflow-y-auto rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div className="sticky left-0 top-0 z-20 flex items-center justify-center gap-2 border-b bg-card/95 p-4 text-center font-medium backdrop-blur">
         <ShoppingBag />
         Pedido
       </div>
@@ -113,7 +113,7 @@ export const PosCart = ({ menuItems }: { menuItems: MenuItem[] }) => {
           )
         })}
       </div>
-      <div className="sticky bottom-0 left-0 z-20 w-full space-y-2 border-t bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
+      <div className="sticky bottom-0 left-0 z-20 w-full space-y-2 border-t bg-card/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className="flex items-center justify-between w-full px-1 ">
           <LargeText variant="lg">Total:</LargeText>
           <LargeText variant="lg">

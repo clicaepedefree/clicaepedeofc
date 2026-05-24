@@ -38,7 +38,7 @@ export const CategoryBlock = ({
     <AccordionItem
       value={category.id.toString()}
       className={cn(
-        'border rounded-lg bg-white',
+        'border rounded-lg bg-card text-card-foreground shadow-sm',
         isDeleting &&
           'border-destructive border-2 border-dashed animate-pulse bg-destructive/5'
       )}
@@ -120,7 +120,7 @@ export const CategoryBlock = ({
               trigger={
                 <Button
                   variant="outline"
-                  className="text-primary w-full h-10 hover:bg-primary/5 hover:text-primary hover:border-2 hover:border-primary hover:border-dashed"
+                  className="text-primary w-full h-10 hover:bg-primary/5 hover:text-primary hover:border-2 hover:border-primary hover:border-dashed dark:bg-card dark:hover:bg-primary/10"
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Adicionar Item

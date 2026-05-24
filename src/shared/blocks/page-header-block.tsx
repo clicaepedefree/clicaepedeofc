@@ -8,7 +8,7 @@ type PageHeaderBlockProps = {
 
 export const PageHeaderBlock = ({ title, subtitle }: PageHeaderBlockProps) => {
   return (
-    <div className="bg-white border-b-2 p-4 space-y-2 ">
+    <div className="bg-card text-card-foreground border-b-2 p-4 space-y-2">
       <Headline variant={300}>{title}</Headline>
       {subtitle && (
         <Body fontWeight="light" highlight="secondary" variant={100}>

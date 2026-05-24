@@ -163,7 +163,7 @@ export const PosPayments = ({
                 <Info size={20} />
               </TooltipTrigger>
               <TooltipContent
-                className="border-2 text-foreground bg-white"
+                className="border-2 bg-popover text-popover-foreground"
                 hideArrow
               >
                 <PaymentsList payments={cartSessionPayments} />
@@ -178,7 +178,7 @@ export const PosPayments = ({
   return (
     <>
       <TabsWithIcons
-        className="relative bg-white w-full h-full rounded-xl border"
+        className="relative bg-card text-card-foreground w-full h-full rounded-xl border"
         headerClassName=" bg-bottom"
         triggerClassName="[&>svg]:h-7 [&>svg]:w-7 "
         tabs={paymentTabs}

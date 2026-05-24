@@ -42,7 +42,7 @@ export const TabsWithIcons = ({
             value={tab.value}
             disabled={tab.disabled}
             className={cn(
-              'flex flex-col gap-2 h-full border-b-2 border-transparent data-[state=active]:border-primary rounded-sm data-[state=active]:shadow-md data-[state=active]:text-primary [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0 data-[state=inactive]:hover:shadow-sm data-[state=inactive]:hover:border data-[state=inactive]:hover:bg-white',
+              'flex flex-col gap-2 h-full border-b-2 border-transparent data-[state=active]:border-primary rounded-sm data-[state=active]:shadow-md data-[state=active]:text-primary [&>svg]:h-5 [&>svg]:w-5 [&>svg]:shrink-0 data-[state=inactive]:hover:shadow-sm data-[state=inactive]:hover:border data-[state=inactive]:hover:bg-background dark:data-[state=inactive]:hover:bg-input/30',
               triggerClassName
             )}
           >

@@ -53,7 +53,7 @@ export default function InvoicesPage() {
         title="Notas fiscais"
         subtitle="Gerencie suas notas fiscais"
       />
-      <Table className="table-auto overflow-x-scroll m-4 bg-white rounded-2xl">
+      <Table className="table-auto overflow-x-scroll m-4 bg-card text-card-foreground rounded-2xl border">
         <TableHeader>
           <TableRow>
             <TableHead className="w-8" />
