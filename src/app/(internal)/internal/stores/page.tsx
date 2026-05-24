@@ -71,6 +71,11 @@ const serializeStoresForClient = (
     })),
   }))
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  return 'Erro desconhecido'
+}
+
 export default async function InternalStoresPage({
   searchParams,
 }: InternalStoresPageProps) {
@@ -79,11 +84,36 @@ export default async function InternalStoresPage({
   const status = parseStoreStatus(params.status)
   const search = params.q?.trim() ?? ''
 
-  const [stores, counts, auditLogs] = await Promise.all([
-    listInternalStores({ status, search }),
-    getInternalStoreStatusCounts(),
-    getRecentInternalAuditLogs(12),
-  ])
+  let stores: Awaited<ReturnType<typeof listInternalStores>>
+  let counts: Awaited<ReturnType<typeof getInternalStoreStatusCounts>>
+  let auditLogs: Awaited<ReturnType<typeof getRecentInternalAuditLogs>>
+
+  try {
+    ;[stores, counts, auditLogs] = await Promise.all([
+      listInternalStores({ status, search }),
+      getInternalStoreStatusCounts(),
+      getRecentInternalAuditLogs(12),
+    ])
+  } catch (error) {
+    console.error('[internal/stores] Failed to load internal operations panel', error)
+
+    return (
+      <div className="space-y-4 rounded-lg border border-rose-200 bg-rose-50 p-6 text-rose-950">
+        <div>
+          <p className="text-sm font-medium text-rose-700">Operacao interna</p>
+          <h1 className="mt-1 text-2xl font-semibold">Nao foi possivel carregar as lojas</h1>
+        </div>
+        <p className="text-sm text-rose-800">
+          O acesso interno foi validado, mas a consulta dos dados falhou no servidor.
+        </p>
+        {operator.role === 'ops_admin' && (
+          <pre className="overflow-auto rounded-md border border-rose-200 bg-white p-3 text-xs text-rose-900">
+            {getErrorMessage(error)}
+          </pre>
+        )}
+      </div>
+    )
+  }
 
   const canReactivate = canUseInternalRole({
     currentRole: operator.role,
