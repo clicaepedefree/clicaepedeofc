@@ -8,6 +8,7 @@ import {
   getNextCategoryIndex,
   getNextItemOfferingIndex,
   updateCategoryOnDb,
+  updateItemOfferingAvailabilityOnDb,
   updateItemOnDb,
 } from '@/features/menu/db'
 import { NewCategory, NewItem } from '@/features/menu/types'
@@ -294,6 +295,30 @@ export const updateItem = async (
 
     return updatedItemRow
   })
+}
+
+export const updateItemOfferingAvailability = async ({
+  itemOfferingId,
+  storeId,
+  isAvailable,
+}: {
+  itemOfferingId: number
+  storeId: number
+  isAvailable: boolean
+}) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  const updatedItemOffering = await updateItemOfferingAvailabilityOnDb({
+    itemOfferingId,
+    storeId,
+    isAvailable,
+  })
+
+  if (!updatedItemOffering) {
+    throw new Error('Item offering does not belong to the validated store')
+  }
+
+  return updatedItemOffering
 }
 
 export const deleteItem = async (itemId: number, storeId: number) => {

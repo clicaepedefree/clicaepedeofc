@@ -118,3 +118,42 @@ export const updateItemOnDb = async ({
 
   return item
 }
+
+export const updateItemOfferingAvailabilityOnDb = async ({
+  itemOfferingId,
+  storeId,
+  isAvailable,
+  dbSession = db,
+}: {
+  itemOfferingId: number
+  storeId: number
+  isAvailable: boolean
+  dbSession?: DbSession
+}) => {
+  const [validatedItemOffering] = await dbSession
+    .select({ id: itemOfferingsTable.id })
+    .from(itemOfferingsTable)
+    .innerJoin(itemsTable, eq(itemsTable.id, itemOfferingsTable.itemId))
+    .innerJoin(
+      categoriesTable,
+      eq(categoriesTable.id, itemOfferingsTable.categoryId)
+    )
+    .where(
+      and(
+        eq(itemOfferingsTable.id, itemOfferingId),
+        eq(itemsTable.storeId, storeId),
+        eq(categoriesTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!validatedItemOffering) return null
+
+  const [updatedItemOffering] = await dbSession
+    .update(itemOfferingsTable)
+    .set({ isAvailable, updatedAt: new Date() })
+    .where(eq(itemOfferingsTable.id, itemOfferingId))
+    .returning()
+
+  return updatedItemOffering
+}

@@ -30,7 +30,7 @@ export const PosMenuItemsList = ({
 
   const handleItemClick = useCallback(
     (item: MenuItem) => {
-      if (item.inventory === 0) return
+      if (!item.isAvailable || item.inventory === 0) return
       setOptionModalItem(item)
     },
     []
@@ -69,16 +69,19 @@ export const PosMenuItemsList = ({
               className={cn(
                 'px-2 py-0.5 bg-amber-500/10 rounded-sm text-muted-foreground whitespace-nowrap h-fit text-center min-w-20',
                 {
-                  'bg-destructive/10 text-destructive': option.inventory === 0,
+                  'bg-destructive/10 text-destructive':
+                    !option.isAvailable || option.inventory === 0,
                 }
               )}
             >
-              {option.inventory === 0
-                ? 'Esgotado'
-                : formatValueToCurrency({
-                    value: option.price,
-                    includeCurrencySymbol: true,
-                  })}
+              {!option.isAvailable
+                ? 'Indisponivel'
+                : option.inventory === 0
+                  ? 'Esgotado'
+                  : formatValueToCurrency({
+                      value: option.price,
+                      includeCurrencySymbol: true,
+                    })}
             </Body>
             <Body className="grow">
               <Highlighter
@@ -86,7 +89,7 @@ export const PosMenuItemsList = ({
                 textToHighlight={option.name}
                 highlightClassName="text-primary font-semibold bg-primary/5"
                 className={cn({
-                  'line-through': option.inventory === 0,
+                  'line-through': !option.isAvailable || option.inventory === 0,
                 })}
                 autoEscape
               />

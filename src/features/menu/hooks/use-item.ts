@@ -2,9 +2,14 @@ import { selectedStoreIdAtom } from '@/features/store/state'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
-import { deleteItem } from '../api'
-import { categoriesCacheKey } from '../cache-keys'
-import { Item, ItemWithImage } from '../types'
+import { deleteItem, updateItemOfferingAvailability } from '../api'
+import { categoriesCacheKey, menuCacheKey } from '../cache-keys'
+import {
+  CategoryWithImage,
+  Item,
+  ItemOfferingWithImage,
+  ItemWithImage,
+} from '../types'
 
 export const useItem = () => {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
@@ -36,6 +41,78 @@ export const useItem = () => {
     },
   })
 
+  const updateItemOfferingAvailabilityMutation = useMutation({
+    mutationFn: ({
+      item,
+      isAvailable,
+    }: {
+      item: ItemOfferingWithImage
+      isAvailable: boolean
+    }) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+
+      return updateItemOfferingAvailability({
+        itemOfferingId: item.itemOfferingId,
+        storeId: selectedStoreId,
+        isAvailable,
+      })
+    },
+    onMutate: async ({ item, isAvailable }) => {
+      await queryClient.cancelQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
+      await queryClient.cancelQueries({
+        queryKey: menuCacheKey(selectedStoreId),
+      })
+
+      const previousCategories = queryClient.getQueryData<CategoryWithImage[]>(
+        categoriesCacheKey(selectedStoreId)
+      )
+
+      queryClient.setQueryData<CategoryWithImage[]>(
+        categoriesCacheKey(selectedStoreId),
+        currentCategories =>
+          currentCategories?.map(category => ({
+            ...category,
+            items: category.items?.map((categoryItem: ItemOfferingWithImage) =>
+              categoryItem.itemOfferingId === item.itemOfferingId
+                ? { ...categoryItem, isAvailable }
+                : categoryItem
+            ),
+          }))
+      )
+
+      return { previousCategories }
+    },
+    onError: (_, { item }, context) => {
+      if (context?.previousCategories) {
+        queryClient.setQueryData(
+          categoriesCacheKey(selectedStoreId),
+          context.previousCategories
+        )
+      }
+
+      dispatchToast({
+        message: `Erro ao atualizar status de venda de '${item.name}'`,
+        type: 'error',
+      })
+    },
+    onSuccess: (_, { item, isAvailable }) => {
+      dispatchToast({
+        message: `Item '${item.name}' ${isAvailable ? 'ativado' : 'desativado'} para venda`,
+        type: 'success',
+      })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: menuCacheKey(selectedStoreId),
+      })
+    },
+  })
+
   const onItemUpdated = (item: Item) => {
     queryClient.invalidateQueries({
       queryKey: categoriesCacheKey(selectedStoreId),
@@ -49,6 +126,10 @@ export const useItem = () => {
   return {
     deleteItem: deleteItemMutation.mutate,
     isDeleting: deleteItemMutation.isPending,
+    updateItemOfferingAvailability:
+      updateItemOfferingAvailabilityMutation.mutate,
+    isUpdatingItemOfferingAvailability:
+      updateItemOfferingAvailabilityMutation.isPending,
     onItemUpdated,
   }
 }
