@@ -58,6 +58,14 @@ function Button({
   const hasHoverStyle = isClickable || props.onClick
 
   const isDisabled = isLoading || disabled
+  const content = isLoading ? (
+    <>
+      <LoadingSpinner className="text-white" />
+      {children}
+    </>
+  ) : (
+    children
+  )
 
   return (
     <Comp
@@ -70,7 +78,7 @@ function Button({
       disabled={isDisabled}
       {...props}
     >
-      {isLoading && <LoadingSpinner className="text-white" />} {children}
+      {asChild ? children : content}
     </Comp>
   )
 }
