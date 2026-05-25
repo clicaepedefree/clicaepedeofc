@@ -568,7 +568,7 @@ export const ImageCropperModal = ({
               <div className="flex-shrink-0">
                 <div className="text-xs text-muted-foreground mb-1">Pré-visualização:</div>
                 <div
-                  className="border border-border rounded overflow-hidden bg-white"
+                  className="border border-border rounded overflow-hidden bg-card"
                   style={{
                     maxWidth: isMobile ? 70 : PREVIEW_MAX_SIZE,
                     maxHeight: isMobile ? 70 : PREVIEW_MAX_SIZE

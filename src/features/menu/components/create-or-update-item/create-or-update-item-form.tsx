@@ -410,7 +410,7 @@ export const CreateOrUpdateItemForm = ({
                               <Button
                                 variant="icon"
                                 size="icon"
-                                className="group mr-2 hover:scale-105 hover:bg-white"
+                                className="group mr-2 hover:scale-105 hover:bg-background"
                                 onClick={() => {
                                   subField.setValue(null)
                                   setApplyDiscount(false)
@@ -449,7 +449,7 @@ export const CreateOrUpdateItemForm = ({
                               <Button
                                 variant="icon"
                                 size="icon"
-                                className="group mr-2 hover:scale-105 hover:bg-white"
+                                className="group mr-2 hover:scale-105 hover:bg-background"
                                 onClick={event => {
                                   event.preventDefault()
                                   form.setFieldValue(

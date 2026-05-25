@@ -51,7 +51,7 @@ export const PosCartItem = ({
           <Body
             variant={300}
             fontWeight="regular"
-            className="bg-primary/10 w-fit px-1.5 py-0.5 rounded-md text-slate-500"
+            className="bg-primary/10 w-fit px-1.5 py-0.5 rounded-md text-muted-foreground"
           >
             {item.category.name}
           </Body>

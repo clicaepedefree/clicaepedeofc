@@ -116,11 +116,11 @@ export function AdminOnboardingForm({
   }
 
   return (
-    <div className="grid min-h-[calc(100dvh-4rem)] w-full place-items-center bg-slate-50 px-4 py-10">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border bg-background shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
-        <aside className="hidden border-r bg-slate-950 p-8 text-white lg:flex lg:flex-col lg:justify-between">
+    <div className="grid min-h-[calc(100dvh-4rem)] w-full place-items-center bg-muted/40 px-4 py-8 dark:bg-background">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/25 lg:grid-cols-[0.9fr_1.1fr]">
+        <aside className="hidden border-r border-white/10 bg-slate-950 p-8 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="space-y-8">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/10">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/10 text-white ring-1 ring-white/10">
               <Store className="h-5 w-5" />
             </div>
 
@@ -154,16 +154,16 @@ export function AdminOnboardingForm({
           </div>
         </aside>
 
-        <section className="p-6 sm:p-8 lg:p-10">
+        <section className="bg-card p-6 sm:p-8 lg:p-10">
           <div className="mb-8 flex items-start gap-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/15 bg-primary/10 text-primary dark:border-primary/20 dark:bg-primary/15">
               <Building2 className="h-5 w-5" />
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">
                 Cadastro da loja
               </p>
-              <h2 className="text-2xl font-semibold text-slate-950">
+              <h2 className="text-2xl font-semibold text-foreground">
                 Configure seu espaco de trabalho
               </h2>
             </div>
@@ -202,7 +202,7 @@ export function AdminOnboardingForm({
             <Label className="gap-2">
               Endereco publico
               <div className="grid gap-2">
-                <div className="flex rounded border bg-background shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-primary/20">
+                <div className="flex rounded border bg-background shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-primary/20 dark:bg-input/30">
                   <Input
                     value={values.subdomain}
                     onChange={event => updateSubdomain(event.target.value)}
@@ -211,7 +211,7 @@ export function AdminOnboardingForm({
                     className="rounded-r-none border-0 shadow-none focus-visible:ring-0"
                     containerClassName="min-w-0"
                   />
-                  <span className="flex shrink-0 items-center border-l px-3 text-sm text-muted-foreground">
+                  <span className="flex shrink-0 items-center border-l bg-muted/50 px-3 text-sm text-muted-foreground dark:bg-background/20">
                     .clicapedidos.com.br
                   </span>
                 </div>
@@ -227,11 +227,11 @@ export function AdminOnboardingForm({
               </div>
             )}
 
-            <div className="rounded-md border bg-slate-50 p-4">
+            <div className="rounded-md border border-primary/15 bg-primary/5 p-4 dark:border-primary/20 dark:bg-primary/10">
               <div className="flex gap-3">
                 <WandSparkles className="mt-0.5 h-4 w-4 text-primary" />
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-slate-950">
+                  <p className="text-sm font-medium text-foreground">
                     O que acontece ao continuar
                   </p>
                   <p className="text-sm leading-6 text-muted-foreground">

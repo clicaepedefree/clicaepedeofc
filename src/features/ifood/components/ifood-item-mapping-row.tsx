@@ -44,9 +44,9 @@ export function IFoodItemMappingRow({
       <TableCell>
         <div>
           <p className="font-medium">{ifoodItem.name}</p>
-          <p className="text-sm text-gray-500">{ifoodItem.categoryName}</p>
+          <p className="text-sm text-muted-foreground">{ifoodItem.categoryName}</p>
           {ifoodItem.description && (
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {ifoodItem.description.substring(0, 60)}
               {ifoodItem.description.length > 60 ? '...' : ''}
             </p>

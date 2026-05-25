@@ -29,17 +29,17 @@ export default async function NotFound() {
   const isAdmin = context === 'admin'
 
   return (
-    <div className="h-dvh bg-accent flex flex-col items-center justify-center py-12 px-2 lg:px-8">
-      <div className="flex flex-col gap-4 items-center text-center bg-background py-8 px-6 shadow sm:rounded-lg sm:px-10 rounded-lg max-w-md">
+    <div className="h-dvh bg-muted/40 flex flex-col items-center justify-center py-12 px-2 lg:px-8 dark:bg-background">
+      <div className="flex flex-col gap-4 items-center text-center bg-card text-card-foreground py-8 px-6 shadow-lg shadow-slate-950/5 dark:shadow-black/25 sm:rounded-lg sm:px-10 rounded-lg max-w-md border">
         <div className="flex items-center justify-center h-16 w-16 rounded-full bg-primary/15">
           <FileQuestion className="h-8 w-8 text-primary" />
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 mt-2">
+        <h1 className="text-2xl font-bold text-foreground mt-2">
           Pagina nao encontrada
         </h1>
 
-        <p className="text-gray-600">
+        <p className="text-muted-foreground">
           {isAdmin
             ? 'A pagina que voce esta procurando nao existe ou foi movida. Verifique o endereco ou volte para o painel.'
             : 'A pagina que voce esta procurando nao existe ou foi movida.'}
@@ -57,7 +57,7 @@ export default async function NotFound() {
               </Link>
               <Link
                 href="/pos"
-                className="flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex-1"
+                className="flex items-center justify-center gap-2 px-4 py-2 border rounded-md hover:bg-accent hover:text-accent-foreground transition-colors flex-1"
               >
                 Ponto de Venda
               </Link>
@@ -73,8 +73,8 @@ export default async function NotFound() {
           )}
         </div>
 
-        <div className="mt-4 p-3 bg-gray-50 rounded-md w-full">
-          <p className="text-xs text-gray-500">
+        <div className="mt-4 p-3 bg-muted rounded-md w-full">
+          <p className="text-xs text-muted-foreground">
             <strong>Codigo do erro:</strong> 404
             <br />
             Se voce acredita que isso e um erro, entre em contato com o suporte.

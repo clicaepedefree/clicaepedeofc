@@ -84,7 +84,7 @@ export function QzTrayConnectionCard() {
     // Connected but no printer selected - warning state
     if (isConnected && !selectedPrinter) {
       return (
-        <Badge variant="default" className="bg-yellow-100 text-yellow-800">
+        <Badge variant="default" className="bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           Atencao
         </Badge>
       )
@@ -93,7 +93,7 @@ export function QzTrayConnectionCard() {
     switch (status) {
       case 'connected':
         return (
-          <Badge variant="default" className="bg-green-100 text-green-800">
+          <Badge variant="default" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
             Conectado
           </Badge>
         )
@@ -117,7 +117,7 @@ export function QzTrayConnectionCard() {
 
   return (
     <>
-      <div className="rounded-lg border border-gray-200 p-4">
+      <div className="rounded-lg border bg-card p-4 text-card-foreground">
         <div className="flex flex-col gap-4">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -153,14 +153,14 @@ export function QzTrayConnectionCard() {
           {/* Warning State - Connected but no printer */}
           {showWarningState && (
             <>
-              <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3">
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/70 dark:bg-amber-950/30">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5 dark:text-amber-300" />
                   <div>
-                    <p className="text-sm font-medium text-yellow-800">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
                       Selecione uma impressora
                     </p>
-                    <p className="text-sm text-yellow-700 mt-1">
+                    <p className="text-sm text-amber-700 mt-1 dark:text-amber-200/80">
                       Para finalizar a configuracao, selecione a impressora que
                       sera usada para imprimir recibos.
                     </p>

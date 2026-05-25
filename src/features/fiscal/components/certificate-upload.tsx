@@ -154,7 +154,7 @@ export const CertificateUpload = () => {
         </div>
       </SettingsCategoryBlock>
 
-      <div className="inline-flex grow bg-white border-1 rounded-xl p-4 sticky bottom-4 left-4 w-full mt-2">
+      <div className="inline-flex grow bg-card border rounded-xl p-4 sticky bottom-4 left-4 w-full mt-2 shadow-lg shadow-slate-950/5 dark:shadow-black/25">
         <Button
           type="button"
           onClick={handleUpload}
