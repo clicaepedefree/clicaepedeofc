@@ -17,6 +17,7 @@ type InternalStoresTableProps = {
   stores: SerializableInternalStoreListItem[]
   canReactivate: boolean
   canArchive: boolean
+  returnTo: string
 }
 
 export type SerializableInternalStoreListItem = Omit<
@@ -68,6 +69,7 @@ export function InternalStoresTable({
   stores,
   canReactivate,
   canArchive,
+  returnTo,
 }: InternalStoresTableProps) {
   if (stores.length === 0) {
     return (
@@ -165,6 +167,7 @@ export function InternalStoresTable({
                         </DialogHeader>
                         <form action={reactivateStoreAction} className="space-y-4">
                           <input type="hidden" name="storeId" value={store.id} />
+                          <input type="hidden" name="returnTo" value={returnTo} />
                           <div className="rounded-md border bg-slate-50 p-3 text-sm">
                             <div className="font-medium text-slate-950">{store.name}</div>
                             <div className="text-slate-500">{store.subdomain}</div>
@@ -223,6 +226,7 @@ export function InternalStoresTable({
                         </AlertDialogHeader>
                         <form action={archiveStoreAction} className="space-y-4">
                           <input type="hidden" name="storeId" value={store.id} />
+                          <input type="hidden" name="returnTo" value={returnTo} />
                           <div className="rounded-md border bg-rose-50 p-3 text-sm text-rose-900">
                             <strong>{store.name}</strong>
                             <div>{store.subdomain}</div>

@@ -59,6 +59,15 @@ export async function getInternalOperator(): Promise<InternalOperator | null> {
   }
 }
 
+export async function getInternalOperatorSafe(): Promise<InternalOperator | null> {
+  try {
+    return await getInternalOperator()
+  } catch (error) {
+    console.error('[internal-operations] Failed to resolve internal operator', error)
+    return null
+  }
+}
+
 export async function requireInternalOperator(
   minimumRole: InternalRole
 ): Promise<InternalOperator> {

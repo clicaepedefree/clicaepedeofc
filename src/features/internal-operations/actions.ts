@@ -17,8 +17,15 @@ const getRequiredString = (formData: FormData, field: string) => {
   return value.trim()
 }
 
-const redirectWithError = (message: string): never => {
-  redirect(`/internal/stores?error=${encodeURIComponent(message)}`)
+const getReturnPath = (formData: FormData) => {
+  const returnTo = getRequiredString(formData, 'returnTo')
+  if (returnTo === '/internal-operations') return returnTo
+
+  return '/internal/stores'
+}
+
+const redirectWithError = (returnPath: string, message: string): never => {
+  redirect(`${returnPath}?error=${encodeURIComponent(message)}`)
 }
 
 export async function reactivateStoreAction(formData: FormData) {
@@ -26,17 +33,18 @@ export async function reactivateStoreAction(formData: FormData) {
   const storeId = Number(getRequiredString(formData, 'storeId'))
   const adminEmail = getRequiredString(formData, 'adminEmail')
   const reason = getRequiredString(formData, 'reason')
+  const returnPath = getReturnPath(formData)
 
   if (!Number.isInteger(storeId) || storeId <= 0) {
-    redirectWithError('Loja invalida para reativacao.')
+    redirectWithError(returnPath, 'Loja invalida para reativacao.')
   }
 
   if (!adminEmail.includes('@')) {
-    redirectWithError('Informe o e-mail do novo administrador.')
+    redirectWithError(returnPath, 'Informe o e-mail do novo administrador.')
   }
 
   if (reason.length < MIN_REASON_LENGTH) {
-    redirectWithError('Informe um motivo com pelo menos 8 caracteres.')
+    redirectWithError(returnPath, 'Informe um motivo com pelo menos 8 caracteres.')
   }
 
   try {
@@ -48,21 +56,22 @@ export async function reactivateStoreAction(formData: FormData) {
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'TARGET_USER_NOT_FOUND') {
-      redirectWithError('Esse e-mail ainda nao tem uma conta ativa no app.')
+      redirectWithError(returnPath, 'Esse e-mail ainda nao tem uma conta ativa no app.')
     }
 
     if (
       error instanceof Error &&
       error.message === 'STORE_STATUS_NOT_REACTIVATABLE'
     ) {
-      redirectWithError('Essa loja nao esta em um status reativavel.')
+      redirectWithError(returnPath, 'Essa loja nao esta em um status reativavel.')
     }
 
-    redirectWithError('Nao foi possivel reativar a loja agora.')
+    redirectWithError(returnPath, 'Nao foi possivel reativar a loja agora.')
   }
 
   revalidatePath('/internal/stores')
-  redirect('/internal/stores?result=loja-reativada')
+  revalidatePath('/internal-operations')
+  redirect(`${returnPath}?result=loja-reativada`)
 }
 
 export async function archiveStoreAction(formData: FormData) {
@@ -70,13 +79,14 @@ export async function archiveStoreAction(formData: FormData) {
   const storeId = Number(getRequiredString(formData, 'storeId'))
   const confirmation = getRequiredString(formData, 'confirmation')
   const reason = getRequiredString(formData, 'reason')
+  const returnPath = getReturnPath(formData)
 
   if (!Number.isInteger(storeId) || storeId <= 0) {
-    redirectWithError('Loja invalida para arquivamento.')
+    redirectWithError(returnPath, 'Loja invalida para arquivamento.')
   }
 
   if (reason.length < MIN_REASON_LENGTH) {
-    redirectWithError('Informe um motivo com pelo menos 8 caracteres.')
+    redirectWithError(returnPath, 'Informe um motivo com pelo menos 8 caracteres.')
   }
 
   try {
@@ -88,19 +98,20 @@ export async function archiveStoreAction(formData: FormData) {
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'STORE_ALREADY_ARCHIVED') {
-      redirectWithError('Essa loja ja esta arquivada.')
+      redirectWithError(returnPath, 'Essa loja ja esta arquivada.')
     }
 
     if (
       error instanceof Error &&
       error.message === 'STORE_CONFIRMATION_MISMATCH'
     ) {
-      redirectWithError('Confirmacao incorreta. Digite o subdominio da loja.')
+      redirectWithError(returnPath, 'Confirmacao incorreta. Digite o subdominio da loja.')
     }
 
-    redirectWithError('Nao foi possivel arquivar a loja agora.')
+    redirectWithError(returnPath, 'Nao foi possivel arquivar a loja agora.')
   }
 
   revalidatePath('/internal/stores')
-  redirect('/internal/stores?result=loja-arquivada')
+  revalidatePath('/internal-operations')
+  redirect(`${returnPath}?result=loja-arquivada`)
 }
