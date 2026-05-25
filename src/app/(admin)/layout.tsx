@@ -1,4 +1,5 @@
 import { AdminHeader } from '@/features/admin/components/admin-header'
+import { getInternalOperatorSafe } from '@/features/internal-operations/access'
 import { validateAdminAccess } from '@/features/store/api'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { AppSidebar } from '@/shared/sidebar/app-sidebar'
@@ -10,6 +11,8 @@ export const metadata: Metadata = {
   title: 'Clica Pedidos',
   description: 'Solução completa de vendas e gestão',
 }
+
+export const dynamic = 'force-dynamic'
 
 const adminMenuItems = [
   {
@@ -83,11 +86,18 @@ export default async function AdminLayout({
   children: React.ReactNode
 }) {
   await validateAdminAccess()
+  const internalOperator = await getInternalOperatorSafe()
+  const internalOperationHref =
+    internalOperator?.role === 'ops_admin' ? '/internal-operations' : undefined
 
   return (
     <AuthProviders clerkProviderProps={{ afterSignOutUrl: '/login' }}>
       <SidebarProvider>
-        <AppSidebar menuItems={adminMenuItems} collapsible="icon" />
+        <AppSidebar
+          menuItems={adminMenuItems}
+          internalOperationHref={internalOperationHref}
+          collapsible="icon"
+        />
         <SidebarInset>
           <AdminHeader />
           <PostHogProvider>
