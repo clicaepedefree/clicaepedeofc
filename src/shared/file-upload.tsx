@@ -184,7 +184,7 @@ export const SingleFileUploader = ({
               onLoad={() => setIsImageLoaded(true)}
             />
             {error && (
-              <span className="flex items-center justify-center gap-2 absolute bottom-2 right-1/2 translate-x-1/2 translate-y-1/2 text-destructive text-xs px-4 py-2 bg-white border border-destructive/10 rounded">
+              <span className="flex items-center justify-center gap-2 absolute bottom-2 right-1/2 translate-x-1/2 translate-y-1/2 text-destructive text-xs px-4 py-2 bg-card border border-destructive/10 rounded shadow-sm">
                 <ImageOff size={16} /> {error}
               </span>
             )}

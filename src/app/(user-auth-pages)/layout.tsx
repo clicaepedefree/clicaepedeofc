@@ -17,7 +17,7 @@ export default function UserAuthLayout({
 }) {
   return (
     <AuthProviders>
-      <header className="flex justify-end items-center p-4 gap-4 h-16">
+      <header className="flex h-16 items-center justify-end gap-4 bg-muted/40 px-4 dark:bg-background">
         <SignedOut>
           <SignUpButton>
             <Button>Criar conta</Button>
@@ -25,7 +25,7 @@ export default function UserAuthLayout({
         </SignedOut>
       </header>
       <PostHogProvider>
-        <main className="flex min-h-screen flex-col items-center justify-between p-24">
+        <main className="flex min-h-[calc(100dvh-4rem)] flex-col items-center justify-center bg-muted/40 p-4 dark:bg-background sm:p-6">
           {children}
         </main>
       </PostHogProvider>

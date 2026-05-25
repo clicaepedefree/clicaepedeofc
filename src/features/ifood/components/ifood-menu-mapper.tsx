@@ -158,7 +158,7 @@ export function IFoodMenuMapper() {
   if (!storeId) {
     return (
       <div className="p-4">
-        <p className="text-gray-500">Selecione uma loja primeiro</p>
+        <p className="text-muted-foreground">Selecione uma loja primeiro</p>
       </div>
     )
   }
@@ -184,7 +184,7 @@ export function IFoodMenuMapper() {
           title="Sincronizar Cardápio iFood"
           subtitle="Carregando..."
         />
-        <p className="text-gray-500">Carregando cardápios...</p>
+        <p className="text-muted-foreground">Carregando cardápios...</p>
       </div>
     )
   }
@@ -202,10 +202,10 @@ export function IFoodMenuMapper() {
 
       <div className="flex items-center justify-between border-b pb-4">
         <div className="space-y-1">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             {autoMatchCount} de {totalItems} itens mapeados
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Os códigos PDV dos itens locais serão enviados para o iFood
           </p>
         </div>
@@ -239,7 +239,7 @@ export function IFoodMenuMapper() {
           <TableBody>
             {ifoodItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-gray-500">
+                <TableCell colSpan={4} className="text-center text-muted-foreground">
                   Nenhum item encontrado no cardápio do iFood
                 </TableCell>
               </TableRow>

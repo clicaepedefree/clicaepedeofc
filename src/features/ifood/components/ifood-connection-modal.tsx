@@ -331,7 +331,7 @@ export function IFoodConnectionModal({
         {isLoading && !userCode && !initiationError ? (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <LoadingSpinner size={32} />
-            <p className="text-gray-500">Iniciando conexao...</p>
+            <p className="text-muted-foreground">Iniciando conexao...</p>
           </div>
         ) : initiationError ? (
           <div className="space-y-4">
@@ -393,7 +393,7 @@ export function IFoodConnectionModal({
                   </p>
 
                   <div className="mt-3 flex items-center gap-2">
-                    <div className="flex-1 rounded-md bg-white px-4 py-2 font-mono text-xl font-bold tracking-wider text-gray-900">
+                    <div className="flex-1 rounded-md border bg-card px-4 py-2 font-mono text-xl font-bold tracking-wider text-foreground">
                       {userCode || '---'}
                     </div>
                     <Button
@@ -457,7 +457,7 @@ export function IFoodConnectionModal({
 
                   <form onSubmit={handleSubmitAuthCode} className="mt-3 space-y-3">
                     <Label>
-                      <span className="text-sm font-medium text-gray-700">
+                      <span className="text-sm font-medium text-foreground">
                         Codigo de Autorizacao
                       </span>
                       <Input
@@ -508,7 +508,7 @@ export function IFoodConnectionModal({
         ) : step === 'selectMerchant' ? (
           <div className="space-y-4">
             {/* Step 4: Select merchant */}
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex items-start gap-3">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
                   4
@@ -527,7 +527,7 @@ export function IFoodConnectionModal({
                     {merchants.map((merchant) => (
                       <label
                         key={merchant.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-md border border-green-300 bg-white p-3 transition-colors hover:bg-green-50"
+                        className="flex cursor-pointer items-center gap-3 rounded-md border border-emerald-300 bg-card p-3 transition-colors hover:bg-emerald-50 dark:border-emerald-900/70 dark:hover:bg-emerald-950/30"
                       >
                         <input
                           type="radio"
@@ -538,11 +538,11 @@ export function IFoodConnectionModal({
                           className="h-4 w-4 text-green-600"
                         />
                         <div className="flex-1">
-                          <div className="font-medium text-gray-900">
+                          <div className="font-medium text-foreground">
                             {merchant.name}
                           </div>
                           {merchant.corporateName && (
-                            <div className="text-sm text-gray-600">
+                            <div className="text-sm text-muted-foreground">
                               {merchant.corporateName}
                             </div>
                           )}
@@ -573,7 +573,7 @@ export function IFoodConnectionModal({
         ) : step === 'selectCatalog' ? (
           <div className="space-y-4">
             {/* Step 5: Select catalog */}
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex items-start gap-3">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
                   5
@@ -592,7 +592,7 @@ export function IFoodConnectionModal({
                     {catalogs.map((catalog) => (
                       <label
                         key={catalog.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-md border border-green-300 bg-white p-3 transition-colors hover:bg-green-50"
+                        className="flex cursor-pointer items-center gap-3 rounded-md border border-emerald-300 bg-card p-3 transition-colors hover:bg-emerald-50 dark:border-emerald-900/70 dark:hover:bg-emerald-950/30"
                       >
                         <input
                           type="radio"
@@ -603,10 +603,10 @@ export function IFoodConnectionModal({
                           className="h-4 w-4 text-green-600"
                         />
                         <div className="flex-1">
-                          <div className="font-medium text-gray-900">
+                          <div className="font-medium text-foreground">
                             {catalog.name}
                           </div>
-                          <div className="text-sm text-gray-600">
+                          <div className="text-sm text-muted-foreground">
                             {catalog.type} - {catalog.status}
                           </div>
                         </div>
@@ -663,7 +663,7 @@ export function IFoodConnectionModal({
         ) : step === 'success' ? (
           <div className="space-y-4">
             {/* Success State */}
-            <div className="rounded-lg border border-green-200 bg-green-50 p-6">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex flex-col items-center text-center">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                   <CheckCircle className="h-10 w-10 text-green-600" />
@@ -676,19 +676,19 @@ export function IFoodConnectionModal({
                   sincronizar seu cardapio.
                 </p>
 
-                <div className="mt-4 w-full max-w-sm space-y-2 rounded-md bg-white p-4 border border-green-200">
+                <div className="mt-4 w-full max-w-sm space-y-2 rounded-md border border-emerald-200 bg-card p-4 dark:border-emerald-900/70">
                   {selectedMerchant && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Loja:</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="text-muted-foreground">Loja:</span>
+                      <span className="font-medium text-foreground">
                         {selectedMerchant.name}
                       </span>
                     </div>
                   )}
                   {selectedCatalog && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Cardapio:</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="text-muted-foreground">Cardapio:</span>
+                      <span className="font-medium text-foreground">
                         {selectedCatalog.name}
                       </span>
                     </div>

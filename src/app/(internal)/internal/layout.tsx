@@ -14,8 +14,8 @@ export default async function InternalLayout({
 
   return (
     <AuthProviders clerkProviderProps={{ afterSignOutUrl: '/login' }}>
-      <main className="min-h-screen bg-slate-100 text-slate-950">
-        <header className="sticky top-0 z-20 border-b bg-white/95 backdrop-blur">
+      <main className="min-h-screen bg-muted/40 text-foreground dark:bg-background">
+        <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <div className="flex items-center gap-3">
               <Link href="/internal/stores" className="flex items-center gap-2 font-semibold">
@@ -24,11 +24,11 @@ export default async function InternalLayout({
                 </span>
                 Operacao Clica e Pede
               </Link>
-              <Badge variant="outline" className="border-slate-300 bg-slate-50">
+              <Badge variant="outline" className="bg-muted">
                 {operator.role}
               </Badge>
             </div>
-            <div className="flex items-center gap-3 text-sm text-slate-600">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <span>{operator.email}</span>
               <UserButton afterSignOutUrl="/login" />
             </div>

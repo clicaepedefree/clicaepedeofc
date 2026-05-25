@@ -22,7 +22,7 @@ export function ImageWithPlaceholder({
   return (
     <div className={containerClassName}>
       <div
-        className={cn('rounded-md overflow-hidden bg-primary/10 border border-slate-200', className)}
+        className={cn('rounded-md overflow-hidden bg-primary/10 border', className)}
         style={{ height: `${size}px`, width: `${size}px` }}
       >
         {image ? (

@@ -117,7 +117,7 @@ export async function InternalStoresPanel({
           O acesso interno foi validado, mas a consulta dos dados falhou no servidor.
         </p>
         {operator.role === 'ops_admin' && (
-          <pre className="overflow-auto rounded-md border border-rose-200 bg-white p-3 text-xs text-rose-900 dark:border-rose-900 dark:bg-background dark:text-rose-100">
+          <pre className="overflow-auto rounded-md border border-rose-200 bg-card p-3 text-xs text-rose-900 dark:border-rose-900 dark:text-rose-100">
             {getErrorMessage(error)}
           </pre>
         )}

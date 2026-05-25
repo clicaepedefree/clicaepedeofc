@@ -42,10 +42,10 @@ const statusLabel: Record<InternalStoreListItem['status'], string> = {
 }
 
 const statusClassName: Record<InternalStoreListItem['status'], string> = {
-  active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  inactive: 'bg-slate-100 text-slate-700 border-slate-200',
-  pending_recovery: 'bg-amber-100 text-amber-800 border-amber-200',
-  archived: 'bg-rose-100 text-rose-800 border-rose-200',
+  active: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900',
+  inactive: 'bg-muted text-muted-foreground border-border',
+  pending_recovery: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900',
+  archived: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-900',
 }
 
 const formatDateTime = (date: Date | string | null) => {
@@ -73,17 +73,17 @@ export function InternalStoresTable({
 }: InternalStoresTableProps) {
   if (stores.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">
         Nenhuma loja encontrada para os filtros atuais.
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-white">
+    <div className="overflow-hidden rounded-lg border bg-card">
       <Table>
         <TableHeader>
-          <TableRow className="bg-slate-50">
+          <TableRow className="bg-muted/60 hover:bg-muted/60">
             <TableHead>Loja</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Administradores</TableHead>
@@ -101,12 +101,12 @@ export function InternalStoresTable({
               <TableRow key={store.id} className="align-top">
                 <TableCell>
                   <div className="space-y-1">
-                    <div className="font-medium text-slate-950">{store.name}</div>
-                    <div className="text-xs text-slate-500">
+                    <div className="font-medium text-foreground">{store.name}</div>
+                    <div className="text-xs text-muted-foreground">
                       #{store.id} · {store.subdomain}
                     </div>
                     {store.statusReason && (
-                      <div className="max-w-[420px] text-xs text-slate-500">
+                      <div className="max-w-[420px] text-xs text-muted-foreground">
                         Motivo: {store.statusReason}
                       </div>
                     )}
@@ -123,12 +123,12 @@ export function InternalStoresTable({
                 <TableCell>
                   <div className="space-y-2">
                     {store.admins.length === 0 ? (
-                      <span className="text-sm text-slate-500">Sem admin vinculado</span>
+                      <span className="text-sm text-muted-foreground">Sem admin vinculado</span>
                     ) : (
                       store.admins.map(admin => (
                         <div key={`${store.id}-${admin.userId}`} className="text-sm">
-                          <div className="font-medium text-slate-800">{admin.email}</div>
-                          <div className="text-xs text-slate-500">
+                          <div className="font-medium text-foreground">{admin.email}</div>
+                          <div className="text-xs text-muted-foreground">
                             {admin.name ?? 'Sem nome'} · {admin.userStatus}
                             {admin.revokedAt && (
                               <>
@@ -142,7 +142,7 @@ export function InternalStoresTable({
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-slate-600">
+                <TableCell className="text-sm text-muted-foreground">
                   {formatDateTime(store.statusUpdatedAt)}
                 </TableCell>
                 <TableCell>
@@ -168,9 +168,9 @@ export function InternalStoresTable({
                         <form action={reactivateStoreAction} className="space-y-4">
                           <input type="hidden" name="storeId" value={store.id} />
                           <input type="hidden" name="returnTo" value={returnTo} />
-                          <div className="rounded-md border bg-slate-50 p-3 text-sm">
-                            <div className="font-medium text-slate-950">{store.name}</div>
-                            <div className="text-slate-500">{store.subdomain}</div>
+                          <div className="rounded-md border bg-muted/60 p-3 text-sm">
+                            <div className="font-medium text-foreground">{store.name}</div>
+                            <div className="text-muted-foreground">{store.subdomain}</div>
                           </div>
                           <Label htmlFor={`adminEmail-${store.id}`} size="sm">
                             E-mail do novo administrador
@@ -227,7 +227,7 @@ export function InternalStoresTable({
                         <form action={archiveStoreAction} className="space-y-4">
                           <input type="hidden" name="storeId" value={store.id} />
                           <input type="hidden" name="returnTo" value={returnTo} />
-                          <div className="rounded-md border bg-rose-50 p-3 text-sm text-rose-900">
+                          <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100">
                             <strong>{store.name}</strong>
                             <div>{store.subdomain}</div>
                           </div>

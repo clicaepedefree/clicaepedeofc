@@ -69,11 +69,11 @@ export function IFoodConnectionCard() {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-gray-200 p-4">
+      <div className="rounded-lg border bg-card p-4 text-card-foreground">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold">iFood</h3>
-            <p className="text-sm text-gray-500">Carregando...</p>
+            <p className="text-sm text-muted-foreground">Carregando...</p>
           </div>
         </div>
       </div>
@@ -83,13 +83,13 @@ export function IFoodConnectionCard() {
   const isConnected = connection?.status === 'connected'
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4">
+    <div className="rounded-lg border bg-card p-4 text-card-foreground">
       <div className="flex items-center justify-between gap-8">
         <div className="flex-1">
           <div className="flex items-center gap-8">
             <h3 className="text-lg font-semibold">iFood</h3>
             {isConnected ? (
-              <Badge variant="default" className="bg-green-100 text-green-800">
+              <Badge variant="default" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
                 Conectado
               </Badge>
             ) : (
@@ -98,7 +98,7 @@ export function IFoodConnectionCard() {
           </div>
 
           {isConnected && connection && (
-            <div className="mt-2 space-y-1 text-sm text-gray-600">
+            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
               {connection.merchantName && (
                 <p>
                   <b>Loja:</b> {connection.merchantName}
@@ -113,7 +113,7 @@ export function IFoodConnectionCard() {
           )}
 
           {!isConnected && (
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               Conecte sua conta do iFood para sincronizar o cardápio e atualizar
               códigos PDV.
             </p>

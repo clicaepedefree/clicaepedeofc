@@ -120,7 +120,7 @@ function PrinterList({ printers, selectedPrinter, onSelect }: PrinterListProps) 
       {printers.map((printer) => (
         <label
           key={printer}
-          className="flex cursor-pointer items-center gap-3 rounded-md border border-green-300 bg-white p-3 transition-colors hover:bg-green-50"
+          className="flex cursor-pointer items-center gap-3 rounded-md border border-emerald-300 bg-card p-3 transition-colors hover:bg-emerald-50 dark:border-emerald-900/70 dark:hover:bg-emerald-950/30"
         >
           <input
             type="radio"
@@ -131,7 +131,7 @@ function PrinterList({ printers, selectedPrinter, onSelect }: PrinterListProps) 
             className="h-4 w-4 text-green-600"
           />
           <div className="flex-1">
-            <div className="font-medium text-gray-900">{printer}</div>
+            <div className="font-medium text-foreground">{printer}</div>
           </div>
         </label>
       ))}
@@ -359,7 +359,7 @@ export function QzTrayConnectionModal({
             {isLoading && !connectionError ? (
               <div className="flex flex-col items-center justify-center py-8 gap-3">
                 <LoadingSpinner size={32} />
-                <p className="text-gray-500">Conectando ao QZ Tray...</p>
+                <p className="text-muted-foreground">Conectando ao QZ Tray...</p>
               </div>
             ) : connectionError ? (
               <div className="rounded-lg border border-red-200 bg-red-50 p-6">
@@ -384,7 +384,7 @@ export function QzTrayConnectionModal({
                   </h3>
                   <p className="mt-2 text-sm text-red-700">{connectionError}</p>
 
-                  <div className="mt-4 text-sm text-gray-600">
+                  <div className="mt-4 text-sm text-muted-foreground">
                     <p>Certifique-se de que:</p>
                     <ul className="mt-2 text-left list-disc list-inside">
                       <li>O QZ Tray esta instalado</li>
@@ -430,10 +430,10 @@ export function QzTrayConnectionModal({
             {isLoading && !certificateChecked ? (
               <div className="flex flex-col items-center justify-center py-8 gap-3">
                 <LoadingSpinner size={32} />
-                <p className="text-gray-500">Verificando certificado...</p>
+                <p className="text-muted-foreground">Verificando certificado...</p>
               </div>
             ) : certificateTrusted ? (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-6">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-900/70 dark:bg-emerald-950/30">
                 <div className="flex flex-col items-center text-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                     <CheckCircle className="h-10 w-10 text-green-600" />
@@ -475,23 +475,23 @@ export function QzTrayConnectionModal({
                 </div>
 
                 {/* Instructions (collapsible) */}
-                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="rounded-lg border overflow-hidden">
                   <button
                     onClick={() => setShowInstructions(!showInstructions)}
-                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between p-3 hover:bg-accent transition-colors"
                   >
                     <span className="font-medium text-sm">
                       Como importar o certificado
                     </span>
                     {showInstructions ? (
-                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
                     )}
                   </button>
 
                   {showInstructions && (
-                    <div className="p-4 pt-0 border-t bg-gray-50">
+                    <div className="p-4 pt-0 border-t bg-muted/50">
                       <ol className="space-y-3 text-sm">
                         <li className="flex gap-2">
                           <span className="flex-shrink-0 w-5 h-5 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-medium">
@@ -557,7 +557,7 @@ export function QzTrayConnectionModal({
         {/* Step 3: Printer Selection */}
         {step === 'printer' && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex items-start gap-3">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
                   <Printer className="w-4 h-4" />
@@ -621,7 +621,7 @@ export function QzTrayConnectionModal({
         {/* Step 4: Success */}
         {step === 'success' && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-6">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-900/70 dark:bg-emerald-950/30">
               <div className="flex flex-col items-center text-center">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
                   <CheckCircle className="h-10 w-10 text-green-600" />
@@ -633,16 +633,16 @@ export function QzTrayConnectionModal({
                   Sua impressora esta pronta para imprimir recibos automaticamente.
                 </p>
 
-                <div className="mt-4 w-full max-w-sm space-y-2 rounded-md bg-white p-4 border border-green-200">
+                <div className="mt-4 w-full max-w-sm space-y-2 rounded-md border border-emerald-200 bg-card p-4 dark:border-emerald-900/70">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Impressora:</span>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-muted-foreground">Impressora:</span>
+                    <span className="font-medium text-foreground">
                       {selectedPrinter}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Certificado:</span>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-muted-foreground">Certificado:</span>
+                    <span className="font-medium text-foreground">
                       {certificateTrusted ? 'Configurado' : 'Nao configurado'}
                     </span>
                   </div>

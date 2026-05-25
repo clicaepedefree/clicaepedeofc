@@ -67,7 +67,7 @@ export const PosMenuItemsList = ({
             <Body
               variant={300}
               className={cn(
-                'px-2 py-0.5 bg-amber-500/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center min-w-20',
+                'px-2 py-0.5 bg-amber-500/10 rounded-sm text-muted-foreground whitespace-nowrap h-fit text-center min-w-20',
                 {
                   'bg-destructive/10 text-destructive': option.inventory === 0,
                 }
@@ -94,7 +94,7 @@ export const PosMenuItemsList = ({
             <Body
               variant={300}
               fontWeight="regular"
-              className="px-2 py-0.5 bg-primary/10 rounded-sm text-slate-500 whitespace-nowrap h-fit text-center"
+              className="px-2 py-0.5 bg-primary/10 rounded-sm text-muted-foreground whitespace-nowrap h-fit text-center"
             >
               {option.category.name}
             </Body>
