@@ -94,7 +94,13 @@ const ItemOfferingRow = ({
   category: BaseCategory
   onItemUpdated?(): void
 }) => {
-  const { deleteItem, isDeleting, onItemUpdated: onUpdateItem } = useItem()
+  const {
+    deleteItem,
+    isDeleting,
+    updateItemOfferingAvailability,
+    isUpdatingItemOfferingAvailability,
+    onItemUpdated: onUpdateItem,
+  } = useItem()
   const textRef = useRef<HTMLSpanElement>(null)
   const isItemNameTruncated = useTextTruncated(textRef, [item.name])
 
@@ -171,8 +177,14 @@ const ItemOfferingRow = ({
           <Switch
             size="lg"
             checked={item.isAvailable}
-            className="disabled:opacity-90"
-            disabled
+            className="disabled:opacity-70"
+            disabled={isUpdatingItemOfferingAvailability}
+            onCheckedChange={isAvailable =>
+              updateItemOfferingAvailability(
+                { item, isAvailable },
+                { onSuccess: onItemUpdated }
+              )
+            }
           />
         </Label>
       </TableCell>

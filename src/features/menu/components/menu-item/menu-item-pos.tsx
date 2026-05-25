@@ -13,7 +13,9 @@ type MenuItemPOSProps = {
 }
 
 export const MenuItemPOS = ({ item, onClick }: MenuItemPOSProps) => {
-  const isItemUnavailable = item.inventory === 0
+  const isItemUnavailable = !item.isAvailable || item.inventory === 0
+  const unavailableLabel = item.inventory === 0 ? 'Esgotado' : 'Indisponivel'
+
   return (
     <div
       key={item.id}
@@ -30,7 +32,7 @@ export const MenuItemPOS = ({ item, onClick }: MenuItemPOSProps) => {
       {isItemUnavailable && (
         <div className="h-full w-full absolute z-10">
           <Badge variant="destructive" className="m-1">
-            Esgotado
+            {unavailableLabel}
           </Badge>
           <div className="h-full w-full bg-black opacity-20 absolute top-0 left-0"></div>
         </div>
