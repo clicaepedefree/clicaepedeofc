@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { onboardingStoreSchema } from './onboarding-store-schema'
+import {
+  normalizeStoreSubdomain,
+  onboardingStoreSchema,
+} from './onboarding-store-schema'
 
 describe('onboarding store schema', () => {
   test('accepts a valid store name and subdomain', () => {
@@ -31,5 +34,34 @@ describe('onboarding store schema', () => {
     if (result.success) {
       expect(result.data.subdomain).toBe('minha-loja')
     }
+  })
+
+  test('rejects subdomains with spaces or special characters', () => {
+    const result = onboardingStoreSchema.safeParse({
+      name: 'Minha loja',
+      subdomain: 'minha loja!',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  test('rejects subdomains with hyphen at the start or end', () => {
+    const startHyphenResult = onboardingStoreSchema.safeParse({
+      name: 'Minha loja',
+      subdomain: '-minha-loja',
+    })
+    const endHyphenResult = onboardingStoreSchema.safeParse({
+      name: 'Minha loja',
+      subdomain: 'minha-loja-',
+    })
+
+    expect(startHyphenResult.success).toBe(false)
+    expect(endHyphenResult.success).toBe(false)
+  })
+
+  test('normalizes a store name into a public subdomain candidate', () => {
+    expect(normalizeStoreSubdomain('  A\u00e7ai & Burg\u00e3o do Buh!!!  ')).toBe(
+      'acai-burgao-do-buh'
+    )
   })
 })

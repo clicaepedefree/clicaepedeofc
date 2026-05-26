@@ -90,32 +90,36 @@ export const getPendingRecoveryStoresByEmail = async (email: string) => {
     )
 }
 
-export const createStoreWithAdminPermission = async ({
+const createStoreWithAdminPermission = async ({
   store,
   userId,
+  requireNoExistingAdminStore,
 }: {
   store: InsertStore
   userId: string
+  requireNoExistingAdminStore: boolean
 }) => {
   return await db.transaction(async tx => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(${getUserStoreCreationLockKey(userId)})`
     )
 
-    const existingAdminStore = await tx
-      .select({ storeId: userStorePermissionsTable.storeId })
-      .from(userStorePermissionsTable)
-      .where(
-        and(
-          eq(userStorePermissionsTable.userId, userId),
-          eq(userStorePermissionsTable.role, 'admin'),
-          sql`${userStorePermissionsTable.revokedAt} is null`
+    if (requireNoExistingAdminStore) {
+      const existingAdminStore = await tx
+        .select({ storeId: userStorePermissionsTable.storeId })
+        .from(userStorePermissionsTable)
+        .where(
+          and(
+            eq(userStorePermissionsTable.userId, userId),
+            eq(userStorePermissionsTable.role, 'admin'),
+            sql`${userStorePermissionsTable.revokedAt} is null`
+          )
         )
-      )
-      .limit(1)
+        .limit(1)
 
-    if (existingAdminStore.length > 0) {
-      throw new Error(USER_ALREADY_HAS_ADMIN_STORE_ERROR)
+      if (existingAdminStore.length > 0) {
+        throw new Error(USER_ALREADY_HAS_ADMIN_STORE_ERROR)
+      }
     }
 
     const [createdStore] = await tx
@@ -130,6 +134,34 @@ export const createStoreWithAdminPermission = async ({
     })
 
     return createdStore
+  })
+}
+
+export const createFirstStoreWithAdminPermission = async ({
+  store,
+  userId,
+}: {
+  store: InsertStore
+  userId: string
+}) => {
+  return createStoreWithAdminPermission({
+    store,
+    userId,
+    requireNoExistingAdminStore: true,
+  })
+}
+
+export const createAdditionalStoreWithAdminPermission = async ({
+  store,
+  userId,
+}: {
+  store: InsertStore
+  userId: string
+}) => {
+  return createStoreWithAdminPermission({
+    store,
+    userId,
+    requireNoExistingAdminStore: false,
   })
 }
 

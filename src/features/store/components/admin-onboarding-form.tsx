@@ -2,6 +2,7 @@
 
 import { createFirstStoreForCurrentUser } from '@/features/store/api'
 import {
+  normalizeStoreSubdomain,
   onboardingStoreSchema,
   type OnboardingStoreFormValues,
 } from '@/features/store/form-validation/onboarding-store-schema'
@@ -20,16 +21,6 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useTransition } from 'react'
-
-const normalizeSubdomain = (value: string) =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 40)
 
 type FormErrors = Partial<Record<keyof OnboardingStoreFormValues | 'root', string>>
 
@@ -65,7 +56,7 @@ export function AdminOnboardingForm({
       name,
       subdomain: subdomainTouched
         ? current.subdomain
-        : normalizeSubdomain(name),
+        : normalizeStoreSubdomain(name),
     }))
   }
 
@@ -73,7 +64,7 @@ export function AdminOnboardingForm({
     setSubdomainTouched(true)
     setValues(current => ({
       ...current,
-      subdomain: normalizeSubdomain(subdomain),
+      subdomain: normalizeStoreSubdomain(subdomain),
     }))
   }
 

@@ -1,8 +1,10 @@
 'use client'
 
+import { AdditionalStoreDialog } from '@/features/store/components/additional-store-dialog'
 import { useAvailableStores } from '@/features/store/hooks/use-available-stores'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Combobox } from '@/shared/combobox'
+import { Skeleton } from '@/shared/skeleton'
 import { useAtom } from 'jotai'
 
 export const StoreSelector = () => {
@@ -20,10 +22,15 @@ export const StoreSelector = () => {
 
   const selectedStoreIdAsString = selectedStoreId ? String(selectedStoreId) : ''
 
+  if (isLoading) {
+    return <Skeleton className="h-9 w-40" />
+  }
+
+  if (!storesOptions?.length) return null
+
   return (
-    <>
-      {isLoading && <div>Carregando...</div>}
-      {!isLoading && storesOptions?.length && (
+    <div className="flex items-center gap-2">
+      <div className="min-w-36 max-w-52">
         <Combobox
           options={storesOptions}
           value={selectedStoreIdAsString}
@@ -35,7 +42,8 @@ export const StoreSelector = () => {
           disableUnselectingOption
           contentClassName="min-w-fit"
         />
-      )}
-    </>
+      </div>
+      <AdditionalStoreDialog />
+    </div>
   )
 }

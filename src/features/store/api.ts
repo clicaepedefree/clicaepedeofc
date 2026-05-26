@@ -1,6 +1,7 @@
 'use server'
 import {
-  createStoreWithAdminPermission,
+  createAdditionalStoreWithAdminPermission,
+  createFirstStoreWithAdminPermission,
   getPendingRecoveryStoresByEmail,
   getUserStorePermissions,
   insertStoreFile,
@@ -26,11 +27,23 @@ import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
 import { UserStoreRole } from './types'
 
-type CreateFirstStoreResult =
+type CreateStoreResult =
   | { success: true; storeId: number }
   | { success: false; error: string }
 
 const USER_ALREADY_HAS_ADMIN_STORE_ERROR = 'USER_ALREADY_HAS_ADMIN_STORE'
+
+const getStoreCreationErrorMessage = (error: unknown) => {
+  if (
+    error instanceof Error &&
+    (error.message.includes('stores_subdomain_unique') ||
+      error.message.includes('duplicate key'))
+  ) {
+    return 'Esse endereco publico ja esta em uso. Tente outro nome.'
+  }
+
+  return 'Nao foi possivel criar a loja agora. Tente novamente.'
+}
 
 export const getAvailableStores = async (): Promise<any[]> => {
   const user = await requireAuth()
@@ -130,7 +143,7 @@ export const validateAdminAccess = async () => {
 
 export const createFirstStoreForCurrentUser = async (
   values: OnboardingStoreFormValues
-): Promise<CreateFirstStoreResult> => {
+): Promise<CreateStoreResult> => {
   const user = await requireAuth()
   const parsedValues = onboardingStoreSchema.safeParse(values)
 
@@ -154,7 +167,7 @@ export const createFirstStoreForCurrentUser = async (
   }
 
   try {
-    const store = await createStoreWithAdminPermission({
+    const store = await createFirstStoreWithAdminPermission({
       userId: user.id,
       store: parsedValues.data,
     })
@@ -178,22 +191,50 @@ export const createFirstStoreForCurrentUser = async (
       }
     }
 
-    if (
-      error instanceof Error &&
-      (error.message.includes('stores_subdomain_unique') ||
-        error.message.includes('duplicate key'))
-    ) {
-      return {
-        success: false,
-        error: 'Esse endereco publico ja esta em uso. Tente outro nome.',
-      }
-    }
-
     console.error('[Onboarding] Failed to create first store:', error)
 
     return {
       success: false,
-      error: 'Nao foi possivel criar a loja agora. Tente novamente.',
+      error: getStoreCreationErrorMessage(error),
+    }
+  }
+}
+
+export const createAdditionalStoreForCurrentUser = async (
+  values: OnboardingStoreFormValues
+): Promise<CreateStoreResult> => {
+  const user = await requireAuth()
+  const parsedValues = onboardingStoreSchema.safeParse(values)
+
+  if (!parsedValues.success) {
+    return {
+      success: false,
+      error: parsedValues.error.issues[0]?.message ?? 'Dados invalidos',
+    }
+  }
+
+  const alreadyHasStore = await isUserAdminOfAnyStore(user.id)
+
+  if (!alreadyHasStore) {
+    return {
+      success: false,
+      error: 'Complete o cadastro da primeira loja antes de adicionar outra.',
+    }
+  }
+
+  try {
+    const store = await createAdditionalStoreWithAdminPermission({
+      userId: user.id,
+      store: parsedValues.data,
+    })
+
+    return { success: true, storeId: store.id }
+  } catch (error) {
+    console.error('[Store] Failed to create additional store:', error)
+
+    return {
+      success: false,
+      error: getStoreCreationErrorMessage(error),
     }
   }
 }

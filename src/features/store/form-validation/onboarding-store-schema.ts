@@ -2,6 +2,16 @@ import { z } from 'zod'
 
 const subdomainRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+export const normalizeStoreSubdomain = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 40)
+
 export const reservedStoreSubdomains = new Set([
   'admin',
   'api',
