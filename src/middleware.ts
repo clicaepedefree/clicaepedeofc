@@ -5,6 +5,7 @@ import { isAdminHostname, stripAdminSubdomain } from '@/shared/lib/domain-config
 const isPublicRoute = createRouteMatcher([
   '/login(.*)',
   '/admin-onboarding(.*)',
+  '/cardapio(.*)',
   '/api/files(.*)',
   '/api/health(.*)',
   '/api/webhooks/clerk(.*)',
@@ -21,6 +22,7 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/', // Root page
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
+  '/cardapio(.*)', // Public digital menu
   '/internal(.*)', // Internal Clica e Pede operations
   '/unauthorized(.*)', // Unauthorized page
 ])

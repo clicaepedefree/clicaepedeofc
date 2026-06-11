@@ -4,7 +4,7 @@ import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 import { ordersTable } from '@/services/db/schema/orders'
 import { coalesce, jsonAgg } from '@/services/db/utils'
-import { and, count, eq, gte, lte, ne, sql, sum } from 'drizzle-orm'
+import { and, count, eq, gte, lte, sql, sum } from 'drizzle-orm'
 
 export const getRevenueSummary = async (
   storeId: number,
@@ -28,7 +28,7 @@ export const getRevenueSummary = async (
       .where(
         and(
           eq(ordersTable.storeId, storeId),
-          ne(ordersTable.status, 'CANCELLED'),
+          eq(ordersTable.status, 'COMPLETED'),
           startDate
             ? gte(orderCreatedAtWithTimezone, sql`date(${startDate})`)
             : undefined,

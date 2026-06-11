@@ -4,6 +4,9 @@ const salesChannelToInfoMapping: Record<SalesChannel, { name: string }> = {
   POS: {
     name: 'PDV',
   },
+  DIGITAL_MENU: {
+    name: 'Cardapio digital',
+  },
 }
 export const getSalesChannelName = (salesChannel: SalesChannel | string) => {
   return (
