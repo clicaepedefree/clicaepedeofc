@@ -46,10 +46,16 @@ export const validateAndPriceDigitalMenuCart = ({
   items,
   categories,
   deliveryFee = '0',
+  minimumOrderAmount = '0',
+  deliveryZoneId = null,
+  deliveryEstimatedMinutes = null,
 }: {
   items: DigitalMenuCartItemInput[]
   categories: DigitalMenuCategory[]
   deliveryFee?: string
+  minimumOrderAmount?: string
+  deliveryZoneId?: number | null
+  deliveryEstimatedMinutes?: number | null
 }): ValidatedDigitalMenuCart => {
   const { offeringById } = buildCatalogLookup(categories)
   let subtotal = new Decimal(0)
@@ -145,6 +151,9 @@ export const validateAndPriceDigitalMenuCart = ({
     items: validatedItems,
     subtotal: toMoney(subtotal),
     deliveryFee: toMoney(deliveryFeeAsDecimal),
+    minimumOrderAmount: toMoney(minimumOrderAmount),
+    deliveryZoneId,
+    deliveryEstimatedMinutes,
     total: toMoney(subtotal.plus(deliveryFeeAsDecimal)),
   }
 }

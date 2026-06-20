@@ -25,12 +25,14 @@ import { cn } from '@/shared/lib/utils'
 import {
   CheckCircle2,
   Clock3,
+  HandPlatter,
   Minus,
   Plus,
   ReceiptText,
   ShoppingBag,
   Store,
   Trash2,
+  Truck,
 } from 'lucide-react'
 import Image from 'next/image'
 import { useMemo, useState, useTransition } from 'react'
@@ -65,6 +67,14 @@ const getItemUnitTotal = (item: CartItem) => {
   return Number(item.price) + optionsTotal
 }
 
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+
 const createIdempotencyKey = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -91,8 +101,14 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [number, setNumber] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [reference, setReference] = useState('')
+  const [orderType, setOrderType] =
+    useState<DigitalMenuSubmitInput['orderType']>('DELIVERY')
   const [paymentMethod, setPaymentMethod] =
-    useState<DigitalMenuSubmitInput['payment']['method']>('PIX')
+    useState<DigitalMenuSubmitInput['payment']['method']>(
+      menu.paymentMethods[0]?.method ?? 'PIX'
+    )
+  const [changeFor, setChangeFor] = useState('')
+  const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey)
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
   const [orderConfirmation, setOrderConfirmation] = useState<{
     publicOrderId: string
@@ -113,6 +129,71 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const cartItemsCount = useMemo(
     () => cart.reduce((total, item) => total + item.quantity, 0),
     [cart]
+  )
+
+  const deliveryQuote = useMemo(() => {
+    if (orderType === 'TAKEOUT') {
+      return {
+        deliveryFee: 0,
+        minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
+        estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
+        isNeighborhoodCovered: true,
+        zoneName: null as string | null,
+      }
+    }
+
+    if (menu.deliveryZones.length === 0) {
+      return {
+        deliveryFee: 0,
+        minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
+        estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
+        isNeighborhoodCovered: true,
+        zoneName: null as string | null,
+      }
+    }
+
+    const zone = menu.deliveryZones.find(
+      current =>
+        normalizeText(current.neighborhood || current.name) ===
+        normalizeText(neighborhood)
+    )
+
+    if (!zone) {
+      return {
+        deliveryFee: 0,
+        minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
+        estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
+        isNeighborhoodCovered: !neighborhood,
+        zoneName: null as string | null,
+      }
+    }
+
+    const hasFreeDelivery =
+      zone.freeDeliveryMinimum &&
+      cartTotal >= Number(zone.freeDeliveryMinimum)
+
+    return {
+      deliveryFee: hasFreeDelivery ? 0 : Number(zone.deliveryFee),
+      minimumOrderAmount: Number(
+        zone.minimumOrderAmount ?? menu.settings.minimumOrderAmount
+      ),
+      estimatedDeliveryMinutes: zone.estimatedDeliveryMinutes,
+      isNeighborhoodCovered: true,
+      zoneName: zone.name,
+    }
+  }, [
+    cartTotal,
+    menu.deliveryZones,
+    menu.settings.averagePreparationMinutes,
+    menu.settings.minimumOrderAmount,
+    neighborhood,
+    orderType,
+  ])
+
+  const checkoutTotal = cartTotal + deliveryQuote.deliveryFee
+  const missingMinimumAmount = Math.max(
+    0,
+    deliveryQuote.minimumOrderAmount - cartTotal
   )
 
   const openItem = (item: DigitalMenuItem) => {
@@ -208,12 +289,15 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const submitOrder = () => {
     const payload: DigitalMenuSubmitInput = {
       storeSlug: menu.store.subdomain,
-      idempotencyKey: createIdempotencyKey(),
+      idempotencyKey,
       customerName,
       customerPhone,
-      orderType: 'DELIVERY',
-      address: { street, number, neighborhood, reference },
-      payment: { method: paymentMethod },
+      orderType,
+      address:
+        orderType === 'DELIVERY'
+          ? { street, number, neighborhood, reference }
+          : undefined,
+      payment: { method: paymentMethod, changeFor },
       items: cart.map(item => ({
         itemOfferingId: item.itemOfferingId,
         quantity: item.quantity,
@@ -240,6 +324,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         total: result.total,
       })
       setCart([])
+      setIdempotencyKey(createIdempotencyKey())
       setCheckoutStep(false)
     })
   }
@@ -260,7 +345,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
             </div>
           </div>
           <Badge className="border-primary/20 bg-primary/10 text-primary">
-            <Clock3 className="size-3" /> Recebendo pedidos
+            <Clock3 className="size-3" /> {menu.settings.averagePreparationMinutes} min
           </Badge>
         </div>
       </header>
@@ -441,6 +526,12 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 neighborhood={neighborhood}
                 reference={reference}
                 paymentMethod={paymentMethod}
+                changeFor={changeFor}
+                orderType={orderType}
+                deliveryQuote={deliveryQuote}
+                checkoutTotal={checkoutTotal}
+                missingMinimumAmount={missingMinimumAmount}
+                paymentMethods={menu.paymentMethods}
                 submissionMessage={submissionMessage}
                 isPending={isPending}
                 onBack={() => setCheckoutStep(false)}
@@ -452,6 +543,8 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 setNeighborhood={setNeighborhood}
                 setReference={setReference}
                 setPaymentMethod={setPaymentMethod}
+                setChangeFor={setChangeFor}
+                setOrderType={setOrderType}
               />
             ) : (
               <>
@@ -530,6 +623,12 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 <span className="text-muted-foreground">Subtotal</span>
                 <strong>{currency(cartTotal)}</strong>
               </div>
+              {orderType === 'DELIVERY' && (
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Entrega</span>
+                  <strong>{currency(deliveryQuote.deliveryFee)}</strong>
+                </div>
+              )}
               <Button size="lg" onClick={() => setCheckoutStep(true)}>
                 <ReceiptText className="size-4" />
                 Continuar para checkout
@@ -608,6 +707,12 @@ const CheckoutForm = ({
   neighborhood,
   reference,
   paymentMethod,
+  changeFor,
+  orderType,
+  deliveryQuote,
+  checkoutTotal,
+  missingMinimumAmount,
+  paymentMethods,
   submissionMessage,
   isPending,
   onBack,
@@ -619,6 +724,8 @@ const CheckoutForm = ({
   setNeighborhood,
   setReference,
   setPaymentMethod,
+  setChangeFor,
+  setOrderType,
 }: {
   customerName: string
   customerPhone: string
@@ -627,6 +734,23 @@ const CheckoutForm = ({
   neighborhood: string
   reference: string
   paymentMethod: DigitalMenuSubmitInput['payment']['method']
+  changeFor: string
+  orderType: DigitalMenuSubmitInput['orderType']
+  deliveryQuote: {
+    deliveryFee: number
+    minimumOrderAmount: number
+    estimatedDeliveryMinutes: number
+    isNeighborhoodCovered: boolean
+    zoneName: string | null
+  }
+  checkoutTotal: number
+  missingMinimumAmount: number
+  paymentMethods: {
+    method: DigitalMenuSubmitInput['payment']['method']
+    label: string
+    instructions: string | null
+    requiresChangeFor: boolean
+  }[]
   submissionMessage: string | null
   isPending: boolean
   onBack: () => void
@@ -638,9 +762,40 @@ const CheckoutForm = ({
   setNeighborhood: (value: string) => void
   setReference: (value: string) => void
   setPaymentMethod: (value: DigitalMenuSubmitInput['payment']['method']) => void
+  setChangeFor: (value: string) => void
+  setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
 }) => {
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setOrderType('DELIVERY')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
+            orderType === 'DELIVERY'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'bg-background hover:bg-accent'
+          )}
+        >
+          <Truck className="size-4" />
+          Entrega
+        </button>
+        <button
+          type="button"
+          onClick={() => setOrderType('TAKEOUT')}
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
+            orderType === 'TAKEOUT'
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'bg-background hover:bg-accent'
+          )}
+        >
+          <HandPlatter className="size-4" />
+          Retirada
+        </button>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm font-medium">
           Nome
@@ -652,45 +807,87 @@ const CheckoutForm = ({
         </label>
       </div>
 
-      <div className="rounded-lg border bg-card p-4">
-        <h3 className="mb-3 font-medium">Endereco de entrega</h3>
-        <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
-          <Input placeholder="Rua" value={street} onChange={event => setStreet(event.target.value)} />
-          <Input placeholder="Numero" value={number} onChange={event => setNumber(event.target.value)} />
+      {orderType === 'DELIVERY' ? (
+        <div className="rounded-lg border bg-card p-4">
+          <h3 className="mb-3 font-medium">Endereco de entrega</h3>
+          <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
+            <Input placeholder="Rua" value={street} onChange={event => setStreet(event.target.value)} />
+            <Input placeholder="Numero" value={number} onChange={event => setNumber(event.target.value)} />
+          </div>
+          <Input
+            className="mt-3"
+            placeholder="Bairro"
+            value={neighborhood}
+            onChange={event => setNeighborhood(event.target.value)}
+          />
+          <Input
+            className="mt-3"
+            placeholder="Referencia (opcional)"
+            value={reference}
+            onChange={event => setReference(event.target.value)}
+          />
+          {!deliveryQuote.isNeighborhoodCovered && (
+            <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              Ainda nao entregamos neste bairro.
+            </p>
+          )}
+          {deliveryQuote.zoneName && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Regiao: {deliveryQuote.zoneName} · entrega em torno de{' '}
+              {deliveryQuote.estimatedDeliveryMinutes} min
+            </p>
+          )}
         </div>
-        <Input
-          className="mt-3"
-          placeholder="Bairro"
-          value={neighborhood}
-          onChange={event => setNeighborhood(event.target.value)}
-        />
-        <Input
-          className="mt-3"
-          placeholder="Referencia (opcional)"
-          value={reference}
-          onChange={event => setReference(event.target.value)}
-        />
-      </div>
+      ) : (
+        <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
+          Seu pedido sera retirado no balcao. A loja informara o preparo pelo
+          acompanhamento do pedido.
+        </div>
+      )}
 
       <div className="rounded-lg border bg-card p-4">
         <h3 className="mb-3 font-medium">Pagamento</h3>
         <div className="grid grid-cols-2 gap-2">
-          {(['PIX', 'CASH'] as const).map(method => (
+          {paymentMethods.map(method => (
             <button
-              key={method}
+              key={method.method}
               type="button"
-              onClick={() => setPaymentMethod(method)}
+              onClick={() => setPaymentMethod(method.method)}
               className={cn(
                 'rounded-md border px-3 py-2 text-sm',
-                paymentMethod === method
+                paymentMethod === method.method
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'bg-background hover:bg-accent'
               )}
             >
-              {method === 'CASH' ? 'Dinheiro' : 'Pix'}
+              {method.label}
             </button>
           ))}
         </div>
+        {paymentMethod === 'CASH' && (
+          <Input
+            className="mt-3"
+            placeholder="Troco para quanto? (opcional)"
+            value={changeFor}
+            onChange={event => setChangeFor(event.target.value)}
+          />
+        )}
+      </div>
+
+      <div className="rounded-lg border bg-card p-4 text-sm">
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">Entrega</span>
+          <strong>{currency(deliveryQuote.deliveryFee)}</strong>
+        </div>
+        <div className="mt-2 flex justify-between">
+          <span className="text-muted-foreground">Total previsto</span>
+          <strong>{currency(checkoutTotal)}</strong>
+        </div>
+        {missingMinimumAmount > 0 && (
+          <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
+            Faltam {currency(missingMinimumAmount)} para atingir o pedido minimo.
+          </p>
+        )}
       </div>
 
       {submissionMessage && (
@@ -703,7 +900,11 @@ const CheckoutForm = ({
         <Button variant="outline" onClick={onBack}>
           Voltar
         </Button>
-        <Button onClick={onSubmit} isLoading={isPending}>
+        <Button
+          onClick={onSubmit}
+          isLoading={isPending}
+          disabled={!deliveryQuote.isNeighborhoodCovered || missingMinimumAmount > 0}
+        >
           Enviar pedido
         </Button>
       </div>

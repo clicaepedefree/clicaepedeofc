@@ -91,6 +91,30 @@ describe('validateAndPriceDigitalMenuCart', () => {
     expect(message).toBe('Um dos itens do carrinho nao esta mais disponivel.')
   })
 
+  test('preserva taxa, pedido minimo e zona de entrega validados no backend', () => {
+    const cart = validateAndPriceDigitalMenuCart({
+      categories,
+      deliveryFee: '7.5000',
+      minimumOrderAmount: '35.0000',
+      deliveryZoneId: 12,
+      deliveryEstimatedMinutes: 45,
+      items: [
+        {
+          itemOfferingId: 10,
+          quantity: 2,
+          options: [{ optionId: 40, quantity: 1 }],
+        },
+      ],
+    })
+
+    expect(cart.subtotal).toBe('46.0000')
+    expect(cart.deliveryFee).toBe('7.5000')
+    expect(cart.total).toBe('53.5000')
+    expect(cart.minimumOrderAmount).toBe('35.0000')
+    expect(cart.deliveryZoneId).toBe(12)
+    expect(cart.deliveryEstimatedMinutes).toBe(45)
+  })
+
   test('bloqueia grupo obrigatorio sem opcao selecionada', () => {
     let message = ''
 
