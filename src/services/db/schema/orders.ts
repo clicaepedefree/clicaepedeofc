@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { countersTable } from './counters'
+import { storeDeliveryZonesTable } from './store-delivery-zones'
 
 export const orderSalesChannels = ['POS', 'DIGITAL_MENU'] as const
 
@@ -47,6 +48,21 @@ export const ordersTable = pgTable(
     deliveryAddressReference: text('delivery_address_reference'),
     deliveryNeighborhood: text('delivery_neighborhood'),
     deliveryFee: numeric('delivery_fee', { precision: 19, scale: 4 }),
+    deliveryZoneId: integer('delivery_zone_id').references(
+      () => storeDeliveryZonesTable.id,
+      { onDelete: 'set null' }
+    ),
+    deliveryEstimatedMinutes: integer('delivery_estimated_minutes'),
+    deliveryEta: timestamp('delivery_eta', { withTimezone: true }),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    acceptedByUserId: text('accepted_by_user_id'),
+    rejectedByUserId: text('rejected_by_user_id'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    publicTrackingTokenHash: text('public_tracking_token_hash'),
+    lastPrintedAt: timestamp('last_printed_at', { withTimezone: true }),
+    printCount: integer('print_count').notNull().default(0),
     couponCode: text('coupon_code'),
     origin: text('origin'),
     idempotencyKey: text('idempotency_key'),

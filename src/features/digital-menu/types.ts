@@ -48,8 +48,45 @@ export type DigitalMenuStore = {
   statusReason: string | null
 }
 
+export type DigitalMenuSettings = {
+  whatsappPhone: string | null
+  isDigitalMenuEnabled: boolean
+  isAcceptingOrders: boolean
+  manualPauseReason: string | null
+  minimumOrderAmount: string
+  averagePreparationMinutes: number
+  allowScheduledOrders: boolean
+}
+
+export type DigitalMenuAvailability = {
+  isOpen: boolean
+  reason: string | null
+  nextOpeningLabel: string | null
+}
+
+export type DigitalMenuPaymentMethod = {
+  method: 'CASH' | 'PIX'
+  label: string
+  instructions: string | null
+  requiresChangeFor: boolean
+}
+
+export type DigitalMenuDeliveryZone = {
+  id: number
+  name: string
+  neighborhood: string | null
+  deliveryFee: string
+  freeDeliveryMinimum: string | null
+  minimumOrderAmount: string | null
+  estimatedDeliveryMinutes: number
+}
+
 export type DigitalMenuData = {
   store: DigitalMenuStore
+  settings: DigitalMenuSettings
+  availability: DigitalMenuAvailability
+  paymentMethods: DigitalMenuPaymentMethod[]
+  deliveryZones: DigitalMenuDeliveryZone[]
   categories: DigitalMenuCategory[]
   unavailableReason?: string
 }
@@ -117,6 +154,9 @@ export type ValidatedDigitalMenuCart = {
   items: ValidatedDigitalMenuCartItem[]
   subtotal: string
   deliveryFee: string
+  minimumOrderAmount: string
+  deliveryZoneId: number | null
+  deliveryEstimatedMinutes: number | null
   total: string
 }
 

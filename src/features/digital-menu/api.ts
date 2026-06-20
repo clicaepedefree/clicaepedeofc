@@ -17,17 +17,27 @@ import {
   publicOrderDeliveryAttemptsTable,
   publicOrderEventsTable,
   publicOrderSubmissionsTable,
+  storeBusinessHoursTable,
+  storeDeliveryZonesTable,
+  storeDigitalMenuSettingsTable,
   storeFilesTable,
+  storePaymentMethodsTable,
+  storeSpecialHoursTable,
   storesTable,
 } from '@/services/db/schema'
-import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
+import { getValueFromCurrencyString } from '@/shared/formatters/currency'
+import Decimal from 'decimal.js'
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { validateAndPriceDigitalMenuCart } from './cart'
 import {
   DigitalMenuCategory,
   DigitalMenuData,
+  DigitalMenuDeliveryZone,
   DigitalMenuItem,
+  DigitalMenuPaymentMethod,
+  DigitalMenuSettings,
   DigitalMenuSubmissionResult,
   DigitalMenuSubmitInput,
 } from './types'
@@ -37,12 +47,46 @@ import {
   submitDigitalMenuOrderSchema,
 } from './validation'
 
-const DIGITAL_MENU_DELIVERY_FEE = '0'
+const DEFAULT_DIGITAL_MENU_SETTINGS = {
+  whatsappPhone: null,
+  isDigitalMenuEnabled: true,
+  isAcceptingOrders: true,
+  manualPauseReason: null,
+  manualPauseUntil: null,
+  minimumOrderAmount: '0',
+  averagePreparationMinutes: 30,
+  allowScheduledOrders: false,
+}
+
+const DEFAULT_PAYMENT_METHODS: DigitalMenuPaymentMethod[] = [
+  {
+    method: 'PIX',
+    label: 'Pix',
+    instructions: null,
+    requiresChangeFor: false,
+  },
+  {
+    method: 'CASH',
+    label: 'Dinheiro',
+    instructions: null,
+    requiresChangeFor: true,
+  },
+]
 
 const createRequestHash = (value: unknown) => {
   return createHash('sha256')
     .update(JSON.stringify(value))
     .digest('hex')
+}
+
+const normalizeOptionalMoney = (value: string | undefined) => {
+  const sanitized = sanitizePublicText(value, 40)
+  if (!sanitized) return null
+
+  const numericValue = getValueFromCurrencyString(sanitized)
+  if (!Number.isFinite(numericValue) || numericValue <= 0) return null
+
+  return new Decimal(numericValue).toFixed(4)
 }
 
 const getUnavailableReason = (status: string, statusReason: string | null) => {
@@ -59,6 +103,288 @@ const getUnavailableReason = (status: string, statusReason: string | null) => {
   }
 
   return null
+}
+
+const normalizeComparableText = (value: string | null | undefined) => {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+}
+
+const formatSaoPauloDateParts = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  }
+
+  return {
+    weekday: weekdayMap[byType.weekday] ?? 0,
+    date: `${byType.year}-${byType.month}-${byType.day}`,
+    time: `${byType.hour}:${byType.minute}:00`,
+  }
+}
+
+const timeIsBetween = (time: string, opensAt: string, closesAt: string) => {
+  return time >= opensAt && time <= closesAt
+}
+
+const getDigitalMenuSettings = async (storeId: number) => {
+  const [settings] = await db
+    .select({
+      whatsappPhone: storeDigitalMenuSettingsTable.whatsappPhone,
+      isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
+      isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
+      manualPauseReason: storeDigitalMenuSettingsTable.manualPauseReason,
+      manualPauseUntil: storeDigitalMenuSettingsTable.manualPauseUntil,
+      minimumOrderAmount: storeDigitalMenuSettingsTable.minimumOrderAmount,
+      averagePreparationMinutes:
+        storeDigitalMenuSettingsTable.averagePreparationMinutes,
+      allowScheduledOrders: storeDigitalMenuSettingsTable.allowScheduledOrders,
+    })
+    .from(storeDigitalMenuSettingsTable)
+    .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
+    .limit(1)
+
+  return settings ?? DEFAULT_DIGITAL_MENU_SETTINGS
+}
+
+const getPaymentMethodsForPublicMenu = async (storeId: number) => {
+  const methods = await db
+    .select({
+      method: storePaymentMethodsTable.method,
+      instructions: storePaymentMethodsTable.instructions,
+      requiresChangeFor: storePaymentMethodsTable.requiresChangeFor,
+    })
+    .from(storePaymentMethodsTable)
+    .where(
+      and(
+        eq(storePaymentMethodsTable.storeId, storeId),
+        eq(storePaymentMethodsTable.isActive, true),
+        inArray(storePaymentMethodsTable.method, ['CASH', 'PIX'])
+      )
+    )
+    .orderBy(asc(storePaymentMethodsTable.method))
+
+  if (methods.length === 0) return DEFAULT_PAYMENT_METHODS
+
+  return methods.map(method => ({
+    method: method.method as 'CASH' | 'PIX',
+    label: method.method === 'CASH' ? 'Dinheiro' : 'Pix',
+    instructions: method.instructions,
+    requiresChangeFor: method.requiresChangeFor,
+  }))
+}
+
+const getDeliveryZonesForPublicMenu = async (storeId: number) => {
+  const zones = await db
+    .select({
+      id: storeDeliveryZonesTable.id,
+      name: storeDeliveryZonesTable.name,
+      neighborhood: storeDeliveryZonesTable.neighborhood,
+      deliveryFee: storeDeliveryZonesTable.deliveryFee,
+      freeDeliveryMinimum: storeDeliveryZonesTable.freeDeliveryMinimum,
+      minimumOrderAmount: storeDeliveryZonesTable.minimumOrderAmount,
+      estimatedDeliveryMinutes: storeDeliveryZonesTable.estimatedDeliveryMinutes,
+    })
+    .from(storeDeliveryZonesTable)
+    .where(
+      and(
+        eq(storeDeliveryZonesTable.storeId, storeId),
+        eq(storeDeliveryZonesTable.isActive, true),
+        eq(storeDeliveryZonesTable.type, 'NEIGHBORHOOD')
+      )
+    )
+    .orderBy(desc(storeDeliveryZonesTable.priority), asc(storeDeliveryZonesTable.name))
+
+  return zones
+}
+
+const getAvailabilityForStore = async ({
+  storeId,
+  settings,
+  serviceType,
+}: {
+  storeId: number
+  settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
+  serviceType: 'DELIVERY' | 'TAKEOUT'
+}) => {
+  if (!settings.isDigitalMenuEnabled) {
+    return {
+      isOpen: false,
+      reason: 'Cardapio digital desativado para esta loja.',
+      nextOpeningLabel: null,
+    }
+  }
+
+  if (!settings.isAcceptingOrders) {
+    return {
+      isOpen: false,
+      reason: settings.manualPauseReason || 'A loja pausou novos pedidos.',
+      nextOpeningLabel: null,
+    }
+  }
+
+  if (
+    settings.manualPauseUntil &&
+    settings.manualPauseUntil.getTime() > Date.now()
+  ) {
+    return {
+      isOpen: false,
+      reason: settings.manualPauseReason || 'A loja pausou novos pedidos.',
+      nextOpeningLabel: null,
+    }
+  }
+
+  const now = formatSaoPauloDateParts()
+  const specialHours = await db
+    .select({
+      isClosed: storeSpecialHoursTable.isClosed,
+      opensAt: storeSpecialHoursTable.opensAt,
+      closesAt: storeSpecialHoursTable.closesAt,
+    })
+    .from(storeSpecialHoursTable)
+    .where(
+      and(
+        eq(storeSpecialHoursTable.storeId, storeId),
+        eq(storeSpecialHoursTable.date, now.date),
+        or(
+          eq(storeSpecialHoursTable.serviceType, serviceType),
+          eq(storeSpecialHoursTable.serviceType, 'ALL')
+        )
+      )
+    )
+
+  if (specialHours.some(hour => hour.isClosed)) {
+    return {
+      isOpen: false,
+      reason: 'A loja esta fechada hoje.',
+      nextOpeningLabel: null,
+    }
+  }
+
+  if (specialHours.length > 0) {
+    const specialWindowIsOpen = specialHours.some(
+      hour =>
+        hour.opensAt &&
+        hour.closesAt &&
+        timeIsBetween(now.time, hour.opensAt, hour.closesAt)
+    )
+
+    return {
+      isOpen: specialWindowIsOpen,
+      reason: specialWindowIsOpen
+        ? null
+        : 'A loja esta fora do horario de atendimento.',
+      nextOpeningLabel: null,
+    }
+  }
+
+  const businessHours = await db
+    .select({
+      opensAt: storeBusinessHoursTable.opensAt,
+      closesAt: storeBusinessHoursTable.closesAt,
+    })
+    .from(storeBusinessHoursTable)
+    .where(
+      and(
+        eq(storeBusinessHoursTable.storeId, storeId),
+        eq(storeBusinessHoursTable.weekday, now.weekday),
+        eq(storeBusinessHoursTable.isActive, true),
+        or(
+          eq(storeBusinessHoursTable.serviceType, serviceType),
+          eq(storeBusinessHoursTable.serviceType, 'ALL')
+        )
+      )
+    )
+    .orderBy(asc(storeBusinessHoursTable.opensAt))
+
+  if (businessHours.length === 0) {
+    return {
+      isOpen: true,
+      reason: null,
+      nextOpeningLabel: null,
+    }
+  }
+
+  const currentWindow = businessHours.find(hour =>
+    timeIsBetween(now.time, hour.opensAt, hour.closesAt)
+  )
+
+  return {
+    isOpen: !!currentWindow,
+    reason: currentWindow ? null : 'A loja esta fora do horario de atendimento.',
+    nextOpeningLabel: businessHours[0]
+      ? `Abre as ${businessHours[0].opensAt.slice(0, 5)}`
+      : null,
+  }
+}
+
+const quoteDelivery = ({
+  zones,
+  neighborhood,
+  subtotal,
+  settings,
+}: {
+  zones: DigitalMenuDeliveryZone[]
+  neighborhood: string | undefined
+  subtotal: string
+  settings: DigitalMenuSettings
+}) => {
+  if (zones.length === 0) {
+    return {
+      deliveryFee: '0',
+      minimumOrderAmount: settings.minimumOrderAmount,
+      deliveryZoneId: null,
+      deliveryEstimatedMinutes: settings.averagePreparationMinutes,
+      deliveryZoneSnapshot: null,
+    }
+  }
+
+  const normalizedNeighborhood = normalizeComparableText(neighborhood)
+  const zone = zones.find(
+    current =>
+      normalizeComparableText(current.neighborhood || current.name) ===
+      normalizedNeighborhood
+  )
+
+  if (!zone) {
+    throw new Error('Ainda nao entregamos neste bairro.')
+  }
+
+  const subtotalAsDecimal = new Decimal(subtotal)
+  const hasFreeDelivery =
+    zone.freeDeliveryMinimum &&
+    subtotalAsDecimal.greaterThanOrEqualTo(zone.freeDeliveryMinimum)
+
+  const minimumOrderAmount =
+    zone.minimumOrderAmount ?? settings.minimumOrderAmount
+
+  return {
+    deliveryFee: hasFreeDelivery ? '0' : zone.deliveryFee,
+    minimumOrderAmount,
+    deliveryZoneId: zone.id,
+    deliveryEstimatedMinutes: zone.estimatedDeliveryMinutes,
+    deliveryZoneSnapshot: zone,
+  }
 }
 
 const mapOptionGroups = (
@@ -112,10 +438,46 @@ export const getDigitalMenuBySlug = async (
   )
 
   if (unavailableReason) {
+    const settings = DEFAULT_DIGITAL_MENU_SETTINGS
     return {
       store,
+      settings,
+      availability: {
+        isOpen: false,
+        reason: unavailableReason,
+        nextOpeningLabel: null,
+      },
+      paymentMethods: DEFAULT_PAYMENT_METHODS,
+      deliveryZones: [],
       categories: [],
       unavailableReason,
+    }
+  }
+
+  const settings = await getDigitalMenuSettings(store.id)
+  const [paymentMethods, deliveryZones, availability] = await Promise.all([
+    getPaymentMethodsForPublicMenu(store.id),
+    getDeliveryZonesForPublicMenu(store.id),
+    getAvailabilityForStore({ storeId: store.id, settings, serviceType: 'DELIVERY' }),
+  ])
+
+  if (!availability.isOpen) {
+    return {
+      store,
+      settings: {
+        whatsappPhone: settings.whatsappPhone,
+        isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
+        isAcceptingOrders: settings.isAcceptingOrders,
+        manualPauseReason: settings.manualPauseReason,
+        minimumOrderAmount: settings.minimumOrderAmount,
+        averagePreparationMinutes: settings.averagePreparationMinutes,
+        allowScheduledOrders: settings.allowScheduledOrders,
+      },
+      availability,
+      paymentMethods,
+      deliveryZones,
+      categories: [],
+      unavailableReason: availability.reason ?? undefined,
     }
   }
 
@@ -208,6 +570,18 @@ export const getDigitalMenuBySlug = async (
 
   return {
     store,
+    settings: {
+      whatsappPhone: settings.whatsappPhone,
+      isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
+      isAcceptingOrders: settings.isAcceptingOrders,
+      manualPauseReason: settings.manualPauseReason,
+      minimumOrderAmount: settings.minimumOrderAmount,
+      averagePreparationMinutes: settings.averagePreparationMinutes,
+      allowScheduledOrders: settings.allowScheduledOrders,
+    },
+    availability,
+    paymentMethods,
+    deliveryZones,
     categories: Array.from(categoriesById.values()).filter(
       category => category.items.length > 0
     ),
@@ -239,13 +613,88 @@ export const submitDigitalMenuOrder = async (
     return { ok: false, message: menu.unavailableReason }
   }
 
+  const paymentMethod = menu.paymentMethods.find(
+    method => method.method === payload.payment.method
+  )
+
+  if (!paymentMethod) {
+    return {
+      ok: false,
+      message: 'Forma de pagamento indisponivel para esta loja.',
+    }
+  }
+
+  const currentSettings = await getDigitalMenuSettings(menu.store.id)
+  const currentPublicSettings: DigitalMenuSettings = {
+    whatsappPhone: currentSettings.whatsappPhone,
+    isDigitalMenuEnabled: currentSettings.isDigitalMenuEnabled,
+    isAcceptingOrders: currentSettings.isAcceptingOrders,
+    manualPauseReason: currentSettings.manualPauseReason,
+    minimumOrderAmount: currentSettings.minimumOrderAmount,
+    averagePreparationMinutes: currentSettings.averagePreparationMinutes,
+    allowScheduledOrders: currentSettings.allowScheduledOrders,
+  }
+  const orderAvailability = await getAvailabilityForStore({
+    storeId: menu.store.id,
+    settings: currentSettings,
+    serviceType: payload.orderType,
+  })
+
+  if (!orderAvailability.isOpen) {
+    return {
+      ok: false,
+      message:
+        orderAvailability.reason ||
+        'A loja nao esta recebendo este tipo de pedido agora.',
+    }
+  }
+
   let validatedCart
   try {
+    const subtotalCart = validateAndPriceDigitalMenuCart({
+      items: payload.items,
+      categories: menu.categories,
+      deliveryFee: '0',
+      minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
+    })
+    const deliveryQuote =
+      payload.orderType === 'DELIVERY'
+        ? quoteDelivery({
+            zones: menu.deliveryZones,
+            neighborhood: payload.address?.neighborhood,
+            subtotal: subtotalCart.subtotal,
+            settings: currentPublicSettings,
+          })
+        : {
+            deliveryFee: '0',
+            minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
+            deliveryZoneId: null,
+            deliveryEstimatedMinutes:
+              currentPublicSettings.averagePreparationMinutes,
+            deliveryZoneSnapshot: null,
+          }
+
     validatedCart = validateAndPriceDigitalMenuCart({
       items: payload.items,
       categories: menu.categories,
-      deliveryFee: DIGITAL_MENU_DELIVERY_FEE,
+      deliveryFee: deliveryQuote.deliveryFee,
+      minimumOrderAmount: deliveryQuote.minimumOrderAmount,
+      deliveryZoneId: deliveryQuote.deliveryZoneId,
+      deliveryEstimatedMinutes: deliveryQuote.deliveryEstimatedMinutes,
     })
+
+    if (
+      new Decimal(validatedCart.subtotal).lessThan(
+        validatedCart.minimumOrderAmount
+      )
+    ) {
+      return {
+        ok: false,
+        message: `O pedido minimo para esta entrega e ${new Decimal(
+          validatedCart.minimumOrderAmount
+        ).toFixed(2).replace('.', ',')}.`,
+      }
+    }
   } catch (error) {
     return {
       ok: false,
@@ -253,6 +702,21 @@ export const submitDigitalMenuOrder = async (
         error instanceof Error
           ? error.message
           : 'Nao foi possivel validar o carrinho.',
+    }
+  }
+
+  const normalizedChangeFor =
+    payload.payment.method === 'CASH'
+      ? normalizeOptionalMoney(payload.payment.changeFor)
+      : null
+
+  if (
+    normalizedChangeFor &&
+    new Decimal(normalizedChangeFor).lessThan(validatedCart.total)
+  ) {
+    return {
+      ok: false,
+      message: 'O valor informado para troco precisa ser maior que o total.',
     }
   }
 
@@ -345,9 +809,18 @@ export const submitDigitalMenuOrder = async (
           addressSnapshot,
           paymentSnapshot: {
             method: payload.payment.method,
-            changeFor: sanitizePublicText(payload.payment.changeFor, 40) || null,
+            changeFor: normalizedChangeFor,
+            instructions: paymentMethod.instructions,
             status: 'PENDING',
           },
+          deliveryZoneSnapshot:
+            validatedCart.deliveryZoneId === null
+              ? null
+              : menu.deliveryZones.find(
+                  zone => zone.id === validatedCart.deliveryZoneId
+                ) ?? null,
+          storeSettingsSnapshot: currentPublicSettings,
+          businessHoursSnapshot: orderAvailability,
           submittedAt,
           technicalAckAt: submittedAt,
           sentToStoreAt: submittedAt,
@@ -390,6 +863,14 @@ export const submitDigitalMenuOrder = async (
           deliveryAddressReference: reference ?? null,
           deliveryNeighborhood: neighborhood ?? null,
           deliveryFee: validatedCart.deliveryFee,
+          deliveryZoneId: validatedCart.deliveryZoneId,
+          deliveryEstimatedMinutes: validatedCart.deliveryEstimatedMinutes,
+          deliveryEta: validatedCart.deliveryEstimatedMinutes
+            ? new Date(
+                submittedAt.getTime() +
+                  validatedCart.deliveryEstimatedMinutes * 60 * 1000
+              )
+            : null,
           origin: 'cardapio-digital',
           idempotencyKey: payload.idempotencyKey,
           requestId,
@@ -399,8 +880,11 @@ export const submitDigitalMenuOrder = async (
             totals: {
               subtotal: validatedCart.subtotal,
               deliveryFee: validatedCart.deliveryFee,
+              minimumOrderAmount: validatedCart.minimumOrderAmount,
               total: validatedCart.total,
             },
+            deliveryZoneId: validatedCart.deliveryZoneId,
+            deliveryEstimatedMinutes: validatedCart.deliveryEstimatedMinutes,
           },
           technicalAckAt: submittedAt,
         },
@@ -458,7 +942,7 @@ export const submitDigitalMenuOrder = async (
           method: payload.payment.method,
           changeFor:
             payload.payment.method === 'CASH'
-              ? sanitizePublicText(payload.payment.changeFor, 40) || null
+              ? normalizedChangeFor
               : null,
         },
         dbSession: tx,
