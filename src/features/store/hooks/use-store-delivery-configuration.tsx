@@ -5,8 +5,10 @@ import {
   getStoreDeliveryConfiguration,
   saveStoreDeliverySettings,
   saveStoreDeliveryZone,
+  saveStorePaymentMethods,
   type StoreDeliverySettingsInput,
   type StoreDeliveryZoneInput,
+  type StorePaymentMethodInput,
 } from '@/features/store/delivery-api'
 import { storeDeliveryConfigurationCacheKey } from '@/features/store/cache-keys'
 import { selectedStoreIdAtom } from '@/features/store/state'
@@ -61,6 +63,20 @@ export const useStoreDeliveryConfiguration = () => {
     },
   })
 
+  const paymentMethodsMutation = useMutation({
+    mutationFn: (values: StorePaymentMethodInput[]) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return saveStorePaymentMethods(selectedStoreId, values)
+    },
+    onSuccess: () => {
+      dispatchToast({ type: 'success', message: 'Pagamentos do cardapio salvos.' })
+      invalidate()
+    },
+    onError: () => {
+      dispatchToast({ type: 'error', message: 'Nao foi possivel salvar os pagamentos.' })
+    },
+  })
+
   const deleteZoneMutation = useMutation({
     mutationFn: (zoneId: number) => {
       if (!selectedStoreId) throw new Error('No store selected')
@@ -80,9 +96,11 @@ export const useStoreDeliveryConfiguration = () => {
     ...query,
     saveSettings: settingsMutation.mutate,
     saveZone: zoneMutation.mutate,
+    savePaymentMethods: paymentMethodsMutation.mutate,
     deleteZone: deleteZoneMutation.mutate,
     isSavingSettings: settingsMutation.isPending,
     isSavingZone: zoneMutation.isPending,
+    isSavingPaymentMethods: paymentMethodsMutation.isPending,
     isDeletingZone: deleteZoneMutation.isPending,
   }
 }

@@ -27,7 +27,7 @@ import {
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -72,15 +72,33 @@ const DEFAULT_PAYMENT_METHODS: DigitalMenuPaymentMethod[] = [
     method: 'PIX',
     label: 'Pix',
     instructions: null,
+    proofInstructions: 'Envie o comprovante pelo WhatsApp da loja.',
+    pixKey: null,
+    integrationProvider: null,
     requiresChangeFor: false,
+    availableFor: ['DELIVERY', 'TAKEOUT'],
   },
   {
     method: 'CASH',
     label: 'Dinheiro',
     instructions: null,
+    proofInstructions: null,
+    pixKey: null,
+    integrationProvider: null,
     requiresChangeFor: true,
+    availableFor: ['DELIVERY', 'TAKEOUT'],
   },
 ]
+
+const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> = {
+  CASH: 'Dinheiro',
+  PIX: 'Pix',
+  CREDIT: 'Cartao de credito',
+  DEBIT: 'Cartao de debito',
+  MEAL_VOUCHER: 'Vale-refeicao',
+  FOOD_VOUCHER: 'Vale-alimentacao',
+  ONLINE: 'Pagamento online',
+}
 
 const createRequestHash = (value: unknown) => {
   return createHash('sha256')
@@ -161,26 +179,40 @@ const getPaymentMethodsForPublicMenu = async (storeId: number) => {
     .select({
       method: storePaymentMethodsTable.method,
       instructions: storePaymentMethodsTable.instructions,
+      proofInstructions: storePaymentMethodsTable.proofInstructions,
+      pixKey: storePaymentMethodsTable.pixKey,
+      allowDelivery: storePaymentMethodsTable.allowDelivery,
+      allowTakeout: storePaymentMethodsTable.allowTakeout,
+      integrationProvider: storePaymentMethodsTable.integrationProvider,
       requiresChangeFor: storePaymentMethodsTable.requiresChangeFor,
+      isActive: storePaymentMethodsTable.isActive,
     })
     .from(storePaymentMethodsTable)
     .where(
       and(
         eq(storePaymentMethodsTable.storeId, storeId),
-        eq(storePaymentMethodsTable.isActive, true),
-        inArray(storePaymentMethodsTable.method, ['CASH', 'PIX'])
+        isNull(storePaymentMethodsTable.cardBrand)
       )
     )
     .orderBy(asc(storePaymentMethodsTable.method))
 
   if (methods.length === 0) return DEFAULT_PAYMENT_METHODS
 
-  return methods.map(method => ({
-    method: method.method as 'CASH' | 'PIX',
-    label: method.method === 'CASH' ? 'Dinheiro' : 'Pix',
-    instructions: method.instructions,
-    requiresChangeFor: method.requiresChangeFor,
-  }))
+  return methods
+    .filter(method => method.isActive && (method.allowDelivery || method.allowTakeout))
+    .map(method => ({
+      method: method.method as DigitalMenuPaymentMethod['method'],
+      label: paymentMethodLabels[method.method as DigitalMenuPaymentMethod['method']],
+      instructions: method.instructions,
+      proofInstructions: method.proofInstructions,
+      pixKey: method.pixKey,
+      integrationProvider: method.integrationProvider,
+      requiresChangeFor: method.requiresChangeFor,
+      availableFor: [
+        ...(method.allowDelivery ? ['DELIVERY' as const] : []),
+        ...(method.allowTakeout ? ['TAKEOUT' as const] : []),
+      ],
+    }))
 }
 
 const getDeliveryZonesForPublicMenu = async (storeId: number) => {
@@ -513,7 +545,9 @@ export const submitDigitalMenuOrder = async (
   }
 
   const paymentMethod = menu.paymentMethods.find(
-    method => method.method === payload.payment.method
+    method =>
+      method.method === payload.payment.method &&
+      method.availableFor.includes(payload.orderType)
   )
 
   if (!paymentMethod) {
@@ -652,11 +686,11 @@ export const submitDigitalMenuOrder = async (
 
   if (
     normalizedChangeFor &&
-    new Decimal(normalizedChangeFor).lessThan(validatedCart.total)
+    new Decimal(normalizedChangeFor).lessThanOrEqualTo(validatedCart.total)
   ) {
     return {
       ok: false,
-      message: 'O valor informado para troco precisa ser maior que o total.',
+      message: 'O valor informado para troco precisa ser maior que o total do pedido.',
     }
   }
 
@@ -753,8 +787,14 @@ export const submitDigitalMenuOrder = async (
           addressSnapshot,
           paymentSnapshot: {
             method: payload.payment.method,
+            label: paymentMethod.label,
             changeFor: normalizedChangeFor,
             instructions: paymentMethod.instructions,
+            proofInstructions: paymentMethod.proofInstructions,
+            pixKey:
+              payload.payment.method === 'PIX' ? paymentMethod.pixKey : null,
+            integrationProvider: paymentMethod.integrationProvider,
+            availableFor: paymentMethod.availableFor,
             status: 'PENDING',
           },
           deliveryZoneSnapshot:

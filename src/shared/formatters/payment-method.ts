@@ -19,6 +19,9 @@ const paymentMethodToInfoMapping: Record<PaymentMethod, { name: string }> = {
   PIX: {
     name: 'PIX',
   },
+  ONLINE: {
+    name: 'Pagamento online',
+  },
 }
 export const getPaymentMethodName = (paymentMethod: PaymentMethod | string) => {
   return (

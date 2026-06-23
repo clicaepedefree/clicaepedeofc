@@ -1,5 +1,15 @@
 import { z } from 'zod'
 
+export const digitalMenuPaymentMethodIds = [
+  'CASH',
+  'PIX',
+  'CREDIT',
+  'DEBIT',
+  'MEAL_VOUCHER',
+  'FOOD_VOUCHER',
+  'ONLINE',
+] as const
+
 export const normalizeStoreSlug = (value: string) => {
   return value
     .trim()
@@ -58,7 +68,7 @@ export const submitDigitalMenuOrderSchema = z
       })
       .optional(),
     payment: z.object({
-      method: z.enum(['CASH', 'PIX']),
+      method: z.enum(digitalMenuPaymentMethodIds),
       changeFor: z.string().max(40).optional(),
     }),
     items: z.array(cartItemSchema).min(1).max(80),
