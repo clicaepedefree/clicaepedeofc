@@ -1,6 +1,7 @@
 'use client'
 
 import { submitDigitalMenuOrder } from '@/features/digital-menu/api'
+import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
 import {
   DigitalMenuCategory,
   DigitalMenuData,
@@ -67,14 +68,6 @@ const getItemUnitTotal = (item: CartItem) => {
   return Number(item.price) + optionsTotal
 }
 
-const normalizeText = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-
 const createIdempotencyKey = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -97,10 +90,14 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [checkoutStep, setCheckoutStep] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [postalCode, setPostalCode] = useState('')
   const [street, setStreet] = useState('')
   const [number, setNumber] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [reference, setReference] = useState('')
+  const [customerLatitude, setCustomerLatitude] = useState<number | undefined>()
+  const [customerLongitude, setCustomerLongitude] = useState<number | undefined>()
+  const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [orderType, setOrderType] =
     useState<DigitalMenuSubmitInput['orderType']>('DELIVERY')
   const [paymentMethod, setPaymentMethod] =
@@ -137,7 +134,8 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         deliveryFee: 0,
         minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
         estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
-        isNeighborhoodCovered: true,
+        isAddressCovered: true,
+        coverageMessage: null as string | null,
         zoneName: null as string | null,
       }
     }
@@ -147,47 +145,58 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         deliveryFee: 0,
         minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
         estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
-        isNeighborhoodCovered: true,
+        isAddressCovered: true,
+        coverageMessage: null as string | null,
         zoneName: null as string | null,
       }
     }
 
-    const zone = menu.deliveryZones.find(
-      current =>
-        normalizeText(current.neighborhood || current.name) ===
-        normalizeText(neighborhood)
-    )
+    try {
+      const quote = quoteDigitalMenuDelivery({
+        zones: menu.deliveryZones,
+        neighborhood,
+        postalCode,
+        customerLatitude,
+        customerLongitude,
+        subtotal: String(cartTotal),
+        settings: menu.settings,
+      })
+      const zone = menu.deliveryZones.find(
+        current => current.id === quote.deliveryZoneId
+      )
 
-    if (!zone) {
+      return {
+        deliveryFee: Number(quote.deliveryFee),
+        minimumOrderAmount: Number(quote.minimumOrderAmount),
+        estimatedDeliveryMinutes:
+          quote.deliveryEstimatedMinutes ??
+          menu.settings.averagePreparationMinutes,
+        isAddressCovered: true,
+        coverageMessage: null as string | null,
+        zoneName: zone?.name ?? null,
+      }
+    } catch (error) {
       return {
         deliveryFee: 0,
         minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
         estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
-        isNeighborhoodCovered: !neighborhood,
+        isAddressCovered: !neighborhood && !postalCode && !customerLatitude,
+        coverageMessage:
+          error instanceof Error
+            ? error.message
+            : 'Ainda nao entregamos neste endereco.',
         zoneName: null as string | null,
       }
     }
-
-    const hasFreeDelivery =
-      zone.freeDeliveryMinimum &&
-      cartTotal >= Number(zone.freeDeliveryMinimum)
-
-    return {
-      deliveryFee: hasFreeDelivery ? 0 : Number(zone.deliveryFee),
-      minimumOrderAmount: Number(
-        zone.minimumOrderAmount ?? menu.settings.minimumOrderAmount
-      ),
-      estimatedDeliveryMinutes: zone.estimatedDeliveryMinutes,
-      isNeighborhoodCovered: true,
-      zoneName: zone.name,
-    }
   }, [
     cartTotal,
+    customerLatitude,
+    customerLongitude,
     menu.deliveryZones,
-    menu.settings.averagePreparationMinutes,
-    menu.settings.minimumOrderAmount,
+    menu.settings,
     neighborhood,
     orderType,
+    postalCode,
   ])
 
   const checkoutTotal = cartTotal + deliveryQuote.deliveryFee
@@ -295,7 +304,15 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
       orderType,
       address:
         orderType === 'DELIVERY'
-          ? { street, number, neighborhood, reference }
+          ? {
+              postalCode,
+              street,
+              number,
+              neighborhood,
+              reference,
+              latitude: customerLatitude,
+              longitude: customerLongitude,
+            }
           : undefined,
       payment: { method: paymentMethod, changeFor },
       items: cart.map(item => ({
@@ -521,10 +538,13 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
               <CheckoutForm
                 customerName={customerName}
                 customerPhone={customerPhone}
+                postalCode={postalCode}
                 street={street}
                 number={number}
                 neighborhood={neighborhood}
                 reference={reference}
+                locationMessage={locationMessage}
+                showLocationButton={menu.deliveryZones.some(zone => zone.type === 'RADIUS')}
                 paymentMethod={paymentMethod}
                 changeFor={changeFor}
                 orderType={orderType}
@@ -538,10 +558,14 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 onSubmit={submitOrder}
                 setCustomerName={setCustomerName}
                 setCustomerPhone={setCustomerPhone}
+                setPostalCode={setPostalCode}
                 setStreet={setStreet}
                 setNumber={setNumber}
                 setNeighborhood={setNeighborhood}
                 setReference={setReference}
+                setCustomerLatitude={setCustomerLatitude}
+                setCustomerLongitude={setCustomerLongitude}
+                setLocationMessage={setLocationMessage}
                 setPaymentMethod={setPaymentMethod}
                 setChangeFor={setChangeFor}
                 setOrderType={setOrderType}
@@ -702,10 +726,13 @@ const CategorySection = ({
 const CheckoutForm = ({
   customerName,
   customerPhone,
+  postalCode,
   street,
   number,
   neighborhood,
   reference,
+  locationMessage,
+  showLocationButton,
   paymentMethod,
   changeFor,
   orderType,
@@ -719,20 +746,27 @@ const CheckoutForm = ({
   onSubmit,
   setCustomerName,
   setCustomerPhone,
+  setPostalCode,
   setStreet,
   setNumber,
   setNeighborhood,
   setReference,
+  setCustomerLatitude,
+  setCustomerLongitude,
+  setLocationMessage,
   setPaymentMethod,
   setChangeFor,
   setOrderType,
 }: {
   customerName: string
   customerPhone: string
+  postalCode: string
   street: string
   number: string
   neighborhood: string
   reference: string
+  locationMessage: string | null
+  showLocationButton: boolean
   paymentMethod: DigitalMenuSubmitInput['payment']['method']
   changeFor: string
   orderType: DigitalMenuSubmitInput['orderType']
@@ -740,7 +774,8 @@ const CheckoutForm = ({
     deliveryFee: number
     minimumOrderAmount: number
     estimatedDeliveryMinutes: number
-    isNeighborhoodCovered: boolean
+    isAddressCovered: boolean
+    coverageMessage: string | null
     zoneName: string | null
   }
   checkoutTotal: number
@@ -757,14 +792,40 @@ const CheckoutForm = ({
   onSubmit: () => void
   setCustomerName: (value: string) => void
   setCustomerPhone: (value: string) => void
+  setPostalCode: (value: string) => void
   setStreet: (value: string) => void
   setNumber: (value: string) => void
   setNeighborhood: (value: string) => void
   setReference: (value: string) => void
+  setCustomerLatitude: (value: number | undefined) => void
+  setCustomerLongitude: (value: number | undefined) => void
+  setLocationMessage: (value: string | null) => void
   setPaymentMethod: (value: DigitalMenuSubmitInput['payment']['method']) => void
   setChangeFor: (value: string) => void
   setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
 }) => {
+  const requestCustomerLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage('Seu navegador nao permite compartilhar localizacao.')
+      return
+    }
+
+    setLocationMessage('Buscando sua localizacao...')
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setCustomerLatitude(position.coords.latitude)
+        setCustomerLongitude(position.coords.longitude)
+        setLocationMessage('Localizacao recebida para calcular a entrega.')
+      },
+      () => {
+        setCustomerLatitude(undefined)
+        setCustomerLongitude(undefined)
+        setLocationMessage('Nao foi possivel acessar sua localizacao.')
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2">
@@ -810,6 +871,12 @@ const CheckoutForm = ({
       {orderType === 'DELIVERY' ? (
         <div className="rounded-lg border bg-card p-4">
           <h3 className="mb-3 font-medium">Endereco de entrega</h3>
+          <Input
+            className="mb-3"
+            placeholder="CEP"
+            value={postalCode}
+            onChange={event => setPostalCode(event.target.value)}
+          />
           <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
             <Input placeholder="Rua" value={street} onChange={event => setStreet(event.target.value)} />
             <Input placeholder="Numero" value={number} onChange={event => setNumber(event.target.value)} />
@@ -826,9 +893,19 @@ const CheckoutForm = ({
             value={reference}
             onChange={event => setReference(event.target.value)}
           />
-          {!deliveryQuote.isNeighborhoodCovered && (
+          {showLocationButton && (
+            <div className="mt-3">
+              <Button type="button" variant="outline" onClick={requestCustomerLocation}>
+                Usar minha localização
+              </Button>
+              {locationMessage && (
+                <p className="mt-2 text-xs text-muted-foreground">{locationMessage}</p>
+              )}
+            </div>
+          )}
+          {!deliveryQuote.isAddressCovered && (
             <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              Ainda nao entregamos neste bairro.
+              {deliveryQuote.coverageMessage ?? 'Ainda nao entregamos neste endereco.'}
             </p>
           )}
           {deliveryQuote.zoneName && (
@@ -903,7 +980,7 @@ const CheckoutForm = ({
         <Button
           onClick={onSubmit}
           isLoading={isPending}
-          disabled={!deliveryQuote.isNeighborhoodCovered || missingMinimumAmount > 0}
+          disabled={!deliveryQuote.isAddressCovered || missingMinimumAmount > 0}
         >
           Enviar pedido
         </Button>

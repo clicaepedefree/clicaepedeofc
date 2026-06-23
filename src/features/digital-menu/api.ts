@@ -31,6 +31,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { validateAndPriceDigitalMenuCart } from './cart'
+import { quoteDigitalMenuDelivery } from './delivery'
 import {
   DigitalMenuCategory,
   DigitalMenuData,
@@ -103,15 +104,6 @@ const getUnavailableReason = (status: string, statusReason: string | null) => {
   }
 
   return null
-}
-
-const normalizeComparableText = (value: string | null | undefined) => {
-  return (value ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
 }
 
 const formatSaoPauloDateParts = (date = new Date()) => {
@@ -198,19 +190,25 @@ const getDeliveryZonesForPublicMenu = async (storeId: number) => {
   const zones = await db
     .select({
       id: storeDeliveryZonesTable.id,
+      type: storeDeliveryZonesTable.type,
       name: storeDeliveryZonesTable.name,
       neighborhood: storeDeliveryZonesTable.neighborhood,
+      postalCodePrefix: storeDeliveryZonesTable.postalCodePrefix,
+      centerLat: storeDeliveryZonesTable.centerLat,
+      centerLng: storeDeliveryZonesTable.centerLng,
+      radiusMeters: storeDeliveryZonesTable.radiusMeters,
       deliveryFee: storeDeliveryZonesTable.deliveryFee,
       freeDeliveryMinimum: storeDeliveryZonesTable.freeDeliveryMinimum,
       minimumOrderAmount: storeDeliveryZonesTable.minimumOrderAmount,
       estimatedDeliveryMinutes: storeDeliveryZonesTable.estimatedDeliveryMinutes,
+      priority: storeDeliveryZonesTable.priority,
+      isActive: storeDeliveryZonesTable.isActive,
     })
     .from(storeDeliveryZonesTable)
     .where(
       and(
         eq(storeDeliveryZonesTable.storeId, storeId),
-        eq(storeDeliveryZonesTable.isActive, true),
-        eq(storeDeliveryZonesTable.type, 'NEIGHBORHOOD')
+        eq(storeDeliveryZonesTable.isActive, true)
       )
     )
     .orderBy(desc(storeDeliveryZonesTable.priority), asc(storeDeliveryZonesTable.name))
@@ -335,55 +333,6 @@ const getAvailabilityForStore = async ({
     nextOpeningLabel: businessHours[0]
       ? `Abre as ${businessHours[0].opensAt.slice(0, 5)}`
       : null,
-  }
-}
-
-const quoteDelivery = ({
-  zones,
-  neighborhood,
-  subtotal,
-  settings,
-}: {
-  zones: DigitalMenuDeliveryZone[]
-  neighborhood: string | undefined
-  subtotal: string
-  settings: DigitalMenuSettings
-}) => {
-  if (zones.length === 0) {
-    return {
-      deliveryFee: '0',
-      minimumOrderAmount: settings.minimumOrderAmount,
-      deliveryZoneId: null,
-      deliveryEstimatedMinutes: settings.averagePreparationMinutes,
-      deliveryZoneSnapshot: null,
-    }
-  }
-
-  const normalizedNeighborhood = normalizeComparableText(neighborhood)
-  const zone = zones.find(
-    current =>
-      normalizeComparableText(current.neighborhood || current.name) ===
-      normalizedNeighborhood
-  )
-
-  if (!zone) {
-    throw new Error('Ainda nao entregamos neste bairro.')
-  }
-
-  const subtotalAsDecimal = new Decimal(subtotal)
-  const hasFreeDelivery =
-    zone.freeDeliveryMinimum &&
-    subtotalAsDecimal.greaterThanOrEqualTo(zone.freeDeliveryMinimum)
-
-  const minimumOrderAmount =
-    zone.minimumOrderAmount ?? settings.minimumOrderAmount
-
-  return {
-    deliveryFee: hasFreeDelivery ? '0' : zone.deliveryFee,
-    minimumOrderAmount,
-    deliveryZoneId: zone.id,
-    deliveryEstimatedMinutes: zone.estimatedDeliveryMinutes,
-    deliveryZoneSnapshot: zone,
   }
 }
 
@@ -659,9 +608,12 @@ export const submitDigitalMenuOrder = async (
     })
     const deliveryQuote =
       payload.orderType === 'DELIVERY'
-        ? quoteDelivery({
+        ? quoteDigitalMenuDelivery({
             zones: menu.deliveryZones,
             neighborhood: payload.address?.neighborhood,
+            postalCode: payload.address?.postalCode,
+            customerLatitude: payload.address?.latitude,
+            customerLongitude: payload.address?.longitude,
             subtotal: subtotalCart.subtotal,
             settings: currentPublicSettings,
           })
@@ -736,8 +688,11 @@ export const submitDigitalMenuOrder = async (
       ? {
           street: sanitizePublicText(payload.address?.street, 160),
           number: sanitizePublicText(payload.address?.number, 30),
+          postalCode: sanitizePublicText(payload.address?.postalCode, 16),
           neighborhood: sanitizePublicText(payload.address?.neighborhood, 120),
           reference: sanitizePublicText(payload.address?.reference, 180),
+          latitude: payload.address?.latitude ?? null,
+          longitude: payload.address?.longitude ?? null,
         }
       : null
 
