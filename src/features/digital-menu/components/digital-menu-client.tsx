@@ -32,7 +32,10 @@ import {
   Minus,
   Plus,
   ReceiptText,
+  Search,
   ShoppingBag,
+  SlidersHorizontal,
+  Sparkles,
   Store,
   Trash2,
   Truck,
@@ -56,6 +59,17 @@ type CartItem = {
   quantity: number
   comment: string
   options: CartOption[]
+}
+
+type MenuFilter = 'ALL' | 'RECOMMENDED' | 'WITH_IMAGE' | 'PROMO'
+
+type DisplayMenuItem = DigitalMenuItem & {
+  categoryName: string
+  isRecommended: boolean
+}
+
+type DisplayMenuCategory = Omit<DigitalMenuCategory, 'items'> & {
+  items: DisplayMenuItem[]
 }
 
 const currency = (value: string | number) =>
@@ -86,11 +100,23 @@ const toDatetimeLocalInputValue = (date: Date) => {
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const normalizeSearchText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+const isItemUnavailable = (item: DigitalMenuItem) =>
+  item.inventory !== null && item.inventory <= 0
+
 export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     menu.categories[0]?.id
   )
   const [selectedItem, setSelectedItem] = useState<DigitalMenuItem | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [activeFilter, setActiveFilter] = useState<MenuFilter>('ALL')
   const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>(
     {}
   )
@@ -230,6 +256,70 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     0,
     deliveryQuote.minimumOrderAmount - cartTotal
   )
+  const allItems = useMemo(
+    () =>
+      menu.categories.flatMap(category =>
+        category.items.map(item => ({
+          ...item,
+          categoryName: category.name,
+          isRecommended: false,
+        }))
+      ),
+    [menu.categories]
+  )
+  const recommendedItemIds = useMemo(() => {
+    const candidates = [...allItems].sort((first, second) => {
+      const secondScore =
+        (second.originalPrice ? 4 : 0) +
+        (second.imageUrl ? 2 : 0) +
+        (second.optionGroups.length > 0 ? 1 : 0)
+      const firstScore =
+        (first.originalPrice ? 4 : 0) +
+        (first.imageUrl ? 2 : 0) +
+        (first.optionGroups.length > 0 ? 1 : 0)
+
+      return secondScore - firstScore
+    })
+
+    return new Set(candidates.slice(0, 6).map(item => item.itemOfferingId))
+  }, [allItems])
+  const displayCategories = useMemo<DisplayMenuCategory[]>(() => {
+    const normalizedSearch = normalizeSearchText(searchTerm)
+
+    return menu.categories
+      .map(category => {
+        const items = category.items
+          .map(item => ({
+            ...item,
+            categoryName: category.name,
+            isRecommended: recommendedItemIds.has(item.itemOfferingId),
+          }))
+          .filter(item => {
+            if (activeFilter === 'RECOMMENDED' && !item.isRecommended) return false
+            if (activeFilter === 'WITH_IMAGE' && !item.imageUrl) return false
+            if (activeFilter === 'PROMO' && !item.originalPrice) return false
+
+            if (!normalizedSearch) return true
+
+            return normalizeSearchText(
+              `${item.name} ${item.description ?? ''} ${category.name}`
+            ).includes(normalizedSearch)
+          })
+
+        return { ...category, items }
+      })
+      .filter(category => category.items.length > 0)
+  }, [activeFilter, menu.categories, recommendedItemIds, searchTerm])
+  const recommendedItems = useMemo(
+    () =>
+      allItems
+        .filter(item => recommendedItemIds.has(item.itemOfferingId))
+        .map(item => ({ ...item, isRecommended: true }))
+        .slice(0, 6),
+    [allItems, recommendedItemIds]
+  )
+  const hasDiscoveryFilter =
+    normalizeSearchText(searchTerm).length > 0 || activeFilter !== 'ALL'
 
   useEffect(() => {
     if (availablePaymentMethods.some(method => method.method === paymentMethod)) {
@@ -242,6 +332,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   }, [availablePaymentMethods, paymentMethod])
 
   const openItem = (item: DigitalMenuItem) => {
+    if (isItemUnavailable(item)) {
+      setSubmissionMessage('Este produto esta indisponivel no momento.')
+      return
+    }
+
     setSelectedItem(item)
     setSelectedOptions({})
     setItemComment('')
@@ -310,7 +405,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         name: selectedItem.name,
         price: selectedItem.price,
         quantity: 1,
-        comment: itemComment,
+        comment: menu.settings.allowItemObservations ? itemComment : '',
         options,
       },
     ])
@@ -459,13 +554,108 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         </aside>
 
         <section className="space-y-8 pb-24">
-          {menu.categories.map(category => (
-            <CategorySection
-              key={category.id}
-              category={category}
-              onOpenItem={openItem}
-            />
-          ))}
+          <div className="sticky top-0 z-20 -mx-4 border-b bg-background/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:rounded-xl lg:border lg:bg-card/70 lg:p-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchTerm}
+                onChange={event => setSearchTerm(event.target.value)}
+                placeholder="Buscar produto, categoria ou descricao"
+                className="h-11 pl-9"
+              />
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {[
+                ['ALL', 'Todos'],
+                ['RECOMMENDED', 'Recomendados'],
+                ['WITH_IMAGE', 'Com foto'],
+                ['PROMO', 'Promocoes'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setActiveFilter(value as MenuFilter)}
+                  className={cn(
+                    'flex min-w-fit items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition-colors',
+                    activeFilter === value
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-accent hover:text-foreground'
+                  )}
+                >
+                  {value === 'RECOMMENDED' ? (
+                    <Sparkles className="size-3.5" />
+                  ) : value === 'ALL' ? (
+                    <SlidersHorizontal className="size-3.5" />
+                  ) : null}
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {!hasDiscoveryFilter && recommendedItems.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                  Destaques da loja
+                </p>
+                <h2 className="text-xl font-semibold">Recomendados para pedir agora</h2>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {recommendedItems.map(item => (
+                  <button
+                    key={item.itemOfferingId}
+                    type="button"
+                    onClick={() => openItem(item)}
+                    className="group w-56 shrink-0 overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-all hover:border-primary/50 hover:shadow-md"
+                  >
+                    <div className="relative aspect-[4/3] bg-muted">
+                      {item.imageUrl ? (
+                        <Image
+                          src={item.imageUrl}
+                          alt={item.name}
+                          fill
+                          sizes="224px"
+                          className="object-cover transition-transform group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-muted-foreground">
+                          <ShoppingBag className="size-8" />
+                        </div>
+                      )}
+                      <Badge className="absolute left-3 top-3 border-amber-500/30 bg-amber-500/90 text-white">
+                        <Sparkles className="size-3" /> Recomendado
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <p className="line-clamp-1 text-sm font-semibold">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.categoryName}</p>
+                      <p className="font-semibold text-primary">{currency(item.price)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {displayCategories.length === 0 ? (
+            <div className="rounded-xl border bg-card p-8 text-center">
+              <Search className="mx-auto mb-3 size-8 text-muted-foreground" />
+              <h2 className="font-semibold">Nenhum produto encontrado</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Tente buscar por outro nome ou remover os filtros.
+              </p>
+            </div>
+          ) : (
+            displayCategories.map(category => (
+              <CategorySection
+                key={category.id}
+                category={category}
+                onOpenItem={openItem}
+                recommendedItemIds={recommendedItemIds}
+              />
+            ))
+          )}
         </section>
       </div>
 
@@ -546,17 +736,19 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                     </div>
                   </div>
                 ))}
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Observacao do item
-                  </label>
-                  <Textarea
-                    value={itemComment}
-                    onChange={event => setItemComment(event.target.value)}
-                    placeholder="Ex: sem cebola, molho separado"
-                    className="min-h-20"
-                  />
-                </div>
+                {menu.settings.allowItemObservations && (
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">
+                      Observacao do item
+                    </label>
+                    <Textarea
+                      value={itemComment}
+                      onChange={event => setItemComment(event.target.value)}
+                      placeholder="Ex: sem cebola, molho separado"
+                      className="min-h-20"
+                    />
+                  </div>
+                )}
                 {submissionMessage && (
                   <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {submissionMessage}
@@ -742,9 +934,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
 const CategorySection = ({
   category,
   onOpenItem,
+  recommendedItemIds,
 }: {
-  category: DigitalMenuCategory
+  category: DisplayMenuCategory
   onOpenItem: (item: DigitalMenuItem) => void
+  recommendedItemIds: Set<number>
 }) => {
   return (
     <section id={`category-${category.id}`} className="scroll-mt-6">
@@ -760,19 +954,48 @@ const CategorySection = ({
             key={item.itemOfferingId}
             type="button"
             onClick={() => onOpenItem(item)}
-            className="group flex min-h-32 overflow-hidden rounded-lg border bg-card text-left transition-all hover:border-primary/50 hover:shadow-md"
+            disabled={isItemUnavailable(item)}
+            className={cn(
+              'group flex min-h-32 overflow-hidden rounded-lg border bg-card text-left transition-all hover:border-primary/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60',
+              recommendedItemIds.has(item.itemOfferingId) && 'border-primary/30'
+            )}
           >
             <div className="flex flex-1 flex-col p-4">
-              <h3 className="font-semibold">{item.name}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-semibold">{item.name}</h3>
+                {recommendedItemIds.has(item.itemOfferingId) && (
+                  <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                    Recomendado
+                  </Badge>
+                )}
+                {item.originalPrice && (
+                  <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                    Promo
+                  </Badge>
+                )}
+              </div>
               {item.description && (
                 <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                   {item.description}
                 </p>
               )}
-              <div className="mt-auto pt-4">
-                <span className="font-semibold text-primary">
-                  {currency(item.price)}
-                </span>
+              <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+                {item.originalPrice && (
+                  <span className="text-sm text-muted-foreground line-through">
+                    {currency(item.originalPrice)}
+                  </span>
+                )}
+                <span className="font-semibold text-primary">{currency(item.price)}</span>
+                {item.optionGroups.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Adicionais e variacoes
+                  </span>
+                )}
+                {isItemUnavailable(item) && (
+                  <span className="text-xs font-medium text-destructive">
+                    Indisponivel
+                  </span>
+                )}
               </div>
             </div>
             <div className="relative h-auto w-28 shrink-0 bg-muted md:w-32">

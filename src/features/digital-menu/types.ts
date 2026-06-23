@@ -60,6 +60,7 @@ export type DigitalMenuSettings = {
   allowScheduledOrders: boolean
   scheduleMinLeadMinutes: number
   scheduleMaxDaysAhead: number
+  allowItemObservations: boolean
 }
 
 export type DigitalMenuAvailability = {
