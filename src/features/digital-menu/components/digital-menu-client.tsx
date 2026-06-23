@@ -4,6 +4,7 @@ import { submitDigitalMenuOrder } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
 import {
   DigitalMenuCategory,
+  DigitalMenuAvailability,
   DigitalMenuData,
   DigitalMenuItem,
   DigitalMenuOptionGroup,
@@ -76,6 +77,14 @@ const createIdempotencyKey = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+const toDatetimeLocalInputValue = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0')
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     menu.categories[0]?.id
@@ -100,6 +109,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [orderType, setOrderType] =
     useState<DigitalMenuSubmitInput['orderType']>('DELIVERY')
+  const [scheduledFor, setScheduledFor] = useState('')
   const [paymentMethod, setPaymentMethod] =
     useState<DigitalMenuSubmitInput['payment']['method']>(
       menu.paymentMethods[0]?.method ?? 'PIX'
@@ -200,6 +210,10 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   ])
 
   const checkoutTotal = cartTotal + deliveryQuote.deliveryFee
+  const selectedAvailability =
+    orderType === 'DELIVERY'
+      ? menu.availabilities.delivery
+      : menu.availabilities.takeout
   const missingMinimumAmount = Math.max(
     0,
     deliveryQuote.minimumOrderAmount - cartTotal
@@ -315,6 +329,9 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
             }
           : undefined,
       payment: { method: paymentMethod, changeFor },
+      scheduledFor: scheduledFor
+        ? new Date(scheduledFor).toISOString()
+        : undefined,
       items: cart.map(item => ({
         itemOfferingId: item.itemOfferingId,
         quantity: item.quantity,
@@ -364,6 +381,28 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
           <Badge className="border-primary/20 bg-primary/10 text-primary">
             <Clock3 className="size-3" /> {menu.settings.averagePreparationMinutes} min
           </Badge>
+        </div>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-4">
+          <Badge
+            className={cn(
+              'border',
+              menu.availability.isOpen
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+            )}
+          >
+            {menu.availability.statusLabel}
+          </Badge>
+          {menu.availability.reason && (
+            <p className="text-sm text-muted-foreground">
+              {menu.availability.reason}
+            </p>
+          )}
+          {!menu.availability.isOpen && menu.availability.canSchedule && (
+            <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300">
+              Agendamento disponivel
+            </Badge>
+          )}
         </div>
       </header>
 
@@ -548,6 +587,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 paymentMethod={paymentMethod}
                 changeFor={changeFor}
                 orderType={orderType}
+                availability={selectedAvailability}
+                allowScheduledOrders={menu.settings.allowScheduledOrders}
+                scheduleMinLeadMinutes={menu.settings.scheduleMinLeadMinutes}
+                scheduleMaxDaysAhead={menu.settings.scheduleMaxDaysAhead}
+                scheduledFor={scheduledFor}
                 deliveryQuote={deliveryQuote}
                 checkoutTotal={checkoutTotal}
                 missingMinimumAmount={missingMinimumAmount}
@@ -569,6 +613,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 setPaymentMethod={setPaymentMethod}
                 setChangeFor={setChangeFor}
                 setOrderType={setOrderType}
+                setScheduledFor={setScheduledFor}
               />
             ) : (
               <>
@@ -736,6 +781,11 @@ const CheckoutForm = ({
   paymentMethod,
   changeFor,
   orderType,
+  availability,
+  allowScheduledOrders,
+  scheduleMinLeadMinutes,
+  scheduleMaxDaysAhead,
+  scheduledFor,
   deliveryQuote,
   checkoutTotal,
   missingMinimumAmount,
@@ -757,6 +807,7 @@ const CheckoutForm = ({
   setPaymentMethod,
   setChangeFor,
   setOrderType,
+  setScheduledFor,
 }: {
   customerName: string
   customerPhone: string
@@ -770,6 +821,11 @@ const CheckoutForm = ({
   paymentMethod: DigitalMenuSubmitInput['payment']['method']
   changeFor: string
   orderType: DigitalMenuSubmitInput['orderType']
+  availability: DigitalMenuAvailability
+  allowScheduledOrders: boolean
+  scheduleMinLeadMinutes: number
+  scheduleMaxDaysAhead: number
+  scheduledFor: string
   deliveryQuote: {
     deliveryFee: number
     minimumOrderAmount: number
@@ -803,7 +859,23 @@ const CheckoutForm = ({
   setPaymentMethod: (value: DigitalMenuSubmitInput['payment']['method']) => void
   setChangeFor: (value: string) => void
   setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
+  setScheduledFor: (value: string) => void
 }) => {
+  const now = new Date()
+  const minScheduledDate = new Date(
+    now.getTime() + scheduleMinLeadMinutes * 60 * 1000
+  )
+  const maxScheduledDate = new Date(
+    now.getTime() + scheduleMaxDaysAhead * 24 * 60 * 60 * 1000
+  )
+  const canCheckoutNow = availability.isOpen
+  const canCheckoutScheduled =
+    allowScheduledOrders && availability.canSchedule && !!scheduledFor
+  const canSubmitOrder =
+    (canCheckoutNow || canCheckoutScheduled) &&
+    deliveryQuote.isAddressCovered &&
+    missingMinimumAmount === 0
+
   const requestCustomerLocation = () => {
     if (!navigator.geolocation) {
       setLocationMessage('Seu navegador nao permite compartilhar localizacao.')
@@ -831,7 +903,10 @@ const CheckoutForm = ({
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => setOrderType('DELIVERY')}
+          onClick={() => {
+            setOrderType('DELIVERY')
+            setScheduledFor('')
+          }}
           className={cn(
             'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
             orderType === 'DELIVERY'
@@ -844,7 +919,10 @@ const CheckoutForm = ({
         </button>
         <button
           type="button"
-          onClick={() => setOrderType('TAKEOUT')}
+          onClick={() => {
+            setOrderType('TAKEOUT')
+            setScheduledFor('')
+          }}
           className={cn(
             'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
             orderType === 'TAKEOUT'
@@ -855,6 +933,53 @@ const CheckoutForm = ({
           <HandPlatter className="size-4" />
           Retirada
         </button>
+      </div>
+
+      <div
+        className={cn(
+          'rounded-lg border p-4 text-sm',
+          availability.isOpen
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+            : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <strong>{availability.statusLabel}</strong>
+          {availability.canSchedule && (
+            <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300">
+              aceita agendamento
+            </Badge>
+          )}
+        </div>
+        {availability.reason && <p className="mt-2">{availability.reason}</p>}
+        {!availability.isOpen && availability.canSchedule && (
+          <label className="mt-3 block space-y-1 font-medium">
+            Agendar pedido
+            <Input
+              type="datetime-local"
+              min={toDatetimeLocalInputValue(minScheduledDate)}
+              max={toDatetimeLocalInputValue(maxScheduledDate)}
+              value={scheduledFor}
+              onChange={event => setScheduledFor(event.target.value)}
+            />
+            <span className="block text-xs font-normal opacity-80">
+              Escolha um horario entre {scheduleMinLeadMinutes} minutos e{' '}
+              {scheduleMaxDaysAhead} dias a partir de agora.
+            </span>
+          </label>
+        )}
+        {availability.isOpen && allowScheduledOrders && (
+          <label className="mt-3 block space-y-1 font-medium">
+            Agendar para depois (opcional)
+            <Input
+              type="datetime-local"
+              min={toDatetimeLocalInputValue(minScheduledDate)}
+              max={toDatetimeLocalInputValue(maxScheduledDate)}
+              value={scheduledFor}
+              onChange={event => setScheduledFor(event.target.value)}
+            />
+          </label>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -980,7 +1105,7 @@ const CheckoutForm = ({
         <Button
           onClick={onSubmit}
           isLoading={isPending}
-          disabled={!deliveryQuote.isAddressCovered || missingMinimumAmount > 0}
+          disabled={!canSubmitOrder}
         >
           Enviar pedido
         </Button>

@@ -52,16 +52,27 @@ export type DigitalMenuSettings = {
   whatsappPhone: string | null
   isDigitalMenuEnabled: boolean
   isAcceptingOrders: boolean
+  operationalStatus: 'OPEN' | 'CLOSED' | 'PAUSED' | 'TAKEOUT_ONLY' | 'DELIVERY_ONLY'
+  operationalStatusMessage: string | null
   manualPauseReason: string | null
   minimumOrderAmount: string
   averagePreparationMinutes: number
   allowScheduledOrders: boolean
+  scheduleMinLeadMinutes: number
+  scheduleMaxDaysAhead: number
 }
 
 export type DigitalMenuAvailability = {
   isOpen: boolean
   reason: string | null
   nextOpeningLabel: string | null
+  canSchedule: boolean
+  statusLabel: string
+}
+
+export type DigitalMenuAvailabilities = {
+  delivery: DigitalMenuAvailability
+  takeout: DigitalMenuAvailability
 }
 
 export type DigitalMenuPaymentMethod = {
@@ -92,6 +103,7 @@ export type DigitalMenuData = {
   store: DigitalMenuStore
   settings: DigitalMenuSettings
   availability: DigitalMenuAvailability
+  availabilities: DigitalMenuAvailabilities
   paymentMethods: DigitalMenuPaymentMethod[]
   deliveryZones: DigitalMenuDeliveryZone[]
   categories: DigitalMenuCategory[]
@@ -116,6 +128,7 @@ export type DigitalMenuSubmitInput = {
   customerName: string
   customerPhone: string
   orderType: 'DELIVERY' | 'TAKEOUT'
+  scheduledFor?: string
   address?: {
     postalCode?: string
     street?: string

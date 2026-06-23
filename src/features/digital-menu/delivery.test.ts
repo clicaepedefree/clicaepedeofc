@@ -6,10 +6,14 @@ const settings: DigitalMenuSettings = {
   whatsappPhone: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
+  operationalStatus: 'OPEN',
+  operationalStatusMessage: null,
   manualPauseReason: null,
   minimumOrderAmount: '25.0000',
   averagePreparationMinutes: 35,
   allowScheduledOrders: false,
+  scheduleMinLeadMinutes: 30,
+  scheduleMaxDaysAhead: 7,
 }
 
 const baseZone: DigitalMenuDeliveryZone = {

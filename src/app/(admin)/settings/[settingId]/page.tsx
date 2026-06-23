@@ -4,6 +4,7 @@ import { IntegrationsSettings } from '@/features/integrations/components/integra
 import { CompanySettings } from '@/features/legal-entity/components/company-settings'
 import { LegalSettings } from '@/features/legal-entity/components/legal-settings'
 import { StoreDeliverySettings } from '@/features/store/components/store-delivery-settings'
+import { StoreOperationSettings } from '@/features/store/components/store-operation-settings'
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/tabs'
 import { useParams, useRouter } from 'next/navigation'
@@ -14,7 +15,12 @@ const settingsPages = [
     id: 'store',
     title: 'Configuração da loja',
     label: 'Loja',
-    pageComponent: () => <StoreDeliverySettings />,
+    pageComponent: () => (
+      <div className="space-y-4">
+        <StoreOperationSettings />
+        <StoreDeliverySettings />
+      </div>
+    ),
   },
   {
     id: 'company',

@@ -45,6 +45,7 @@ export const submitDigitalMenuOrderSchema = z
       .transform(normalizePhone)
       .refine(value => value.length >= 10, 'Informe um telefone valido.'),
     orderType: z.enum(['DELIVERY', 'TAKEOUT']),
+    scheduledFor: z.string().datetime().optional(),
     address: z
       .object({
         postalCode: z.string().max(16).optional(),

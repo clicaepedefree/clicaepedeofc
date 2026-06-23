@@ -7,3 +7,9 @@ export const storeDeliveryConfigurationCacheKey = (storeId: number | null) => [
   storeId,
   'delivery-configuration',
 ]
+
+export const storeOperationConfigurationCacheKey = (storeId: number | null) => [
+  'stores',
+  storeId,
+  'operation-configuration',
+]
