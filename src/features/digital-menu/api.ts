@@ -30,6 +30,10 @@ import Decimal from 'decimal.js'
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
+import {
+  evaluateDigitalMenuAvailability,
+  DigitalMenuAvailabilitySettings,
+} from './availability'
 import { validateAndPriceDigitalMenuCart } from './cart'
 import { quoteDigitalMenuDelivery } from './delivery'
 import {
@@ -54,9 +58,13 @@ const DEFAULT_DIGITAL_MENU_SETTINGS = {
   isAcceptingOrders: true,
   manualPauseReason: null,
   manualPauseUntil: null,
+  operationalStatus: 'OPEN' as const,
+  operationalStatusMessage: null,
   minimumOrderAmount: '0',
   averagePreparationMinutes: 30,
   allowScheduledOrders: false,
+  scheduleMinLeadMinutes: 30,
+  scheduleMaxDaysAhead: 7,
 }
 
 const DEFAULT_PAYMENT_METHODS: DigitalMenuPaymentMethod[] = [
@@ -106,51 +114,24 @@ const getUnavailableReason = (status: string, statusReason: string | null) => {
   return null
 }
 
-const formatSaoPauloDateParts = (date = new Date()) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Sao_Paulo',
-    weekday: 'short',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date)
-  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]))
-  const weekdayMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  }
-
-  return {
-    weekday: weekdayMap[byType.weekday] ?? 0,
-    date: `${byType.year}-${byType.month}-${byType.day}`,
-    time: `${byType.hour}:${byType.minute}:00`,
-  }
-}
-
-const timeIsBetween = (time: string, opensAt: string, closesAt: string) => {
-  return time >= opensAt && time <= closesAt
-}
-
 const getDigitalMenuSettings = async (storeId: number) => {
   const [settings] = await db
     .select({
       whatsappPhone: storeDigitalMenuSettingsTable.whatsappPhone,
       isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
       isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
+      operationalStatus: storeDigitalMenuSettingsTable.operationalStatus,
+      operationalStatusMessage:
+        storeDigitalMenuSettingsTable.operationalStatusMessage,
       manualPauseReason: storeDigitalMenuSettingsTable.manualPauseReason,
       manualPauseUntil: storeDigitalMenuSettingsTable.manualPauseUntil,
       minimumOrderAmount: storeDigitalMenuSettingsTable.minimumOrderAmount,
       averagePreparationMinutes:
         storeDigitalMenuSettingsTable.averagePreparationMinutes,
       allowScheduledOrders: storeDigitalMenuSettingsTable.allowScheduledOrders,
+      scheduleMinLeadMinutes:
+        storeDigitalMenuSettingsTable.scheduleMinLeadMinutes,
+      scheduleMaxDaysAhead: storeDigitalMenuSettingsTable.scheduleMaxDaysAhead,
     })
     .from(storeDigitalMenuSettingsTable)
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
@@ -158,6 +139,22 @@ const getDigitalMenuSettings = async (storeId: number) => {
 
   return settings ?? DEFAULT_DIGITAL_MENU_SETTINGS
 }
+
+const toPublicSettings = (
+  settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
+): DigitalMenuSettings => ({
+  whatsappPhone: settings.whatsappPhone,
+  isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
+  isAcceptingOrders: settings.isAcceptingOrders,
+  operationalStatus: settings.operationalStatus,
+  operationalStatusMessage: settings.operationalStatusMessage,
+  manualPauseReason: settings.manualPauseReason,
+  minimumOrderAmount: settings.minimumOrderAmount,
+  averagePreparationMinutes: settings.averagePreparationMinutes,
+  allowScheduledOrders: settings.allowScheduledOrders,
+  scheduleMinLeadMinutes: settings.scheduleMinLeadMinutes,
+  scheduleMaxDaysAhead: settings.scheduleMaxDaysAhead,
+})
 
 const getPaymentMethodsForPublicMenu = async (storeId: number) => {
   const methods = await db
@@ -220,120 +217,61 @@ const getAvailabilityForStore = async ({
   storeId,
   settings,
   serviceType,
+  now = new Date(),
 }: {
   storeId: number
   settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
   serviceType: 'DELIVERY' | 'TAKEOUT'
+  now?: Date
 }) => {
-  if (!settings.isDigitalMenuEnabled) {
-    return {
-      isOpen: false,
-      reason: 'Cardapio digital desativado para esta loja.',
-      nextOpeningLabel: null,
-    }
-  }
-
-  if (!settings.isAcceptingOrders) {
-    return {
-      isOpen: false,
-      reason: settings.manualPauseReason || 'A loja pausou novos pedidos.',
-      nextOpeningLabel: null,
-    }
-  }
-
-  if (
-    settings.manualPauseUntil &&
-    settings.manualPauseUntil.getTime() > Date.now()
-  ) {
-    return {
-      isOpen: false,
-      reason: settings.manualPauseReason || 'A loja pausou novos pedidos.',
-      nextOpeningLabel: null,
-    }
-  }
-
-  const now = formatSaoPauloDateParts()
   const specialHours = await db
     .select({
+      date: storeSpecialHoursTable.date,
+      reason: storeSpecialHoursTable.reason,
       isClosed: storeSpecialHoursTable.isClosed,
       opensAt: storeSpecialHoursTable.opensAt,
       closesAt: storeSpecialHoursTable.closesAt,
+      serviceType: storeSpecialHoursTable.serviceType,
     })
     .from(storeSpecialHoursTable)
-    .where(
-      and(
-        eq(storeSpecialHoursTable.storeId, storeId),
-        eq(storeSpecialHoursTable.date, now.date),
-        or(
-          eq(storeSpecialHoursTable.serviceType, serviceType),
-          eq(storeSpecialHoursTable.serviceType, 'ALL')
-        )
-      )
-    )
-
-  if (specialHours.some(hour => hour.isClosed)) {
-    return {
-      isOpen: false,
-      reason: 'A loja esta fechada hoje.',
-      nextOpeningLabel: null,
-    }
-  }
-
-  if (specialHours.length > 0) {
-    const specialWindowIsOpen = specialHours.some(
-      hour =>
-        hour.opensAt &&
-        hour.closesAt &&
-        timeIsBetween(now.time, hour.opensAt, hour.closesAt)
-    )
-
-    return {
-      isOpen: specialWindowIsOpen,
-      reason: specialWindowIsOpen
-        ? null
-        : 'A loja esta fora do horario de atendimento.',
-      nextOpeningLabel: null,
-    }
-  }
+    .where(eq(storeSpecialHoursTable.storeId, storeId))
 
   const businessHours = await db
     .select({
+      weekday: storeBusinessHoursTable.weekday,
       opensAt: storeBusinessHoursTable.opensAt,
       closesAt: storeBusinessHoursTable.closesAt,
+      serviceType: storeBusinessHoursTable.serviceType,
+      isActive: storeBusinessHoursTable.isActive,
     })
     .from(storeBusinessHoursTable)
-    .where(
-      and(
-        eq(storeBusinessHoursTable.storeId, storeId),
-        eq(storeBusinessHoursTable.weekday, now.weekday),
-        eq(storeBusinessHoursTable.isActive, true),
-        or(
-          eq(storeBusinessHoursTable.serviceType, serviceType),
-          eq(storeBusinessHoursTable.serviceType, 'ALL')
-        )
-      )
-    )
+    .where(eq(storeBusinessHoursTable.storeId, storeId))
     .orderBy(asc(storeBusinessHoursTable.opensAt))
 
-  if (businessHours.length === 0) {
-    return {
-      isOpen: true,
-      reason: null,
-      nextOpeningLabel: null,
-    }
-  }
+  return evaluateDigitalMenuAvailability({
+    settings: settings as DigitalMenuAvailabilitySettings,
+    businessHours,
+    specialHours,
+    serviceType,
+    now,
+  })
+}
 
-  const currentWindow = businessHours.find(hour =>
-    timeIsBetween(now.time, hour.opensAt, hour.closesAt)
-  )
+const getAvailabilitiesForStore = async ({
+  storeId,
+  settings,
+  now,
+}: {
+  storeId: number
+  settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
+  now?: Date
+}) => {
+  const [delivery, takeout] = await Promise.all([
+    getAvailabilityForStore({ storeId, settings, serviceType: 'DELIVERY', now }),
+    getAvailabilityForStore({ storeId, settings, serviceType: 'TAKEOUT', now }),
+  ])
 
-  return {
-    isOpen: !!currentWindow,
-    reason: currentWindow ? null : 'A loja esta fora do horario de atendimento.',
-    nextOpeningLabel: businessHours[0]
-      ? `Abre as ${businessHours[0].opensAt.slice(0, 5)}`
-      : null,
-  }
+  return { delivery, takeout }
 }
 
 const mapOptionGroups = (
@@ -395,6 +333,24 @@ export const getDigitalMenuBySlug = async (
         isOpen: false,
         reason: unavailableReason,
         nextOpeningLabel: null,
+        canSchedule: false,
+        statusLabel: 'Indisponivel',
+      },
+      availabilities: {
+        delivery: {
+          isOpen: false,
+          reason: unavailableReason,
+          nextOpeningLabel: null,
+          canSchedule: false,
+          statusLabel: 'Indisponivel',
+        },
+        takeout: {
+          isOpen: false,
+          reason: unavailableReason,
+          nextOpeningLabel: null,
+          canSchedule: false,
+          statusLabel: 'Indisponivel',
+        },
       },
       paymentMethods: DEFAULT_PAYMENT_METHODS,
       deliveryZones: [],
@@ -404,25 +360,26 @@ export const getDigitalMenuBySlug = async (
   }
 
   const settings = await getDigitalMenuSettings(store.id)
-  const [paymentMethods, deliveryZones, availability] = await Promise.all([
+  const [paymentMethods, deliveryZones, availabilities] = await Promise.all([
     getPaymentMethodsForPublicMenu(store.id),
     getDeliveryZonesForPublicMenu(store.id),
-    getAvailabilityForStore({ storeId: store.id, settings, serviceType: 'DELIVERY' }),
+    getAvailabilitiesForStore({ storeId: store.id, settings }),
   ])
+  const availability =
+    availabilities.delivery.isOpen || availabilities.delivery.canSchedule
+    ? availabilities.delivery
+    : availabilities.takeout
 
-  if (!availability.isOpen) {
+  if (
+    !availabilities.delivery.isOpen &&
+    !availabilities.takeout.isOpen &&
+    !availability.canSchedule
+  ) {
     return {
       store,
-      settings: {
-        whatsappPhone: settings.whatsappPhone,
-        isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
-        isAcceptingOrders: settings.isAcceptingOrders,
-        manualPauseReason: settings.manualPauseReason,
-        minimumOrderAmount: settings.minimumOrderAmount,
-        averagePreparationMinutes: settings.averagePreparationMinutes,
-        allowScheduledOrders: settings.allowScheduledOrders,
-      },
+      settings: toPublicSettings(settings),
       availability,
+      availabilities,
       paymentMethods,
       deliveryZones,
       categories: [],
@@ -519,16 +476,9 @@ export const getDigitalMenuBySlug = async (
 
   return {
     store,
-    settings: {
-      whatsappPhone: settings.whatsappPhone,
-      isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
-      isAcceptingOrders: settings.isAcceptingOrders,
-      manualPauseReason: settings.manualPauseReason,
-      minimumOrderAmount: settings.minimumOrderAmount,
-      averagePreparationMinutes: settings.averagePreparationMinutes,
-      allowScheduledOrders: settings.allowScheduledOrders,
-    },
+    settings: toPublicSettings(settings),
     availability,
+    availabilities,
     paymentMethods,
     deliveryZones,
     categories: Array.from(categoriesById.values()).filter(
@@ -574,22 +524,60 @@ export const submitDigitalMenuOrder = async (
   }
 
   const currentSettings = await getDigitalMenuSettings(menu.store.id)
-  const currentPublicSettings: DigitalMenuSettings = {
-    whatsappPhone: currentSettings.whatsappPhone,
-    isDigitalMenuEnabled: currentSettings.isDigitalMenuEnabled,
-    isAcceptingOrders: currentSettings.isAcceptingOrders,
-    manualPauseReason: currentSettings.manualPauseReason,
-    minimumOrderAmount: currentSettings.minimumOrderAmount,
-    averagePreparationMinutes: currentSettings.averagePreparationMinutes,
-    allowScheduledOrders: currentSettings.allowScheduledOrders,
-  }
+  const currentPublicSettings = toPublicSettings(currentSettings)
   const orderAvailability = await getAvailabilityForStore({
     storeId: menu.store.id,
     settings: currentSettings,
     serviceType: payload.orderType,
   })
+  const scheduledFor = payload.scheduledFor ? new Date(payload.scheduledFor) : null
 
-  if (!orderAvailability.isOpen) {
+  if (scheduledFor) {
+    if (!currentSettings.allowScheduledOrders) {
+      return {
+        ok: false,
+        message: 'Esta loja nao aceita pedidos agendados.',
+      }
+    }
+
+    const now = new Date()
+    const minDate = new Date(
+      now.getTime() + currentSettings.scheduleMinLeadMinutes * 60 * 1000
+    )
+    const maxDate = new Date(
+      now.getTime() +
+        currentSettings.scheduleMaxDaysAhead * 24 * 60 * 60 * 1000
+    )
+
+    if (
+      Number.isNaN(scheduledFor.getTime()) ||
+      scheduledFor < minDate ||
+      scheduledFor > maxDate
+    ) {
+      return {
+        ok: false,
+        message: `Escolha um horario entre ${currentSettings.scheduleMinLeadMinutes} minutos e ${currentSettings.scheduleMaxDaysAhead} dias a partir de agora.`,
+      }
+    }
+
+    const scheduledAvailability = await getAvailabilityForStore({
+      storeId: menu.store.id,
+      settings: currentSettings,
+      serviceType: payload.orderType,
+      now: scheduledFor,
+    })
+
+    if (!scheduledAvailability.isOpen) {
+      return {
+        ok: false,
+        message:
+          scheduledAvailability.reason ||
+          'A loja nao atende neste horario agendado.',
+      }
+    }
+  }
+
+  if (!orderAvailability.isOpen && !scheduledFor) {
     return {
       ok: false,
       message:
@@ -679,6 +667,7 @@ export const submitDigitalMenuOrder = async (
     customerName: payload.customerName,
     customerPhone: payload.customerPhone,
     orderType: payload.orderType,
+    scheduledFor: payload.scheduledFor ?? null,
     address: payload.address ?? null,
     payment: payload.payment,
     items: payload.items,
@@ -776,6 +765,7 @@ export const submitDigitalMenuOrder = async (
                 ) ?? null,
           storeSettingsSnapshot: currentPublicSettings,
           businessHoursSnapshot: orderAvailability,
+          scheduledFor,
           submittedAt,
           technicalAckAt: submittedAt,
           sentToStoreAt: submittedAt,
@@ -826,6 +816,7 @@ export const submitDigitalMenuOrder = async (
                   validatedCart.deliveryEstimatedMinutes * 60 * 1000
               )
             : null,
+          scheduledFor,
           origin: 'cardapio-digital',
           idempotencyKey: payload.idempotencyKey,
           requestId,
