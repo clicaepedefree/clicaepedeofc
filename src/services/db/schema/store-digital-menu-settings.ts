@@ -41,6 +41,7 @@ export const storeDigitalMenuSettingsTable = pgTable('store_digital_menu_setting
   allowScheduledOrders: boolean('allow_scheduled_orders').notNull().default(false),
   scheduleMinLeadMinutes: integer('schedule_min_lead_minutes').notNull().default(30),
   scheduleMaxDaysAhead: integer('schedule_max_days_ahead').notNull().default(7),
+  allowItemObservations: boolean('allow_item_observations').notNull().default(true),
   createdAt,
   updatedAt,
 })

@@ -65,6 +65,7 @@ const DEFAULT_DIGITAL_MENU_SETTINGS = {
   allowScheduledOrders: false,
   scheduleMinLeadMinutes: 30,
   scheduleMaxDaysAhead: 7,
+  allowItemObservations: true,
 }
 
 const DEFAULT_PAYMENT_METHODS: DigitalMenuPaymentMethod[] = [
@@ -150,6 +151,7 @@ const getDigitalMenuSettings = async (storeId: number) => {
       scheduleMinLeadMinutes:
         storeDigitalMenuSettingsTable.scheduleMinLeadMinutes,
       scheduleMaxDaysAhead: storeDigitalMenuSettingsTable.scheduleMaxDaysAhead,
+      allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
@@ -172,6 +174,7 @@ const toPublicSettings = (
   allowScheduledOrders: settings.allowScheduledOrders,
   scheduleMinLeadMinutes: settings.scheduleMinLeadMinutes,
   scheduleMaxDaysAhead: settings.scheduleMaxDaysAhead,
+  allowItemObservations: settings.allowItemObservations,
 })
 
 const getPaymentMethodsForPublicMenu = async (storeId: number) => {
@@ -620,10 +623,14 @@ export const submitDigitalMenuOrder = async (
     }
   }
 
+  const cartItemsForValidation = currentPublicSettings.allowItemObservations
+    ? payload.items
+    : payload.items.map(item => ({ ...item, comment: undefined }))
+
   let validatedCart
   try {
     const subtotalCart = validateAndPriceDigitalMenuCart({
-      items: payload.items,
+      items: cartItemsForValidation,
       categories: menu.categories,
       deliveryFee: '0',
       minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
@@ -649,7 +656,7 @@ export const submitDigitalMenuOrder = async (
           }
 
     validatedCart = validateAndPriceDigitalMenuCart({
-      items: payload.items,
+      items: cartItemsForValidation,
       categories: menu.categories,
       deliveryFee: deliveryQuote.deliveryFee,
       minimumOrderAmount: deliveryQuote.minimumOrderAmount,
@@ -704,7 +711,7 @@ export const submitDigitalMenuOrder = async (
     scheduledFor: payload.scheduledFor ?? null,
     address: payload.address ?? null,
     payment: payload.payment,
-    items: payload.items,
+    items: cartItemsForValidation,
   })
   const addressSnapshot =
     payload.orderType === 'DELIVERY'

@@ -89,6 +89,7 @@ export const StoreOperationSettings = () => {
     useState<OperationalStatus>('OPEN')
   const [operationalStatusMessage, setOperationalStatusMessage] = useState('')
   const [allowScheduledOrders, setAllowScheduledOrders] = useState(false)
+  const [allowItemObservations, setAllowItemObservations] = useState(true)
   const [scheduleMinLeadMinutes, setScheduleMinLeadMinutes] = useState('30')
   const [scheduleMaxDaysAhead, setScheduleMaxDaysAhead] = useState('7')
   const [businessHourForm, setBusinessHourForm] = useState(emptyBusinessHour)
@@ -105,6 +106,7 @@ export const StoreOperationSettings = () => {
         ''
     )
     setAllowScheduledOrders(data.settings.allowScheduledOrders)
+    setAllowItemObservations(data.settings.allowItemObservations ?? true)
     setScheduleMinLeadMinutes(String(data.settings.scheduleMinLeadMinutes))
     setScheduleMaxDaysAhead(String(data.settings.scheduleMaxDaysAhead))
   }, [data?.settings])
@@ -137,6 +139,7 @@ export const StoreOperationSettings = () => {
       allowScheduledOrders,
       scheduleMinLeadMinutes: Number(scheduleMinLeadMinutes),
       scheduleMaxDaysAhead: Number(scheduleMaxDaysAhead),
+      allowItemObservations,
     })
   }
 
@@ -228,13 +231,22 @@ export const StoreOperationSettings = () => {
           </div>
 
           <div className="grid gap-3 rounded-lg border bg-background p-4 lg:grid-cols-[1fr_160px_160px_auto]">
-            <label className="flex items-end gap-2 text-sm font-medium">
-              <Switch
-                checked={allowScheduledOrders}
-                onCheckedChange={setAllowScheduledOrders}
-              />
-              Permitir pedidos agendados
-            </label>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Switch
+                  checked={allowScheduledOrders}
+                  onCheckedChange={setAllowScheduledOrders}
+                />
+                Permitir pedidos agendados
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Switch
+                  checked={allowItemObservations}
+                  onCheckedChange={setAllowItemObservations}
+                />
+                Permitir observacao nos itens
+              </label>
+            </div>
             <label className="space-y-1 text-sm font-medium">
               Min. antecedencia
               <Input

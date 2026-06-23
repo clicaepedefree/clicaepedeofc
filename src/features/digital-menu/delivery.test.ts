@@ -14,6 +14,7 @@ const settings: DigitalMenuSettings = {
   allowScheduledOrders: false,
   scheduleMinLeadMinutes: 30,
   scheduleMaxDaysAhead: 7,
+  allowItemObservations: true,
 }
 
 const baseZone: DigitalMenuDeliveryZone = {

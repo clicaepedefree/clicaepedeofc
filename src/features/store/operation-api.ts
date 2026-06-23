@@ -30,6 +30,7 @@ const operationSettingsSchema = z.object({
   allowScheduledOrders: z.boolean(),
   scheduleMinLeadMinutes: z.coerce.number().int().min(0).max(10080),
   scheduleMaxDaysAhead: z.coerce.number().int().min(0).max(90),
+  allowItemObservations: z.boolean(),
 })
 
 const businessHourSchema = z
@@ -94,6 +95,7 @@ export const getStoreOperationConfiguration = async (storeId: number) => {
       scheduleMinLeadMinutes:
         storeDigitalMenuSettingsTable.scheduleMinLeadMinutes,
       scheduleMaxDaysAhead: storeDigitalMenuSettingsTable.scheduleMaxDaysAhead,
+      allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
@@ -136,6 +138,7 @@ export const getStoreOperationConfiguration = async (storeId: number) => {
       allowScheduledOrders: false,
       scheduleMinLeadMinutes: 30,
       scheduleMaxDaysAhead: 7,
+      allowItemObservations: true,
     },
     businessHours,
     specialHours,
