@@ -2,7 +2,7 @@ import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
 import { boolean, integer, numeric, pgTable, serial, text } from 'drizzle-orm/pg-core'
 
-export const storeDeliveryZoneTypes = ['NEIGHBORHOOD', 'RADIUS', 'POSTAL_CODE'] as const
+export const storeDeliveryZoneTypes = ['FIXED', 'NEIGHBORHOOD', 'RADIUS', 'POSTAL_CODE'] as const
 
 export const storeDeliveryZonesTable = pgTable('store_delivery_zones', {
   id: serial('id').primaryKey(),

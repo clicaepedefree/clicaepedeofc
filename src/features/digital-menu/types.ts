@@ -73,12 +73,19 @@ export type DigitalMenuPaymentMethod = {
 
 export type DigitalMenuDeliveryZone = {
   id: number
+  type: 'FIXED' | 'NEIGHBORHOOD' | 'RADIUS' | 'POSTAL_CODE'
   name: string
   neighborhood: string | null
+  postalCodePrefix: string | null
+  centerLat: string | null
+  centerLng: string | null
+  radiusMeters: number | null
   deliveryFee: string
   freeDeliveryMinimum: string | null
   minimumOrderAmount: string | null
   estimatedDeliveryMinutes: number
+  priority: number
+  isActive: boolean
 }
 
 export type DigitalMenuData = {
@@ -110,10 +117,13 @@ export type DigitalMenuSubmitInput = {
   customerPhone: string
   orderType: 'DELIVERY' | 'TAKEOUT'
   address?: {
+    postalCode?: string
     street?: string
     number?: string
     neighborhood?: string
     reference?: string
+    latitude?: number
+    longitude?: number
   }
   payment: {
     method: 'CASH' | 'PIX'

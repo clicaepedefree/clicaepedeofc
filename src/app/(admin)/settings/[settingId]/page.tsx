@@ -3,6 +3,7 @@
 import { IntegrationsSettings } from '@/features/integrations/components/integrations-settings'
 import { CompanySettings } from '@/features/legal-entity/components/company-settings'
 import { LegalSettings } from '@/features/legal-entity/components/legal-settings'
+import { StoreDeliverySettings } from '@/features/store/components/store-delivery-settings'
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/tabs'
 import { useParams, useRouter } from 'next/navigation'
@@ -13,7 +14,7 @@ const settingsPages = [
     id: 'store',
     title: 'Configuração da loja',
     label: 'Loja',
-    pageComponent: () => <>Loja</>,
+    pageComponent: () => <StoreDeliverySettings />,
   },
   {
     id: 'company',

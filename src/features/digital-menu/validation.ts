@@ -47,10 +47,13 @@ export const submitDigitalMenuOrderSchema = z
     orderType: z.enum(['DELIVERY', 'TAKEOUT']),
     address: z
       .object({
+        postalCode: z.string().max(16).optional(),
         street: z.string().max(160).optional(),
         number: z.string().max(30).optional(),
         neighborhood: z.string().max(120).optional(),
         reference: z.string().max(180).optional(),
+        latitude: z.coerce.number().min(-90).max(90).optional(),
+        longitude: z.coerce.number().min(-180).max(180).optional(),
       })
       .optional(),
     payment: z.object({
