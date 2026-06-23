@@ -76,10 +76,21 @@ export type DigitalMenuAvailabilities = {
 }
 
 export type DigitalMenuPaymentMethod = {
-  method: 'CASH' | 'PIX'
+  method:
+    | 'CASH'
+    | 'PIX'
+    | 'CREDIT'
+    | 'DEBIT'
+    | 'MEAL_VOUCHER'
+    | 'FOOD_VOUCHER'
+    | 'ONLINE'
   label: string
   instructions: string | null
+  proofInstructions: string | null
+  pixKey: string | null
+  integrationProvider: string | null
   requiresChangeFor: boolean
+  availableFor: ('DELIVERY' | 'TAKEOUT')[]
 }
 
 export type DigitalMenuDeliveryZone = {
@@ -139,7 +150,14 @@ export type DigitalMenuSubmitInput = {
     longitude?: number
   }
   payment: {
-    method: 'CASH' | 'PIX'
+    method:
+      | 'CASH'
+      | 'PIX'
+      | 'CREDIT'
+      | 'DEBIT'
+      | 'MEAL_VOUCHER'
+      | 'FOOD_VOUCHER'
+      | 'ONLINE'
     changeFor?: string
   }
   items: DigitalMenuCartItemInput[]

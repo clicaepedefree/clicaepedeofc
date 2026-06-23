@@ -5,8 +5,10 @@ import { db } from '@/services/db'
 import {
   storeDeliveryZonesTable,
   storeDigitalMenuSettingsTable,
+  storePaymentMethods,
+  storePaymentMethodsTable,
 } from '@/services/db/schema'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
 const moneySchema = z.coerce.number().min(0).max(99999).transform(value => value.toFixed(4))
@@ -19,6 +21,20 @@ const deliverySettingsSchema = z.object({
   minimumOrderAmount: moneySchema,
   averagePreparationMinutes: z.coerce.number().int().min(1).max(600),
 })
+
+const paymentMethodSchema = z.object({
+  method: z.enum(storePaymentMethods),
+  isActive: z.boolean(),
+  allowDelivery: z.boolean(),
+  allowTakeout: z.boolean(),
+  requiresChangeFor: z.boolean(),
+  instructions: z.string().max(500).optional().nullable(),
+  proofInstructions: z.string().max(500).optional().nullable(),
+  pixKey: z.string().max(180).optional().nullable(),
+  integrationProvider: z.string().max(80).optional().nullable(),
+})
+
+const paymentMethodsSchema = z.array(paymentMethodSchema).min(1).max(12)
 
 const deliveryZoneSchema = z
   .object({
@@ -86,6 +102,7 @@ const deliveryZoneSchema = z
 
 export type StoreDeliverySettingsInput = z.input<typeof deliverySettingsSchema>
 export type StoreDeliveryZoneInput = z.input<typeof deliveryZoneSchema>
+export type StorePaymentMethodInput = z.input<typeof paymentMethodSchema>
 
 export const getStoreDeliveryConfiguration = async (storeId: number) => {
   await validateUserPermissionsForStore(storeId, 'admin')
@@ -121,12 +138,36 @@ export const getStoreDeliveryConfiguration = async (storeId: number) => {
     .where(eq(storeDeliveryZonesTable.storeId, storeId))
     .orderBy(desc(storeDeliveryZonesTable.priority), asc(storeDeliveryZonesTable.name))
 
+  const paymentMethods = await db
+    .select({
+      id: storePaymentMethodsTable.id,
+      method: storePaymentMethodsTable.method,
+      cardBrand: storePaymentMethodsTable.cardBrand,
+      requiresChangeFor: storePaymentMethodsTable.requiresChangeFor,
+      instructions: storePaymentMethodsTable.instructions,
+      proofInstructions: storePaymentMethodsTable.proofInstructions,
+      pixKey: storePaymentMethodsTable.pixKey,
+      allowDelivery: storePaymentMethodsTable.allowDelivery,
+      allowTakeout: storePaymentMethodsTable.allowTakeout,
+      integrationProvider: storePaymentMethodsTable.integrationProvider,
+      isActive: storePaymentMethodsTable.isActive,
+    })
+    .from(storePaymentMethodsTable)
+    .where(
+      and(
+        eq(storePaymentMethodsTable.storeId, storeId),
+        isNull(storePaymentMethodsTable.cardBrand)
+      )
+    )
+    .orderBy(asc(storePaymentMethodsTable.method))
+
   return {
     settings: settings ?? {
       minimumOrderAmount: '0',
       averagePreparationMinutes: 30,
     },
     zones,
+    paymentMethods,
   }
 }
 
@@ -203,4 +244,61 @@ export const deleteStoreDeliveryZone = async (storeId: number, zoneId: number) =
         eq(storeDeliveryZonesTable.storeId, storeId)
       )
     )
+}
+
+export const saveStorePaymentMethods = async (
+  storeId: number,
+  input: StorePaymentMethodInput[]
+) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+  const values = paymentMethodsSchema.parse(input)
+
+  await db.transaction(async tx => {
+    for (const method of values) {
+      const normalizedValues = {
+        requiresChangeFor:
+          method.method === 'CASH' ? method.requiresChangeFor : false,
+        instructions: method.instructions?.trim() || null,
+        proofInstructions:
+          method.method === 'PIX'
+            ? method.proofInstructions?.trim() || null
+            : null,
+        pixKey: method.method === 'PIX' ? method.pixKey?.trim() || null : null,
+        allowDelivery: method.allowDelivery,
+        allowTakeout: method.allowTakeout,
+        integrationProvider:
+          method.method === 'PIX' || method.method === 'ONLINE'
+            ? method.integrationProvider?.trim() || null
+            : null,
+        isActive: method.isActive,
+      }
+
+      const [existing] = await tx
+        .select({ id: storePaymentMethodsTable.id })
+        .from(storePaymentMethodsTable)
+        .where(
+          and(
+            eq(storePaymentMethodsTable.storeId, storeId),
+            eq(storePaymentMethodsTable.method, method.method),
+            isNull(storePaymentMethodsTable.cardBrand)
+          )
+        )
+        .limit(1)
+
+      if (existing) {
+        await tx
+          .update(storePaymentMethodsTable)
+          .set(normalizedValues)
+          .where(eq(storePaymentMethodsTable.id, existing.id))
+        continue
+      }
+
+      await tx.insert(storePaymentMethodsTable).values({
+        storeId,
+        method: method.method,
+        cardBrand: null,
+        ...normalizedValues,
+      })
+    }
+  })
 }

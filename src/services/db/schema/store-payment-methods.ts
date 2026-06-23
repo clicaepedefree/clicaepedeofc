@@ -1,6 +1,6 @@
 import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
-import { boolean, integer, pgTable, serial, text, unique } from 'drizzle-orm/pg-core'
+import { boolean, integer, jsonb, pgTable, serial, text, unique } from 'drizzle-orm/pg-core'
 
 export const storePaymentMethods = [
   'CASH',
@@ -9,6 +9,7 @@ export const storePaymentMethods = [
   'DEBIT',
   'MEAL_VOUCHER',
   'FOOD_VOUCHER',
+  'ONLINE',
 ] as const
 
 export const storePaymentMethodsTable = pgTable(
@@ -22,6 +23,12 @@ export const storePaymentMethodsTable = pgTable(
     cardBrand: text('card_brand'),
     requiresChangeFor: boolean('requires_change_for').notNull().default(false),
     instructions: text('instructions'),
+    proofInstructions: text('proof_instructions'),
+    pixKey: text('pix_key'),
+    allowDelivery: boolean('allow_delivery').notNull().default(true),
+    allowTakeout: boolean('allow_takeout').notNull().default(true),
+    integrationProvider: text('integration_provider'),
+    integrationConfig: jsonb('integration_config').notNull().default({}),
     isActive: boolean('is_active').notNull().default(true),
     createdAt,
     updatedAt,

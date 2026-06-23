@@ -6,6 +6,7 @@ import { SettingsCategoryBlock } from '@/shared/blocks/settings-category-block'
 import { Button } from '@/shared/button'
 import { Input } from '@/shared/input'
 import { Switch } from '@/shared/switch'
+import { Textarea } from '@/shared/textarea'
 import {
   Table,
   TableBody,
@@ -15,10 +16,18 @@ import {
   TableRow,
 } from '@/shared/table'
 import { cn } from '@/shared/lib/utils'
-import { Edit3, MapPin, Plus, Save, Trash2, Truck } from 'lucide-react'
+import { Banknote, CreditCard, Landmark, Plus, Save, Trash2, Truck, Edit3, MapPin, WalletCards } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 type ZoneType = 'FIXED' | 'NEIGHBORHOOD' | 'RADIUS' | 'POSTAL_CODE'
+type PaymentMethodId =
+  | 'CASH'
+  | 'PIX'
+  | 'CREDIT'
+  | 'DEBIT'
+  | 'MEAL_VOUCHER'
+  | 'FOOD_VOUCHER'
+  | 'ONLINE'
 
 type ZoneFormState = {
   id?: number
@@ -35,6 +44,18 @@ type ZoneFormState = {
   estimatedDeliveryMinutes: string
   priority: string
   isActive: boolean
+}
+
+type PaymentMethodFormState = {
+  method: PaymentMethodId
+  isActive: boolean
+  allowDelivery: boolean
+  allowTakeout: boolean
+  requiresChangeFor: boolean
+  instructions: string
+  proofInstructions: string
+  pixKey: string
+  integrationProvider: string
 }
 
 const emptyZoneForm: ZoneFormState = {
@@ -59,6 +80,91 @@ const zoneTypeLabels: Record<ZoneType, string> = {
   RADIUS: 'Raio',
   POSTAL_CODE: 'CEP',
 }
+
+const paymentMethodLabels: Record<PaymentMethodId, string> = {
+  CASH: 'Dinheiro',
+  PIX: 'Pix',
+  CREDIT: 'Cartao de credito na entrega',
+  DEBIT: 'Cartao de debito na entrega',
+  MEAL_VOUCHER: 'Vale-refeicao',
+  FOOD_VOUCHER: 'Vale-alimentacao',
+  ONLINE: 'Pagamento online',
+}
+
+const paymentMethodHints: Record<PaymentMethodId, string> = {
+  CASH: 'Pergunte se o cliente precisa de troco antes de enviar o pedido.',
+  PIX: 'Mostre a chave Pix e oriente o envio do comprovante.',
+  CREDIT: 'Pagamento manual pela maquininha na entrega ou retirada.',
+  DEBIT: 'Pagamento manual pela maquininha na entrega ou retirada.',
+  MEAL_VOUCHER: 'Use quando a loja aceita vale-refeicao.',
+  FOOD_VOUCHER: 'Use quando a loja aceita vale-alimentacao.',
+  ONLINE: 'Estrutura preparada para link, gateway ou Pix automatico futuro.',
+}
+
+const paymentMethodIcons: Record<PaymentMethodId, typeof Banknote> = {
+  CASH: Banknote,
+  PIX: Landmark,
+  CREDIT: CreditCard,
+  DEBIT: CreditCard,
+  MEAL_VOUCHER: WalletCards,
+  FOOD_VOUCHER: WalletCards,
+  ONLINE: CreditCard,
+}
+
+const defaultPaymentMethodsForm: PaymentMethodFormState[] = (
+  [
+    'PIX',
+    'CASH',
+    'CREDIT',
+    'DEBIT',
+    'MEAL_VOUCHER',
+    'FOOD_VOUCHER',
+    'ONLINE',
+  ] as PaymentMethodId[]
+).map(method => ({
+  method,
+  isActive: method === 'PIX' || method === 'CASH',
+  allowDelivery: true,
+  allowTakeout: true,
+  requiresChangeFor: method === 'CASH',
+  instructions: '',
+  proofInstructions:
+    method === 'PIX' ? 'Envie o comprovante pelo WhatsApp da loja.' : '',
+  pixKey: '',
+  integrationProvider: '',
+}))
+
+const mergePaymentMethods = (
+  paymentMethods:
+    | {
+        method: string
+        isActive: boolean
+        allowDelivery: boolean
+        allowTakeout: boolean
+        requiresChangeFor: boolean
+        instructions: string | null
+        proofInstructions: string | null
+        pixKey: string | null
+        integrationProvider: string | null
+      }[]
+    | undefined
+) =>
+  defaultPaymentMethodsForm.map(defaultMethod => {
+    const saved = paymentMethods?.find(method => method.method === defaultMethod.method)
+    if (!saved) return defaultMethod
+
+    return {
+      ...defaultMethod,
+      isActive: saved.isActive,
+      allowDelivery: saved.allowDelivery,
+      allowTakeout: saved.allowTakeout,
+      requiresChangeFor: saved.requiresChangeFor,
+      instructions: saved.instructions ?? '',
+      proofInstructions: saved.proofInstructions ?? '',
+      pixKey: saved.pixKey ?? '',
+      integrationProvider: saved.integrationProvider ?? '',
+    }
+  })
 
 const money = (value: string | null | undefined) => {
   if (!value) return '-'
@@ -95,21 +201,30 @@ export const StoreDeliverySettings = () => {
     isLoading,
     saveSettings,
     saveZone,
+    savePaymentMethods,
     deleteZone,
     isSavingSettings,
     isSavingZone,
+    isSavingPaymentMethods,
     isDeletingZone,
   } = useStoreDeliveryConfiguration()
 
   const [minimumOrderAmount, setMinimumOrderAmount] = useState('0')
   const [averagePreparationMinutes, setAveragePreparationMinutes] = useState('30')
   const [zoneForm, setZoneForm] = useState<ZoneFormState>(emptyZoneForm)
+  const [paymentMethodsForm, setPaymentMethodsForm] = useState(
+    defaultPaymentMethodsForm
+  )
 
   useEffect(() => {
     if (!data?.settings) return
     setMinimumOrderAmount(String(Number(data.settings.minimumOrderAmount)))
     setAveragePreparationMinutes(String(data.settings.averagePreparationMinutes))
   }, [data?.settings])
+
+  useEffect(() => {
+    setPaymentMethodsForm(mergePaymentMethods(data?.paymentMethods))
+  }, [data?.paymentMethods])
 
   const activeZonesCount = useMemo(
     () => data?.zones.filter(zone => zone.isActive).length ?? 0,
@@ -164,6 +279,22 @@ export const StoreDeliverySettings = () => {
     resetZoneForm()
   }
 
+  const updatePaymentMethod = (
+    method: PaymentMethodId,
+    values: Partial<PaymentMethodFormState>
+  ) => {
+    setPaymentMethodsForm(current =>
+      current.map(payment =>
+        payment.method === method ? { ...payment, ...values } : payment
+      )
+    )
+  }
+
+  const submitPaymentMethods = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    savePaymentMethods(paymentMethodsForm)
+  }
+
   return (
     <div className="space-y-4">
       <SettingsCategoryBlock title="Entrega do cardápio digital" contentClassName="grid-cols-1">
@@ -210,6 +341,165 @@ export const StoreDeliverySettings = () => {
           <Button className="self-end" type="submit" isLoading={isSavingSettings}>
             <Save className="size-4" />
             Salvar padrão
+          </Button>
+        </form>
+      </SettingsCategoryBlock>
+
+      <SettingsCategoryBlock title="Pagamentos do cardapio digital" contentClassName="grid-cols-1">
+        <form onSubmit={submitPaymentMethods} className="space-y-4">
+          <div className="grid gap-3 xl:grid-cols-2">
+            {paymentMethodsForm.map(method => {
+              const Icon = paymentMethodIcons[method.method]
+
+              return (
+                <div
+                  key={method.method}
+                  className="rounded-lg border bg-background p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                        <Icon className="size-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold">
+                          {paymentMethodLabels[method.method]}
+                        </h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {paymentMethodHints[method.method]}
+                        </p>
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-medium">
+                      Ativo
+                      <Switch
+                        checked={method.isActive}
+                        onCheckedChange={checked =>
+                          updatePaymentMethod(method.method, { isActive: checked })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm">
+                      Entrega
+                      <Switch
+                        checked={method.allowDelivery}
+                        onCheckedChange={checked =>
+                          updatePaymentMethod(method.method, {
+                            allowDelivery: checked,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm">
+                      Retirada
+                      <Switch
+                        checked={method.allowTakeout}
+                        onCheckedChange={checked =>
+                          updatePaymentMethod(method.method, {
+                            allowTakeout: checked,
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  {method.method === 'CASH' && (
+                    <label className="mt-3 flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm">
+                      Perguntar se precisa de troco
+                      <Switch
+                        checked={method.requiresChangeFor}
+                        onCheckedChange={checked =>
+                          updatePaymentMethod(method.method, {
+                            requiresChangeFor: checked,
+                          })
+                        }
+                      />
+                    </label>
+                  )}
+
+                  {method.method === 'PIX' && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1 text-sm font-medium">
+                        Chave Pix
+                        <Input
+                          value={method.pixKey}
+                          onChange={event =>
+                            updatePaymentMethod(method.method, {
+                              pixKey: event.target.value,
+                            })
+                          }
+                          placeholder="CPF, CNPJ, e-mail ou chave aleatoria"
+                        />
+                      </label>
+                      <label className="space-y-1 text-sm font-medium">
+                        Provedor futuro
+                        <Input
+                          value={method.integrationProvider}
+                          onChange={event =>
+                            updatePaymentMethod(method.method, {
+                              integrationProvider: event.target.value,
+                            })
+                          }
+                          placeholder="Ex: manual, mercado-pago"
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {method.method === 'ONLINE' && (
+                    <label className="mt-3 block space-y-1 text-sm font-medium">
+                      Provedor ou observacao interna
+                      <Input
+                        value={method.integrationProvider}
+                        onChange={event =>
+                          updatePaymentMethod(method.method, {
+                            integrationProvider: event.target.value,
+                          })
+                        }
+                        placeholder="Ex: gateway futuro, link de pagamento"
+                      />
+                    </label>
+                  )}
+
+                  <label className="mt-3 block space-y-1 text-sm font-medium">
+                    Instrucao exibida no checkout
+                    <Textarea
+                      className="min-h-20"
+                      value={method.instructions}
+                      onChange={event =>
+                        updatePaymentMethod(method.method, {
+                          instructions: event.target.value,
+                        })
+                      }
+                      placeholder="Ex: pague na entrega, envie comprovante ou aguarde confirmacao."
+                    />
+                  </label>
+
+                  {method.method === 'PIX' && (
+                    <label className="mt-3 block space-y-1 text-sm font-medium">
+                      Instrucao de comprovante
+                      <Textarea
+                        className="min-h-16"
+                        value={method.proofInstructions}
+                        onChange={event =>
+                          updatePaymentMethod(method.method, {
+                            proofInstructions: event.target.value,
+                          })
+                        }
+                        placeholder="Ex: envie o comprovante no WhatsApp apos finalizar."
+                      />
+                    </label>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <Button type="submit" isLoading={isSavingPaymentMethods}>
+            <Save className="size-4" />
+            Salvar pagamentos
           </Button>
         </form>
       </SettingsCategoryBlock>

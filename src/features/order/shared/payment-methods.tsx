@@ -40,4 +40,9 @@ export const paymentMethods = [
       </svg>
     ),
   },
+  {
+    id: 'ONLINE',
+    name: 'Pagamento online',
+    icon: <CreditCard />,
+  },
 ] as const

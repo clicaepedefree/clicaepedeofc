@@ -27,6 +27,7 @@ import { cn } from '@/shared/lib/utils'
 import {
   CheckCircle2,
   Clock3,
+  Copy,
   HandPlatter,
   Minus,
   Plus,
@@ -37,7 +38,7 @@ import {
   Truck,
 } from 'lucide-react'
 import Image from 'next/image'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 
 type CartOption = {
   optionId: number
@@ -114,6 +115,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     useState<DigitalMenuSubmitInput['payment']['method']>(
       menu.paymentMethods[0]?.method ?? 'PIX'
     )
+  const [needsChange, setNeedsChange] = useState(false)
   const [changeFor, setChangeFor] = useState('')
   const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey)
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
@@ -214,10 +216,30 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     orderType === 'DELIVERY'
       ? menu.availabilities.delivery
       : menu.availabilities.takeout
+  const availablePaymentMethods = useMemo(
+    () =>
+      menu.paymentMethods.filter(method =>
+        method.availableFor.includes(orderType)
+      ),
+    [menu.paymentMethods, orderType]
+  )
+  const selectedPaymentMethod = availablePaymentMethods.find(
+    method => method.method === paymentMethod
+  )
   const missingMinimumAmount = Math.max(
     0,
     deliveryQuote.minimumOrderAmount - cartTotal
   )
+
+  useEffect(() => {
+    if (availablePaymentMethods.some(method => method.method === paymentMethod)) {
+      return
+    }
+
+    setPaymentMethod(availablePaymentMethods[0]?.method ?? 'PIX')
+    setNeedsChange(false)
+    setChangeFor('')
+  }, [availablePaymentMethods, paymentMethod])
 
   const openItem = (item: DigitalMenuItem) => {
     setSelectedItem(item)
@@ -328,7 +350,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
               longitude: customerLongitude,
             }
           : undefined,
-      payment: { method: paymentMethod, changeFor },
+      payment: {
+        method: paymentMethod,
+        changeFor:
+          paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
+      },
       scheduledFor: scheduledFor
         ? new Date(scheduledFor).toISOString()
         : undefined,
@@ -595,7 +621,9 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 deliveryQuote={deliveryQuote}
                 checkoutTotal={checkoutTotal}
                 missingMinimumAmount={missingMinimumAmount}
-                paymentMethods={menu.paymentMethods}
+                availablePaymentMethods={availablePaymentMethods}
+                selectedPaymentMethod={selectedPaymentMethod}
+                needsChange={needsChange}
                 submissionMessage={submissionMessage}
                 isPending={isPending}
                 onBack={() => setCheckoutStep(false)}
@@ -611,6 +639,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 setCustomerLongitude={setCustomerLongitude}
                 setLocationMessage={setLocationMessage}
                 setPaymentMethod={setPaymentMethod}
+                setNeedsChange={setNeedsChange}
                 setChangeFor={setChangeFor}
                 setOrderType={setOrderType}
                 setScheduledFor={setScheduledFor}
@@ -789,7 +818,9 @@ const CheckoutForm = ({
   deliveryQuote,
   checkoutTotal,
   missingMinimumAmount,
-  paymentMethods,
+  availablePaymentMethods,
+  selectedPaymentMethod,
+  needsChange,
   submissionMessage,
   isPending,
   onBack,
@@ -805,6 +836,7 @@ const CheckoutForm = ({
   setCustomerLongitude,
   setLocationMessage,
   setPaymentMethod,
+  setNeedsChange,
   setChangeFor,
   setOrderType,
   setScheduledFor,
@@ -836,12 +868,29 @@ const CheckoutForm = ({
   }
   checkoutTotal: number
   missingMinimumAmount: number
-  paymentMethods: {
+  availablePaymentMethods: {
     method: DigitalMenuSubmitInput['payment']['method']
     label: string
     instructions: string | null
+    proofInstructions: string | null
+    pixKey: string | null
+    integrationProvider: string | null
     requiresChangeFor: boolean
+    availableFor: DigitalMenuSubmitInput['orderType'][]
   }[]
+  selectedPaymentMethod:
+    | {
+        method: DigitalMenuSubmitInput['payment']['method']
+        label: string
+        instructions: string | null
+        proofInstructions: string | null
+        pixKey: string | null
+        integrationProvider: string | null
+        requiresChangeFor: boolean
+        availableFor: DigitalMenuSubmitInput['orderType'][]
+      }
+    | undefined
+  needsChange: boolean
   submissionMessage: string | null
   isPending: boolean
   onBack: () => void
@@ -857,6 +906,7 @@ const CheckoutForm = ({
   setCustomerLongitude: (value: number | undefined) => void
   setLocationMessage: (value: string | null) => void
   setPaymentMethod: (value: DigitalMenuSubmitInput['payment']['method']) => void
+  setNeedsChange: (value: boolean) => void
   setChangeFor: (value: string) => void
   setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
   setScheduledFor: (value: string) => void
@@ -874,7 +924,8 @@ const CheckoutForm = ({
   const canSubmitOrder =
     (canCheckoutNow || canCheckoutScheduled) &&
     deliveryQuote.isAddressCovered &&
-    missingMinimumAmount === 0
+    missingMinimumAmount === 0 &&
+    !!selectedPaymentMethod
 
   const requestCustomerLocation = () => {
     if (!navigator.geolocation) {
@@ -896,6 +947,16 @@ const CheckoutForm = ({
       },
       { enableHighAccuracy: true, timeout: 10000 }
     )
+  }
+
+  const copyPixKey = async () => {
+    if (!selectedPaymentMethod?.pixKey) return
+
+    try {
+      await navigator.clipboard.writeText(selectedPaymentMethod.pixKey)
+    } catch {
+      setLocationMessage('Nao foi possivel copiar a chave Pix automaticamente.')
+    }
   }
 
   return (
@@ -1049,30 +1110,91 @@ const CheckoutForm = ({
 
       <div className="rounded-lg border bg-card p-4">
         <h3 className="mb-3 font-medium">Pagamento</h3>
-        <div className="grid grid-cols-2 gap-2">
-          {paymentMethods.map(method => (
-            <button
-              key={method.method}
-              type="button"
-              onClick={() => setPaymentMethod(method.method)}
-              className={cn(
-                'rounded-md border px-3 py-2 text-sm',
-                paymentMethod === method.method
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'bg-background hover:bg-accent'
-              )}
-            >
-              {method.label}
-            </button>
-          ))}
-        </div>
-        {paymentMethod === 'CASH' && (
-          <Input
-            className="mt-3"
-            placeholder="Troco para quanto? (opcional)"
-            value={changeFor}
-            onChange={event => setChangeFor(event.target.value)}
-          />
+        {availablePaymentMethods.length === 0 ? (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+            Esta loja ainda nao habilitou pagamentos para este tipo de pedido.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {availablePaymentMethods.map(method => (
+              <button
+                key={method.method}
+                type="button"
+                onClick={() => {
+                  setPaymentMethod(method.method)
+                  setNeedsChange(false)
+                  setChangeFor('')
+                }}
+                className={cn(
+                  'rounded-md border px-3 py-2 text-sm',
+                  paymentMethod === method.method
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'bg-background hover:bg-accent'
+                )}
+              >
+                {method.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedPaymentMethod?.instructions && (
+          <p className="mt-3 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-800 dark:text-sky-200">
+            {selectedPaymentMethod.instructions}
+          </p>
+        )}
+
+        {selectedPaymentMethod?.method === 'PIX' && (
+          <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
+            {selectedPaymentMethod.pixKey ? (
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">
+                  Chave Pix
+                </span>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs">
+                    {selectedPaymentMethod.pixKey}
+                  </code>
+                  <Button type="button" size="icon" variant="outline" onClick={copyPixKey}>
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                A loja ainda nao informou uma chave Pix. Confira as instrucoes antes de finalizar.
+              </p>
+            )}
+            {selectedPaymentMethod.proofInstructions && (
+              <p className="text-sm text-muted-foreground">
+                {selectedPaymentMethod.proofInstructions}
+              </p>
+            )}
+          </div>
+        )}
+
+        {paymentMethod === 'CASH' && selectedPaymentMethod?.requiresChangeFor && (
+          <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
+            <label className="flex items-center justify-between gap-3 text-sm font-medium">
+              Precisa de troco?
+              <input
+                type="checkbox"
+                checked={needsChange}
+                onChange={event => {
+                  setNeedsChange(event.target.checked)
+                  if (!event.target.checked) setChangeFor('')
+                }}
+                className="size-4 accent-primary"
+              />
+            </label>
+            {needsChange && (
+              <Input
+                placeholder="Troco para quanto?"
+                value={changeFor}
+                onChange={event => setChangeFor(event.target.value)}
+              />
+            )}
+          </div>
         )}
       </div>
 
