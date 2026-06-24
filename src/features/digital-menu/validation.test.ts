@@ -63,4 +63,13 @@ describe('submitDigitalMenuOrderSchema', () => {
     expect(result.data.customerName).toBe('Bruno')
     expect(result.data.customerPhone).toBe('11999999999')
   })
+
+  test('bloqueia finalizacao com carrinho vazio', () => {
+    const result = submitDigitalMenuOrderSchema.safeParse({
+      ...basePayload,
+      items: [],
+    })
+
+    expect(result.success).toBe(false)
+  })
 })
