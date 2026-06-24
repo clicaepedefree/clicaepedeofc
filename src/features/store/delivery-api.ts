@@ -175,62 +175,78 @@ export const saveStoreDeliverySettings = async (
   storeId: number,
   input: StoreDeliverySettingsInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = deliverySettingsSchema.parse(input)
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = deliverySettingsSchema.parse(input)
 
-  await db
-    .insert(storeDigitalMenuSettingsTable)
-    .values({ storeId, ...values })
-    .onConflictDoUpdate({
-      target: storeDigitalMenuSettingsTable.storeId,
-      set: values,
+    await db
+      .insert(storeDigitalMenuSettingsTable)
+      .values({ storeId, ...values })
+      .onConflictDoUpdate({
+        target: storeDigitalMenuSettingsTable.storeId,
+        set: values,
+      })
+  } catch (error) {
+    console.error('[store-delivery] Failed to save delivery settings', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
     })
+    throw error
+  }
 }
 
 export const saveStoreDeliveryZone = async (
   storeId: number,
   input: StoreDeliveryZoneInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = deliveryZoneSchema.parse(input)
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = deliveryZoneSchema.parse(input)
 
-  const normalizedValues = {
-    type: values.type,
-    name: values.name.trim(),
-    neighborhood:
-      values.type === 'NEIGHBORHOOD' ? values.neighborhood?.trim() : null,
-    postalCodePrefix:
-      values.type === 'POSTAL_CODE'
-        ? values.postalCodePrefix?.replace(/\D/g, '')
-        : null,
-    centerLat: values.type === 'RADIUS' ? values.centerLat : null,
-    centerLng: values.type === 'RADIUS' ? values.centerLng : null,
-    radiusMeters: values.type === 'RADIUS' ? values.radiusMeters : null,
-    deliveryFee: values.deliveryFee,
-    freeDeliveryMinimum: values.freeDeliveryMinimum,
-    minimumOrderAmount: values.minimumOrderAmount,
-    estimatedDeliveryMinutes: values.estimatedDeliveryMinutes,
-    priority: values.priority,
-    isActive: values.isActive,
-  }
+    const normalizedValues = {
+      type: values.type,
+      name: values.name.trim(),
+      neighborhood:
+        values.type === 'NEIGHBORHOOD' ? values.neighborhood?.trim() : null,
+      postalCodePrefix:
+        values.type === 'POSTAL_CODE'
+          ? values.postalCodePrefix?.replace(/\D/g, '')
+          : null,
+      centerLat: values.type === 'RADIUS' ? values.centerLat : null,
+      centerLng: values.type === 'RADIUS' ? values.centerLng : null,
+      radiusMeters: values.type === 'RADIUS' ? values.radiusMeters : null,
+      deliveryFee: values.deliveryFee,
+      freeDeliveryMinimum: values.freeDeliveryMinimum,
+      minimumOrderAmount: values.minimumOrderAmount,
+      estimatedDeliveryMinutes: values.estimatedDeliveryMinutes,
+      priority: values.priority,
+      isActive: values.isActive,
+    }
 
-  if (values.id) {
-    await db
-      .update(storeDeliveryZonesTable)
-      .set(normalizedValues)
-      .where(
-        and(
-          eq(storeDeliveryZonesTable.id, values.id),
-          eq(storeDeliveryZonesTable.storeId, storeId)
+    if (values.id) {
+      await db
+        .update(storeDeliveryZonesTable)
+        .set(normalizedValues)
+        .where(
+          and(
+            eq(storeDeliveryZonesTable.id, values.id),
+            eq(storeDeliveryZonesTable.storeId, storeId)
+          )
         )
-      )
-    return
-  }
+      return
+    }
 
-  await db.insert(storeDeliveryZonesTable).values({
-    storeId,
-    ...normalizedValues,
-  })
+    await db.insert(storeDeliveryZonesTable).values({
+      storeId,
+      ...normalizedValues,
+    })
+  } catch (error) {
+    console.error('[store-delivery] Failed to save delivery zone', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 export const deleteStoreDeliveryZone = async (storeId: number, zoneId: number) => {
@@ -250,55 +266,63 @@ export const saveStorePaymentMethods = async (
   storeId: number,
   input: StorePaymentMethodInput[]
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = paymentMethodsSchema.parse(input)
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = paymentMethodsSchema.parse(input)
 
-  await db.transaction(async tx => {
-    for (const method of values) {
-      const normalizedValues = {
-        requiresChangeFor:
-          method.method === 'CASH' ? method.requiresChangeFor : false,
-        instructions: method.instructions?.trim() || null,
-        proofInstructions:
-          method.method === 'PIX'
-            ? method.proofInstructions?.trim() || null
-            : null,
-        pixKey: method.method === 'PIX' ? method.pixKey?.trim() || null : null,
-        allowDelivery: method.allowDelivery,
-        allowTakeout: method.allowTakeout,
-        integrationProvider:
-          method.method === 'PIX' || method.method === 'ONLINE'
-            ? method.integrationProvider?.trim() || null
-            : null,
-        isActive: method.isActive,
-      }
+    await db.transaction(async tx => {
+      for (const method of values) {
+        const normalizedValues = {
+          requiresChangeFor:
+            method.method === 'CASH' ? method.requiresChangeFor : false,
+          instructions: method.instructions?.trim() || null,
+          proofInstructions:
+            method.method === 'PIX'
+              ? method.proofInstructions?.trim() || null
+              : null,
+          pixKey: method.method === 'PIX' ? method.pixKey?.trim() || null : null,
+          allowDelivery: method.allowDelivery,
+          allowTakeout: method.allowTakeout,
+          integrationProvider:
+            method.method === 'PIX' || method.method === 'ONLINE'
+              ? method.integrationProvider?.trim() || null
+              : null,
+          isActive: method.isActive,
+        }
 
-      const [existing] = await tx
-        .select({ id: storePaymentMethodsTable.id })
-        .from(storePaymentMethodsTable)
-        .where(
-          and(
-            eq(storePaymentMethodsTable.storeId, storeId),
-            eq(storePaymentMethodsTable.method, method.method),
-            isNull(storePaymentMethodsTable.cardBrand)
+        const [existing] = await tx
+          .select({ id: storePaymentMethodsTable.id })
+          .from(storePaymentMethodsTable)
+          .where(
+            and(
+              eq(storePaymentMethodsTable.storeId, storeId),
+              eq(storePaymentMethodsTable.method, method.method),
+              isNull(storePaymentMethodsTable.cardBrand)
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
 
-      if (existing) {
-        await tx
-          .update(storePaymentMethodsTable)
-          .set(normalizedValues)
-          .where(eq(storePaymentMethodsTable.id, existing.id))
-        continue
+        if (existing) {
+          await tx
+            .update(storePaymentMethodsTable)
+            .set(normalizedValues)
+            .where(eq(storePaymentMethodsTable.id, existing.id))
+          continue
+        }
+
+        await tx.insert(storePaymentMethodsTable).values({
+          storeId,
+          method: method.method,
+          cardBrand: null,
+          ...normalizedValues,
+        })
       }
-
-      await tx.insert(storePaymentMethodsTable).values({
-        storeId,
-        method: method.method,
-        cardBrand: null,
-        ...normalizedValues,
-      })
-    }
-  })
+    })
+  } catch (error) {
+    console.error('[store-delivery] Failed to save payment methods', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }

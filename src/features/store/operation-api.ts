@@ -149,50 +149,66 @@ export const saveStoreOperationSettings = async (
   storeId: number,
   input: StoreOperationSettingsInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = operationSettingsSchema.parse(input)
-  const message = values.operationalStatusMessage?.trim() || null
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = operationSettingsSchema.parse(input)
+    const message = values.operationalStatusMessage?.trim() || null
 
-  await db
-    .insert(storeDigitalMenuSettingsTable)
-    .values({
-      storeId,
-      ...values,
-      operationalStatusMessage: message,
-      manualPauseReason: message,
-    })
-    .onConflictDoUpdate({
-      target: storeDigitalMenuSettingsTable.storeId,
-      set: {
+    await db
+      .insert(storeDigitalMenuSettingsTable)
+      .values({
+        storeId,
         ...values,
         operationalStatusMessage: message,
         manualPauseReason: message,
-      },
+      })
+      .onConflictDoUpdate({
+        target: storeDigitalMenuSettingsTable.storeId,
+        set: {
+          ...values,
+          operationalStatusMessage: message,
+          manualPauseReason: message,
+        },
+      })
+  } catch (error) {
+    console.error('[store-operation] Failed to save operation settings', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
     })
+    throw error
+  }
 }
 
 export const saveStoreBusinessHour = async (
   storeId: number,
   input: StoreBusinessHourInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = businessHourSchema.parse(input)
-  const { id, ...hourValues } = values
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = businessHourSchema.parse(input)
+    const { id, ...hourValues } = values
 
-  if (id) {
-    await db
-      .update(storeBusinessHoursTable)
-      .set(hourValues)
-      .where(
-        and(
-          eq(storeBusinessHoursTable.id, id),
-          eq(storeBusinessHoursTable.storeId, storeId)
+    if (id) {
+      await db
+        .update(storeBusinessHoursTable)
+        .set(hourValues)
+        .where(
+          and(
+            eq(storeBusinessHoursTable.id, id),
+            eq(storeBusinessHoursTable.storeId, storeId)
+          )
         )
-      )
-    return
-  }
+      return
+    }
 
-  await db.insert(storeBusinessHoursTable).values({ storeId, ...hourValues })
+    await db.insert(storeBusinessHoursTable).values({ storeId, ...hourValues })
+  } catch (error) {
+    console.error('[store-operation] Failed to save business hour', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 export const deleteStoreBusinessHour = async (storeId: number, id: number) => {
@@ -212,31 +228,39 @@ export const saveStoreSpecialHour = async (
   storeId: number,
   input: StoreSpecialHourInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
-  const values = specialHourSchema.parse(input)
-  const normalized = {
-    date: values.date,
-    reason: values.reason?.trim() || null,
-    isClosed: values.isClosed,
-    opensAt: values.isClosed ? null : values.opensAt,
-    closesAt: values.isClosed ? null : values.closesAt,
-    serviceType: values.serviceType,
-  }
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = specialHourSchema.parse(input)
+    const normalized = {
+      date: values.date,
+      reason: values.reason?.trim() || null,
+      isClosed: values.isClosed,
+      opensAt: values.isClosed ? null : values.opensAt,
+      closesAt: values.isClosed ? null : values.closesAt,
+      serviceType: values.serviceType,
+    }
 
-  if (values.id) {
-    await db
-      .update(storeSpecialHoursTable)
-      .set(normalized)
-      .where(
-        and(
-          eq(storeSpecialHoursTable.id, values.id),
-          eq(storeSpecialHoursTable.storeId, storeId)
+    if (values.id) {
+      await db
+        .update(storeSpecialHoursTable)
+        .set(normalized)
+        .where(
+          and(
+            eq(storeSpecialHoursTable.id, values.id),
+            eq(storeSpecialHoursTable.storeId, storeId)
+          )
         )
-      )
-    return
-  }
+      return
+    }
 
-  await db.insert(storeSpecialHoursTable).values({ storeId, ...normalized })
+    await db.insert(storeSpecialHoursTable).values({ storeId, ...normalized })
+  } catch (error) {
+    console.error('[store-operation] Failed to save special hour', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 export const deleteStoreSpecialHour = async (storeId: number, id: number) => {
