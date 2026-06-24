@@ -30,6 +30,7 @@ import {
   Copy,
   HandPlatter,
   Minus,
+  Pencil,
   Plus,
   ReceiptText,
   Search,
@@ -120,6 +121,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>(
     {}
   )
+  const [editingCartId, setEditingCartId] = useState<string | null>(null)
   const [itemComment, setItemComment] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [isCartOpen, setIsCartOpen] = useState(false)
@@ -237,7 +239,8 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     postalCode,
   ])
 
-  const checkoutTotal = cartTotal + deliveryQuote.deliveryFee
+  const appliedDiscount = 0
+  const checkoutTotal = cartTotal + deliveryQuote.deliveryFee - appliedDiscount
   const selectedAvailability =
     orderType === 'DELIVERY'
       ? menu.availabilities.delivery
@@ -331,6 +334,12 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     setChangeFor('')
   }, [availablePaymentMethods, paymentMethod])
 
+  useEffect(() => {
+    if (cart.length > 0) return
+
+    setCheckoutStep(false)
+  }, [cart.length])
+
   const openItem = (item: DigitalMenuItem) => {
     if (isItemUnavailable(item)) {
       setSubmissionMessage('Este produto esta indisponivel no momento.')
@@ -338,6 +347,14 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     }
 
     setSelectedItem(item)
+    setEditingCartId(null)
+    setSelectedOptions({})
+    setItemComment('')
+  }
+
+  const closeSelectedItem = () => {
+    setSelectedItem(null)
+    setEditingCartId(null)
     setSelectedOptions({})
     setItemComment('')
   }
@@ -369,6 +386,19 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     })
   }
 
+  const buildSelectedCartOptions = (item: DigitalMenuItem) =>
+    item.optionGroups.flatMap(group =>
+      group.options
+        .filter(option => selectedOptions[option.id])
+        .map(option => ({
+          optionId: option.id,
+          optionName: option.name,
+          optionGroupName: group.name,
+          price: option.price,
+          quantity: selectedOptions[option.id],
+        }))
+    )
+
   const addSelectedItemToCart = () => {
     if (!selectedItem) return
 
@@ -385,17 +415,28 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
       }
     }
 
-    const options = selectedItem.optionGroups.flatMap(group =>
-      group.options
-        .filter(option => selectedOptions[option.id])
-        .map(option => ({
-          optionId: option.id,
-          optionName: option.name,
-          optionGroupName: group.name,
-          price: option.price,
-          quantity: selectedOptions[option.id],
-        }))
-    )
+    const options = buildSelectedCartOptions(selectedItem)
+    const comment = menu.settings.allowItemObservations ? itemComment : ''
+
+    if (editingCartId) {
+      setCart(current =>
+        current.map(item =>
+          item.cartId === editingCartId
+            ? {
+                ...item,
+                name: selectedItem.name,
+                price: selectedItem.price,
+                comment,
+                options,
+              }
+            : item
+        )
+      )
+      setSubmissionMessage(null)
+      closeSelectedItem()
+      setIsCartOpen(true)
+      return
+    }
 
     setCart(current => [
       ...current,
@@ -405,13 +446,38 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         name: selectedItem.name,
         price: selectedItem.price,
         quantity: 1,
-        comment: menu.settings.allowItemObservations ? itemComment : '',
+        comment,
         options,
       },
     ])
     setSubmissionMessage(null)
-    setSelectedItem(null)
+    closeSelectedItem()
     setIsCartOpen(true)
+  }
+
+  const editCartItem = (cartItem: CartItem) => {
+    const catalogItem = allItems.find(
+      item => item.itemOfferingId === cartItem.itemOfferingId
+    )
+
+    if (!catalogItem) {
+      setSubmissionMessage('Este produto nao esta mais disponivel para edicao.')
+      return
+    }
+
+    const options = cartItem.options.reduce<Record<number, number>>(
+      (selected, option) => ({
+        ...selected,
+        [option.optionId]: option.quantity,
+      }),
+      {}
+    )
+
+    setSelectedItem(catalogItem)
+    setSelectedOptions(options)
+    setItemComment(cartItem.comment)
+    setEditingCartId(cartItem.cartId)
+    setIsCartOpen(false)
   }
 
   const updateCartQuantity = (cartId: string, quantity: number) => {
@@ -677,7 +743,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         </div>
       )}
 
-      <Sheet open={!!selectedItem} onOpenChange={open => !open && setSelectedItem(null)}>
+      <Sheet open={!!selectedItem} onOpenChange={open => !open && closeSelectedItem()}>
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
           {selectedItem && (
             <>
@@ -757,8 +823,12 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
               </div>
               <SheetFooter>
                 <Button size="lg" onClick={addSelectedItemToCart}>
-                  <Plus className="size-4" />
-                  Adicionar ao carrinho
+                  {editingCartId ? (
+                    <Pencil className="size-4" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  {editingCartId ? 'Salvar alteracoes' : 'Adicionar ao carrinho'}
                 </Button>
               </SheetFooter>
             </>
@@ -811,6 +881,8 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 scheduleMaxDaysAhead={menu.settings.scheduleMaxDaysAhead}
                 scheduledFor={scheduledFor}
                 deliveryQuote={deliveryQuote}
+                cartSubtotal={cartTotal}
+                appliedDiscount={appliedDiscount}
                 checkoutTotal={checkoutTotal}
                 missingMinimumAmount={missingMinimumAmount}
                 availablePaymentMethods={availablePaymentMethods}
@@ -868,10 +940,21 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                           type="button"
                           className="text-muted-foreground hover:text-destructive"
                           onClick={() => updateCartQuantity(item.cartId, 0)}
+                          aria-label={`Remover ${item.name}`}
                         >
                           <Trash2 className="size-4" />
                         </button>
                       </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => editCartItem(item)}
+                      >
+                        <Pencil className="size-4" />
+                        Editar adicionais
+                      </Button>
                       <div className="mt-4 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Button
@@ -919,7 +1002,24 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                   <strong>{currency(deliveryQuote.deliveryFee)}</strong>
                 </div>
               )}
-              <Button size="lg" onClick={() => setCheckoutStep(true)}>
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Desconto/cupom</span>
+                <strong>{currency(appliedDiscount)}</strong>
+              </div>
+              <div className="mb-3 flex items-center justify-between border-t pt-3 text-base">
+                <span className="font-medium">Total final</span>
+                <strong>{currency(checkoutTotal)}</strong>
+              </div>
+              {missingMinimumAmount > 0 && (
+                <p className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                  Faltam {currency(missingMinimumAmount)} para atingir o pedido minimo.
+                </p>
+              )}
+              <Button
+                size="lg"
+                onClick={() => setCheckoutStep(true)}
+                disabled={missingMinimumAmount > 0}
+              >
                 <ReceiptText className="size-4" />
                 Continuar para checkout
               </Button>
@@ -1039,6 +1139,8 @@ const CheckoutForm = ({
   scheduleMaxDaysAhead,
   scheduledFor,
   deliveryQuote,
+  cartSubtotal,
+  appliedDiscount,
   checkoutTotal,
   missingMinimumAmount,
   availablePaymentMethods,
@@ -1089,6 +1191,8 @@ const CheckoutForm = ({
     coverageMessage: string | null
     zoneName: string | null
   }
+  cartSubtotal: number
+  appliedDiscount: number
   checkoutTotal: number
   missingMinimumAmount: number
   availablePaymentMethods: {
@@ -1180,6 +1284,12 @@ const CheckoutForm = ({
     } catch {
       setLocationMessage('Nao foi possivel copiar a chave Pix automaticamente.')
     }
+  }
+
+  const clearLocationQuote = () => {
+    setCustomerLatitude(undefined)
+    setCustomerLongitude(undefined)
+    setLocationMessage(null)
   }
 
   return (
@@ -1284,17 +1394,37 @@ const CheckoutForm = ({
             className="mb-3"
             placeholder="CEP"
             value={postalCode}
-            onChange={event => setPostalCode(event.target.value)}
+            onChange={event => {
+              setPostalCode(event.target.value)
+              clearLocationQuote()
+            }}
           />
           <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
-            <Input placeholder="Rua" value={street} onChange={event => setStreet(event.target.value)} />
-            <Input placeholder="Numero" value={number} onChange={event => setNumber(event.target.value)} />
+            <Input
+              placeholder="Rua"
+              value={street}
+              onChange={event => {
+                setStreet(event.target.value)
+                clearLocationQuote()
+              }}
+            />
+            <Input
+              placeholder="Numero"
+              value={number}
+              onChange={event => {
+                setNumber(event.target.value)
+                clearLocationQuote()
+              }}
+            />
           </div>
           <Input
             className="mt-3"
             placeholder="Bairro"
             value={neighborhood}
-            onChange={event => setNeighborhood(event.target.value)}
+            onChange={event => {
+              setNeighborhood(event.target.value)
+              clearLocationQuote()
+            }}
           />
           <Input
             className="mt-3"
@@ -1423,11 +1553,19 @@ const CheckoutForm = ({
 
       <div className="rounded-lg border bg-card p-4 text-sm">
         <div className="flex justify-between">
+          <span className="text-muted-foreground">Subtotal</span>
+          <strong>{currency(cartSubtotal)}</strong>
+        </div>
+        <div className="flex justify-between">
           <span className="text-muted-foreground">Entrega</span>
           <strong>{currency(deliveryQuote.deliveryFee)}</strong>
         </div>
         <div className="mt-2 flex justify-between">
-          <span className="text-muted-foreground">Total previsto</span>
+          <span className="text-muted-foreground">Desconto/cupom</span>
+          <strong>{currency(appliedDiscount)}</strong>
+        </div>
+        <div className="mt-2 flex justify-between">
+          <span className="text-muted-foreground">Total final</span>
           <strong>{currency(checkoutTotal)}</strong>
         </div>
         {missingMinimumAmount > 0 && (
