@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS "store_company_profiles" (
+  "store_id" integer PRIMARY KEY NOT NULL REFERENCES "stores"("id") ON DELETE cascade,
+  "company_tax_number" text,
+  "company_name" text,
+  "phone_1" text,
+  "phone_2" text,
+  "email" text,
+  "responsible_name" text,
+  "responsible_tax_number" text,
+  "responsible_phone" text,
+  "responsible_email" text,
+  "postal_code" text,
+  "street" text,
+  "number" text,
+  "district" text,
+  "city" text,
+  "state_code" text,
+  "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
