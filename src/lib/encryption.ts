@@ -1,22 +1,25 @@
 import crypto from 'crypto'
 
-const ENCRYPTION_KEY = process.env.IFOOD_TOKEN_ENCRYPTION_KEY
-
-if (!ENCRYPTION_KEY) {
-  throw new Error('IFOOD_TOKEN_ENCRYPTION_KEY environment variable is required')
-}
-
-// Ensure the key is 32 bytes (64 hex characters)
-if (ENCRYPTION_KEY.length !== 64) {
-  throw new Error(
-    'IFOOD_TOKEN_ENCRYPTION_KEY must be a 32-byte hex string (64 characters). Generate with: openssl rand -hex 32'
-  )
-}
-
-const KEY_BUFFER = Buffer.from(ENCRYPTION_KEY, 'hex')
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 16 // AES-GCM standard IV length
 const AUTH_TAG_LENGTH = 16 // AES-GCM standard auth tag length
+
+function getKeyBuffer() {
+  const encryptionKey = process.env.IFOOD_TOKEN_ENCRYPTION_KEY
+
+  if (!encryptionKey) {
+    throw new Error('IFOOD_TOKEN_ENCRYPTION_KEY environment variable is required')
+  }
+
+  // Ensure the key is 32 bytes (64 hex characters).
+  if (encryptionKey.length !== 64) {
+    throw new Error(
+      'IFOOD_TOKEN_ENCRYPTION_KEY must be a 32-byte hex string (64 characters). Generate with: openssl rand -hex 32'
+    )
+  }
+
+  return Buffer.from(encryptionKey, 'hex')
+}
 
 /**
  * Encrypts a string using AES-256-GCM
@@ -25,7 +28,7 @@ const AUTH_TAG_LENGTH = 16 // AES-GCM standard auth tag length
  */
 export function encrypt(text: string): string {
   const iv = crypto.randomBytes(IV_LENGTH)
-  const cipher = crypto.createCipheriv(ALGORITHM, KEY_BUFFER, iv)
+  const cipher = crypto.createCipheriv(ALGORITHM, getKeyBuffer(), iv)
 
   let encrypted = cipher.update(text, 'utf8', 'hex')
   encrypted += cipher.final('hex')
@@ -53,7 +56,7 @@ export function decrypt(encryptedText: string): string {
   const iv = Buffer.from(ivHex, 'hex')
   const authTag = Buffer.from(authTagHex, 'hex')
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY_BUFFER, iv)
+  const decipher = crypto.createDecipheriv(ALGORITHM, getKeyBuffer(), iv)
   decipher.setAuthTag(authTag)
 
   let decrypted = decipher.update(encrypted, 'hex', 'utf8')
