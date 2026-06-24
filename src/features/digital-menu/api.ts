@@ -18,6 +18,7 @@ import {
   publicOrderEventsTable,
   publicOrderSubmissionsTable,
   storeBusinessHoursTable,
+  storeCompanyProfilesTable,
   storeDeliveryZonesTable,
   storeDigitalMenuSettingsTable,
   storeFilesTable,
@@ -28,6 +29,7 @@ import {
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -53,7 +55,15 @@ import {
 } from './validation'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
+  logoImageUrl: null,
+  bannerImageUrl: null,
   whatsappPhone: null,
+  pickupAddress: null,
+  pickupStreet: null,
+  pickupNumber: null,
+  pickupDistrict: null,
+  pickupCity: null,
+  pickupStateCode: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
   manualPauseReason: null,
@@ -134,9 +144,19 @@ const getUnavailableReason = (status: string, statusReason: string | null) => {
 }
 
 const getDigitalMenuSettings = async (storeId: number) => {
+  const logoFilesTable = alias(storeFilesTable, 'digitalMenuLogoFiles')
+  const bannerFilesTable = alias(storeFilesTable, 'digitalMenuBannerFiles')
+
   const [settings] = await db
     .select({
+      logoImageUrl: logoFilesTable.url,
+      bannerImageUrl: bannerFilesTable.url,
       whatsappPhone: storeDigitalMenuSettingsTable.whatsappPhone,
+      pickupStreet: storeCompanyProfilesTable.street,
+      pickupNumber: storeCompanyProfilesTable.number,
+      pickupDistrict: storeCompanyProfilesTable.district,
+      pickupCity: storeCompanyProfilesTable.city,
+      pickupStateCode: storeCompanyProfilesTable.stateCode,
       isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
       isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
       operationalStatus: storeDigitalMenuSettingsTable.operationalStatus,
@@ -154,16 +174,68 @@ const getDigitalMenuSettings = async (storeId: number) => {
       allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
+    .leftJoin(
+      logoFilesTable,
+      and(
+        eq(logoFilesTable.id, storeDigitalMenuSettingsTable.logoFileId),
+        eq(logoFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
+    .leftJoin(
+      bannerFilesTable,
+      and(
+        eq(bannerFilesTable.id, storeDigitalMenuSettingsTable.bannerFileId),
+        eq(bannerFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
+    .leftJoin(storeCompanyProfilesTable, eq(storeCompanyProfilesTable.storeId, storeDigitalMenuSettingsTable.storeId))
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
     .limit(1)
 
-  return settings ?? DEFAULT_DIGITAL_MENU_SETTINGS
+  if (settings) return settings
+
+  const [pickupProfile] = await db
+    .select({
+      pickupStreet: storeCompanyProfilesTable.street,
+      pickupNumber: storeCompanyProfilesTable.number,
+      pickupDistrict: storeCompanyProfilesTable.district,
+      pickupCity: storeCompanyProfilesTable.city,
+      pickupStateCode: storeCompanyProfilesTable.stateCode,
+    })
+    .from(storeCompanyProfilesTable)
+    .where(eq(storeCompanyProfilesTable.storeId, storeId))
+    .limit(1)
+
+  return {
+    ...DEFAULT_DIGITAL_MENU_SETTINGS,
+    pickupStreet: pickupProfile?.pickupStreet ?? null,
+    pickupNumber: pickupProfile?.pickupNumber ?? null,
+    pickupDistrict: pickupProfile?.pickupDistrict ?? null,
+    pickupCity: pickupProfile?.pickupCity ?? null,
+    pickupStateCode: pickupProfile?.pickupStateCode ?? null,
+  }
 }
 
 const toPublicSettings = (
   settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
 ): DigitalMenuSettings => ({
+  logoImageUrl: settings.logoImageUrl,
+  bannerImageUrl: settings.bannerImageUrl,
   whatsappPhone: settings.whatsappPhone,
+  pickupAddress:
+    settings.pickupStreet ||
+    settings.pickupNumber ||
+    settings.pickupDistrict ||
+    settings.pickupCity ||
+    settings.pickupStateCode
+      ? {
+          street: settings.pickupStreet,
+          number: settings.pickupNumber,
+          district: settings.pickupDistrict,
+          city: settings.pickupCity,
+          stateCode: settings.pickupStateCode,
+        }
+      : null,
   isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
   isAcceptingOrders: settings.isAcceptingOrders,
   operationalStatus: settings.operationalStatus,

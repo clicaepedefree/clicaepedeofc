@@ -30,7 +30,8 @@ export const CategoryBlock = ({
   onCategoryUpdated?(): void
   onUpdateOpenedState?(isOpen: boolean): void
 }) => {
-  const { deleteCategory, isDeleting, onUpdateCategory } = useCategory()
+  const { deleteCategory, isDeleting, isMoving, moveCategory, onUpdateCategory } =
+    useCategory()
 
   const itemOfferings = category.items ?? []
 
@@ -75,8 +76,12 @@ export const CategoryBlock = ({
                 className="h-8 w-8"
                 onClick={e => {
                   e.stopPropagation()
+                  moveCategory(
+                    { category, direction: 'up' },
+                    { onSuccess: onCategoryUpdated }
+                  )
                 }}
-                disabled={isFirst}
+                disabled={isFirst || isMoving}
               >
                 <MoveUp className="h-4 w-4" />
               </Button>
@@ -86,8 +91,12 @@ export const CategoryBlock = ({
                 className="h-8 w-8"
                 onClick={e => {
                   e.stopPropagation()
+                  moveCategory(
+                    { category, direction: 'down' },
+                    { onSuccess: onCategoryUpdated }
+                  )
                 }}
-                disabled={isLast}
+                disabled={isLast || isMoving}
               >
                 <MoveDown className="h-4 w-4" />
               </Button>

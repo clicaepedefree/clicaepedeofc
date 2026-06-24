@@ -3,7 +3,10 @@ import { quoteDigitalMenuDelivery } from './delivery'
 import { DigitalMenuDeliveryZone, DigitalMenuSettings } from './types'
 
 const settings: DigitalMenuSettings = {
+  logoImageUrl: null,
+  bannerImageUrl: null,
   whatsappPhone: null,
+  pickupAddress: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
   operationalStatus: 'OPEN',

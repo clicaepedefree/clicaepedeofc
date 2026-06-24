@@ -111,6 +111,18 @@ const normalizeSearchText = (value: string) =>
 const isItemUnavailable = (item: DigitalMenuItem) =>
   item.inventory !== null && item.inventory <= 0
 
+const formatPickupAddress = (address: DigitalMenuData['settings']['pickupAddress']) => {
+  if (!address) return null
+
+  return [
+    [address.street, address.number].filter(Boolean).join(', '),
+    address.district,
+    [address.city, address.stateCode].filter(Boolean).join(' - '),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     menu.categories[0]?.id
@@ -323,6 +335,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   )
   const hasDiscoveryFilter =
     normalizeSearchText(searchTerm).length > 0 || activeFilter !== 'ALL'
+  const whatsappDigits = menu.settings.whatsappPhone?.replace(/\D/g, '') ?? ''
+  const whatsappContactUrl = whatsappDigits.length >= 10
+    ? `https://wa.me/${whatsappDigits}`
+    : null
+  const pickupAddressLabel = formatPickupAddress(menu.settings.pickupAddress)
 
   useEffect(() => {
     if (availablePaymentMethods.some(method => method.method === paymentMethod)) {
@@ -553,10 +570,33 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   return (
     <main className="min-h-dvh bg-background text-foreground">
       <header className="border-b bg-card/80 backdrop-blur">
+        {menu.settings.bannerImageUrl && (
+          <div className="relative h-36 w-full overflow-hidden bg-muted sm:h-48">
+            <Image
+              src={menu.settings.bannerImageUrl}
+              alt={`Banner de ${menu.store.name}`}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-background/10 to-transparent" />
+          </div>
+        )}
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Store className="size-5" />
+            <div className="relative flex size-12 items-center justify-center overflow-hidden rounded-xl border bg-primary/10 text-primary shadow-sm">
+              {menu.settings.logoImageUrl ? (
+                <Image
+                  src={menu.settings.logoImageUrl}
+                  alt={`Logo de ${menu.store.name}`}
+                  fill
+                  sizes="48px"
+                  className="object-cover"
+                />
+              ) : (
+                <Store className="size-5" />
+              )}
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
@@ -568,6 +608,13 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
           <Badge className="border-primary/20 bg-primary/10 text-primary">
             <Clock3 className="size-3" /> {menu.settings.averagePreparationMinutes} min
           </Badge>
+          {whatsappContactUrl && (
+            <Button asChild variant="outline" size="sm">
+              <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
+                WhatsApp
+              </a>
+            </Button>
+          )}
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-4">
           <Badge
@@ -860,6 +907,13 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 <p className="mt-1 font-semibold">
                   Total: {currency(orderConfirmation.total)}
                 </p>
+                {whatsappContactUrl && (
+                  <Button asChild className="mt-4" variant="outline">
+                    <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
+                      Falar com a loja
+                    </a>
+                  </Button>
+                )}
               </div>
             ) : checkoutStep ? (
               <CheckoutForm
@@ -887,6 +941,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 missingMinimumAmount={missingMinimumAmount}
                 availablePaymentMethods={availablePaymentMethods}
                 selectedPaymentMethod={selectedPaymentMethod}
+                pickupAddressLabel={pickupAddressLabel}
                 needsChange={needsChange}
                 submissionMessage={submissionMessage}
                 isPending={isPending}
@@ -1145,6 +1200,7 @@ const CheckoutForm = ({
   missingMinimumAmount,
   availablePaymentMethods,
   selectedPaymentMethod,
+  pickupAddressLabel,
   needsChange,
   submissionMessage,
   isPending,
@@ -1217,6 +1273,7 @@ const CheckoutForm = ({
         availableFor: DigitalMenuSubmitInput['orderType'][]
       }
     | undefined
+  pickupAddressLabel: string | null
   needsChange: boolean
   submissionMessage: string | null
   isPending: boolean
@@ -1458,6 +1515,11 @@ const CheckoutForm = ({
         <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
           Seu pedido sera retirado no balcao. A loja informara o preparo pelo
           acompanhamento do pedido.
+          {pickupAddressLabel && (
+            <p className="mt-2 font-medium text-foreground">
+              Retirada em: {pickupAddressLabel}
+            </p>
+          )}
         </div>
       )}
 

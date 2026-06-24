@@ -49,7 +49,16 @@ export type DigitalMenuStore = {
 }
 
 export type DigitalMenuSettings = {
+  logoImageUrl: string | null
+  bannerImageUrl: string | null
   whatsappPhone: string | null
+  pickupAddress: {
+    street: string | null
+    number: string | null
+    district: string | null
+    city: string | null
+    stateCode: string | null
+  } | null
   isDigitalMenuEnabled: boolean
   isAcceptingOrders: boolean
   operationalStatus: 'OPEN' | 'CLOSED' | 'PAUSED' | 'TAKEOUT_ONLY' | 'DELIVERY_ONLY'

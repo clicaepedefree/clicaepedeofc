@@ -7,9 +7,11 @@ import {
   getStoreOperationConfiguration,
   saveStoreBusinessHour,
   saveStoreOperationSettings,
+  saveStorePublicProfile,
   saveStoreSpecialHour,
   type StoreBusinessHourInput,
   type StoreOperationSettingsInput,
+  type StorePublicProfileInput,
   type StoreSpecialHourInput,
 } from '@/features/store/operation-api'
 import { selectedStoreIdAtom } from '@/features/store/state'
@@ -44,6 +46,23 @@ export const useStoreOperationConfiguration = () => {
     },
     onError: () => {
       dispatchToast({ type: 'error', message: 'Não foi possível salvar o funcionamento.' })
+    },
+  })
+
+  const publicProfileMutation = useMutation({
+    mutationFn: (values: StorePublicProfileInput) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return saveStorePublicProfile(selectedStoreId, values)
+    },
+    onSuccess: () => {
+      dispatchToast({ type: 'success', message: 'Identidade publica salva.' })
+      invalidate()
+    },
+    onError: () => {
+      dispatchToast({
+        type: 'error',
+        message: 'Nao foi possivel salvar a identidade publica.',
+      })
     },
   })
 
@@ -107,11 +126,13 @@ export const useStoreOperationConfiguration = () => {
     selectedStoreId,
     ...query,
     saveSettings: settingsMutation.mutate,
+    savePublicProfile: publicProfileMutation.mutate,
     saveBusinessHour: businessHourMutation.mutate,
     saveSpecialHour: specialHourMutation.mutate,
     deleteBusinessHour: deleteBusinessHourMutation.mutate,
     deleteSpecialHour: deleteSpecialHourMutation.mutate,
     isSavingSettings: settingsMutation.isPending,
+    isSavingPublicProfile: publicProfileMutation.isPending,
     isSavingBusinessHour: businessHourMutation.isPending,
     isSavingSpecialHour: specialHourMutation.isPending,
     isDeletingBusinessHour: deleteBusinessHourMutation.isPending,

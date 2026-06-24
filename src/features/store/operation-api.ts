@@ -3,11 +3,14 @@
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 import {
+  storeFilesTable,
+  storesTable,
   storeBusinessHoursTable,
   storeDigitalMenuSettingsTable,
   storeSpecialHoursTable,
 } from '@/services/db/schema'
 import { and, asc, eq } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 
 const timeSchema = z
@@ -31,6 +34,21 @@ const operationSettingsSchema = z.object({
   scheduleMinLeadMinutes: z.coerce.number().int().min(0).max(10080),
   scheduleMaxDaysAhead: z.coerce.number().int().min(0).max(90),
   allowItemObservations: z.boolean(),
+})
+
+const publicProfileSchema = z.object({
+  storeName: z.string().trim().min(2).max(120),
+  whatsappPhone: z
+    .string()
+    .trim()
+    .max(30)
+    .optional()
+    .nullable()
+    .refine(value => !value || value.replace(/\D/g, '').length >= 10, {
+      message: 'Informe um WhatsApp valido com DDD.',
+    }),
+  logoFileId: z.number().int().positive().optional().nullable(),
+  bannerFileId: z.number().int().positive().optional().nullable(),
 })
 
 const businessHourSchema = z
@@ -77,14 +95,23 @@ const specialHourSchema = z
   })
 
 export type StoreOperationSettingsInput = z.input<typeof operationSettingsSchema>
+export type StorePublicProfileInput = z.input<typeof publicProfileSchema>
 export type StoreBusinessHourInput = z.input<typeof businessHourSchema>
 export type StoreSpecialHourInput = z.input<typeof specialHourSchema>
 
 export const getStoreOperationConfiguration = async (storeId: number) => {
   await validateUserPermissionsForStore(storeId, 'admin')
+  const logoFilesTable = alias(storeFilesTable, 'digitalMenuLogoFiles')
+  const bannerFilesTable = alias(storeFilesTable, 'digitalMenuBannerFiles')
 
   const [settings] = await db
     .select({
+      storeName: storesTable.name,
+      whatsappPhone: storeDigitalMenuSettingsTable.whatsappPhone,
+      logoFileId: storeDigitalMenuSettingsTable.logoFileId,
+      bannerFileId: storeDigitalMenuSettingsTable.bannerFileId,
+      logoUrl: logoFilesTable.url,
+      bannerUrl: bannerFilesTable.url,
       isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
       isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
       operationalStatus: storeDigitalMenuSettingsTable.operationalStatus,
@@ -98,8 +125,31 @@ export const getStoreOperationConfiguration = async (storeId: number) => {
       allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
+    .innerJoin(storesTable, eq(storesTable.id, storeDigitalMenuSettingsTable.storeId))
+    .leftJoin(
+      logoFilesTable,
+      and(
+        eq(logoFilesTable.id, storeDigitalMenuSettingsTable.logoFileId),
+        eq(logoFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
+    .leftJoin(
+      bannerFilesTable,
+      and(
+        eq(bannerFilesTable.id, storeDigitalMenuSettingsTable.bannerFileId),
+        eq(bannerFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
     .limit(1)
+
+  const [store] = settings
+    ? [null]
+    : await db
+        .select({ storeName: storesTable.name })
+        .from(storesTable)
+        .where(eq(storesTable.id, storeId))
+        .limit(1)
 
   const businessHours = await db
     .select({
@@ -130,6 +180,12 @@ export const getStoreOperationConfiguration = async (storeId: number) => {
 
   return {
     settings: settings ?? {
+      storeName: store?.storeName ?? '',
+      whatsappPhone: null,
+      logoFileId: null,
+      bannerFileId: null,
+      logoUrl: null,
+      bannerUrl: null,
       isDigitalMenuEnabled: true,
       isAcceptingOrders: true,
       operationalStatus: 'OPEN' as const,
@@ -142,6 +198,67 @@ export const getStoreOperationConfiguration = async (storeId: number) => {
     },
     businessHours,
     specialHours,
+  }
+}
+
+const assertStoreFileBelongsToStore = async ({
+  fileId,
+  storeId,
+}: {
+  fileId: number | null | undefined
+  storeId: number
+}) => {
+  if (!fileId) return
+
+  const [file] = await db
+    .select({ id: storeFilesTable.id })
+    .from(storeFilesTable)
+    .where(and(eq(storeFilesTable.id, fileId), eq(storeFilesTable.storeId, storeId)))
+    .limit(1)
+
+  if (!file) throw new Error('Arquivo nao pertence a loja validada.')
+}
+
+export const saveStorePublicProfile = async (
+  storeId: number,
+  input: StorePublicProfileInput
+) => {
+  try {
+    await validateUserPermissionsForStore(storeId, 'admin')
+    const values = publicProfileSchema.parse(input)
+
+    await assertStoreFileBelongsToStore({ fileId: values.logoFileId, storeId })
+    await assertStoreFileBelongsToStore({ fileId: values.bannerFileId, storeId })
+
+    await db.transaction(async tx => {
+      await tx
+        .update(storesTable)
+        .set({ name: values.storeName })
+        .where(eq(storesTable.id, storeId))
+
+      await tx
+        .insert(storeDigitalMenuSettingsTable)
+        .values({
+          storeId,
+          whatsappPhone: values.whatsappPhone?.trim() || null,
+          logoFileId: values.logoFileId ?? null,
+          bannerFileId: values.bannerFileId ?? null,
+        })
+        .onConflictDoUpdate({
+          target: storeDigitalMenuSettingsTable.storeId,
+          set: {
+            whatsappPhone: values.whatsappPhone?.trim() || null,
+            logoFileId: values.logoFileId ?? null,
+            bannerFileId: values.bannerFileId ?? null,
+          },
+        })
+    })
+  } catch (error) {
+    console.error('[store-operation] Failed to save public profile', {
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
 }
 

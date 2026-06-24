@@ -4,6 +4,7 @@ import { useStoreOperationConfiguration } from '@/features/store/hooks/use-store
 import { Badge } from '@/shared/badge'
 import { SettingsCategoryBlock } from '@/shared/blocks/settings-category-block'
 import { Button } from '@/shared/button'
+import { SingleFileUploader } from '@/shared/file-upload'
 import { Input } from '@/shared/input'
 import { Switch } from '@/shared/switch'
 import {
@@ -14,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/shared/table'
-import { CalendarClock, Clock3, Power, Save, Trash2 } from 'lucide-react'
+import { CalendarClock, Clock3, ImageIcon, Phone, Power, Save, Trash2 } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 type OperationalStatus =
@@ -72,11 +73,13 @@ export const StoreOperationSettings = () => {
     data,
     isLoading,
     saveSettings,
+    savePublicProfile,
     saveBusinessHour,
     saveSpecialHour,
     deleteBusinessHour,
     deleteSpecialHour,
     isSavingSettings,
+    isSavingPublicProfile,
     isSavingBusinessHour,
     isSavingSpecialHour,
     isDeletingBusinessHour,
@@ -84,6 +87,10 @@ export const StoreOperationSettings = () => {
   } = useStoreOperationConfiguration()
 
   const [isDigitalMenuEnabled, setIsDigitalMenuEnabled] = useState(true)
+  const [storeName, setStoreName] = useState('')
+  const [whatsappPhone, setWhatsappPhone] = useState('')
+  const [logoFile, setLogoFile] = useState<{ id: number; url: string } | null>(null)
+  const [bannerFile, setBannerFile] = useState<{ id: number; url: string } | null>(null)
   const [isAcceptingOrders, setIsAcceptingOrders] = useState(true)
   const [operationalStatus, setOperationalStatus] =
     useState<OperationalStatus>('OPEN')
@@ -97,6 +104,18 @@ export const StoreOperationSettings = () => {
 
   useEffect(() => {
     if (!data?.settings) return
+    setStoreName(data.settings.storeName)
+    setWhatsappPhone(data.settings.whatsappPhone ?? '')
+    setLogoFile(
+      data.settings.logoFileId && data.settings.logoUrl
+        ? { id: data.settings.logoFileId, url: data.settings.logoUrl }
+        : null
+    )
+    setBannerFile(
+      data.settings.bannerFileId && data.settings.bannerUrl
+        ? { id: data.settings.bannerFileId, url: data.settings.bannerUrl }
+        : null
+    )
     setIsDigitalMenuEnabled(data.settings.isDigitalMenuEnabled)
     setIsAcceptingOrders(data.settings.isAcceptingOrders)
     setOperationalStatus(data.settings.operationalStatus as OperationalStatus)
@@ -143,6 +162,16 @@ export const StoreOperationSettings = () => {
     })
   }
 
+  const submitPublicProfile = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    savePublicProfile({
+      storeName,
+      whatsappPhone,
+      logoFileId: logoFile?.id ?? null,
+      bannerFileId: bannerFile?.id ?? null,
+    })
+  }
+
   const submitBusinessHour = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     saveBusinessHour({
@@ -168,6 +197,92 @@ export const StoreOperationSettings = () => {
 
   return (
     <div className="space-y-4">
+      <SettingsCategoryBlock title="Identidade publica do cardapio" contentClassName="grid-cols-1">
+        <form onSubmit={submitPublicProfile} className="space-y-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <ImageIcon className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold">Vitrine do cliente</h2>
+                <p className="text-sm text-muted-foreground">
+                  Nome, contato e imagens usados no cardapio publico da loja.
+                </p>
+              </div>
+            </div>
+            <Button className="self-start" type="submit" isLoading={isSavingPublicProfile}>
+              <Save className="size-4" />
+              Salvar identidade
+            </Button>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <label className="space-y-1 text-sm font-medium">
+              Nome da loja
+              <Input
+                value={storeName}
+                onChange={event => setStoreName(event.target.value)}
+                placeholder="Ex: Clica e Pede Restaurante"
+                required
+              />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              WhatsApp do cardapio
+              <div className="relative">
+                <Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  value={whatsappPhone}
+                  onChange={event => setWhatsappPhone(event.target.value)}
+                  placeholder="Ex: 11999999999"
+                  inputMode="tel"
+                />
+              </div>
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+            <div>
+              <p className="mb-2 text-sm font-medium">Logo</p>
+              <SingleFileUploader
+                storeId={selectedStoreId}
+                fileUrl={logoFile?.url}
+                fileTag="digital-menu-logo"
+                onFileUploaded={file =>
+                  setLogoFile({
+                    id: file.serverData.id,
+                    url: file.serverData.url,
+                  })
+                }
+                onFileDeleted={() => setLogoFile(null)}
+                enableCropper
+                cropperAspectRatio={1}
+                className="m-0 min-h-48"
+              />
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium">Banner</p>
+              <SingleFileUploader
+                storeId={selectedStoreId}
+                fileUrl={bannerFile?.url}
+                fileTag="digital-menu-banner"
+                onFileUploaded={file =>
+                  setBannerFile({
+                    id: file.serverData.id,
+                    url: file.serverData.url,
+                  })
+                }
+                onFileDeleted={() => setBannerFile(null)}
+                enableCropper
+                cropperAspectRatio={16 / 7}
+                className="m-0 min-h-48"
+              />
+            </div>
+          </div>
+        </form>
+      </SettingsCategoryBlock>
+
       <SettingsCategoryBlock title="Funcionamento do cardapio digital" contentClassName="grid-cols-1">
         <form onSubmit={submitSettings} className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

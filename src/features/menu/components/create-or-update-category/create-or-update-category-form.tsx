@@ -9,6 +9,7 @@ import { SingleFileUploader } from '@/shared/file-upload'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
+import { Switch } from '@/shared/switch'
 import { Textarea } from '@/shared/textarea'
 import { useForm, useStore } from '@tanstack/react-form'
 import { useAtom } from 'jotai'
@@ -162,6 +163,22 @@ export const CreateOrUpdateCategoryForm = ({
                   onBlur={field.handleBlur}
                   onChange={e => field.handleChange(e.target.value)}
                   error={field.state.meta.errors[0]?.message}
+                />
+              </Label>
+            )}
+          </form.Field>
+          <form.Field name="isAvailable">
+            {field => (
+              <Label className="flex flex-row items-center justify-between rounded-lg border bg-card px-3 py-2">
+                <span>
+                  Categoria ativa
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Categorias inativas nao aparecem no cardapio publico.
+                  </span>
+                </span>
+                <Switch
+                  checked={field.state.value}
+                  onCheckedChange={checked => field.handleChange(checked)}
                 />
               </Label>
             )}

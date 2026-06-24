@@ -18,6 +18,9 @@ export const storeDigitalMenuSettingsTable = pgTable('store_digital_menu_setting
   logoFileId: integer('logo_file_id').references(() => storeFilesTable.id, {
     onDelete: 'set null',
   }),
+  bannerFileId: integer('banner_file_id').references(() => storeFilesTable.id, {
+    onDelete: 'set null',
+  }),
   whatsappPhone: text('whatsapp_phone'),
   isDigitalMenuEnabled: boolean('is_digital_menu_enabled').notNull().default(true),
   isAcceptingOrders: boolean('is_accepting_orders').notNull().default(true),
