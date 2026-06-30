@@ -148,6 +148,9 @@ export type DigitalMenuSubmitInput = {
   idempotencyKey: string
   customerName: string
   customerPhone: string
+  customerDocument?: string
+  orderNotes?: string
+  termsAccepted: boolean
   orderType: 'DELIVERY' | 'TAKEOUT'
   scheduledFor?: string
   address?: {
@@ -155,6 +158,7 @@ export type DigitalMenuSubmitInput = {
     street?: string
     number?: string
     neighborhood?: string
+    complement?: string
     reference?: string
     latitude?: number
     longitude?: number
@@ -169,6 +173,7 @@ export type DigitalMenuSubmitInput = {
       | 'FOOD_VOUCHER'
       | 'ONLINE'
     changeFor?: string
+    needsChange?: boolean
   }
   items: DigitalMenuCartItemInput[]
 }

@@ -44,8 +44,10 @@ export const ordersTable = pgTable(
     customerName: text('customer_name'),
     customerPhone: text('customer_phone'),
     customerDocument: text('customer_document'),
+    orderNotes: text('order_notes'),
     deliveryAddress: text('delivery_address'),
     deliveryAddressReference: text('delivery_address_reference'),
+    deliveryAddressComplement: text('delivery_address_complement'),
     deliveryNeighborhood: text('delivery_neighborhood'),
     deliveryFee: numeric('delivery_fee', { precision: 19, scale: 4 }),
     deliveryZoneId: integer('delivery_zone_id').references(

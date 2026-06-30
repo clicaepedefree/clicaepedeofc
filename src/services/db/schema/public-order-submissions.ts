@@ -55,6 +55,7 @@ export const publicOrderSubmissionsTable = pgTable(
     customerSnapshot: jsonb('customer_snapshot').notNull(),
     addressSnapshot: jsonb('address_snapshot'),
     paymentSnapshot: jsonb('payment_snapshot').notNull(),
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     validationErrors: jsonb('validation_errors'),
     trackingTokenHash: text('tracking_token_hash'),
     scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
