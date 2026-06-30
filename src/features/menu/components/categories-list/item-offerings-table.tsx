@@ -25,7 +25,7 @@ import { Badge } from '@/shared/badge'
 import { Body } from '@/shared/typography/body'
 import { LargeText } from '@/shared/typography/large-text'
 import { SmallText } from '@/shared/typography/small-text'
-import { Edit, ListChecks } from 'lucide-react'
+import { Copy, Edit, ListChecks } from 'lucide-react'
 import { useTextTruncated } from '@/shared/hooks/use-text-truncated'
 import { useItem } from '../../hooks/use-item'
 import { BaseCategory, ItemOfferingWithImage } from '../../types'
@@ -96,7 +96,9 @@ const ItemOfferingRow = ({
 }) => {
   const {
     deleteItem,
+    duplicateItem,
     isDeleting,
+    isDuplicatingItem,
     updateItemOfferingAvailability,
     isUpdatingItemOfferingAvailability,
     onItemUpdated: onUpdateItem,
@@ -238,6 +240,18 @@ const ItemOfferingRow = ({
               onItemUpdated?.()
             }}
           />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="group/duplicate"
+            disabled={isDeleting || isDuplicatingItem}
+            onClick={() => duplicateItem(item, { onSuccess: onItemUpdated })}
+          >
+            <Copy
+              size={16}
+              className={cn('group-hover/duplicate:text-primary')}
+            />
+          </Button>
           <DeleteResourceConfirmationModal
             trigger={<DeleteButton isDeleting={isDeleting} />}
             resource="item"

@@ -18,6 +18,7 @@ import {
   publicOrderEventsTable,
   publicOrderSubmissionsTable,
   storeBusinessHoursTable,
+  storeCompanyProfilesTable,
   storeDeliveryZonesTable,
   storeDigitalMenuSettingsTable,
   storeFilesTable,
@@ -28,6 +29,7 @@ import {
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash } from 'node:crypto'
 import {
@@ -53,7 +55,15 @@ import {
 } from './validation'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
+  logoImageUrl: null,
+  bannerImageUrl: null,
   whatsappPhone: null,
+  pickupAddress: null,
+  pickupStreet: null,
+  pickupNumber: null,
+  pickupDistrict: null,
+  pickupCity: null,
+  pickupStateCode: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
   manualPauseReason: null,
@@ -67,29 +77,6 @@ const DEFAULT_DIGITAL_MENU_SETTINGS = {
   scheduleMaxDaysAhead: 7,
   allowItemObservations: true,
 }
-
-const DEFAULT_PAYMENT_METHODS: DigitalMenuPaymentMethod[] = [
-  {
-    method: 'PIX',
-    label: 'Pix',
-    instructions: null,
-    proofInstructions: 'Envie o comprovante pelo WhatsApp da loja.',
-    pixKey: null,
-    integrationProvider: null,
-    requiresChangeFor: false,
-    availableFor: ['DELIVERY', 'TAKEOUT'],
-  },
-  {
-    method: 'CASH',
-    label: 'Dinheiro',
-    instructions: null,
-    proofInstructions: null,
-    pixKey: null,
-    integrationProvider: null,
-    requiresChangeFor: true,
-    availableFor: ['DELIVERY', 'TAKEOUT'],
-  },
-]
 
 const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> = {
   CASH: 'Dinheiro',
@@ -134,9 +121,19 @@ const getUnavailableReason = (status: string, statusReason: string | null) => {
 }
 
 const getDigitalMenuSettings = async (storeId: number) => {
+  const logoFilesTable = alias(storeFilesTable, 'digitalMenuLogoFiles')
+  const bannerFilesTable = alias(storeFilesTable, 'digitalMenuBannerFiles')
+
   const [settings] = await db
     .select({
+      logoImageUrl: logoFilesTable.url,
+      bannerImageUrl: bannerFilesTable.url,
       whatsappPhone: storeDigitalMenuSettingsTable.whatsappPhone,
+      pickupStreet: storeCompanyProfilesTable.street,
+      pickupNumber: storeCompanyProfilesTable.number,
+      pickupDistrict: storeCompanyProfilesTable.district,
+      pickupCity: storeCompanyProfilesTable.city,
+      pickupStateCode: storeCompanyProfilesTable.stateCode,
       isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
       isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
       operationalStatus: storeDigitalMenuSettingsTable.operationalStatus,
@@ -154,16 +151,68 @@ const getDigitalMenuSettings = async (storeId: number) => {
       allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
+    .leftJoin(
+      logoFilesTable,
+      and(
+        eq(logoFilesTable.id, storeDigitalMenuSettingsTable.logoFileId),
+        eq(logoFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
+    .leftJoin(
+      bannerFilesTable,
+      and(
+        eq(bannerFilesTable.id, storeDigitalMenuSettingsTable.bannerFileId),
+        eq(bannerFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
+      )
+    )
+    .leftJoin(storeCompanyProfilesTable, eq(storeCompanyProfilesTable.storeId, storeDigitalMenuSettingsTable.storeId))
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
     .limit(1)
 
-  return settings ?? DEFAULT_DIGITAL_MENU_SETTINGS
+  if (settings) return settings
+
+  const [pickupProfile] = await db
+    .select({
+      pickupStreet: storeCompanyProfilesTable.street,
+      pickupNumber: storeCompanyProfilesTable.number,
+      pickupDistrict: storeCompanyProfilesTable.district,
+      pickupCity: storeCompanyProfilesTable.city,
+      pickupStateCode: storeCompanyProfilesTable.stateCode,
+    })
+    .from(storeCompanyProfilesTable)
+    .where(eq(storeCompanyProfilesTable.storeId, storeId))
+    .limit(1)
+
+  return {
+    ...DEFAULT_DIGITAL_MENU_SETTINGS,
+    pickupStreet: pickupProfile?.pickupStreet ?? null,
+    pickupNumber: pickupProfile?.pickupNumber ?? null,
+    pickupDistrict: pickupProfile?.pickupDistrict ?? null,
+    pickupCity: pickupProfile?.pickupCity ?? null,
+    pickupStateCode: pickupProfile?.pickupStateCode ?? null,
+  }
 }
 
 const toPublicSettings = (
   settings: Awaited<ReturnType<typeof getDigitalMenuSettings>>
 ): DigitalMenuSettings => ({
+  logoImageUrl: settings.logoImageUrl,
+  bannerImageUrl: settings.bannerImageUrl,
   whatsappPhone: settings.whatsappPhone,
+  pickupAddress:
+    settings.pickupStreet ||
+    settings.pickupNumber ||
+    settings.pickupDistrict ||
+    settings.pickupCity ||
+    settings.pickupStateCode
+      ? {
+          street: settings.pickupStreet,
+          number: settings.pickupNumber,
+          district: settings.pickupDistrict,
+          city: settings.pickupCity,
+          stateCode: settings.pickupStateCode,
+        }
+      : null,
   isDigitalMenuEnabled: settings.isDigitalMenuEnabled,
   isAcceptingOrders: settings.isAcceptingOrders,
   operationalStatus: settings.operationalStatus,
@@ -199,7 +248,7 @@ const getPaymentMethodsForPublicMenu = async (storeId: number) => {
     )
     .orderBy(asc(storePaymentMethodsTable.method))
 
-  if (methods.length === 0) return DEFAULT_PAYMENT_METHODS
+  if (methods.length === 0) return []
 
   return methods
     .filter(method => method.isActive && (method.allowDelivery || method.allowTakeout))
@@ -387,7 +436,7 @@ export const getDigitalMenuBySlug = async (
           statusLabel: 'Indisponivel',
         },
       },
-      paymentMethods: DEFAULT_PAYMENT_METHODS,
+      paymentMethods: [],
       deliveryZones: [],
       categories: [],
       unavailableReason,
@@ -691,6 +740,13 @@ export const submitDigitalMenuOrder = async (
       ? normalizeOptionalMoney(payload.payment.changeFor)
       : null
 
+  if (payload.payment.changeFor && !normalizedChangeFor) {
+    return {
+      ok: false,
+      message: 'Informe um valor valido para o troco.',
+    }
+  }
+
   if (
     normalizedChangeFor &&
     new Decimal(normalizedChangeFor).lessThanOrEqualTo(validatedCart.total)
@@ -707,6 +763,9 @@ export const submitDigitalMenuOrder = async (
     storeSlug: payload.storeSlug,
     customerName: payload.customerName,
     customerPhone: payload.customerPhone,
+    customerDocument: payload.customerDocument ?? null,
+    orderNotes: payload.orderNotes ?? null,
+    termsAccepted: payload.termsAccepted,
     orderType: payload.orderType,
     scheduledFor: payload.scheduledFor ?? null,
     address: payload.address ?? null,
@@ -720,6 +779,7 @@ export const submitDigitalMenuOrder = async (
           number: sanitizePublicText(payload.address?.number, 30),
           postalCode: sanitizePublicText(payload.address?.postalCode, 16),
           neighborhood: sanitizePublicText(payload.address?.neighborhood, 120),
+          complement: sanitizePublicText(payload.address?.complement, 120),
           reference: sanitizePublicText(payload.address?.reference, 180),
           latitude: payload.address?.latitude ?? null,
           longitude: payload.address?.longitude ?? null,
@@ -790,6 +850,8 @@ export const submitDigitalMenuOrder = async (
             name: payload.customerName,
             phone: payload.customerPhone,
             phoneLast4: payload.customerPhone.slice(-4),
+            document: payload.customerDocument || null,
+            orderNotes: payload.orderNotes || null,
           },
           addressSnapshot,
           paymentSnapshot: {
@@ -812,6 +874,7 @@ export const submitDigitalMenuOrder = async (
                 ) ?? null,
           storeSettingsSnapshot: currentPublicSettings,
           businessHoursSnapshot: orderAvailability,
+          termsAcceptedAt: submittedAt,
           scheduledFor,
           submittedAt,
           technicalAckAt: submittedAt,
@@ -830,15 +893,16 @@ export const submitDigitalMenuOrder = async (
         dbSession: tx,
       })
 
-      const [street, number, neighborhood, reference] =
+      const [street, number, neighborhood, complement, reference] =
         payload.orderType === 'DELIVERY'
           ? [
               addressSnapshot?.street,
               addressSnapshot?.number,
               addressSnapshot?.neighborhood,
+              addressSnapshot?.complement,
               addressSnapshot?.reference,
             ]
-          : [null, null, null, null]
+          : [null, null, null, null, null]
 
       const createdOrder = await createOrderOnDb({
         newOrder: {
@@ -850,9 +914,12 @@ export const submitDigitalMenuOrder = async (
           totalPrice: validatedCart.total,
           customerName: payload.customerName,
           customerPhone: payload.customerPhone,
+          customerDocument: payload.customerDocument || null,
+          orderNotes: payload.orderNotes || null,
           deliveryAddress:
             street && number ? `${street}, ${number}` : street ?? null,
           deliveryAddressReference: reference ?? null,
+          deliveryAddressComplement: complement ?? null,
           deliveryNeighborhood: neighborhood ?? null,
           deliveryFee: validatedCart.deliveryFee,
           deliveryZoneId: validatedCart.deliveryZoneId,
@@ -878,6 +945,11 @@ export const submitDigitalMenuOrder = async (
             },
             deliveryZoneId: validatedCart.deliveryZoneId,
             deliveryEstimatedMinutes: validatedCart.deliveryEstimatedMinutes,
+            customer: {
+              document: payload.customerDocument || null,
+              orderNotes: payload.orderNotes || null,
+              termsAcceptedAt: submittedAt.toISOString(),
+            },
           },
           technicalAckAt: submittedAt,
         },
@@ -987,10 +1059,35 @@ export const submitDigitalMenuOrder = async (
         'public_order_submissions_store_id_idempotency_key_unique'
       )
     ) {
+      const existing = await db.query.publicOrderSubmissionsTable.findFirst({
+        where: and(
+          eq(publicOrderSubmissionsTable.storeId, menu.store.id),
+          eq(publicOrderSubmissionsTable.idempotencyKey, payload.idempotencyKey)
+        ),
+        columns: {
+          id: true,
+          requestId: true,
+          requestHash: true,
+          status: true,
+          totalsSnapshot: true,
+        },
+      })
+
+      if (existing?.requestHash === requestHash) {
+        const totals = existing.totalsSnapshot as { total?: string }
+        return {
+          ok: true,
+          publicOrderId: existing.id,
+          requestId: existing.requestId,
+          status: existing.status,
+          total: totals.total ?? validatedCart.total,
+          reused: true,
+        }
+      }
+
       return {
         ok: false,
-        message:
-          'Este pedido ja foi recebido. Atualize a pagina antes de tentar novamente.',
+        message: 'Este identificador de pedido ja foi usado com outros dados.',
       }
     }
 

@@ -49,7 +49,16 @@ export type DigitalMenuStore = {
 }
 
 export type DigitalMenuSettings = {
+  logoImageUrl: string | null
+  bannerImageUrl: string | null
   whatsappPhone: string | null
+  pickupAddress: {
+    street: string | null
+    number: string | null
+    district: string | null
+    city: string | null
+    stateCode: string | null
+  } | null
   isDigitalMenuEnabled: boolean
   isAcceptingOrders: boolean
   operationalStatus: 'OPEN' | 'CLOSED' | 'PAUSED' | 'TAKEOUT_ONLY' | 'DELIVERY_ONLY'
@@ -139,6 +148,9 @@ export type DigitalMenuSubmitInput = {
   idempotencyKey: string
   customerName: string
   customerPhone: string
+  customerDocument?: string
+  orderNotes?: string
+  termsAccepted: boolean
   orderType: 'DELIVERY' | 'TAKEOUT'
   scheduledFor?: string
   address?: {
@@ -146,6 +158,7 @@ export type DigitalMenuSubmitInput = {
     street?: string
     number?: string
     neighborhood?: string
+    complement?: string
     reference?: string
     latitude?: number
     longitude?: number
@@ -160,6 +173,7 @@ export type DigitalMenuSubmitInput = {
       | 'FOOD_VOUCHER'
       | 'ONLINE'
     changeFor?: string
+    needsChange?: boolean
   }
   items: DigitalMenuCartItemInput[]
 }

@@ -2,7 +2,7 @@ import { selectedStoreIdAtom } from '@/features/store/state'
 import { dispatchToast } from '@/shared/lib/toast'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
-import { deleteItem, updateItemOfferingAvailability } from '../api'
+import { deleteItem, duplicateItem, updateItemOfferingAvailability } from '../api'
 import { categoriesCacheKey, menuCacheKey } from '../cache-keys'
 import {
   CategoryWithImage,
@@ -113,6 +113,43 @@ export const useItem = () => {
     },
   })
 
+  const duplicateItemMutation = useMutation({
+    mutationFn: (item: ItemOfferingWithImage) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+
+      return duplicateItem({
+        itemId: item.id,
+        itemOfferingId: item.itemOfferingId,
+        storeId: selectedStoreId,
+      })
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
+    },
+    onError: (_, item) => {
+      dispatchToast({
+        message: `Erro ao duplicar item '${item.name}'`,
+        type: 'error',
+      })
+    },
+    onSuccess: (_, item) => {
+      dispatchToast({
+        message: `Item '${item.name}' duplicado`,
+        type: 'success',
+      })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: categoriesCacheKey(selectedStoreId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: menuCacheKey(selectedStoreId),
+      })
+    },
+  })
+
   const onItemUpdated = (item: Item) => {
     queryClient.invalidateQueries({
       queryKey: categoriesCacheKey(selectedStoreId),
@@ -128,8 +165,10 @@ export const useItem = () => {
     isDeleting: deleteItemMutation.isPending,
     updateItemOfferingAvailability:
       updateItemOfferingAvailabilityMutation.mutate,
+    duplicateItem: duplicateItemMutation.mutate,
     isUpdatingItemOfferingAvailability:
       updateItemOfferingAvailabilityMutation.isPending,
+    isDuplicatingItem: duplicateItemMutation.isPending,
     onItemUpdated,
   }
 }

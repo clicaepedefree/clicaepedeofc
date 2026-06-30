@@ -2,6 +2,7 @@
 
 import { submitDigitalMenuOrder } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
+import { isValidCpf } from '@/features/digital-menu/validation'
 import {
   DigitalMenuCategory,
   DigitalMenuAvailability,
@@ -111,6 +112,18 @@ const normalizeSearchText = (value: string) =>
 const isItemUnavailable = (item: DigitalMenuItem) =>
   item.inventory !== null && item.inventory <= 0
 
+const formatPickupAddress = (address: DigitalMenuData['settings']['pickupAddress']) => {
+  if (!address) return null
+
+  return [
+    [address.street, address.number].filter(Boolean).join(', '),
+    address.district,
+    [address.city, address.stateCode].filter(Boolean).join(' - '),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     menu.categories[0]?.id
@@ -128,11 +141,15 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   const [checkoutStep, setCheckoutStep] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [customerDocument, setCustomerDocument] = useState('')
+  const [orderNotes, setOrderNotes] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [street, setStreet] = useState('')
   const [number, setNumber] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
+  const [complement, setComplement] = useState('')
   const [reference, setReference] = useState('')
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [customerLatitude, setCustomerLatitude] = useState<number | undefined>()
   const [customerLongitude, setCustomerLongitude] = useState<number | undefined>()
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
@@ -185,8 +202,9 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         deliveryFee: 0,
         minimumOrderAmount: Number(menu.settings.minimumOrderAmount),
         estimatedDeliveryMinutes: menu.settings.averagePreparationMinutes,
-        isAddressCovered: true,
-        coverageMessage: null as string | null,
+        isAddressCovered: false,
+        coverageMessage:
+          'Entrega indisponivel no momento. Escolha retirada para continuar.',
         zoneName: null as string | null,
       }
     }
@@ -323,6 +341,11 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   )
   const hasDiscoveryFilter =
     normalizeSearchText(searchTerm).length > 0 || activeFilter !== 'ALL'
+  const whatsappDigits = menu.settings.whatsappPhone?.replace(/\D/g, '') ?? ''
+  const whatsappContactUrl = whatsappDigits.length >= 10
+    ? `https://wa.me/${whatsappDigits}`
+    : null
+  const pickupAddressLabel = formatPickupAddress(menu.settings.pickupAddress)
 
   useEffect(() => {
     if (availablePaymentMethods.some(method => method.method === paymentMethod)) {
@@ -498,6 +521,9 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
       idempotencyKey,
       customerName,
       customerPhone,
+      customerDocument: customerDocument || undefined,
+      orderNotes: orderNotes || undefined,
+      termsAccepted,
       orderType,
       address:
         orderType === 'DELIVERY'
@@ -506,6 +532,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
               street,
               number,
               neighborhood,
+              complement: complement || undefined,
               reference,
               latitude: customerLatitude,
               longitude: customerLongitude,
@@ -513,6 +540,7 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
           : undefined,
       payment: {
         method: paymentMethod,
+        needsChange: paymentMethod === 'CASH' && needsChange,
         changeFor:
           paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
       },
@@ -553,10 +581,33 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
   return (
     <main className="min-h-dvh bg-background text-foreground">
       <header className="border-b bg-card/80 backdrop-blur">
+        {menu.settings.bannerImageUrl && (
+          <div className="relative h-36 w-full overflow-hidden bg-muted sm:h-48">
+            <Image
+              src={menu.settings.bannerImageUrl}
+              alt={`Banner de ${menu.store.name}`}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-background/10 to-transparent" />
+          </div>
+        )}
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Store className="size-5" />
+            <div className="relative flex size-12 items-center justify-center overflow-hidden rounded-xl border bg-primary/10 text-primary shadow-sm">
+              {menu.settings.logoImageUrl ? (
+                <Image
+                  src={menu.settings.logoImageUrl}
+                  alt={`Logo de ${menu.store.name}`}
+                  fill
+                  sizes="48px"
+                  className="object-cover"
+                />
+              ) : (
+                <Store className="size-5" />
+              )}
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
@@ -568,6 +619,13 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
           <Badge className="border-primary/20 bg-primary/10 text-primary">
             <Clock3 className="size-3" /> {menu.settings.averagePreparationMinutes} min
           </Badge>
+          {whatsappContactUrl && (
+            <Button asChild variant="outline" size="sm">
+              <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
+                WhatsApp
+              </a>
+            </Button>
+          )}
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-4">
           <Badge
@@ -860,16 +918,27 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 <p className="mt-1 font-semibold">
                   Total: {currency(orderConfirmation.total)}
                 </p>
+                {whatsappContactUrl && (
+                  <Button asChild className="mt-4" variant="outline">
+                    <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
+                      Falar com a loja
+                    </a>
+                  </Button>
+                )}
               </div>
             ) : checkoutStep ? (
               <CheckoutForm
                 customerName={customerName}
                 customerPhone={customerPhone}
+                customerDocument={customerDocument}
+                orderNotes={orderNotes}
                 postalCode={postalCode}
                 street={street}
                 number={number}
                 neighborhood={neighborhood}
+                complement={complement}
                 reference={reference}
+                termsAccepted={termsAccepted}
                 locationMessage={locationMessage}
                 showLocationButton={menu.deliveryZones.some(zone => zone.type === 'RADIUS')}
                 paymentMethod={paymentMethod}
@@ -887,18 +956,25 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 missingMinimumAmount={missingMinimumAmount}
                 availablePaymentMethods={availablePaymentMethods}
                 selectedPaymentMethod={selectedPaymentMethod}
+                pickupAddressLabel={pickupAddressLabel}
+                cart={cart}
                 needsChange={needsChange}
                 submissionMessage={submissionMessage}
                 isPending={isPending}
+                deliveryAvailable={menu.deliveryZones.length > 0}
                 onBack={() => setCheckoutStep(false)}
                 onSubmit={submitOrder}
                 setCustomerName={setCustomerName}
                 setCustomerPhone={setCustomerPhone}
+                setCustomerDocument={setCustomerDocument}
+                setOrderNotes={setOrderNotes}
                 setPostalCode={setPostalCode}
                 setStreet={setStreet}
                 setNumber={setNumber}
                 setNeighborhood={setNeighborhood}
+                setComplement={setComplement}
                 setReference={setReference}
+                setTermsAccepted={setTermsAccepted}
                 setCustomerLatitude={setCustomerLatitude}
                 setCustomerLongitude={setCustomerLongitude}
                 setLocationMessage={setLocationMessage}
@@ -1123,11 +1199,15 @@ const CategorySection = ({
 const CheckoutForm = ({
   customerName,
   customerPhone,
+  customerDocument,
+  orderNotes,
   postalCode,
   street,
   number,
   neighborhood,
+  complement,
   reference,
+  termsAccepted,
   locationMessage,
   showLocationButton,
   paymentMethod,
@@ -1145,18 +1225,25 @@ const CheckoutForm = ({
   missingMinimumAmount,
   availablePaymentMethods,
   selectedPaymentMethod,
+  pickupAddressLabel,
+  cart,
   needsChange,
   submissionMessage,
   isPending,
+  deliveryAvailable,
   onBack,
   onSubmit,
   setCustomerName,
   setCustomerPhone,
+  setCustomerDocument,
+  setOrderNotes,
   setPostalCode,
   setStreet,
   setNumber,
   setNeighborhood,
+  setComplement,
   setReference,
+  setTermsAccepted,
   setCustomerLatitude,
   setCustomerLongitude,
   setLocationMessage,
@@ -1168,11 +1255,15 @@ const CheckoutForm = ({
 }: {
   customerName: string
   customerPhone: string
+  customerDocument: string
+  orderNotes: string
   postalCode: string
   street: string
   number: string
   neighborhood: string
+  complement: string
   reference: string
+  termsAccepted: boolean
   locationMessage: string | null
   showLocationButton: boolean
   paymentMethod: DigitalMenuSubmitInput['payment']['method']
@@ -1217,18 +1308,25 @@ const CheckoutForm = ({
         availableFor: DigitalMenuSubmitInput['orderType'][]
       }
     | undefined
+  pickupAddressLabel: string | null
+  cart: CartItem[]
   needsChange: boolean
   submissionMessage: string | null
   isPending: boolean
+  deliveryAvailable: boolean
   onBack: () => void
   onSubmit: () => void
   setCustomerName: (value: string) => void
   setCustomerPhone: (value: string) => void
+  setCustomerDocument: (value: string) => void
+  setOrderNotes: (value: string) => void
   setPostalCode: (value: string) => void
   setStreet: (value: string) => void
   setNumber: (value: string) => void
   setNeighborhood: (value: string) => void
+  setComplement: (value: string) => void
   setReference: (value: string) => void
+  setTermsAccepted: (value: boolean) => void
   setCustomerLatitude: (value: number | undefined) => void
   setCustomerLongitude: (value: number | undefined) => void
   setLocationMessage: (value: string | null) => void
@@ -1238,6 +1336,7 @@ const CheckoutForm = ({
   setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
   setScheduledFor: (value: string) => void
 }) => {
+  const [validationAttempted, setValidationAttempted] = useState(false)
   const now = new Date()
   const minScheduledDate = new Date(
     now.getTime() + scheduleMinLeadMinutes * 60 * 1000
@@ -1248,11 +1347,60 @@ const CheckoutForm = ({
   const canCheckoutNow = availability.isOpen
   const canCheckoutScheduled =
     allowScheduledOrders && availability.canSchedule && !!scheduledFor
-  const canSubmitOrder =
+  const phoneDigits = customerPhone.replace(/\D/g, '')
+  const postalCodeDigits = postalCode.replace(/\D/g, '')
+  const documentDigits = customerDocument.replace(/\D/g, '')
+  const fieldErrors = {
+    customerName:
+      customerName.trim().length < 2 ? 'Informe seu nome completo.' : null,
+    customerPhone:
+      phoneDigits.length < 10 || phoneDigits.length > 11
+        ? 'Informe um WhatsApp com DDD.'
+        : null,
+    customerDocument:
+      documentDigits.length > 0 && !isValidCpf(documentDigits)
+        ? 'Informe um CPF valido.'
+        : null,
+    postalCode:
+      orderType === 'DELIVERY' && postalCodeDigits.length !== 8
+        ? 'Informe um CEP com 8 numeros.'
+        : null,
+    street:
+      orderType === 'DELIVERY' && !street.trim() ? 'Informe a rua.' : null,
+    number:
+      orderType === 'DELIVERY' && !number.trim() ? 'Informe o numero.' : null,
+    neighborhood:
+      orderType === 'DELIVERY' && !neighborhood.trim()
+        ? 'Informe o bairro para calcular a zona de entrega.'
+        : null,
+    termsAccepted: !termsAccepted
+      ? 'Aceite os termos para enviar o pedido.'
+      : null,
+    changeFor:
+      paymentMethod === 'CASH' && needsChange && !changeFor.trim()
+        ? 'Informe o valor para o troco.'
+        : null,
+  }
+  const hasFieldErrors = Object.values(fieldErrors).some(Boolean)
+  const canAttemptOrder =
     (canCheckoutNow || canCheckoutScheduled) &&
+    (orderType === 'TAKEOUT' || deliveryAvailable) &&
     deliveryQuote.isAddressCovered &&
     missingMinimumAmount === 0 &&
     !!selectedPaymentMethod
+  const canSubmitOrder = canAttemptOrder && !hasFieldErrors
+
+  const submitValidatedOrder = () => {
+    setValidationAttempted(true)
+    if (!canSubmitOrder) return
+    onSubmit()
+  }
+
+  useEffect(() => {
+    if (!deliveryAvailable && orderType === 'DELIVERY') {
+      setOrderType('TAKEOUT')
+    }
+  }, [deliveryAvailable, orderType, setOrderType])
 
   const requestCustomerLocation = () => {
     if (!navigator.geolocation) {
@@ -1297,12 +1445,13 @@ const CheckoutForm = ({
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
+          disabled={!deliveryAvailable}
           onClick={() => {
             setOrderType('DELIVERY')
             setScheduledFor('')
           }}
           className={cn(
-            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
+            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50',
             orderType === 'DELIVERY'
               ? 'border-primary bg-primary text-primary-foreground'
               : 'bg-background hover:bg-accent'
@@ -1328,6 +1477,13 @@ const CheckoutForm = ({
           Retirada
         </button>
       </div>
+
+      {!deliveryAvailable && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          Entrega indisponivel no momento: a loja nao possui uma zona de entrega
+          configurada. Escolha retirada para continuar.
+        </p>
+      )}
 
       <div
         className={cn(
@@ -1376,62 +1532,91 @@ const CheckoutForm = ({
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1 text-sm font-medium">
-          Nome
-          <Input value={customerName} onChange={event => setCustomerName(event.target.value)} />
+      <section className="space-y-3 border-t pt-4">
+        <h3 className="font-medium">Seus dados</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm font-medium">
+            Nome completo
+            <Input
+              autoComplete="name"
+              value={customerName}
+              aria-invalid={validationAttempted && !!fieldErrors.customerName}
+              onChange={event => setCustomerName(event.target.value)}
+            />
+            {validationAttempted && fieldErrors.customerName && (
+              <span className="block text-xs font-normal text-destructive">{fieldErrors.customerName}</span>
+            )}
+          </label>
+          <label className="space-y-1 text-sm font-medium">
+            WhatsApp
+            <Input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(11) 99999-9999"
+              value={customerPhone}
+              aria-invalid={validationAttempted && !!fieldErrors.customerPhone}
+              onChange={event => setCustomerPhone(event.target.value)}
+            />
+            {validationAttempted && fieldErrors.customerPhone && (
+              <span className="block text-xs font-normal text-destructive">{fieldErrors.customerPhone}</span>
+            )}
+          </label>
+        </div>
+        <label className="block space-y-1 text-sm font-medium">
+          CPF <span className="font-normal text-muted-foreground">(opcional)</span>
+          <Input
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="000.000.000-00"
+            value={customerDocument}
+            aria-invalid={validationAttempted && !!fieldErrors.customerDocument}
+            onChange={event => setCustomerDocument(event.target.value)}
+          />
+          {validationAttempted && fieldErrors.customerDocument && (
+            <span className="block text-xs font-normal text-destructive">{fieldErrors.customerDocument}</span>
+          )}
         </label>
-        <label className="space-y-1 text-sm font-medium">
-          Telefone
-          <Input value={customerPhone} onChange={event => setCustomerPhone(event.target.value)} />
-        </label>
-      </div>
+      </section>
 
       {orderType === 'DELIVERY' ? (
         <div className="rounded-lg border bg-card p-4">
           <h3 className="mb-3 font-medium">Endereco de entrega</h3>
-          <Input
-            className="mb-3"
-            placeholder="CEP"
-            value={postalCode}
-            onChange={event => {
-              setPostalCode(event.target.value)
-              clearLocationQuote()
-            }}
-          />
-          <div className="grid gap-3 sm:grid-cols-[1fr_96px]">
-            <Input
-              placeholder="Rua"
-              value={street}
-              onChange={event => {
-                setStreet(event.target.value)
-                clearLocationQuote()
-              }}
-            />
-            <Input
-              placeholder="Numero"
-              value={number}
-              onChange={event => {
-                setNumber(event.target.value)
-                clearLocationQuote()
-              }}
-            />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm font-medium">
+              CEP
+              <Input inputMode="numeric" autoComplete="postal-code" placeholder="00000-000" value={postalCode} aria-invalid={validationAttempted && !!fieldErrors.postalCode} onChange={event => { setPostalCode(event.target.value); clearLocationQuote() }} />
+              {validationAttempted && fieldErrors.postalCode && <span className="block text-xs font-normal text-destructive">{fieldErrors.postalCode}</span>}
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Bairro
+              <Input autoComplete="address-level3" value={neighborhood} aria-invalid={validationAttempted && !!fieldErrors.neighborhood} onChange={event => { setNeighborhood(event.target.value); clearLocationQuote() }} />
+              {validationAttempted && fieldErrors.neighborhood && <span className="block text-xs font-normal text-destructive">{fieldErrors.neighborhood}</span>}
+              <span className="block text-xs font-normal text-muted-foreground">Usado para verificar a zona e a taxa de entrega.</span>
+            </label>
           </div>
-          <Input
-            className="mt-3"
-            placeholder="Bairro"
-            value={neighborhood}
-            onChange={event => {
-              setNeighborhood(event.target.value)
-              clearLocationQuote()
-            }}
-          />
-          <Input
-            className="mt-3"
-            placeholder="Referencia (opcional)"
-            value={reference}
-            onChange={event => setReference(event.target.value)}
-          />
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_112px]">
+            <label className="space-y-1 text-sm font-medium">
+              Rua
+              <Input autoComplete="address-line1" value={street} aria-invalid={validationAttempted && !!fieldErrors.street} onChange={event => { setStreet(event.target.value); clearLocationQuote() }} />
+              {validationAttempted && fieldErrors.street && <span className="block text-xs font-normal text-destructive">{fieldErrors.street}</span>}
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Numero
+              <Input inputMode="numeric" value={number} aria-invalid={validationAttempted && !!fieldErrors.number} onChange={event => { setNumber(event.target.value); clearLocationQuote() }} />
+              {validationAttempted && fieldErrors.number && <span className="block text-xs font-normal text-destructive">{fieldErrors.number}</span>}
+            </label>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-sm font-medium">
+              Complemento <span className="font-normal text-muted-foreground">(opcional)</span>
+              <Input autoComplete="address-line2" placeholder="Apto, bloco..." value={complement} onChange={event => setComplement(event.target.value)} />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
+              Referencia <span className="font-normal text-muted-foreground">(opcional)</span>
+              <Input placeholder="Proximo a..." value={reference} onChange={event => setReference(event.target.value)} />
+            </label>
+          </div>
           {showLocationButton && (
             <div className="mt-3">
               <Button type="button" variant="outline" onClick={requestCustomerLocation}>
@@ -1458,8 +1643,22 @@ const CheckoutForm = ({
         <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
           Seu pedido sera retirado no balcao. A loja informara o preparo pelo
           acompanhamento do pedido.
+          {pickupAddressLabel && (
+            <p className="mt-2 font-medium text-foreground">
+              Retirada em: {pickupAddressLabel}
+            </p>
+          )}
         </div>
       )}
+
+      <label className="block space-y-1 text-sm font-medium">
+        Observacao geral <span className="font-normal text-muted-foreground">(opcional)</span>
+        <Textarea
+          value={orderNotes}
+          placeholder="Ex.: chamar no portao, retirar ingrediente..."
+          onChange={event => setOrderNotes(event.target.value)}
+        />
+      </label>
 
       <div className="rounded-lg border bg-card p-4">
         <h3 className="mb-3 font-medium">Pagamento</h3>
@@ -1541,23 +1740,57 @@ const CheckoutForm = ({
               />
             </label>
             {needsChange && (
-              <Input
-                placeholder="Troco para quanto?"
-                value={changeFor}
-                onChange={event => setChangeFor(event.target.value)}
-              />
+              <label className="block space-y-1 text-sm font-medium">
+                Troco para quanto?
+                <Input
+                  inputMode="decimal"
+                  placeholder="R$ 0,00"
+                  value={changeFor}
+                  aria-invalid={validationAttempted && !!fieldErrors.changeFor}
+                  onChange={event => setChangeFor(event.target.value)}
+                />
+                {validationAttempted && fieldErrors.changeFor && (
+                  <span className="block text-xs font-normal text-destructive">
+                    {fieldErrors.changeFor}
+                  </span>
+                )}
+              </label>
             )}
           </div>
         )}
       </div>
 
-      <div className="rounded-lg border bg-card p-4 text-sm">
+      <section className="rounded-lg border bg-card p-4 text-sm">
+        <h3 className="mb-3 font-medium">Resumo do pedido</h3>
+        <div className="space-y-3 border-b pb-3">
+          {cart.map(item => (
+            <div key={item.cartId} className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-medium">{item.quantity}x {item.name}</p>
+                {item.options.map(option => (
+                  <p key={option.optionId} className="text-xs text-muted-foreground">
+                    {option.optionGroupName}: {option.optionName}
+                    {Number(option.price) > 0 ? ` (+${currency(Number(option.price) * option.quantity)})` : ''}
+                  </p>
+                ))}
+              </div>
+              <strong className="shrink-0">{currency(getItemUnitTotal(item) * item.quantity)}</strong>
+            </div>
+          ))}
+        </div>
+        <dl className="space-y-2 border-b py-3">
+          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Modalidade</dt><dd className="text-right font-medium">{orderType === 'DELIVERY' ? 'Entrega' : 'Retirada'}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Destino</dt><dd className="max-w-[70%] text-right font-medium">{orderType === 'DELIVERY' ? `${street || 'Rua'}, ${number || 's/n'} - ${neighborhood || 'bairro'}` : pickupAddressLabel ?? 'Balcao da loja'}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Pagamento</dt><dd className="text-right font-medium">{selectedPaymentMethod?.label ?? 'Nao selecionado'}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Prazo</dt><dd className="text-right font-medium">{scheduledFor ? new Date(scheduledFor).toLocaleString('pt-BR') : `cerca de ${deliveryQuote.estimatedDeliveryMinutes} min`}</dd></div>
+        </dl>
+        <div className="space-y-2 pt-3">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Subtotal</span>
           <strong>{currency(cartSubtotal)}</strong>
         </div>
         <div className="flex justify-between">
-          <span className="text-muted-foreground">Entrega</span>
+          <span className="text-muted-foreground">Taxa de entrega</span>
           <strong>{currency(deliveryQuote.deliveryFee)}</strong>
         </div>
         <div className="mt-2 flex justify-between">
@@ -1573,7 +1806,23 @@ const CheckoutForm = ({
             Faltam {currency(missingMinimumAmount)} para atingir o pedido minimo.
           </p>
         )}
-      </div>
+        </div>
+      </section>
+
+      <label className="flex items-start gap-3 rounded-lg border bg-card p-4 text-sm">
+        <input
+          type="checkbox"
+          checked={termsAccepted}
+          onChange={event => setTermsAccepted(event.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-primary"
+        />
+        <span>
+          Confirmo que revisei os dados e aceito o envio deste pedido para a loja.
+          {validationAttempted && fieldErrors.termsAccepted && (
+            <span className="mt-1 block text-xs text-destructive">{fieldErrors.termsAccepted}</span>
+          )}
+        </span>
+      </label>
 
       {submissionMessage && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -1581,14 +1830,14 @@ const CheckoutForm = ({
         </p>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="sticky bottom-0 -mx-4 grid gap-2 border-t bg-background/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-0 sm:grid-cols-2 sm:border-0 sm:bg-transparent sm:p-0">
         <Button variant="outline" onClick={onBack}>
           Voltar
         </Button>
         <Button
-          onClick={onSubmit}
+          onClick={submitValidatedOrder}
           isLoading={isPending}
-          disabled={!canSubmitOrder}
+          disabled={!canAttemptOrder}
         >
           Enviar pedido
         </Button>

@@ -3,7 +3,10 @@ import { quoteDigitalMenuDelivery } from './delivery'
 import { DigitalMenuDeliveryZone, DigitalMenuSettings } from './types'
 
 const settings: DigitalMenuSettings = {
+  logoImageUrl: null,
+  bannerImageUrl: null,
   whatsappPhone: null,
+  pickupAddress: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
   operationalStatus: 'OPEN',
@@ -137,6 +140,23 @@ describe('quoteDigitalMenuDelivery', () => {
     }
 
     expect(message).toBe('Ainda nao entregamos neste endereco.')
+  })
+
+  test('bloqueia delivery quando a loja nao configurou zona', () => {
+    let message = ''
+
+    try {
+      quoteDigitalMenuDelivery({
+        zones: [],
+        neighborhood: 'Centro',
+        subtotal: '40.0000',
+        settings,
+      })
+    } catch (error) {
+      message = error instanceof Error ? error.message : ''
+    }
+
+    expect(message).toBe('A loja ainda nao configurou uma area de entrega.')
   })
 
   test('solicita localizacao quando ha apenas regra por raio', () => {

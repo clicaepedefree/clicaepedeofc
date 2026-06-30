@@ -26,6 +26,7 @@ import {
   InsertItemOffering,
   itemOfferingsTable,
 } from '@/services/db/schema/item-offerings'
+import { itemOfferingOptionGroupsTable } from '@/services/db/schema/item-offering-option-groups'
 import { InsertItem, itemsTable } from '@/services/db/schema/items'
 import {
   baseStoreFileRelationalQuery,
@@ -33,7 +34,7 @@ import {
 } from '@/services/db/schema/store-files'
 import { DbSession } from '@/services/db/types'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { difference } from 'lodash'
 import { validateUserPermissionsForStore } from '../store/api'
@@ -144,6 +145,45 @@ export const deleteCategory = async (categoryId: number, storeId: number) => {
     )
 }
 
+export const moveCategory = async ({
+  categoryId,
+  storeId,
+  direction,
+}: {
+  categoryId: number
+  storeId: number
+  direction: 'up' | 'down'
+}) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  await db.transaction(async tx => {
+    const categories = await tx
+      .select({ id: categoriesTable.id, index: categoriesTable.index })
+      .from(categoriesTable)
+      .where(eq(categoriesTable.storeId, storeId))
+      .orderBy(asc(categoriesTable.index), asc(categoriesTable.name))
+
+    const currentIndex = categories.findIndex(category => category.id === categoryId)
+    if (currentIndex < 0) throw new Error('Category does not belong to the validated store')
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    const targetCategory = categories[targetIndex]
+    const currentCategory = categories[currentIndex]
+
+    if (!targetCategory || !currentCategory) return
+
+    await tx
+      .update(categoriesTable)
+      .set({ index: targetCategory.index })
+      .where(and(eq(categoriesTable.id, currentCategory.id), eq(categoriesTable.storeId, storeId)))
+
+    await tx
+      .update(categoriesTable)
+      .set({ index: currentCategory.index })
+      .where(and(eq(categoriesTable.id, targetCategory.id), eq(categoriesTable.storeId, storeId)))
+  })
+}
+
 export const createItem = async (
   newItem: NewItem & { optionGroupIds?: number[] }
 ) => {
@@ -196,6 +236,103 @@ export const createItem = async (
     }
 
     return item
+  })
+}
+
+export const duplicateItem = async ({
+  itemId,
+  itemOfferingId,
+  storeId,
+}: {
+  itemId: number
+  itemOfferingId: number
+  storeId: number
+}) => {
+  await validateUserPermissionsForStore(storeId, 'admin')
+
+  return await db.transaction(async tx => {
+    const [source] = await tx
+      .select({
+        itemId: itemsTable.id,
+        name: itemsTable.name,
+        description: itemsTable.description,
+        imageId: itemsTable.imageId,
+        inventory: itemsTable.inventory,
+        isAvailable: itemOfferingsTable.isAvailable,
+        categoryId: itemOfferingsTable.categoryId,
+        price: itemOfferingsTable.price,
+        originalPrice: itemOfferingsTable.originalPrice,
+        externalCode: itemOfferingsTable.externalCode,
+        ean: itemsTable.ean,
+      })
+      .from(itemsTable)
+      .innerJoin(itemOfferingsTable, eq(itemOfferingsTable.itemId, itemsTable.id))
+      .innerJoin(categoriesTable, eq(categoriesTable.id, itemOfferingsTable.categoryId))
+      .where(
+        and(
+          eq(itemsTable.id, itemId),
+          eq(itemOfferingsTable.id, itemOfferingId),
+          eq(itemsTable.storeId, storeId),
+          eq(categoriesTable.storeId, storeId)
+        )
+      )
+      .limit(1)
+
+    if (!source) throw new Error('Item does not belong to the validated store')
+
+    const createdItem = await createItemOnDb({
+      newItem: {
+        storeId,
+        name: `${source.name} (copia)`,
+        description: source.description,
+        imageId: source.imageId,
+        inventory: source.inventory,
+        ean: source.ean,
+      },
+      dbSession: tx,
+    })
+
+    const itemOfferingIndex = await getNextItemOfferingIndex({
+      categoryId: source.categoryId,
+      dbSession: tx,
+    })
+
+    const createdOffering = await createItemOfferingOnDb({
+      newItemOffering: {
+        itemId: createdItem.id,
+        categoryId: source.categoryId,
+        price: source.price,
+        originalPrice: source.originalPrice,
+        isAvailable: source.isAvailable,
+        externalCode: source.externalCode,
+        index: itemOfferingIndex,
+      },
+      dbSession: tx,
+    })
+
+    const optionGroupLinks = await tx
+      .select({
+        optionGroupId: itemOfferingOptionGroupsTable.optionGroupId,
+        index: itemOfferingOptionGroupsTable.index,
+      })
+      .from(itemOfferingOptionGroupsTable)
+      .where(eq(itemOfferingOptionGroupsTable.itemOfferingId, itemOfferingId))
+      .orderBy(asc(itemOfferingOptionGroupsTable.index))
+
+    if (optionGroupLinks.length > 0) {
+      await replaceItemOfferingOptionGroupLinks({
+        itemOfferingId: createdOffering.id,
+        storeId,
+        links: optionGroupLinks.map(link => ({
+          itemOfferingId: createdOffering.id,
+          optionGroupId: link.optionGroupId,
+          index: link.index,
+        })),
+        dbSession: tx,
+      })
+    }
+
+    return createdItem
   })
 }
 

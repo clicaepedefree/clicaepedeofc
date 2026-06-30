@@ -91,13 +91,7 @@ export const quoteDigitalMenuDelivery = ({
   settings: DigitalMenuSettings
 }) => {
   if (zones.length === 0) {
-    return {
-      deliveryFee: '0',
-      minimumOrderAmount: settings.minimumOrderAmount,
-      deliveryZoneId: null,
-      deliveryEstimatedMinutes: settings.averagePreparationMinutes,
-      deliveryZoneSnapshot: null,
-    }
+    throw new Error('A loja ainda nao configurou uma area de entrega.')
   }
 
   const activeZones = zones
