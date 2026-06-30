@@ -14,6 +14,17 @@ import {
   orderPaymentsTable,
 } from '@/services/db/schema/order-payments'
 import { InsertOrder, ordersTable } from '@/services/db/schema/orders'
+import {
+  InsertOrderAuditEvent,
+  orderAuditEventsTable,
+} from '@/services/db/schema/order-audit-events'
+import { publicOrderSubmissionsTable } from '@/services/db/schema/public-order-submissions'
+import {
+  OrderTransitionAction,
+  requireAuditReason,
+  resolveOrderTransition,
+  sanitizeOrderAuditMetadata,
+} from './audit-policy'
 import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
 import { DbSession } from '@/services/db/types'
 import { decrementColumnValue } from '@/services/db/utils/decrement-column-value'
@@ -56,6 +67,136 @@ export const createOrderOnDb = async ({
     .returning()
 
   return createdOrder
+}
+
+export const createOrderAuditEventOnDb = async ({
+  event,
+  dbSession,
+}: {
+  event: InsertOrderAuditEvent
+  dbSession: DbSession
+}) => {
+  const [createdEvent] = await dbSession
+    .insert(orderAuditEventsTable)
+    .values({ ...event, metadata: sanitizeOrderAuditMetadata(event.metadata) })
+    .returning()
+  return createdEvent
+}
+
+export const transitionOrderOnDb = async ({
+  orderId,
+  storeId,
+  action,
+  reason,
+  actorUserId,
+  requestId,
+  dbSession,
+}: {
+  orderId: number
+  storeId: number
+  action: OrderTransitionAction
+  reason?: string
+  actorUserId: string
+  requestId: string
+  dbSession: DbSession
+}) => {
+  const [order] = await dbSession
+    .select()
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
+    .limit(1)
+    .for('update')
+
+  if (!order) throw new Error('Pedido nao encontrado.')
+
+  const transition = resolveOrderTransition(order.status, action, reason)
+  const now = new Date()
+  const statusFields =
+    action === 'accept'
+      ? { acceptedAt: now, acceptedByUserId: actorUserId }
+      : action === 'reject'
+        ? {
+            rejectedAt: now,
+            rejectedByUserId: actorUserId,
+            rejectionReason: transition.reason,
+          }
+        : action === 'cancel'
+          ? { cancelledAt: now }
+          : { completedAt: now }
+
+  const [updatedOrder] = await dbSession
+    .update(ordersTable)
+    .set({ status: transition.toStatus, ...statusFields })
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
+    .returning()
+
+  await dbSession
+    .update(publicOrderSubmissionsTable)
+    .set({ status: transition.toStatus, ...statusFields })
+    .where(
+      and(
+        eq(publicOrderSubmissionsTable.orderId, orderId),
+        eq(publicOrderSubmissionsTable.storeId, storeId)
+      )
+    )
+
+  await createOrderAuditEventOnDb({
+    dbSession,
+    event: {
+      orderId,
+      storeId,
+      eventType: 'status_changed',
+      fromStatus: transition.fromStatus,
+      toStatus: transition.toStatus,
+      actorType: 'store',
+      actorUserId,
+      origin: 'MANUAL',
+      reason: transition.reason,
+      requestId,
+      metadata: { salesChannel: order.salesChannel, displayId: order.displayId },
+    },
+  })
+
+  return updatedOrder
+}
+
+export const addOrderAuditNoteOnDb = async ({
+  orderId,
+  storeId,
+  reason,
+  actorUserId,
+  requestId,
+  dbSession,
+}: {
+  orderId: number
+  storeId: number
+  reason: string
+  actorUserId: string
+  requestId: string
+  dbSession: DbSession
+}) => {
+  const [order] = await dbSession
+    .select({ salesChannel: ordersTable.salesChannel, displayId: ordersTable.displayId })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
+    .limit(1)
+    .for('update')
+  if (!order) throw new Error('Pedido nao encontrado.')
+
+  return createOrderAuditEventOnDb({
+    dbSession,
+    event: {
+      orderId,
+      storeId,
+      eventType: 'note_added',
+      actorType: 'store',
+      actorUserId,
+      origin: 'MANUAL',
+      reason: requireAuditReason(reason),
+      requestId,
+      metadata: { salesChannel: order.salesChannel, displayId: order.displayId },
+    },
+  })
 }
 
 export const createOrderItemOnDb = async ({

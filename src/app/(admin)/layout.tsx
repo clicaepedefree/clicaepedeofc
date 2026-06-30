@@ -47,6 +47,11 @@ const adminMenuItems = [
         url: '/pos',
         icon: 'monitor' as const,
       },
+      {
+        title: 'Pedidos',
+        url: '/orders',
+        icon: 'shopping-cart' as const,
+      },
     ],
   },
   {

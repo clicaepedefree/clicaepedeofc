@@ -4,6 +4,7 @@ import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import {
   createOrderItemOnDb,
   createOrderItemOptionsOnDb,
+  createOrderAuditEventOnDb,
   createOrderOnDb,
   createOrderPaymentOnDb,
   getNextOrderDisplayIdForStore,
@@ -31,7 +32,8 @@ import Decimal from 'decimal.js'
 import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
+import { headers } from 'next/headers'
 import {
   evaluateDigitalMenuAvailability,
   DigitalMenuAvailabilitySettings,
@@ -76,6 +78,23 @@ const DEFAULT_DIGITAL_MENU_SETTINGS = {
   scheduleMinLeadMinutes: 30,
   scheduleMaxDaysAhead: 7,
   allowItemObservations: true,
+}
+
+const hashRequestIdentifier = (value: string | null) => {
+  if (!value) return null
+  const pepper = process.env.CLERK_SECRET_KEY
+  if (!pepper) throw new Error('Missing server-side audit hash pepper.')
+  return createHmac('sha256', pepper).update(value).digest('hex')
+}
+
+const getPublicRequestHashes = async () => {
+  const requestHeaders = await headers()
+  const forwardedFor = requestHeaders.get('x-forwarded-for')
+  const ip = forwardedFor?.split(',')[0]?.trim() || requestHeaders.get('x-real-ip')
+  return {
+    ipHash: hashRequestIdentifier(ip),
+    userAgentHash: hashRequestIdentifier(requestHeaders.get('user-agent')),
+  }
 }
 
 const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> = {
@@ -758,6 +777,7 @@ export const submitDigitalMenuOrder = async (
   }
 
   const requestId = crypto.randomUUID()
+  const { ipHash, userAgentHash } = await getPublicRequestHashes()
   const submittedAt = new Date()
   const requestHash = createRequestHash({
     storeSlug: payload.storeSlug,
@@ -874,6 +894,8 @@ export const submitDigitalMenuOrder = async (
                 ) ?? null,
           storeSettingsSnapshot: currentPublicSettings,
           businessHoursSnapshot: orderAvailability,
+          customerIpHash: ipHash,
+          userAgentHash,
           termsAcceptedAt: submittedAt,
           scheduledFor,
           submittedAt,
@@ -954,6 +976,29 @@ export const submitDigitalMenuOrder = async (
           technicalAckAt: submittedAt,
         },
         dbSession: tx,
+      })
+
+      await createOrderAuditEventOnDb({
+        dbSession: tx,
+        event: {
+          orderId: createdOrder.id,
+          storeId: createdOrder.storeId,
+          eventType: 'order_created',
+          fromStatus: null,
+          toStatus: createdOrder.status,
+          actorType: 'customer',
+          actorUserId: null,
+          origin: 'DIGITAL_MENU',
+          requestId,
+          metadata: {
+            salesChannel: createdOrder.salesChannel,
+            orderType: createdOrder.type,
+            publicOrderId: created.id,
+            displayId: createdOrder.displayId,
+          },
+          ipHash,
+          userAgentHash,
+        },
       })
 
       for (const item of validatedCart.items) {

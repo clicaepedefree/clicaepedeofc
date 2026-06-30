@@ -19,6 +19,7 @@ export const publicOrderStatuses = [
   'ACCEPTED',
   'REJECTED',
   'CANCELLED',
+  'COMPLETED',
 ] as const
 
 export const publicOrderTechnicalStatuses = [
@@ -79,6 +80,7 @@ export const publicOrderSubmissionsTable = pgTable(
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     rejectedAt: timestamp('rejected_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt,
     updatedAt,
