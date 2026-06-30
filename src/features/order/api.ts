@@ -2,24 +2,39 @@
 
 import {
   checkStockAvailability,
+  addOrderAuditNoteOnDb,
+  createOrderAuditEventOnDb,
   createOrderItemOnDb,
   createOrderItemOptionsOnDb,
   createOrderOnDb,
   createOrderPaymentOnDb,
   getNextOrderDisplayIdForStore,
   updateOrderItemInventoryOnDb,
+  transitionOrderOnDb,
 } from '@/features/order/db'
+import {
+  OrderTransitionAction,
+  orderTransitionActions,
+  toOrderAuditEventDto,
+} from './audit-policy'
 import { NewOrder } from '@/features/order/types'
 import { OrderTemplate } from '@/features/receipt/templates/order'
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
-import { ordersTable, storesTable } from '@/services/db/schema'
+import {
+  ordersTable,
+  orderAuditEventsTable,
+  storesTable,
+  userStorePermissionsTable,
+  usersTable,
+} from '@/services/db/schema'
+import { requireAuth } from '@/services/auth'
 import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
-import { desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 export const createOrder = async (newOrder: NewOrder) => {
-  await validateUserPermissionsForStore(newOrder.storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(newOrder.storeId, 'admin')
 
   return await db.transaction(async tx => {
     // Check stock availability for all items before creating order
@@ -46,6 +61,26 @@ export const createOrder = async (newOrder: NewOrder) => {
     const createdOrder = await createOrderOnDb({
       newOrder: { ...newOrder, displayId: nextOrderDisplayId },
       dbSession: tx,
+    })
+
+    await createOrderAuditEventOnDb({
+      dbSession: tx,
+      event: {
+        orderId: createdOrder.id,
+        storeId: createdOrder.storeId,
+        eventType: 'order_created',
+        fromStatus: null,
+        toStatus: createdOrder.status,
+        actorType: 'store',
+        actorUserId: user.id,
+        origin: 'POS',
+        requestId: crypto.randomUUID(),
+        metadata: {
+          salesChannel: createdOrder.salesChannel,
+          orderType: createdOrder.type,
+          displayId: createdOrder.displayId,
+        },
+      },
     })
 
     const updateItemsInventoryPromises = newOrder.items.map(newOrderItem =>
@@ -169,6 +204,7 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
   const orders = await db.query.ordersTable.findMany({
     where: eq(ordersTable.storeId, storeId),
     orderBy: [desc(ordersTable.createdAt)],
+    limit: 200,
     with: {
       items: {
         with: {
@@ -176,10 +212,106 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
         },
       },
       payments: true,
+      auditEvents: { orderBy: [asc(orderAuditEventsTable.createdAt)] },
     },
   })
 
-  return orders
+  const actorUserIds = [
+    ...new Set(
+      orders.flatMap(order =>
+        order.auditEvents
+          .map(event => event.actorUserId)
+          .filter((userId): userId is string => !!userId)
+      )
+    ),
+  ]
+  const actors = actorUserIds.length
+    ? await db
+        .select({ id: usersTable.id, name: usersTable.name })
+        .from(usersTable)
+        .where(inArray(usersTable.id, actorUserIds))
+    : []
+  const actorNames = new Map(
+    actors.map(actor => [actor.id, actor.name || 'Equipe da loja'])
+  )
+
+  return orders.map(order => ({
+    id: order.id,
+    displayId: order.displayId,
+    status: order.status,
+    salesChannel: order.salesChannel,
+    type: order.type,
+    totalPrice: order.totalPrice,
+    customerName: order.customerName,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    items: order.items.map(item => ({
+      id: item.id,
+      itemName: item.itemName,
+      quantity: item.quantity,
+      price: item.price,
+      comment: item.comment,
+      options: item.options.map(option => ({
+        id: option.id,
+        optionName: option.optionName,
+        quantity: option.quantity,
+        price: option.price,
+      })),
+    })),
+    payments: order.payments.map(payment => ({
+      id: payment.id,
+      method: payment.method,
+      type: payment.type,
+      value: payment.value,
+      cardBrand: payment.cardBrand,
+      changeFor: payment.changeFor,
+    })),
+    auditEvents: order.auditEvents.map(event => ({
+      ...toOrderAuditEventDto(event),
+      actorName:
+        event.actorType === 'customer'
+          ? 'Cliente'
+          : event.actorType === 'system' || event.actorType === null
+            ? 'Sistema'
+            : event.actorUserId
+              ? actorNames.get(event.actorUserId) ?? 'Equipe da loja'
+              : 'Equipe da loja',
+    })),
+  }))
+}
+
+export const transitionOrderStatus = async (input: {
+  orderId: number
+  storeId: number
+  action: OrderTransitionAction
+  reason?: string
+}) => {
+  if (!orderTransitionActions.includes(input.action)) throw new Error('Acao invalida.')
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  return db.transaction(tx =>
+    transitionOrderOnDb({
+      ...input,
+      actorUserId: user.id,
+      requestId: crypto.randomUUID(),
+      dbSession: tx,
+    })
+  )
+}
+
+export const addOrderAuditNote = async (input: {
+  orderId: number
+  storeId: number
+  reason: string
+}) => {
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  return db.transaction(tx =>
+    addOrderAuditNoteOnDb({
+      ...input,
+      actorUserId: user.id,
+      requestId: crypto.randomUUID(),
+      dbSession: tx,
+    })
+  )
 }
 
 /**
@@ -206,9 +338,33 @@ export const validateCartStock = async (params: {
 }
 
 export const generateOrderReceipt = async (orderId: number) => {
-  // Fetch order with all related data
+  const user = await requireAuth()
+  const [authorizedOrder] = await db
+    .select({ id: ordersTable.id, storeId: ordersTable.storeId })
+    .from(ordersTable)
+    .innerJoin(
+      userStorePermissionsTable,
+      and(
+        eq(userStorePermissionsTable.storeId, ordersTable.storeId),
+        eq(userStorePermissionsTable.userId, user.id),
+        eq(userStorePermissionsTable.role, 'admin'),
+        sql`${userStorePermissionsTable.revokedAt} is null`
+      )
+    )
+    .innerJoin(
+      usersTable,
+      and(eq(usersTable.id, user.id), eq(usersTable.status, 'active'))
+    )
+    .where(eq(ordersTable.id, orderId))
+    .limit(1)
+
+  if (!authorizedOrder) throw new Error('Pedido nao encontrado')
+
   const order = await db.query.ordersTable.findFirst({
-    where: eq(ordersTable.id, orderId),
+    where: and(
+      eq(ordersTable.id, authorizedOrder.id),
+      eq(ordersTable.storeId, authorizedOrder.storeId)
+    ),
     with: {
       items: {
         with: {
@@ -222,9 +378,6 @@ export const generateOrderReceipt = async (orderId: number) => {
   if (!order) {
     throw new Error('Pedido não encontrado')
   }
-
-  // Validate user has access to this order's store
-  await validateUserPermissionsForStore(order.storeId, 'admin')
 
   // Fetch store name for receipt header
   const [store] = await db

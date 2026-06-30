@@ -77,6 +77,7 @@ export const ordersTable = pgTable(
     updatedAt,
   },
   table => [
+    uniqueIndex('orders_id_store_id_unique').on(table.id, table.storeId),
     uniqueIndex('orders_store_id_idempotency_key_unique')
       .on(table.storeId, table.idempotencyKey)
       .where(isNotNull(table.idempotencyKey)),
