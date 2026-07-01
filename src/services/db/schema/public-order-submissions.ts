@@ -1,5 +1,6 @@
 import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
+import { isNotNull } from 'drizzle-orm'
 import {
   integer,
   jsonb,
@@ -7,6 +8,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import { ordersTable } from './orders'
@@ -59,6 +61,7 @@ export const publicOrderSubmissionsTable = pgTable(
     termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     validationErrors: jsonb('validation_errors'),
     trackingTokenHash: text('tracking_token_hash'),
+    trackingExpiresAt: timestamp('tracking_expires_at', { withTimezone: true }),
     scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
     deliveryZoneSnapshot: jsonb('delivery_zone_snapshot'),
     storeSettingsSnapshot: jsonb('store_settings_snapshot'),
@@ -86,10 +89,17 @@ export const publicOrderSubmissionsTable = pgTable(
     updatedAt,
   },
   table => [
+    unique('public_order_submissions_id_store_id_unique').on(
+      table.id,
+      table.storeId
+    ),
     unique('public_order_submissions_store_id_idempotency_key_unique').on(
       table.storeId,
       table.idempotencyKey
     ),
+    uniqueIndex('public_order_submissions_tracking_token_hash_unique')
+      .on(table.trackingTokenHash)
+      .where(isNotNull(table.trackingTokenHash)),
   ]
 )
 

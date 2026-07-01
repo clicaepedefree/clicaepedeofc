@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   '/login(.*)',
   '/admin-onboarding(.*)',
   '/cardapio(.*)',
+  '/pedido(.*)',
   '/api/files(.*)',
   '/api/health(.*)',
   '/api/webhooks/clerk(.*)',
@@ -23,6 +24,7 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
   '/cardapio(.*)', // Public digital menu
+  '/pedido(.*)', // Public order tracking protected by an opaque token
   '/internal(.*)', // Internal Clica e Pede operations
   '/unauthorized(.*)', // Unauthorized page
 ])

@@ -233,13 +233,11 @@ export const evaluateDigitalMenuAvailability = ({
     .sort((a, b) => a.opensAt.localeCompare(b.opensAt))
 
   if (todayBusinessHours.length === 0) {
-    return {
-      isOpen: true,
-      reason: null,
-      nextOpeningLabel: null,
-      canSchedule: settings.allowScheduledOrders,
-      statusLabel: 'Aberta',
-    }
+    return buildClosedResult({
+      reason: 'A loja ainda nao configurou horarios para este tipo de pedido.',
+      settings,
+      statusLabel: 'Horarios indisponiveis',
+    })
   }
 
   const currentWindow = todayBusinessHours.find(hour =>

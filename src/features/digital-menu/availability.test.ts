@@ -100,7 +100,15 @@ describe('evaluateDigitalMenuAvailability', () => {
     expect(
       evaluateDigitalMenuAvailability({
         settings,
-        businessHours: [],
+        businessHours: [
+          {
+            weekday: 1,
+            opensAt: '00:00:00',
+            closesAt: '23:59:59',
+            serviceType: 'ALL',
+            isActive: true,
+          },
+        ],
         specialHours: [],
         serviceType: 'DELIVERY',
         now: mondayNoon,
@@ -110,12 +118,37 @@ describe('evaluateDigitalMenuAvailability', () => {
     expect(
       evaluateDigitalMenuAvailability({
         settings,
-        businessHours: [],
+        businessHours: [
+          {
+            weekday: 1,
+            opensAt: '00:00:00',
+            closesAt: '23:59:59',
+            serviceType: 'ALL',
+            isActive: true,
+          },
+        ],
         specialHours: [],
         serviceType: 'TAKEOUT',
         now: mondayNoon,
       }).isOpen
     ).toBe(true)
+  })
+
+  test('ausencia de horarios fecha pedidos com mensagem clara', () => {
+    const result = evaluateDigitalMenuAvailability({
+      settings: baseSettings,
+      businessHours: [],
+      specialHours: [],
+      serviceType: 'DELIVERY',
+      now: mondayNoon,
+    })
+
+    expect(result.isOpen).toBe(false)
+    expect(result.canSchedule).toBe(false)
+    expect(result.reason).toBe(
+      'A loja ainda nao configurou horarios para este tipo de pedido.'
+    )
+    expect(result.statusLabel).toBe('Horarios indisponiveis')
   })
 
   test('fora do horario permite agendamento quando configurado', () => {

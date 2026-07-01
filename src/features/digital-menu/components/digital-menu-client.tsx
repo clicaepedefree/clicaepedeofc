@@ -43,6 +43,7 @@ import {
   Truck,
 } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 
 type CartOption = {
@@ -168,7 +169,9 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
     publicOrderId: string
     requestId: string
     total: string
+    trackingToken: string | null
   } | null>(null)
+  const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const cartTotal = useMemo(
@@ -571,6 +574,8 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
         publicOrderId: result.publicOrderId,
         requestId: result.requestId,
         total: result.total,
+        trackingToken:
+          (result as typeof result & { trackingToken?: string }).trackingToken ?? null,
       })
       setCart([])
       setIdempotencyKey(createIdempotencyKey())
@@ -917,6 +922,35 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 </p>
                 <p className="mt-1 font-semibold">
                   Total: {currency(orderConfirmation.total)}
+                </p>
+                {orderConfirmation.trackingToken && (
+                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                    <Button asChild>
+                      <Link href={`/pedido/${orderConfirmation.trackingToken}`}>
+                        <Clock3 className="size-4" />
+                        Acompanhar pedido
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={async () => {
+                        const url = `${window.location.origin}/pedido/${orderConfirmation.trackingToken}`
+                        try {
+                          await navigator.clipboard.writeText(url)
+                          setTrackingLinkMessage('Link de acompanhamento copiado.')
+                        } catch {
+                          setTrackingLinkMessage('Nao foi possivel copiar o link automaticamente.')
+                        }
+                      }}
+                    >
+                      <Copy className="size-4" />
+                      Copiar link
+                    </Button>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                  {trackingLinkMessage}
                 </p>
                 {whatsappContactUrl && (
                   <Button asChild className="mt-4" variant="outline">
@@ -1707,8 +1741,15 @@ const CheckoutForm = ({
                   <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 text-xs">
                     {selectedPaymentMethod.pixKey}
                   </code>
-                  <Button type="button" size="icon" variant="outline" onClick={copyPixKey}>
-                    <Copy className="size-4" />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    aria-label="Copiar chave Pix"
+                    title="Copiar chave Pix"
+                    onClick={copyPixKey}
+                  >
+                    <Copy className="size-4" aria-hidden="true" />
                   </Button>
                 </div>
               </div>
