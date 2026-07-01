@@ -19,6 +19,7 @@ import {
   ordersTable,
   publicOrderDeliveryAttemptsTable,
   publicOrderEventsTable,
+  publicOrderSecurityEventsTable,
   publicOrderSubmissionsTable,
   storeBusinessHoursTable,
   storeCompanyProfilesTable,
@@ -59,7 +60,9 @@ import {
   hashPublicIdentifier,
   isPublicTrackingToken,
   PUBLIC_ORDER_RATE_LIMIT,
+  PUBLIC_ORDER_RISK,
   PUBLIC_ORDER_TRACKING_TTL_MS,
+  calculatePublicOrderRiskScore,
   publicTrackingTokenMatches,
 } from './public-order-security'
 import {
@@ -67,6 +70,7 @@ import {
   sanitizePublicText,
   submitDigitalMenuOrderSchema,
 } from './validation'
+import { getTurnstileSiteKey, verifyTurnstileToken } from './turnstile'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
   logoImageUrl: null,
@@ -103,34 +107,110 @@ const hashRequestIdentifier = (value: string | null) => {
 const getPublicOrderSecuritySecret = () => {
   const secret =
     process.env.PUBLIC_ORDER_SECURITY_SECRET ?? process.env.CLERK_SECRET_KEY
-  if (!secret) throw new Error('Missing server-side public order security secret.')
+  if (!secret)
+    throw new Error('Missing server-side public order security secret.')
   return secret
 }
 
 const getPublicRequestHashes = async () => {
   const requestHeaders = await headers()
   const forwardedFor = requestHeaders.get('x-forwarded-for')
-  const ip = forwardedFor?.split(',')[0]?.trim() || requestHeaders.get('x-real-ip')
+  const ip =
+    forwardedFor?.split(',')[0]?.trim() || requestHeaders.get('x-real-ip')
   return {
+    remoteIp: ip,
     ipHash: hashRequestIdentifier(ip),
     userAgentHash: hashRequestIdentifier(requestHeaders.get('user-agent')),
   }
 }
 
-const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> = {
-  CASH: 'Dinheiro',
-  PIX: 'Pix',
-  CREDIT: 'Cartao de credito',
-  DEBIT: 'Cartao de debito',
-  MEAL_VOUCHER: 'Vale-refeicao',
-  FOOD_VOUCHER: 'Vale-alimentacao',
-  ONLINE: 'Pagamento online',
+type PublicSecurityContext = {
+  ipHash: string | null
+  deviceHash: string | null
+  phoneHash: string | null
+  userAgentHash: string | null
 }
 
+const getPublicOrderRisk = async (
+  storeId: number,
+  context: PublicSecurityContext
+) => {
+  const since = new Date(
+    Date.now() - PUBLIC_ORDER_RISK.lookbackMinutes * 60 * 1000
+  )
+  const [row] = await db.execute<{
+    invalidPayloads: number
+    captchaFailures: number
+    rateLimits: number
+  }>(sql`
+    select
+      count(*) filter (where event_type = 'INVALID_PAYLOAD')::integer as "invalidPayloads",
+      count(*) filter (where event_type = 'CAPTCHA_FAILED')::integer as "captchaFailures",
+      count(*) filter (where event_type in ('RATE_LIMITED', 'TEMPORARILY_BLOCKED'))::integer as "rateLimits"
+    from public.public_order_security_events
+    where store_id = ${storeId}
+      and created_at >= ${since}
+      and (
+        (${context.ipHash}::text is not null and ip_hash = ${context.ipHash})
+        or (${context.deviceHash}::text is not null and device_hash = ${context.deviceHash})
+        or (${context.phoneHash}::text is not null and phone_hash = ${context.phoneHash})
+      )
+  `)
+
+  return calculatePublicOrderRiskScore({
+    invalidPayloads: row?.invalidPayloads ?? 0,
+    captchaFailures: row?.captchaFailures ?? 0,
+    rateLimits: row?.rateLimits ?? 0,
+  })
+}
+
+const recordPublicSecurityEvent = async ({
+  storeId,
+  eventType,
+  context,
+  riskScore,
+  captchaStatus = 'not_required',
+  retryAfterSeconds,
+  metadata = {},
+}: {
+  storeId: number
+  eventType:
+    | 'INVALID_PAYLOAD'
+    | 'CAPTCHA_REQUIRED'
+    | 'CAPTCHA_PASSED'
+    | 'CAPTCHA_FAILED'
+    | 'RATE_LIMITED'
+    | 'TEMPORARILY_BLOCKED'
+  context: PublicSecurityContext
+  riskScore: number
+  captchaStatus?: 'not_required' | 'required' | 'passed' | 'failed'
+  retryAfterSeconds?: number
+  metadata?: Record<string, string | number | boolean>
+}) => {
+  await db.insert(publicOrderSecurityEventsTable).values({
+    storeId,
+    eventType,
+    ...context,
+    riskScore,
+    captchaStatus,
+    retryAfterSeconds,
+    metadata,
+  })
+}
+
+const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> =
+  {
+    CASH: 'Dinheiro',
+    PIX: 'Pix',
+    CREDIT: 'Cartao de credito',
+    DEBIT: 'Cartao de debito',
+    MEAL_VOUCHER: 'Vale-refeicao',
+    FOOD_VOUCHER: 'Vale-alimentacao',
+    ONLINE: 'Pagamento online',
+  }
+
 const createRequestHash = (value: unknown) => {
-  return createHash('sha256')
-    .update(JSON.stringify(value))
-    .digest('hex')
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
 const normalizeOptionalMoney = (value: string | undefined) => {
@@ -188,7 +268,8 @@ const getDigitalMenuSettings = async (storeId: number) => {
       scheduleMinLeadMinutes:
         storeDigitalMenuSettingsTable.scheduleMinLeadMinutes,
       scheduleMaxDaysAhead: storeDigitalMenuSettingsTable.scheduleMaxDaysAhead,
-      allowItemObservations: storeDigitalMenuSettingsTable.allowItemObservations,
+      allowItemObservations:
+        storeDigitalMenuSettingsTable.allowItemObservations,
     })
     .from(storeDigitalMenuSettingsTable)
     .leftJoin(
@@ -205,7 +286,13 @@ const getDigitalMenuSettings = async (storeId: number) => {
         eq(bannerFilesTable.storeId, storeDigitalMenuSettingsTable.storeId)
       )
     )
-    .leftJoin(storeCompanyProfilesTable, eq(storeCompanyProfilesTable.storeId, storeDigitalMenuSettingsTable.storeId))
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(
+        storeCompanyProfilesTable.storeId,
+        storeDigitalMenuSettingsTable.storeId
+      )
+    )
     .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
     .limit(1)
 
@@ -291,10 +378,15 @@ const getPaymentMethodsForPublicMenu = async (storeId: number) => {
   if (methods.length === 0) return []
 
   return methods
-    .filter(method => method.isActive && (method.allowDelivery || method.allowTakeout))
+    .filter(
+      method => method.isActive && (method.allowDelivery || method.allowTakeout)
+    )
     .map(method => ({
       method: method.method as DigitalMenuPaymentMethod['method'],
-      label: paymentMethodLabels[method.method as DigitalMenuPaymentMethod['method']],
+      label:
+        paymentMethodLabels[
+          method.method as DigitalMenuPaymentMethod['method']
+        ],
       instructions: method.instructions,
       proofInstructions: method.proofInstructions,
       pixKey: method.pixKey,
@@ -321,7 +413,8 @@ const getDeliveryZonesForPublicMenu = async (storeId: number) => {
       deliveryFee: storeDeliveryZonesTable.deliveryFee,
       freeDeliveryMinimum: storeDeliveryZonesTable.freeDeliveryMinimum,
       minimumOrderAmount: storeDeliveryZonesTable.minimumOrderAmount,
-      estimatedDeliveryMinutes: storeDeliveryZonesTable.estimatedDeliveryMinutes,
+      estimatedDeliveryMinutes:
+        storeDeliveryZonesTable.estimatedDeliveryMinutes,
       priority: storeDeliveryZonesTable.priority,
       isActive: storeDeliveryZonesTable.isActive,
     })
@@ -332,7 +425,10 @@ const getDeliveryZonesForPublicMenu = async (storeId: number) => {
         eq(storeDeliveryZonesTable.isActive, true)
       )
     )
-    .orderBy(desc(storeDeliveryZonesTable.priority), asc(storeDeliveryZonesTable.name))
+    .orderBy(
+      desc(storeDeliveryZonesTable.priority),
+      asc(storeDeliveryZonesTable.name)
+    )
 
   return zones
 }
@@ -396,7 +492,12 @@ const getAvailabilitiesForStore = async ({
   now?: Date
 }) => {
   const [delivery, takeout] = await Promise.all([
-    getAvailabilityForStore({ storeId, settings, serviceType: 'DELIVERY', now }),
+    getAvailabilityForStore({
+      storeId,
+      settings,
+      serviceType: 'DELIVERY',
+      now,
+    }),
     getAvailabilityForStore({ storeId, settings, serviceType: 'TAKEOUT', now }),
   ])
 
@@ -520,12 +621,15 @@ const getDigitalMenuBySlugInternal = async (
             statusLabel: 'Previa',
           },
         })
-      : getAvailabilitiesForStore({ storeId: store.id, settings: effectiveSettings }),
+      : getAvailabilitiesForStore({
+          storeId: store.id,
+          settings: effectiveSettings,
+        }),
   ])
   const availability =
     availabilities.delivery.isOpen || availabilities.delivery.canSchedule
-    ? availabilities.delivery
-    : availabilities.takeout
+      ? availabilities.delivery
+      : availabilities.takeout
 
   if (
     !availabilities.delivery.isOpen &&
@@ -576,7 +680,10 @@ const getDigitalMenuBySlugInternal = async (
       ean: itemsTable.ean,
     })
     .from(itemOfferingsTable)
-    .innerJoin(categoriesTable, eq(itemOfferingsTable.categoryId, categoriesTable.id))
+    .innerJoin(
+      categoriesTable,
+      eq(itemOfferingsTable.categoryId, categoriesTable.id)
+    )
     .innerJoin(itemsTable, eq(itemOfferingsTable.itemId, itemsTable.id))
     .leftJoin(storeFilesTable, eq(itemsTable.imageId, storeFilesTable.id))
     .where(
@@ -625,7 +732,10 @@ const getDigitalMenuBySlugInternal = async (
       inventory: item.inventory,
       externalCode: item.externalCode,
       ean: item.ean,
-      optionGroups: mapOptionGroups(optionGroupsByOffering, item.itemOfferingId),
+      optionGroups: mapOptionGroups(
+        optionGroupsByOffering,
+        item.itemOfferingId
+      ),
     }
 
     category.items.push(menuItem)
@@ -649,11 +759,66 @@ export const submitDigitalMenuOrder = async (
 ): Promise<DigitalMenuSubmissionResult> => {
   noStore()
   const presentedTrackingToken = input.trackingToken
+  const rawStoreSlug =
+    typeof input?.storeSlug === 'string'
+      ? normalizeStoreSlug(input.storeSlug)
+      : ''
+  const { remoteIp, ipHash, userAgentHash } = await getPublicRequestHashes()
+  const securitySecret = getPublicOrderSecuritySecret()
+  const rawDeviceId =
+    typeof input?.deviceId === 'string' ? input.deviceId.trim() : ''
+  const rawPhone =
+    typeof input?.customerPhone === 'string'
+      ? input.customerPhone.replace(/\D/g, '').slice(0, 13)
+      : ''
+  const baseSecurityContext: PublicSecurityContext = {
+    ipHash,
+    deviceHash: rawDeviceId
+      ? hashPublicIdentifier(rawDeviceId, securitySecret)
+      : null,
+    phoneHash: rawPhone ? hashPublicIdentifier(rawPhone, securitySecret) : null,
+    userAgentHash,
+  }
 
   const parsed = submitDigitalMenuOrderSchema.safeParse(input)
   if (!parsed.success) {
+    if (rawStoreSlug) {
+      const invalidMenu = await getDigitalMenuBySlug(rawStoreSlug)
+      if (invalidMenu?.store) {
+        const currentRisk = await getPublicOrderRisk(
+          invalidMenu.store.id,
+          baseSecurityContext
+        )
+        const riskScore = currentRisk + 20
+        await recordPublicSecurityEvent({
+          storeId: invalidMenu.store.id,
+          eventType: 'INVALID_PAYLOAD',
+          context: baseSecurityContext,
+          riskScore,
+          metadata: { issueCount: parsed.error.issues.length },
+        })
+
+        if (riskScore >= PUBLIC_ORDER_RISK.blockScore) {
+          await recordPublicSecurityEvent({
+            storeId: invalidMenu.store.id,
+            eventType: 'TEMPORARILY_BLOCKED',
+            context: baseSecurityContext,
+            riskScore,
+            retryAfterSeconds: PUBLIC_ORDER_RISK.temporaryBlockSeconds,
+          })
+          return {
+            ok: false,
+            code: 'TEMPORARILY_BLOCKED',
+            message:
+              'Recebemos varias tentativas em sequencia. Seu carrinho esta salvo e voce podera tentar novamente em alguns minutos.',
+            retryAfterSeconds: PUBLIC_ORDER_RISK.temporaryBlockSeconds,
+          }
+        }
+      }
+    }
     return {
       ok: false,
+      code: 'VALIDATION_ERROR',
       message: 'Revise os dados do pedido.',
       fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string>,
     }
@@ -664,6 +829,93 @@ export const submitDigitalMenuOrder = async (
 
   if (!menu?.store) {
     return { ok: false, message: 'Loja nao encontrada.' }
+  }
+
+  const phoneHash = hashPublicIdentifier(payload.customerPhone, securitySecret)
+  const securityContext: PublicSecurityContext = {
+    ...baseSecurityContext,
+    phoneHash,
+  }
+  const riskScore = await getPublicOrderRisk(menu.store.id, securityContext)
+  let captchaStatus: 'not_required' | 'passed' = 'not_required'
+
+  if (riskScore >= PUBLIC_ORDER_RISK.blockScore) {
+    await recordPublicSecurityEvent({
+      storeId: menu.store.id,
+      eventType: 'TEMPORARILY_BLOCKED',
+      context: securityContext,
+      riskScore,
+      retryAfterSeconds: PUBLIC_ORDER_RISK.temporaryBlockSeconds,
+    })
+    return {
+      ok: false,
+      code: 'TEMPORARILY_BLOCKED',
+      message:
+        'Recebemos varias tentativas em sequencia. Seu carrinho esta salvo e voce podera tentar novamente em alguns minutos.',
+      retryAfterSeconds: PUBLIC_ORDER_RISK.temporaryBlockSeconds,
+    }
+  }
+
+  if (riskScore >= PUBLIC_ORDER_RISK.challengeScore) {
+    const siteKey = getTurnstileSiteKey()
+    if (!payload.captchaToken || !siteKey) {
+      await recordPublicSecurityEvent({
+        storeId: menu.store.id,
+        eventType: 'CAPTCHA_REQUIRED',
+        context: securityContext,
+        riskScore,
+        captchaStatus: 'required',
+        metadata: { providerConfigured: !!siteKey },
+      })
+      return siteKey
+        ? {
+            ok: false,
+            code: 'CAPTCHA_REQUIRED',
+            message:
+              'Precisamos de uma verificacao rapida antes de enviar seu pedido.',
+            challengeSiteKey: siteKey,
+          }
+        : {
+            ok: false,
+            code: 'TEMPORARILY_BLOCKED',
+            message:
+              'A verificacao esta temporariamente indisponivel. Seu carrinho esta salvo; tente novamente em alguns minutos.',
+            retryAfterSeconds: PUBLIC_ORDER_RISK.temporaryBlockSeconds,
+          }
+    }
+
+    const captcha = await verifyTurnstileToken({
+      token: payload.captchaToken,
+      remoteIp,
+    })
+    if (!captcha.ok) {
+      await recordPublicSecurityEvent({
+        storeId: menu.store.id,
+        eventType: 'CAPTCHA_FAILED',
+        context: securityContext,
+        riskScore,
+        captchaStatus: 'failed',
+        metadata: { reason: captcha.reason },
+      })
+      return {
+        ok: false,
+        code: 'CAPTCHA_FAILED',
+        message:
+          captcha.reason === 'provider_error'
+            ? 'Nao foi possivel carregar a verificacao. Confira sua conexao e tente novamente.'
+            : 'A verificacao expirou. Faca novamente para enviar o pedido.',
+        challengeSiteKey: siteKey,
+      }
+    }
+
+    captchaStatus = 'passed'
+    await recordPublicSecurityEvent({
+      storeId: menu.store.id,
+      eventType: 'CAPTCHA_PASSED',
+      context: securityContext,
+      riskScore,
+      captchaStatus: 'passed',
+    })
   }
 
   if (menu.unavailableReason) {
@@ -690,7 +942,9 @@ export const submitDigitalMenuOrder = async (
     settings: currentSettings,
     serviceType: payload.orderType,
   })
-  const scheduledFor = payload.scheduledFor ? new Date(payload.scheduledFor) : null
+  const scheduledFor = payload.scheduledFor
+    ? new Date(payload.scheduledFor)
+    : null
 
   if (scheduledFor) {
     if (!currentSettings.allowScheduledOrders) {
@@ -705,8 +959,7 @@ export const submitDigitalMenuOrder = async (
       now.getTime() + currentSettings.scheduleMinLeadMinutes * 60 * 1000
     )
     const maxDate = new Date(
-      now.getTime() +
-        currentSettings.scheduleMaxDaysAhead * 24 * 60 * 60 * 1000
+      now.getTime() + currentSettings.scheduleMaxDaysAhead * 24 * 60 * 60 * 1000
     )
 
     if (
@@ -796,7 +1049,9 @@ export const submitDigitalMenuOrder = async (
         ok: false,
         message: `O pedido minimo para esta entrega e ${new Decimal(
           validatedCart.minimumOrderAmount
-        ).toFixed(2).replace('.', ',')}.`,
+        )
+          .toFixed(2)
+          .replace('.', ',')}.`,
       }
     }
   } catch (error) {
@@ -827,18 +1082,19 @@ export const submitDigitalMenuOrder = async (
   ) {
     return {
       ok: false,
-      message: 'O valor informado para troco precisa ser maior que o total do pedido.',
+      message:
+        'O valor informado para troco precisa ser maior que o total do pedido.',
     }
   }
 
   const requestId = crypto.randomUUID()
-  const { ipHash, userAgentHash } = await getPublicRequestHashes()
-  const securitySecret = getPublicOrderSecuritySecret()
-  const phoneHash = hashPublicIdentifier(payload.customerPhone, securitySecret)
   const rateLimitIpHash =
     ipHash ?? hashPublicIdentifier('unknown-ip', securitySecret)
   const anyIpHash = hashPublicIdentifier('rate-limit:any-ip', securitySecret)
-  const anyPhoneHash = hashPublicIdentifier('rate-limit:any-phone', securitySecret)
+  const anyPhoneHash = hashPublicIdentifier(
+    'rate-limit:any-phone',
+    securitySecret
+  )
   const trackingToken = createPublicTrackingToken()
   const trackingTokenHash = hashPublicIdentifier(trackingToken, securitySecret)
   const submittedAt = new Date()
@@ -949,18 +1205,52 @@ export const submitDigitalMenuOrder = async (
         )
       `)
 
-      if (!ipRateLimit?.allowed || !phoneRateLimit?.allowed) {
+      const [deviceRateLimit] = securityContext.deviceHash
+        ? await tx.execute<{
+            allowed: boolean
+            retryAfterSeconds: number
+          }>(sql`
+            select "allowed", "retry_after_seconds" as "retryAfterSeconds"
+            from public.consume_public_order_rate_limit(
+              ${menu.store.id}, ${securityContext.deviceHash}, ${anyPhoneHash},
+              ${PUBLIC_ORDER_RATE_LIMIT.windowSeconds},
+              ${PUBLIC_ORDER_RATE_LIMIT.windowLimit},
+              ${PUBLIC_ORDER_RATE_LIMIT.burstSeconds},
+              ${PUBLIC_ORDER_RATE_LIMIT.burstLimit}
+            )
+          `)
+        : [{ allowed: true, retryAfterSeconds: 0 }]
+
+      if (
+        !ipRateLimit?.allowed ||
+        !phoneRateLimit?.allowed ||
+        !deviceRateLimit?.allowed
+      ) {
         const retryAfterSeconds = Math.max(
           ipRateLimit?.retryAfterSeconds ?? 0,
           phoneRateLimit?.retryAfterSeconds ?? 0,
+          deviceRateLimit?.retryAfterSeconds ?? 0,
           1
         )
+        await tx.insert(publicOrderSecurityEventsTable).values({
+          storeId: menu.store.id,
+          eventType: 'RATE_LIMITED',
+          ...securityContext,
+          riskScore: riskScore + 50,
+          captchaStatus,
+          retryAfterSeconds,
+          metadata: {
+            ipLimited: !ipRateLimit?.allowed,
+            phoneLimited: !phoneRateLimit?.allowed,
+            deviceLimited: !deviceRateLimit?.allowed,
+          },
+        })
         return {
           ok: false as const,
-          message: `Muitas tentativas de pedido. Aguarde ${Math.max(
-            1,
-            retryAfterSeconds
-          )} segundos e tente novamente.`,
+          code: 'RATE_LIMITED' as const,
+          message:
+            'Recebemos varias tentativas em sequencia. Seu carrinho esta salvo e voce podera tentar novamente em instantes.',
+          retryAfterSeconds,
         }
       }
 
@@ -1011,15 +1301,17 @@ export const submitDigitalMenuOrder = async (
           deliveryZoneSnapshot:
             validatedCart.deliveryZoneId === null
               ? null
-              : menu.deliveryZones.find(
+              : (menu.deliveryZones.find(
                   zone => zone.id === validatedCart.deliveryZoneId
-                ) ?? null,
+                ) ?? null),
           storeSettingsSnapshot: currentPublicSettings,
           businessHoursSnapshot: orderAvailability,
           trackingTokenHash,
           trackingExpiresAt,
           customerIpHash: ipHash,
           userAgentHash,
+          captchaStatus,
+          riskScore,
           termsAcceptedAt: submittedAt,
           scheduledFor,
           submittedAt,
@@ -1063,7 +1355,7 @@ export const submitDigitalMenuOrder = async (
           customerDocument: payload.customerDocument || null,
           orderNotes: payload.orderNotes || null,
           deliveryAddress:
-            street && number ? `${street}, ${number}` : street ?? null,
+            street && number ? `${street}, ${number}` : (street ?? null),
           deliveryAddressReference: reference ?? null,
           deliveryAddressComplement: complement ?? null,
           deliveryNeighborhood: neighborhood ?? null,
@@ -1177,9 +1469,7 @@ export const submitDigitalMenuOrder = async (
           type: 'PENDING',
           method: payload.payment.method,
           changeFor:
-            payload.payment.method === 'CASH'
-              ? normalizedChangeFor
-              : null,
+            payload.payment.method === 'CASH' ? normalizedChangeFor : null,
         },
         dbSession: tx,
       })
@@ -1364,7 +1654,9 @@ export const getPublicOrderTracking = async (
   return buildPublicOrderTrackingDto(
     { ...order, trackingExpiresAt },
     events.flatMap(event =>
-      event.status ? [{ status: event.status, occurredAt: event.occurredAt }] : []
+      event.status
+        ? [{ status: event.status, occurredAt: event.occurredAt }]
+        : []
     ),
     now
   )

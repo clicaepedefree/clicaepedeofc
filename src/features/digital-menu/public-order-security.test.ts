@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  calculatePublicOrderRiskScore,
   buildPublicOrderTrackingDto,
   createPublicTrackingToken,
   hashPublicIdentifier,
@@ -8,6 +9,38 @@ import {
   PUBLIC_ORDER_RATE_LIMIT,
   publicTrackingTokenMatches,
 } from './public-order-security'
+
+describe('calculatePublicOrderRiskScore', () => {
+  test('keeps normal traffic below the challenge threshold', () => {
+    expect(
+      calculatePublicOrderRiskScore({
+        invalidPayloads: 1,
+        captchaFailures: 0,
+        rateLimits: 0,
+      })
+    ).toBe(20)
+  })
+
+  test('combines repeated invalid attempts and captcha failures', () => {
+    expect(
+      calculatePublicOrderRiskScore({
+        invalidPayloads: 3,
+        captchaFailures: 1,
+        rateLimits: 0,
+      })
+    ).toBe(95)
+  })
+
+  test('caps every signal to keep scoring predictable', () => {
+    expect(
+      calculatePublicOrderRiskScore({
+        invalidPayloads: 99,
+        captchaFailures: 99,
+        rateLimits: 99,
+      })
+    ).toBe(325)
+  })
+})
 
 const secret = 'test-secret-with-enough-entropy-for-hmac'
 

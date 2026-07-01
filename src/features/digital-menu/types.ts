@@ -61,7 +61,12 @@ export type DigitalMenuSettings = {
   } | null
   isDigitalMenuEnabled: boolean
   isAcceptingOrders: boolean
-  operationalStatus: 'OPEN' | 'CLOSED' | 'PAUSED' | 'TAKEOUT_ONLY' | 'DELIVERY_ONLY'
+  operationalStatus:
+    | 'OPEN'
+    | 'CLOSED'
+    | 'PAUSED'
+    | 'TAKEOUT_ONLY'
+    | 'DELIVERY_ONLY'
   operationalStatusMessage: string | null
   manualPauseReason: string | null
   minimumOrderAmount: string
@@ -146,6 +151,8 @@ export type DigitalMenuCartItemInput = {
 export type DigitalMenuSubmitInput = {
   storeSlug: string
   idempotencyKey: string
+  deviceId?: string
+  captchaToken?: string
   trackingToken?: string
   customerName: string
   customerPhone: string
@@ -229,9 +236,18 @@ export type DigitalMenuSubmissionResult =
     }
   | {
       ok: false
+      code?:
+        | 'VALIDATION_ERROR'
+        | 'CAPTCHA_REQUIRED'
+        | 'CAPTCHA_FAILED'
+        | 'RATE_LIMITED'
+        | 'TEMPORARILY_BLOCKED'
+        | 'SUBMISSION_FAILED'
       message: string
       fieldErrors?: Record<string, string>
       affectedItemOfferingId?: number
+      retryAfterSeconds?: number
+      challengeSiteKey?: string
     }
 
 export type PublicOrderTrackingDto = {

@@ -31,7 +31,8 @@ export const normalizePhone = (value: string) => {
   return value.replace(/\D/g, '').slice(0, 13)
 }
 
-export const normalizeCpf = (value: string) => value.replace(/\D/g, '').slice(0, 11)
+export const normalizeCpf = (value: string) =>
+  value.replace(/\D/g, '').slice(0, 11)
 
 export const isValidCpf = (value: string) => {
   const cpf = normalizeCpf(value)
@@ -41,12 +42,18 @@ export const isValidCpf = (value: string) => {
     const sum = cpf
       .slice(0, length)
       .split('')
-      .reduce((total, digit, index) => total + Number(digit) * (length + 1 - index), 0)
+      .reduce(
+        (total, digit, index) => total + Number(digit) * (length + 1 - index),
+        0
+      )
     const remainder = (sum * 10) % 11
     return remainder === 10 ? 0 : remainder
   }
 
-  return calculateDigit(9) === Number(cpf[9]) && calculateDigit(10) === Number(cpf[10])
+  return (
+    calculateDigit(9) === Number(cpf[9]) &&
+    calculateDigit(10) === Number(cpf[10])
+  )
 }
 
 const cartOptionSchema = z.object({
@@ -65,6 +72,8 @@ export const submitDigitalMenuOrderSchema = z
   .object({
     storeSlug: z.string().min(1).max(80).transform(normalizeStoreSlug),
     idempotencyKey: z.string().min(12).max(120),
+    deviceId: z.string().trim().min(16).max(120).optional(),
+    captchaToken: z.string().trim().min(10).max(2048).optional(),
     customerName: z
       .string()
       .max(120)
@@ -92,12 +101,36 @@ export const submitDigitalMenuOrderSchema = z
     scheduledFor: z.string().datetime().optional(),
     address: z
       .object({
-        postalCode: z.string().max(16).transform(value => sanitizePublicText(value, 16)).optional(),
-        street: z.string().max(160).transform(value => sanitizePublicText(value, 160)).optional(),
-        number: z.string().max(30).transform(value => sanitizePublicText(value, 30)).optional(),
-        neighborhood: z.string().max(120).transform(value => sanitizePublicText(value, 120)).optional(),
-        complement: z.string().max(120).transform(value => sanitizePublicText(value, 120)).optional(),
-        reference: z.string().max(180).transform(value => sanitizePublicText(value, 180)).optional(),
+        postalCode: z
+          .string()
+          .max(16)
+          .transform(value => sanitizePublicText(value, 16))
+          .optional(),
+        street: z
+          .string()
+          .max(160)
+          .transform(value => sanitizePublicText(value, 160))
+          .optional(),
+        number: z
+          .string()
+          .max(30)
+          .transform(value => sanitizePublicText(value, 30))
+          .optional(),
+        neighborhood: z
+          .string()
+          .max(120)
+          .transform(value => sanitizePublicText(value, 120))
+          .optional(),
+        complement: z
+          .string()
+          .max(120)
+          .transform(value => sanitizePublicText(value, 120))
+          .optional(),
+        reference: z
+          .string()
+          .max(180)
+          .transform(value => sanitizePublicText(value, 180))
+          .optional(),
         latitude: z.coerce.number().min(-90).max(90).optional(),
         longitude: z.coerce.number().min(-180).max(180).optional(),
       })
