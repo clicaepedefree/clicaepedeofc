@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS "public_order_submissions" (
   "order_id" integer REFERENCES "orders"("id") ON DELETE set null,
   "request_id" text NOT NULL,
   "idempotency_key" text NOT NULL,
-  "request_hash" text NOT NULL,
   "status" text NOT NULL,
   "technical_status" text NOT NULL,
   "sales_channel" text DEFAULT 'DIGITAL_MENU' NOT NULL,
