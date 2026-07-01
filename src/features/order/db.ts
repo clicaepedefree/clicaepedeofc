@@ -19,6 +19,7 @@ import {
   orderAuditEventsTable,
 } from '@/services/db/schema/order-audit-events'
 import { publicOrderSubmissionsTable } from '@/services/db/schema/public-order-submissions'
+import { publicOrderEventsTable } from '@/services/db/schema/public-order-events'
 import {
   OrderTransitionAction,
   requireAuditReason,
@@ -130,7 +131,7 @@ export const transitionOrderOnDb = async ({
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
     .returning()
 
-  await dbSession
+  const [publicSubmission] = await dbSession
     .update(publicOrderSubmissionsTable)
     .set({ status: transition.toStatus, ...statusFields })
     .where(
@@ -139,6 +140,21 @@ export const transitionOrderOnDb = async ({
         eq(publicOrderSubmissionsTable.storeId, storeId)
       )
     )
+    .returning({ id: publicOrderSubmissionsTable.id })
+
+  if (publicSubmission) {
+    await dbSession.insert(publicOrderEventsTable).values({
+      publicOrderId: publicSubmission.id,
+      storeId,
+      eventType: 'public_order_status_changed',
+      fromStatus: transition.fromStatus,
+      toStatus: transition.toStatus,
+      actorType: 'store',
+      actorUserId,
+      requestId,
+      payload: transition.reason ? { reason: transition.reason } : null,
+    })
+  }
 
   await createOrderAuditEventOnDb({
     dbSession,

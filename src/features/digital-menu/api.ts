@@ -15,6 +15,7 @@ import {
   categoriesTable,
   itemOfferingsTable,
   itemsTable,
+  ordersTable,
   publicOrderDeliveryAttemptsTable,
   publicOrderEventsTable,
   publicOrderSubmissionsTable,
@@ -29,7 +30,7 @@ import {
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash, createHmac } from 'node:crypto'
@@ -49,7 +50,17 @@ import {
   DigitalMenuSettings,
   DigitalMenuSubmissionResult,
   DigitalMenuSubmitInput,
+  PublicOrderTrackingDto,
 } from './types'
+import {
+  buildPublicOrderTrackingDto,
+  createPublicTrackingToken,
+  hashPublicIdentifier,
+  isPublicTrackingToken,
+  PUBLIC_ORDER_RATE_LIMIT,
+  PUBLIC_ORDER_TRACKING_TTL_MS,
+  publicTrackingTokenMatches,
+} from './public-order-security'
 import {
   normalizeStoreSlug,
   sanitizePublicText,
@@ -85,6 +96,13 @@ const hashRequestIdentifier = (value: string | null) => {
   const pepper = process.env.CLERK_SECRET_KEY
   if (!pepper) throw new Error('Missing server-side audit hash pepper.')
   return createHmac('sha256', pepper).update(value).digest('hex')
+}
+
+const getPublicOrderSecuritySecret = () => {
+  const secret =
+    process.env.PUBLIC_ORDER_SECURITY_SECRET ?? process.env.CLERK_SECRET_KEY
+  if (!secret) throw new Error('Missing server-side public order security secret.')
+  return secret
 }
 
 const getPublicRequestHashes = async () => {
@@ -594,6 +612,7 @@ export const submitDigitalMenuOrder = async (
   input: DigitalMenuSubmitInput
 ): Promise<DigitalMenuSubmissionResult> => {
   noStore()
+  const presentedTrackingToken = input.trackingToken
 
   const parsed = submitDigitalMenuOrderSchema.safeParse(input)
   if (!parsed.success) {
@@ -778,7 +797,18 @@ export const submitDigitalMenuOrder = async (
 
   const requestId = crypto.randomUUID()
   const { ipHash, userAgentHash } = await getPublicRequestHashes()
+  const securitySecret = getPublicOrderSecuritySecret()
+  const phoneHash = hashPublicIdentifier(payload.customerPhone, securitySecret)
+  const rateLimitIpHash =
+    ipHash ?? hashPublicIdentifier('unknown-ip', securitySecret)
+  const anyIpHash = hashPublicIdentifier('rate-limit:any-ip', securitySecret)
+  const anyPhoneHash = hashPublicIdentifier('rate-limit:any-phone', securitySecret)
+  const trackingToken = createPublicTrackingToken()
+  const trackingTokenHash = hashPublicIdentifier(trackingToken, securitySecret)
   const submittedAt = new Date()
+  const trackingExpiresAt = new Date(
+    submittedAt.getTime() + PUBLIC_ORDER_TRACKING_TTL_MS
+  )
   const requestHash = createRequestHash({
     storeSlug: payload.storeSlug,
     customerName: payload.customerName,
@@ -819,6 +849,8 @@ export const submitDigitalMenuOrder = async (
           requestHash: true,
           status: true,
           totalsSnapshot: true,
+          trackingTokenHash: true,
+          trackingExpiresAt: true,
         },
       })
 
@@ -832,6 +864,14 @@ export const submitDigitalMenuOrder = async (
         }
 
         const totals = existing.totalsSnapshot as { total?: string }
+        const canReuseTrackingToken =
+          !!existing.trackingExpiresAt &&
+          existing.trackingExpiresAt > submittedAt &&
+          publicTrackingTokenMatches(
+            presentedTrackingToken,
+            existing.trackingTokenHash,
+            securitySecret
+          )
         return {
           ok: true as const,
           publicOrderId: existing.id,
@@ -839,6 +879,52 @@ export const submitDigitalMenuOrder = async (
           status: existing.status,
           total: totals.total ?? validatedCart.total,
           reused: true,
+          ...(canReuseTrackingToken
+            ? { trackingToken: presentedTrackingToken }
+            : {}),
+        }
+      }
+
+      const [ipRateLimit] = await tx.execute<{
+        allowed: boolean
+        retryAfterSeconds: number
+      }>(sql`
+        select "allowed", "retry_after_seconds" as "retryAfterSeconds"
+        from public.consume_public_order_rate_limit(
+          ${menu.store.id}, ${rateLimitIpHash}, ${anyPhoneHash},
+          ${PUBLIC_ORDER_RATE_LIMIT.windowSeconds},
+          ${PUBLIC_ORDER_RATE_LIMIT.windowLimit},
+          ${PUBLIC_ORDER_RATE_LIMIT.burstSeconds},
+          ${PUBLIC_ORDER_RATE_LIMIT.burstLimit}
+        )
+      `)
+
+      const [phoneRateLimit] = await tx.execute<{
+        allowed: boolean
+        retryAfterSeconds: number
+      }>(sql`
+        select "allowed", "retry_after_seconds" as "retryAfterSeconds"
+        from public.consume_public_order_rate_limit(
+          ${menu.store.id}, ${anyIpHash}, ${phoneHash},
+          ${PUBLIC_ORDER_RATE_LIMIT.windowSeconds},
+          ${Math.max(3, PUBLIC_ORDER_RATE_LIMIT.windowLimit - 2)},
+          ${PUBLIC_ORDER_RATE_LIMIT.burstSeconds},
+          ${PUBLIC_ORDER_RATE_LIMIT.burstLimit}
+        )
+      `)
+
+      if (!ipRateLimit?.allowed || !phoneRateLimit?.allowed) {
+        const retryAfterSeconds = Math.max(
+          ipRateLimit?.retryAfterSeconds ?? 0,
+          phoneRateLimit?.retryAfterSeconds ?? 0,
+          1
+        )
+        return {
+          ok: false as const,
+          message: `Muitas tentativas de pedido. Aguarde ${Math.max(
+            1,
+            retryAfterSeconds
+          )} segundos e tente novamente.`,
         }
       }
 
@@ -894,6 +980,8 @@ export const submitDigitalMenuOrder = async (
                 ) ?? null,
           storeSettingsSnapshot: currentPublicSettings,
           businessHoursSnapshot: orderAvailability,
+          trackingTokenHash,
+          trackingExpiresAt,
           customerIpHash: ipHash,
           userAgentHash,
           termsAcceptedAt: submittedAt,
@@ -956,6 +1044,8 @@ export const submitDigitalMenuOrder = async (
           origin: 'cardapio-digital',
           idempotencyKey: payload.idempotencyKey,
           requestId,
+          publicTrackingTokenHash: trackingTokenHash,
+          publicTrackingExpiresAt: trackingExpiresAt,
           snapshot: {
             publicOrderId: created.id,
             cart: validatedCart.items,
@@ -1093,6 +1183,7 @@ export const submitDigitalMenuOrder = async (
         status: created.status,
         total: validatedCart.total,
         reused: false,
+        trackingToken,
       }
     })
 
@@ -1115,11 +1206,21 @@ export const submitDigitalMenuOrder = async (
           requestHash: true,
           status: true,
           totalsSnapshot: true,
+          trackingTokenHash: true,
+          trackingExpiresAt: true,
         },
       })
 
       if (existing?.requestHash === requestHash) {
         const totals = existing.totalsSnapshot as { total?: string }
+        const canReuseTrackingToken =
+          !!existing.trackingExpiresAt &&
+          existing.trackingExpiresAt > new Date() &&
+          publicTrackingTokenMatches(
+            presentedTrackingToken,
+            existing.trackingTokenHash,
+            securitySecret
+          )
         return {
           ok: true,
           publicOrderId: existing.id,
@@ -1127,6 +1228,9 @@ export const submitDigitalMenuOrder = async (
           status: existing.status,
           total: totals.total ?? validatedCart.total,
           reused: true,
+          ...(canReuseTrackingToken
+            ? { trackingToken: presentedTrackingToken }
+            : {}),
         }
       }
 
@@ -1148,4 +1252,66 @@ export const submitDigitalMenuOrder = async (
         'Nao conseguimos enviar o pedido agora. Tente novamente em alguns instantes.',
     }
   }
+}
+
+export const getPublicOrderTracking = async (
+  rawToken: string
+): Promise<PublicOrderTrackingDto | null> => {
+  noStore()
+  if (!isPublicTrackingToken(rawToken)) return null
+
+  const tokenHash = hashPublicIdentifier(
+    rawToken,
+    getPublicOrderSecuritySecret()
+  )
+  const now = new Date()
+  const [order] = await db
+    .select({
+      publicOrderId: publicOrderSubmissionsTable.id,
+      displayId: ordersTable.displayId,
+      storeName: storesTable.name,
+      status: publicOrderSubmissionsTable.status,
+      orderType: publicOrderSubmissionsTable.orderType,
+      total: ordersTable.totalPrice,
+      estimatedMinutes: ordersTable.deliveryEstimatedMinutes,
+      submittedAt: publicOrderSubmissionsTable.submittedAt,
+      updatedAt: publicOrderSubmissionsTable.updatedAt,
+      trackingExpiresAt: publicOrderSubmissionsTable.trackingExpiresAt,
+    })
+    .from(publicOrderSubmissionsTable)
+    .innerJoin(
+      ordersTable,
+      and(
+        eq(ordersTable.id, publicOrderSubmissionsTable.orderId),
+        eq(ordersTable.storeId, publicOrderSubmissionsTable.storeId),
+        eq(ordersTable.publicTrackingTokenHash, tokenHash)
+      )
+    )
+    .where(
+      and(
+        eq(publicOrderSubmissionsTable.trackingTokenHash, tokenHash),
+        gt(publicOrderSubmissionsTable.trackingExpiresAt, now)
+      )
+    )
+    .limit(1)
+
+  const trackingExpiresAt = order?.trackingExpiresAt
+  if (!order || !trackingExpiresAt) return null
+
+  const events = await db
+    .select({
+      status: publicOrderEventsTable.toStatus,
+      occurredAt: publicOrderEventsTable.createdAt,
+    })
+    .from(publicOrderEventsTable)
+    .where(eq(publicOrderEventsTable.publicOrderId, order.publicOrderId))
+    .orderBy(asc(publicOrderEventsTable.createdAt))
+
+  return buildPublicOrderTrackingDto(
+    { ...order, trackingExpiresAt },
+    events.flatMap(event =>
+      event.status ? [{ status: event.status, occurredAt: event.occurredAt }] : []
+    ),
+    now
+  )
 }

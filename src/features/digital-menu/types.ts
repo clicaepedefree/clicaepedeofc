@@ -146,6 +146,7 @@ export type DigitalMenuCartItemInput = {
 export type DigitalMenuSubmitInput = {
   storeSlug: string
   idempotencyKey: string
+  trackingToken?: string
   customerName: string
   customerPhone: string
   customerDocument?: string
@@ -224,6 +225,7 @@ export type DigitalMenuSubmissionResult =
       status: string
       total: string
       reused: boolean
+      trackingToken?: string
     }
   | {
       ok: false
@@ -231,3 +233,17 @@ export type DigitalMenuSubmissionResult =
       fieldErrors?: Record<string, string>
       affectedItemOfferingId?: number
     }
+
+export type PublicOrderTrackingDto = {
+  publicOrderId: string
+  displayId: string
+  storeName: string
+  status: string
+  orderType: 'DELIVERY' | 'TAKEOUT'
+  total: string
+  estimatedMinutes: number | null
+  submittedAt: string
+  updatedAt: string
+  expiresAt: string
+  timeline: Array<{ status: string; occurredAt: string }>
+}

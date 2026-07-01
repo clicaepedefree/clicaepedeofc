@@ -36,6 +36,7 @@ import {
   TableRow,
 } from '@/shared/table'
 import { Textarea } from '@/shared/textarea'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/tooltip'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAtomValue } from 'jotai'
@@ -56,6 +57,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 type OrderAction = 'accept' | 'reject' | 'cancel' | 'complete'
+type QueueTab = 'NEW' | 'PREPARING' | 'FINISHED'
 
 type AuditEvent = {
   id?: number | string
@@ -161,6 +163,12 @@ const validActions: Record<string, OrderAction[]> = {
   ACCEPTED: ['complete', 'cancel'],
 }
 
+const queueStatuses: Record<QueueTab, string[]> = {
+  NEW: ['PENDING', 'CREATED', 'SENT_TO_STORE'],
+  PREPARING: ['RECEIVED', 'ACCEPTED', 'READY', 'OUT_FOR_DELIVERY'],
+  FINISHED: ['COMPLETED', 'CANCELLED', 'REJECTED'],
+}
+
 const actionIcons = {
   accept: Check,
   reject: CircleX,
@@ -187,6 +195,14 @@ const formatDateTime = (value?: string | Date | null) =>
 
 const statusLabel = (status?: string | null) =>
   status ? (statusLabels[status] ?? status) : 'Atualização'
+
+const formatWaitingTime = (value: string | Date, now: number) => {
+  const minutes = Math.max(0, Math.floor((now - new Date(value).getTime()) / 60_000))
+  if (minutes < 1) return 'Agora'
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}min`
+}
 
 function StatusBadge({ status }: { status: string }) {
   const variant =
@@ -229,13 +245,22 @@ export function OrdersPage() {
   const [pendingAction, setPendingAction] = useState<OrderAction | null>(null)
   const [reason, setReason] = useState('')
   const [noteOpen, setNoteOpen] = useState(false)
+  const [queueTab, setQueueTab] = useState<QueueTab>('NEW')
+  const [now, setNow] = useState(() => Date.now())
 
   const ordersQuery = useQuery({
     queryKey: ordersCacheKey(storeId),
     queryFn: () => listOrders(storeId!) as Promise<Order[]>,
     enabled: !!storeId,
     refetchOnMount: 'always',
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
   })
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   const invalidateOrders = async () => {
     await queryClient.invalidateQueries({ queryKey: ordersCacheKey(storeId) })
@@ -290,12 +315,23 @@ export function OrdersPage() {
         (order.customerName ?? '').toLocaleLowerCase('pt-BR').includes(term)
       return (
         matchesSearch &&
+        queueStatuses[queueTab].includes(order.status) &&
         (status === 'ALL' || order.status === status) &&
         (channel === 'ALL' || order.salesChannel === channel) &&
         (type === 'ALL' || order.type === type)
       )
     })
-  }, [ordersQuery.data, search, status, channel, type])
+  }, [ordersQuery.data, search, status, channel, type, queueTab])
+
+  const queueCounts = useMemo(() => {
+    const orders = ordersQuery.data ?? []
+    return Object.fromEntries(
+      Object.entries(queueStatuses).map(([key, statuses]) => [
+        key,
+        orders.filter(order => statuses.includes(order.status)).length,
+      ])
+    ) as Record<QueueTab, number>
+  }, [ordersQuery.data])
 
   useEffect(() => {
     if (!selectedOrder) return
@@ -328,6 +364,13 @@ export function OrdersPage() {
       />
 
       <section aria-label="Filtros de pedidos" className="border-b bg-background px-4 py-3 lg:px-6">
+        <Tabs value={queueTab} onValueChange={value => setQueueTab(value as QueueTab)} className="mb-3">
+          <TabsList className="grid h-10 w-full grid-cols-3 sm:w-auto">
+            <TabsTrigger value="NEW">Novos <Badge variant="secondary">{queueCounts.NEW}</Badge></TabsTrigger>
+            <TabsTrigger value="PREPARING">Em preparo <Badge variant="secondary">{queueCounts.PREPARING}</Badge></TabsTrigger>
+            <TabsTrigger value="FINISHED">Finalizados <Badge variant="secondary">{queueCounts.FINISHED}</Badge></TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
           <label className="relative min-w-0 flex-1 xl:max-w-md">
             <span className="sr-only">Buscar por número ou cliente</span>
@@ -362,6 +405,9 @@ export function OrdersPage() {
       </section>
 
       <main className="p-4 lg:p-6">
+        <p className="sr-only" aria-live="polite">
+          {ordersQuery.isFetching ? 'Atualizando pedidos.' : `${filteredOrders.length} pedidos exibidos na fila.`}
+        </p>
         {!storeId || ordersQuery.isPending ? (
           <StatePanel icon={<LoadingSpinner />} title="Carregando pedidos" description="Buscando os pedidos da loja selecionada." />
         ) : ordersQuery.isError ? (
@@ -386,14 +432,14 @@ export function OrdersPage() {
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
-                    <TableHead>Pedido</TableHead><TableHead>Horário</TableHead><TableHead>Cliente</TableHead><TableHead>Canal / tipo</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead>Atualização</TableHead><TableHead className="w-12"><span className="sr-only">Detalhes</span></TableHead>
+                    <TableHead>Pedido</TableHead><TableHead>Aguardando</TableHead><TableHead>Cliente</TableHead><TableHead>Canal / tipo</TableHead><TableHead>Total</TableHead><TableHead>Status</TableHead><TableHead>Atualização</TableHead><TableHead className="w-12"><span className="sr-only">Detalhes</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredOrders.map(order => (
                     <TableRow key={order.id}>
                       <TableCell className="font-semibold">#{order.displayId}</TableCell>
-                      <TableCell>{formatDateTime(order.createdAt)}</TableCell>
+                      <TableCell><span className="font-medium tabular-nums">{formatWaitingTime(order.createdAt, now)}</span><span className="block text-xs text-muted-foreground">desde {formatDateTime(order.createdAt)}</span></TableCell>
                       <TableCell className="max-w-52 truncate">{order.customerName || 'Cliente não informado'}</TableCell>
                       <TableCell><div className="font-medium">{channelLabels[order.salesChannel] ?? order.salesChannel}</div><div className="text-xs text-muted-foreground">{typeLabels[order.type] ?? order.type}</div></TableCell>
                       <TableCell className="font-semibold tabular-nums">{formatCurrency(order.totalPrice)}</TableCell>
@@ -412,7 +458,7 @@ export function OrdersPage() {
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center justify-between gap-2"><span className="font-semibold">#{order.displayId}</span><StatusBadge status={order.status} /></div>
                     <p className="truncate text-sm">{order.customerName || 'Cliente não informado'}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{channelLabels[order.salesChannel] ?? order.salesChannel} · {typeLabels[order.type] ?? order.type} · {formatDateTime(order.createdAt)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Aguardando {formatWaitingTime(order.createdAt, now)} · {channelLabels[order.salesChannel] ?? order.salesChannel} · {typeLabels[order.type] ?? order.type}</p>
                   </div>
                   <div className="shrink-0 text-right"><p className="text-sm font-semibold tabular-nums">{formatCurrency(order.totalPrice)}</p><ChevronRight className="ml-auto mt-2 size-4 text-muted-foreground" /></div>
                 </button>

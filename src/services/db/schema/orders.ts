@@ -63,6 +63,7 @@ export const ordersTable = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     publicTrackingTokenHash: text('public_tracking_token_hash'),
+    publicTrackingExpiresAt: timestamp('public_tracking_expires_at', { withTimezone: true }),
     lastPrintedAt: timestamp('last_printed_at', { withTimezone: true }),
     printCount: integer('print_count').notNull().default(0),
     couponCode: text('coupon_code'),
@@ -78,6 +79,9 @@ export const ordersTable = pgTable(
   },
   table => [
     uniqueIndex('orders_id_store_id_unique').on(table.id, table.storeId),
+    uniqueIndex('orders_public_tracking_token_hash_unique')
+      .on(table.publicTrackingTokenHash)
+      .where(isNotNull(table.publicTrackingTokenHash)),
     uniqueIndex('orders_store_id_idempotency_key_unique')
       .on(table.storeId, table.idempotencyKey)
       .where(isNotNull(table.idempotencyKey)),
