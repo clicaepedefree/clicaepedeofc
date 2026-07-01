@@ -11,6 +11,12 @@ export const storeOperationalStatuses = [
   'DELIVERY_ONLY',
 ] as const
 
+export const digitalMenuPublicationStatuses = [
+  'DRAFT',
+  'PUBLISHED',
+  'PAUSED',
+] as const
+
 export const storeDigitalMenuSettingsTable = pgTable('store_digital_menu_settings', {
   storeId: integer('store_id')
     .primaryKey()
@@ -24,6 +30,16 @@ export const storeDigitalMenuSettingsTable = pgTable('store_digital_menu_setting
   whatsappPhone: text('whatsapp_phone'),
   isDigitalMenuEnabled: boolean('is_digital_menu_enabled').notNull().default(true),
   isAcceptingOrders: boolean('is_accepting_orders').notNull().default(true),
+  publicationStatus: text('publication_status', {
+    enum: digitalMenuPublicationStatuses,
+  })
+    .notNull()
+    .default('DRAFT'),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  publicationUpdatedAt: timestamp('publication_updated_at', {
+    withTimezone: true,
+  }),
+  publicationUpdatedByUserId: text('publication_updated_by_user_id'),
   operationalStatus: text('operational_status', {
     enum: storeOperationalStatuses,
   })

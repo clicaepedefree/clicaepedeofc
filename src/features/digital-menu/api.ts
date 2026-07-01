@@ -1,6 +1,7 @@
 'use server'
 
 import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
+import { validateUserPermissionsForStore } from '@/features/store/api'
 import {
   createOrderItemOnDb,
   createOrderItemOptionsOnDb,
@@ -79,6 +80,7 @@ const DEFAULT_DIGITAL_MENU_SETTINGS = {
   pickupStateCode: null,
   isDigitalMenuEnabled: true,
   isAcceptingOrders: true,
+  publicationStatus: 'DRAFT' as const,
   manualPauseReason: null,
   manualPauseUntil: null,
   operationalStatus: 'OPEN' as const,
@@ -173,6 +175,7 @@ const getDigitalMenuSettings = async (storeId: number) => {
       pickupStateCode: storeCompanyProfilesTable.stateCode,
       isDigitalMenuEnabled: storeDigitalMenuSettingsTable.isDigitalMenuEnabled,
       isAcceptingOrders: storeDigitalMenuSettingsTable.isAcceptingOrders,
+      publicationStatus: storeDigitalMenuSettingsTable.publicationStatus,
       operationalStatus: storeDigitalMenuSettingsTable.operationalStatus,
       operationalStatusMessage:
         storeDigitalMenuSettingsTable.operationalStatusMessage,
@@ -370,7 +373,12 @@ const getAvailabilityForStore = async ({
     .orderBy(asc(storeBusinessHoursTable.opensAt))
 
   return evaluateDigitalMenuAvailability({
-    settings: settings as DigitalMenuAvailabilitySettings,
+    settings: {
+      ...settings,
+      isDigitalMenuEnabled:
+        settings.publicationStatus === 'PUBLISHED' &&
+        settings.isDigitalMenuEnabled,
+    } as DigitalMenuAvailabilitySettings,
     businessHours,
     specialHours,
     serviceType,
@@ -419,8 +427,9 @@ const mapOptionGroups = (
   }))
 }
 
-export const getDigitalMenuBySlug = async (
-  rawStoreSlug: string
+const getDigitalMenuBySlugInternal = async (
+  rawStoreSlug: string,
+  preview = false
 ): Promise<DigitalMenuData | null> => {
   noStore()
 
@@ -481,10 +490,37 @@ export const getDigitalMenuBySlug = async (
   }
 
   const settings = await getDigitalMenuSettings(store.id)
+  const effectiveSettings = preview
+    ? {
+        ...settings,
+        publicationStatus: 'PUBLISHED' as const,
+        isDigitalMenuEnabled: true,
+        isAcceptingOrders: true,
+        operationalStatus: 'OPEN' as const,
+        manualPauseUntil: null,
+      }
+    : settings
   const [paymentMethods, deliveryZones, availabilities] = await Promise.all([
     getPaymentMethodsForPublicMenu(store.id),
     getDeliveryZonesForPublicMenu(store.id),
-    getAvailabilitiesForStore({ storeId: store.id, settings }),
+    preview
+      ? Promise.resolve({
+          delivery: {
+            isOpen: true,
+            reason: null,
+            nextOpeningLabel: null,
+            canSchedule: false,
+            statusLabel: 'Previa',
+          },
+          takeout: {
+            isOpen: true,
+            reason: null,
+            nextOpeningLabel: null,
+            canSchedule: false,
+            statusLabel: 'Previa',
+          },
+        })
+      : getAvailabilitiesForStore({ storeId: store.id, settings: effectiveSettings }),
   ])
   const availability =
     availabilities.delivery.isOpen || availabilities.delivery.canSchedule
@@ -498,7 +534,7 @@ export const getDigitalMenuBySlug = async (
   ) {
     return {
       store,
-      settings: toPublicSettings(settings),
+      settings: toPublicSettings(effectiveSettings),
       availability,
       availabilities,
       paymentMethods,
@@ -597,7 +633,7 @@ export const getDigitalMenuBySlug = async (
 
   return {
     store,
-    settings: toPublicSettings(settings),
+    settings: toPublicSettings(effectiveSettings),
     availability,
     availabilities,
     paymentMethods,
@@ -1252,6 +1288,24 @@ export const submitDigitalMenuOrder = async (
         'Nao conseguimos enviar o pedido agora. Tente novamente em alguns instantes.',
     }
   }
+}
+
+export const getDigitalMenuBySlug = async (rawStoreSlug: string) =>
+  getDigitalMenuBySlugInternal(rawStoreSlug)
+
+export const getDigitalMenuPreviewBySlug = async (rawStoreSlug: string) => {
+  const storeSlug = normalizeStoreSlug(rawStoreSlug)
+  if (!storeSlug) return null
+
+  const [store] = await db
+    .select({ id: storesTable.id })
+    .from(storesTable)
+    .where(eq(storesTable.subdomain, storeSlug))
+    .limit(1)
+
+  if (!store) return null
+  await validateUserPermissionsForStore(store.id, 'admin')
+  return getDigitalMenuBySlugInternal(storeSlug, true)
 }
 
 export const getPublicOrderTracking = async (

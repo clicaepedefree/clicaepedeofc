@@ -31,6 +31,11 @@ const adminMenuItems = [
         icon: 'utensils' as const,
       },
       {
+        title: 'Cardapio Digital',
+        url: '/digital-menu',
+        icon: 'store' as const,
+      },
+      {
         title: 'Configurações',
         url: '/settings/store',
         icon: 'settings' as const,
