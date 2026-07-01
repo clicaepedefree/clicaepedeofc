@@ -35,6 +35,7 @@ import {
   Plus,
   ReceiptText,
   Search,
+  ShieldCheck,
   ShoppingBag,
   SlidersHorizontal,
   Sparkles,
@@ -44,7 +45,15 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import Script from 'next/script'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
 
 type CartOption = {
   optionId: number
@@ -73,6 +82,72 @@ type DisplayMenuItem = DigitalMenuItem & {
 
 type DisplayMenuCategory = Omit<DigitalMenuCategory, 'items'> & {
   items: DisplayMenuItem[]
+}
+
+type TurnstileApi = {
+  render: (container: string, options: Record<string, unknown>) => string
+  remove: (widgetId: string) => void
+}
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi
+  }
+}
+
+const ConditionalTurnstile = ({
+  siteKey,
+  resetKey,
+  onToken,
+  onError,
+}: {
+  siteKey: string
+  resetKey: number
+  onToken: (token: string | null) => void
+  onError: (message: string) => void
+}) => {
+  const containerId = `turnstile-${useId().replace(/:/g, '')}`
+  const widgetId = useRef<string | null>(null)
+  const [scriptReady, setScriptReady] = useState(false)
+
+  useEffect(() => {
+    if (!scriptReady || !window.turnstile) return
+    if (widgetId.current) window.turnstile.remove(widgetId.current)
+    widgetId.current = window.turnstile.render(`#${containerId}`, {
+      sitekey: siteKey,
+      action: 'digital_menu_checkout',
+      theme: 'auto',
+      size: 'flexible',
+      appearance: 'interaction-only',
+      callback: (token: string) => onToken(token),
+      'expired-callback': () => {
+        onToken(null)
+        onError('A verificacao expirou. Faca novamente para enviar o pedido.')
+      },
+      'error-callback': () => {
+        onToken(null)
+        onError(
+          'Nao foi possivel carregar a verificacao. Confira sua conexao e tente novamente.'
+        )
+      },
+    })
+    return () => {
+      if (widgetId.current && window.turnstile)
+        window.turnstile.remove(widgetId.current)
+      widgetId.current = null
+    }
+  }, [containerId, onError, onToken, resetKey, scriptReady, siteKey])
+
+  return (
+    <>
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+        onReady={() => setScriptReady(true)}
+      />
+      <div id={containerId} className="min-h-16 w-full overflow-hidden" />
+    </>
+  )
 }
 
 const currency = (value: string | number) =>
@@ -113,7 +188,9 @@ const normalizeSearchText = (value: string) =>
 const isItemUnavailable = (item: DigitalMenuItem) =>
   item.inventory !== null && item.inventory <= 0
 
-const formatPickupAddress = (address: DigitalMenuData['settings']['pickupAddress']) => {
+const formatPickupAddress = (
+  address: DigitalMenuData['settings']['pickupAddress']
+) => {
   if (!address) return null
 
   return [
@@ -138,9 +215,9 @@ export const DigitalMenuClient = ({
   const [selectedItem, setSelectedItem] = useState<DigitalMenuItem | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState<MenuFilter>('ALL')
-  const [selectedOptions, setSelectedOptions] = useState<Record<number, number>>(
-    {}
-  )
+  const [selectedOptions, setSelectedOptions] = useState<
+    Record<number, number>
+  >({})
   const [editingCartId, setEditingCartId] = useState<string | null>(null)
   const [itemComment, setItemComment] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
@@ -158,27 +235,45 @@ export const DigitalMenuClient = ({
   const [reference, setReference] = useState('')
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [customerLatitude, setCustomerLatitude] = useState<number | undefined>()
-  const [customerLongitude, setCustomerLongitude] = useState<number | undefined>()
+  const [customerLongitude, setCustomerLongitude] = useState<
+    number | undefined
+  >()
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [orderType, setOrderType] =
     useState<DigitalMenuSubmitInput['orderType']>('DELIVERY')
   const [scheduledFor, setScheduledFor] = useState('')
-  const [paymentMethod, setPaymentMethod] =
-    useState<DigitalMenuSubmitInput['payment']['method']>(
-      menu.paymentMethods[0]?.method ?? 'PIX'
-    )
+  const [paymentMethod, setPaymentMethod] = useState<
+    DigitalMenuSubmitInput['payment']['method']
+  >(menu.paymentMethods[0]?.method ?? 'PIX')
   const [needsChange, setNeedsChange] = useState(false)
   const [changeFor, setChangeFor] = useState('')
   const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey)
-  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(
+    null
+  )
+  const [deviceId, setDeviceId] = useState('')
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const [challengeSiteKey, setChallengeSiteKey] = useState<string | null>(null)
+  const [captchaResetKey, setCaptchaResetKey] = useState(0)
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0)
   const [orderConfirmation, setOrderConfirmation] = useState<{
     publicOrderId: string
     requestId: string
     total: string
     trackingToken: string | null
   } | null>(null)
-  const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(null)
+  const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(
+    null
+  )
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    const storageKey = 'clica-public-device-id'
+    const stored = window.localStorage.getItem(storageKey)
+    const value = stored || createIdempotencyKey()
+    if (!stored) window.localStorage.setItem(storageKey, value)
+    setDeviceId(value)
+  }, [])
 
   const cartTotal = useMemo(
     () =>
@@ -325,7 +420,8 @@ export const DigitalMenuClient = ({
             isRecommended: recommendedItemIds.has(item.itemOfferingId),
           }))
           .filter(item => {
-            if (activeFilter === 'RECOMMENDED' && !item.isRecommended) return false
+            if (activeFilter === 'RECOMMENDED' && !item.isRecommended)
+              return false
             if (activeFilter === 'WITH_IMAGE' && !item.imageUrl) return false
             if (activeFilter === 'PROMO' && !item.originalPrice) return false
 
@@ -351,13 +447,14 @@ export const DigitalMenuClient = ({
   const hasDiscoveryFilter =
     normalizeSearchText(searchTerm).length > 0 || activeFilter !== 'ALL'
   const whatsappDigits = menu.settings.whatsappPhone?.replace(/\D/g, '') ?? ''
-  const whatsappContactUrl = whatsappDigits.length >= 10
-    ? `https://wa.me/${whatsappDigits}`
-    : null
+  const whatsappContactUrl =
+    whatsappDigits.length >= 10 ? `https://wa.me/${whatsappDigits}` : null
   const pickupAddressLabel = formatPickupAddress(menu.settings.pickupAddress)
 
   useEffect(() => {
-    if (availablePaymentMethods.some(method => method.method === paymentMethod)) {
+    if (
+      availablePaymentMethods.some(method => method.method === paymentMethod)
+    ) {
       return
     }
 
@@ -528,6 +625,8 @@ export const DigitalMenuClient = ({
     const payload: DigitalMenuSubmitInput = {
       storeSlug: menu.store.subdomain,
       idempotencyKey,
+      deviceId: deviceId || undefined,
+      captchaToken: captchaToken || undefined,
       customerName,
       customerPhone,
       customerDocument: customerDocument || undefined,
@@ -573,6 +672,21 @@ export const DigitalMenuClient = ({
 
       if (!result.ok) {
         setSubmissionMessage(result.message)
+        if (result.code === 'CAPTCHA_REQUIRED') {
+          setChallengeSiteKey(result.challengeSiteKey ?? null)
+          setCaptchaToken(null)
+        }
+        if (result.code === 'CAPTCHA_FAILED') {
+          setChallengeSiteKey(result.challengeSiteKey ?? challengeSiteKey)
+          setCaptchaToken(null)
+          setCaptchaResetKey(current => current + 1)
+        }
+        if (
+          result.code === 'RATE_LIMITED' ||
+          result.code === 'TEMPORARILY_BLOCKED'
+        ) {
+          setRetryAfterSeconds(result.retryAfterSeconds ?? 60)
+        }
         return
       }
 
@@ -581,9 +695,13 @@ export const DigitalMenuClient = ({
         requestId: result.requestId,
         total: result.total,
         trackingToken:
-          (result as typeof result & { trackingToken?: string }).trackingToken ?? null,
+          (result as typeof result & { trackingToken?: string })
+            .trackingToken ?? null,
       })
       setCart([])
+      setCaptchaToken(null)
+      setChallengeSiteKey(null)
+      setRetryAfterSeconds(0)
       setIdempotencyKey(createIdempotencyKey())
       setCheckoutStep(false)
     })
@@ -628,7 +746,8 @@ export const DigitalMenuClient = ({
             </div>
           </div>
           <Badge className="border-primary/20 bg-primary/10 text-primary">
-            <Clock3 className="size-3" /> {menu.settings.averagePreparationMinutes} min
+            <Clock3 className="size-3" />{' '}
+            {menu.settings.averagePreparationMinutes} min
           </Badge>
           {whatsappContactUrl && (
             <Button asChild variant="outline" size="sm">
@@ -734,7 +853,9 @@ export const DigitalMenuClient = ({
                 <p className="text-xs font-semibold uppercase tracking-wide text-primary">
                   Destaques da loja
                 </p>
-                <h2 className="text-xl font-semibold">Recomendados para pedir agora</h2>
+                <h2 className="text-xl font-semibold">
+                  Recomendados para pedir agora
+                </h2>
               </div>
               <div className="flex gap-3 overflow-x-auto pb-1">
                 {recommendedItems.map(item => (
@@ -763,9 +884,15 @@ export const DigitalMenuClient = ({
                       </Badge>
                     </div>
                     <div className="space-y-1 p-3">
-                      <p className="line-clamp-1 text-sm font-semibold">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.categoryName}</p>
-                      <p className="font-semibold text-primary">{currency(item.price)}</p>
+                      <p className="line-clamp-1 text-sm font-semibold">
+                        {item.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.categoryName}
+                      </p>
+                      <p className="font-semibold text-primary">
+                        {currency(item.price)}
+                      </p>
                     </div>
                   </button>
                 ))}
@@ -812,7 +939,10 @@ export const DigitalMenuClient = ({
         </div>
       )}
 
-      <Sheet open={!!selectedItem} onOpenChange={open => !open && closeSelectedItem()}>
+      <Sheet
+        open={!!selectedItem}
+        onOpenChange={open => !open && closeSelectedItem()}
+      >
         <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
           {selectedItem && (
             <>
@@ -862,7 +992,11 @@ export const DigitalMenuClient = ({
                             type="checkbox"
                             checked={!!selectedOptions[option.id]}
                             onChange={event =>
-                              toggleOption(group, option.id, event.target.checked)
+                              toggleOption(
+                                group,
+                                option.id,
+                                event.target.checked
+                              )
                             }
                             className="size-4 accent-primary"
                           />
@@ -952,9 +1086,13 @@ export const DigitalMenuClient = ({
                         const url = `${window.location.origin}/pedido/${orderConfirmation.trackingToken}`
                         try {
                           await navigator.clipboard.writeText(url)
-                          setTrackingLinkMessage('Link de acompanhamento copiado.')
+                          setTrackingLinkMessage(
+                            'Link de acompanhamento copiado.'
+                          )
                         } catch {
-                          setTrackingLinkMessage('Nao foi possivel copiar o link automaticamente.')
+                          setTrackingLinkMessage(
+                            'Nao foi possivel copiar o link automaticamente.'
+                          )
                         }
                       }}
                     >
@@ -963,12 +1101,19 @@ export const DigitalMenuClient = ({
                     </Button>
                   </div>
                 )}
-                <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">
+                <p
+                  className="mt-2 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
                   {trackingLinkMessage}
                 </p>
                 {whatsappContactUrl && (
                   <Button asChild className="mt-4" variant="outline">
-                    <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={whatsappContactUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       Falar com a loja
                     </a>
                   </Button>
@@ -988,7 +1133,9 @@ export const DigitalMenuClient = ({
                 reference={reference}
                 termsAccepted={termsAccepted}
                 locationMessage={locationMessage}
-                showLocationButton={menu.deliveryZones.some(zone => zone.type === 'RADIUS')}
+                showLocationButton={menu.deliveryZones.some(
+                  zone => zone.type === 'RADIUS'
+                )}
                 paymentMethod={paymentMethod}
                 changeFor={changeFor}
                 orderType={orderType}
@@ -1008,10 +1155,16 @@ export const DigitalMenuClient = ({
                 cart={cart}
                 needsChange={needsChange}
                 submissionMessage={submissionMessage}
+                challengeSiteKey={challengeSiteKey}
+                captchaToken={captchaToken}
+                captchaResetKey={captchaResetKey}
+                retryAfterSeconds={retryAfterSeconds}
                 isPending={isPending}
                 deliveryAvailable={menu.deliveryZones.length > 0}
                 onBack={() => setCheckoutStep(false)}
                 onSubmit={submitOrder}
+                setCaptchaToken={setCaptchaToken}
+                setSubmissionMessage={setSubmissionMessage}
                 setCustomerName={setCustomerName}
                 setCustomerPhone={setCustomerPhone}
                 setCustomerDocument={setCustomerDocument}
@@ -1043,7 +1196,10 @@ export const DigitalMenuClient = ({
                   </div>
                 ) : (
                   cart.map(item => (
-                    <div key={item.cartId} className="rounded-lg border bg-card p-4">
+                    <div
+                      key={item.cartId}
+                      className="rounded-lg border bg-card p-4"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="font-medium">{item.name}</h3>
@@ -1136,7 +1292,8 @@ export const DigitalMenuClient = ({
               </div>
               {missingMinimumAmount > 0 && (
                 <p className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-                  Faltam {currency(missingMinimumAmount)} para atingir o pedido minimo.
+                  Faltam {currency(missingMinimumAmount)} para atingir o pedido
+                  minimo.
                 </p>
               )}
               <Button
@@ -1169,7 +1326,9 @@ const CategorySection = ({
       <div className="mb-3">
         <h2 className="text-xl font-semibold">{category.name}</h2>
         {category.description && (
-          <p className="text-sm text-muted-foreground">{category.description}</p>
+          <p className="text-sm text-muted-foreground">
+            {category.description}
+          </p>
         )}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
@@ -1209,7 +1368,9 @@ const CategorySection = ({
                     {currency(item.originalPrice)}
                   </span>
                 )}
-                <span className="font-semibold text-primary">{currency(item.price)}</span>
+                <span className="font-semibold text-primary">
+                  {currency(item.price)}
+                </span>
                 {item.optionGroups.length > 0 && (
                   <span className="text-xs text-muted-foreground">
                     Adicionais e variacoes
@@ -1277,10 +1438,16 @@ const CheckoutForm = ({
   cart,
   needsChange,
   submissionMessage,
+  challengeSiteKey,
+  captchaToken,
+  captchaResetKey,
+  retryAfterSeconds,
   isPending,
   deliveryAvailable,
   onBack,
   onSubmit,
+  setCaptchaToken,
+  setSubmissionMessage,
   setCustomerName,
   setCustomerPhone,
   setCustomerDocument,
@@ -1360,10 +1527,16 @@ const CheckoutForm = ({
   cart: CartItem[]
   needsChange: boolean
   submissionMessage: string | null
+  challengeSiteKey: string | null
+  captchaToken: string | null
+  captchaResetKey: number
+  retryAfterSeconds: number
   isPending: boolean
   deliveryAvailable: boolean
   onBack: () => void
   onSubmit: () => void
+  setCaptchaToken: (value: string | null) => void
+  setSubmissionMessage: (value: string | null) => void
   setCustomerName: (value: string) => void
   setCustomerPhone: (value: string) => void
   setCustomerDocument: (value: string) => void
@@ -1385,6 +1558,17 @@ const CheckoutForm = ({
   setScheduledFor: (value: string) => void
 }) => {
   const [validationAttempted, setValidationAttempted] = useState(false)
+  const [remainingSeconds, setRemainingSeconds] = useState(retryAfterSeconds)
+
+  useEffect(() => setRemainingSeconds(retryAfterSeconds), [retryAfterSeconds])
+  useEffect(() => {
+    if (remainingSeconds <= 0) return
+    const timer = window.setTimeout(
+      () => setRemainingSeconds(current => Math.max(0, current - 1)),
+      1000
+    )
+    return () => window.clearTimeout(timer)
+  }, [remainingSeconds])
   const now = new Date()
   const minScheduledDate = new Date(
     now.getTime() + scheduleMinLeadMinutes * 60 * 1000
@@ -1436,7 +1620,11 @@ const CheckoutForm = ({
     deliveryQuote.isAddressCovered &&
     missingMinimumAmount === 0 &&
     !!selectedPaymentMethod
-  const canSubmitOrder = canAttemptOrder && !hasFieldErrors
+  const canSubmitOrder =
+    canAttemptOrder &&
+    !hasFieldErrors &&
+    remainingSeconds === 0 &&
+    (!challengeSiteKey || !!captchaToken)
 
   const submitValidatedOrder = () => {
     setValidationAttempted(true)
@@ -1592,7 +1780,9 @@ const CheckoutForm = ({
               onChange={event => setCustomerName(event.target.value)}
             />
             {validationAttempted && fieldErrors.customerName && (
-              <span className="block text-xs font-normal text-destructive">{fieldErrors.customerName}</span>
+              <span className="block text-xs font-normal text-destructive">
+                {fieldErrors.customerName}
+              </span>
             )}
           </label>
           <label className="space-y-1 text-sm font-medium">
@@ -1607,12 +1797,15 @@ const CheckoutForm = ({
               onChange={event => setCustomerPhone(event.target.value)}
             />
             {validationAttempted && fieldErrors.customerPhone && (
-              <span className="block text-xs font-normal text-destructive">{fieldErrors.customerPhone}</span>
+              <span className="block text-xs font-normal text-destructive">
+                {fieldErrors.customerPhone}
+              </span>
             )}
           </label>
         </div>
         <label className="block space-y-1 text-sm font-medium">
-          CPF <span className="font-normal text-muted-foreground">(opcional)</span>
+          CPF{' '}
+          <span className="font-normal text-muted-foreground">(opcional)</span>
           <Input
             inputMode="numeric"
             autoComplete="off"
@@ -1622,7 +1815,9 @@ const CheckoutForm = ({
             onChange={event => setCustomerDocument(event.target.value)}
           />
           {validationAttempted && fieldErrors.customerDocument && (
-            <span className="block text-xs font-normal text-destructive">{fieldErrors.customerDocument}</span>
+            <span className="block text-xs font-normal text-destructive">
+              {fieldErrors.customerDocument}
+            </span>
           )}
         </label>
       </section>
@@ -1633,51 +1828,125 @@ const CheckoutForm = ({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-medium">
               CEP
-              <Input inputMode="numeric" autoComplete="postal-code" placeholder="00000-000" value={postalCode} aria-invalid={validationAttempted && !!fieldErrors.postalCode} onChange={event => { setPostalCode(event.target.value); clearLocationQuote() }} />
-              {validationAttempted && fieldErrors.postalCode && <span className="block text-xs font-normal text-destructive">{fieldErrors.postalCode}</span>}
+              <Input
+                inputMode="numeric"
+                autoComplete="postal-code"
+                placeholder="00000-000"
+                value={postalCode}
+                aria-invalid={validationAttempted && !!fieldErrors.postalCode}
+                onChange={event => {
+                  setPostalCode(event.target.value)
+                  clearLocationQuote()
+                }}
+              />
+              {validationAttempted && fieldErrors.postalCode && (
+                <span className="block text-xs font-normal text-destructive">
+                  {fieldErrors.postalCode}
+                </span>
+              )}
             </label>
             <label className="space-y-1 text-sm font-medium">
               Bairro
-              <Input autoComplete="address-level3" value={neighborhood} aria-invalid={validationAttempted && !!fieldErrors.neighborhood} onChange={event => { setNeighborhood(event.target.value); clearLocationQuote() }} />
-              {validationAttempted && fieldErrors.neighborhood && <span className="block text-xs font-normal text-destructive">{fieldErrors.neighborhood}</span>}
-              <span className="block text-xs font-normal text-muted-foreground">Usado para verificar a zona e a taxa de entrega.</span>
+              <Input
+                autoComplete="address-level3"
+                value={neighborhood}
+                aria-invalid={validationAttempted && !!fieldErrors.neighborhood}
+                onChange={event => {
+                  setNeighborhood(event.target.value)
+                  clearLocationQuote()
+                }}
+              />
+              {validationAttempted && fieldErrors.neighborhood && (
+                <span className="block text-xs font-normal text-destructive">
+                  {fieldErrors.neighborhood}
+                </span>
+              )}
+              <span className="block text-xs font-normal text-muted-foreground">
+                Usado para verificar a zona e a taxa de entrega.
+              </span>
             </label>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_112px]">
             <label className="space-y-1 text-sm font-medium">
               Rua
-              <Input autoComplete="address-line1" value={street} aria-invalid={validationAttempted && !!fieldErrors.street} onChange={event => { setStreet(event.target.value); clearLocationQuote() }} />
-              {validationAttempted && fieldErrors.street && <span className="block text-xs font-normal text-destructive">{fieldErrors.street}</span>}
+              <Input
+                autoComplete="address-line1"
+                value={street}
+                aria-invalid={validationAttempted && !!fieldErrors.street}
+                onChange={event => {
+                  setStreet(event.target.value)
+                  clearLocationQuote()
+                }}
+              />
+              {validationAttempted && fieldErrors.street && (
+                <span className="block text-xs font-normal text-destructive">
+                  {fieldErrors.street}
+                </span>
+              )}
             </label>
             <label className="space-y-1 text-sm font-medium">
               Numero
-              <Input inputMode="numeric" value={number} aria-invalid={validationAttempted && !!fieldErrors.number} onChange={event => { setNumber(event.target.value); clearLocationQuote() }} />
-              {validationAttempted && fieldErrors.number && <span className="block text-xs font-normal text-destructive">{fieldErrors.number}</span>}
+              <Input
+                inputMode="numeric"
+                value={number}
+                aria-invalid={validationAttempted && !!fieldErrors.number}
+                onChange={event => {
+                  setNumber(event.target.value)
+                  clearLocationQuote()
+                }}
+              />
+              {validationAttempted && fieldErrors.number && (
+                <span className="block text-xs font-normal text-destructive">
+                  {fieldErrors.number}
+                </span>
+              )}
             </label>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm font-medium">
-              Complemento <span className="font-normal text-muted-foreground">(opcional)</span>
-              <Input autoComplete="address-line2" placeholder="Apto, bloco..." value={complement} onChange={event => setComplement(event.target.value)} />
+              Complemento{' '}
+              <span className="font-normal text-muted-foreground">
+                (opcional)
+              </span>
+              <Input
+                autoComplete="address-line2"
+                placeholder="Apto, bloco..."
+                value={complement}
+                onChange={event => setComplement(event.target.value)}
+              />
             </label>
             <label className="space-y-1 text-sm font-medium">
-              Referencia <span className="font-normal text-muted-foreground">(opcional)</span>
-              <Input placeholder="Proximo a..." value={reference} onChange={event => setReference(event.target.value)} />
+              Referencia{' '}
+              <span className="font-normal text-muted-foreground">
+                (opcional)
+              </span>
+              <Input
+                placeholder="Proximo a..."
+                value={reference}
+                onChange={event => setReference(event.target.value)}
+              />
             </label>
           </div>
           {showLocationButton && (
             <div className="mt-3">
-              <Button type="button" variant="outline" onClick={requestCustomerLocation}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={requestCustomerLocation}
+              >
                 Usar minha localização
               </Button>
               {locationMessage && (
-                <p className="mt-2 text-xs text-muted-foreground">{locationMessage}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {locationMessage}
+                </p>
               )}
             </div>
           )}
           {!deliveryQuote.isAddressCovered && (
             <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {deliveryQuote.coverageMessage ?? 'Ainda nao entregamos neste endereco.'}
+              {deliveryQuote.coverageMessage ??
+                'Ainda nao entregamos neste endereco.'}
             </p>
           )}
           {deliveryQuote.zoneName && (
@@ -1700,7 +1969,8 @@ const CheckoutForm = ({
       )}
 
       <label className="block space-y-1 text-sm font-medium">
-        Observacao geral <span className="font-normal text-muted-foreground">(opcional)</span>
+        Observacao geral{' '}
+        <span className="font-normal text-muted-foreground">(opcional)</span>
         <Textarea
           value={orderNotes}
           placeholder="Ex.: chamar no portao, retirar ingrediente..."
@@ -1769,7 +2039,8 @@ const CheckoutForm = ({
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                A loja ainda nao informou uma chave Pix. Confira as instrucoes antes de finalizar.
+                A loja ainda nao informou uma chave Pix. Confira as instrucoes
+                antes de finalizar.
               </p>
             )}
             {selectedPaymentMethod.proofInstructions && (
@@ -1780,87 +2051,127 @@ const CheckoutForm = ({
           </div>
         )}
 
-        {paymentMethod === 'CASH' && selectedPaymentMethod?.requiresChangeFor && (
-          <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
-            <label className="flex items-center justify-between gap-3 text-sm font-medium">
-              Precisa de troco?
-              <input
-                type="checkbox"
-                checked={needsChange}
-                onChange={event => {
-                  setNeedsChange(event.target.checked)
-                  if (!event.target.checked) setChangeFor('')
-                }}
-                className="size-4 accent-primary"
-              />
-            </label>
-            {needsChange && (
-              <label className="block space-y-1 text-sm font-medium">
-                Troco para quanto?
-                <Input
-                  inputMode="decimal"
-                  placeholder="R$ 0,00"
-                  value={changeFor}
-                  aria-invalid={validationAttempted && !!fieldErrors.changeFor}
-                  onChange={event => setChangeFor(event.target.value)}
+        {paymentMethod === 'CASH' &&
+          selectedPaymentMethod?.requiresChangeFor && (
+            <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
+              <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                Precisa de troco?
+                <input
+                  type="checkbox"
+                  checked={needsChange}
+                  onChange={event => {
+                    setNeedsChange(event.target.checked)
+                    if (!event.target.checked) setChangeFor('')
+                  }}
+                  className="size-4 accent-primary"
                 />
-                {validationAttempted && fieldErrors.changeFor && (
-                  <span className="block text-xs font-normal text-destructive">
-                    {fieldErrors.changeFor}
-                  </span>
-                )}
               </label>
-            )}
-          </div>
-        )}
+              {needsChange && (
+                <label className="block space-y-1 text-sm font-medium">
+                  Troco para quanto?
+                  <Input
+                    inputMode="decimal"
+                    placeholder="R$ 0,00"
+                    value={changeFor}
+                    aria-invalid={
+                      validationAttempted && !!fieldErrors.changeFor
+                    }
+                    onChange={event => setChangeFor(event.target.value)}
+                  />
+                  {validationAttempted && fieldErrors.changeFor && (
+                    <span className="block text-xs font-normal text-destructive">
+                      {fieldErrors.changeFor}
+                    </span>
+                  )}
+                </label>
+              )}
+            </div>
+          )}
       </div>
 
       <section className="rounded-lg border bg-card p-4 text-sm">
         <h3 className="mb-3 font-medium">Resumo do pedido</h3>
         <div className="space-y-3 border-b pb-3">
           {cart.map(item => (
-            <div key={item.cartId} className="flex items-start justify-between gap-3">
+            <div
+              key={item.cartId}
+              className="flex items-start justify-between gap-3"
+            >
               <div className="min-w-0">
-                <p className="font-medium">{item.quantity}x {item.name}</p>
+                <p className="font-medium">
+                  {item.quantity}x {item.name}
+                </p>
                 {item.options.map(option => (
-                  <p key={option.optionId} className="text-xs text-muted-foreground">
+                  <p
+                    key={option.optionId}
+                    className="text-xs text-muted-foreground"
+                  >
                     {option.optionGroupName}: {option.optionName}
-                    {Number(option.price) > 0 ? ` (+${currency(Number(option.price) * option.quantity)})` : ''}
+                    {Number(option.price) > 0
+                      ? ` (+${currency(Number(option.price) * option.quantity)})`
+                      : ''}
                   </p>
                 ))}
               </div>
-              <strong className="shrink-0">{currency(getItemUnitTotal(item) * item.quantity)}</strong>
+              <strong className="shrink-0">
+                {currency(getItemUnitTotal(item) * item.quantity)}
+              </strong>
             </div>
           ))}
         </div>
         <dl className="space-y-2 border-b py-3">
-          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Modalidade</dt><dd className="text-right font-medium">{orderType === 'DELIVERY' ? 'Entrega' : 'Retirada'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Destino</dt><dd className="max-w-[70%] text-right font-medium">{orderType === 'DELIVERY' ? `${street || 'Rua'}, ${number || 's/n'} - ${neighborhood || 'bairro'}` : pickupAddressLabel ?? 'Balcao da loja'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Pagamento</dt><dd className="text-right font-medium">{selectedPaymentMethod?.label ?? 'Nao selecionado'}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Prazo</dt><dd className="text-right font-medium">{scheduledFor ? new Date(scheduledFor).toLocaleString('pt-BR') : `cerca de ${deliveryQuote.estimatedDeliveryMinutes} min`}</dd></div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Modalidade</dt>
+            <dd className="text-right font-medium">
+              {orderType === 'DELIVERY' ? 'Entrega' : 'Retirada'}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Destino</dt>
+            <dd className="max-w-[70%] text-right font-medium">
+              {orderType === 'DELIVERY'
+                ? `${street || 'Rua'}, ${number || 's/n'} - ${neighborhood || 'bairro'}`
+                : (pickupAddressLabel ?? 'Balcao da loja')}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Pagamento</dt>
+            <dd className="text-right font-medium">
+              {selectedPaymentMethod?.label ?? 'Nao selecionado'}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Prazo</dt>
+            <dd className="text-right font-medium">
+              {scheduledFor
+                ? new Date(scheduledFor).toLocaleString('pt-BR')
+                : `cerca de ${deliveryQuote.estimatedDeliveryMinutes} min`}
+            </dd>
+          </div>
         </dl>
         <div className="space-y-2 pt-3">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Subtotal</span>
-          <strong>{currency(cartSubtotal)}</strong>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Taxa de entrega</span>
-          <strong>{currency(deliveryQuote.deliveryFee)}</strong>
-        </div>
-        <div className="mt-2 flex justify-between">
-          <span className="text-muted-foreground">Desconto/cupom</span>
-          <strong>{currency(appliedDiscount)}</strong>
-        </div>
-        <div className="mt-2 flex justify-between">
-          <span className="text-muted-foreground">Total final</span>
-          <strong>{currency(checkoutTotal)}</strong>
-        </div>
-        {missingMinimumAmount > 0 && (
-          <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
-            Faltam {currency(missingMinimumAmount)} para atingir o pedido minimo.
-          </p>
-        )}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Subtotal</span>
+            <strong>{currency(cartSubtotal)}</strong>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Taxa de entrega</span>
+            <strong>{currency(deliveryQuote.deliveryFee)}</strong>
+          </div>
+          <div className="mt-2 flex justify-between">
+            <span className="text-muted-foreground">Desconto/cupom</span>
+            <strong>{currency(appliedDiscount)}</strong>
+          </div>
+          <div className="mt-2 flex justify-between">
+            <span className="text-muted-foreground">Total final</span>
+            <strong>{currency(checkoutTotal)}</strong>
+          </div>
+          {missingMinimumAmount > 0 && (
+            <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
+              Faltam {currency(missingMinimumAmount)} para atingir o pedido
+              minimo.
+            </p>
+          )}
         </div>
       </section>
 
@@ -1872,16 +2183,57 @@ const CheckoutForm = ({
           className="mt-0.5 size-4 shrink-0 accent-primary"
         />
         <span>
-          Confirmo que revisei os dados e aceito o envio deste pedido para a loja.
+          Confirmo que revisei os dados e aceito o envio deste pedido para a
+          loja.
           {validationAttempted && fieldErrors.termsAccepted && (
-            <span className="mt-1 block text-xs text-destructive">{fieldErrors.termsAccepted}</span>
+            <span className="mt-1 block text-xs text-destructive">
+              {fieldErrors.termsAccepted}
+            </span>
           )}
         </span>
       </label>
 
+      {challengeSiteKey && (
+        <section
+          role="group"
+          aria-labelledby="checkout-verification-title"
+          className="scroll-mt-4 rounded-lg border border-amber-500/35 bg-amber-500/10 p-4"
+        >
+          <div className="mb-3 flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300" />
+            <div>
+              <h3 id="checkout-verification-title" className="font-medium">
+                Confirme que e voce
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Precisamos de uma verificacao rapida antes de enviar seu pedido.
+              </p>
+            </div>
+          </div>
+          <ConditionalTurnstile
+            siteKey={challengeSiteKey}
+            resetKey={captchaResetKey}
+            onToken={setCaptchaToken}
+            onError={setSubmissionMessage}
+          />
+        </section>
+      )}
+
       {submissionMessage && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          aria-live="polite"
+          className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+        >
           {submissionMessage}
+          {remainingSeconds > 0 && (
+            <span className="mt-1 block font-medium">
+              Tentar novamente em{' '}
+              {Math.floor(remainingSeconds / 60)
+                .toString()
+                .padStart(2, '0')}
+              :{(remainingSeconds % 60).toString().padStart(2, '0')}
+            </span>
+          )}
         </p>
       )}
 
@@ -1892,9 +2244,17 @@ const CheckoutForm = ({
         <Button
           onClick={submitValidatedOrder}
           isLoading={isPending}
-          disabled={!canAttemptOrder}
+          disabled={
+            !canAttemptOrder ||
+            remainingSeconds > 0 ||
+            (!!challengeSiteKey && !captchaToken)
+          }
         >
-          Enviar pedido
+          {remainingSeconds > 0
+            ? 'Aguarde para tentar novamente'
+            : challengeSiteKey
+              ? 'Confirmar e enviar'
+              : 'Enviar pedido'}
         </Button>
       </div>
     </div>

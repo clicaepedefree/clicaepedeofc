@@ -8,6 +8,26 @@ export const PUBLIC_ORDER_RATE_LIMIT = {
   burstLimit: 3,
 } as const
 
+export const PUBLIC_ORDER_RISK = {
+  lookbackMinutes: 15,
+  challengeScore: 40,
+  blockScore: 100,
+  temporaryBlockSeconds: 5 * 60,
+} as const
+
+export const calculatePublicOrderRiskScore = ({
+  invalidPayloads,
+  captchaFailures,
+  rateLimits,
+}: {
+  invalidPayloads: number
+  captchaFailures: number
+  rateLimits: number
+}) =>
+  Math.min(invalidPayloads, 6) * 20 +
+  Math.min(captchaFailures, 3) * 35 +
+  Math.min(rateLimits, 2) * 50
+
 export const isPublicOrderRateLimitAllowed = (
   windowCount: number,
   burstCount: number
@@ -18,9 +38,11 @@ export const isPublicOrderRateLimitAllowed = (
 const TOKEN_BYTES = 32
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
-export const createPublicTrackingToken = () => randomBytes(TOKEN_BYTES).toString('base64url')
+export const createPublicTrackingToken = () =>
+  randomBytes(TOKEN_BYTES).toString('base64url')
 
-export const isPublicTrackingToken = (token: string) => TOKEN_PATTERN.test(token)
+export const isPublicTrackingToken = (token: string) =>
+  TOKEN_PATTERN.test(token)
 
 export const hashPublicIdentifier = (value: string, secret: string) =>
   createHmac('sha256', secret).update(value).digest('hex')
