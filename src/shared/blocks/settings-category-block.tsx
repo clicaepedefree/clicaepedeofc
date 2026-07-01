@@ -5,13 +5,15 @@ export const SettingsCategoryBlock = ({
   title,
   children,
   contentClassName,
+  id,
 }: {
   title: string
   children?: React.ReactNode
   contentClassName?: string
+  id?: string
 }) => {
   return (
-    <div className="bg-card text-card-foreground border-1 rounded-xl p-4">
+    <div id={id} className="scroll-mt-4 bg-card text-card-foreground border-1 rounded-xl p-4">
       <div className="border-b py-2 px-4 mb-4">
         <Headline variant={500} fontWeight="medium" className="text-primary">
           {title}

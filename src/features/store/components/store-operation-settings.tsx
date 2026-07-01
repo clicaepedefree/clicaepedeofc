@@ -197,7 +197,7 @@ export const StoreOperationSettings = () => {
 
   return (
     <div className="space-y-4">
-      <SettingsCategoryBlock title="Identidade publica do cardapio" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock id="digital-menu-identity" title="Identidade publica do cardapio" contentClassName="grid-cols-1">
         <form onSubmit={submitPublicProfile} className="space-y-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-center gap-2">
@@ -327,14 +327,7 @@ export const StoreOperationSettings = () => {
                 placeholder="Ex: Pausamos por alta demanda."
               />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-end gap-2 text-sm font-medium">
-                <Switch
-                  checked={isDigitalMenuEnabled}
-                  onCheckedChange={setIsDigitalMenuEnabled}
-                />
-                Cardapio ativo
-              </label>
+            <div className="grid gap-3 sm:grid-cols-1">
               <label className="flex items-end gap-2 text-sm font-medium">
                 <Switch
                   checked={isAcceptingOrders}
@@ -389,7 +382,7 @@ export const StoreOperationSettings = () => {
         </form>
       </SettingsCategoryBlock>
 
-      <SettingsCategoryBlock title="Horarios semanais" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock id="digital-menu-hours" title="Horarios semanais" contentClassName="grid-cols-1">
         <form onSubmit={submitBusinessHour} className="grid gap-3 rounded-lg border bg-background p-4 lg:grid-cols-[150px_140px_140px_190px_1fr_auto]">
           <label className="space-y-1 text-sm font-medium">
             Dia

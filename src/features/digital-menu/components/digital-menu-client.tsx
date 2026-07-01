@@ -125,7 +125,13 @@ const formatPickupAddress = (address: DigitalMenuData['settings']['pickupAddress
     .join(' · ')
 }
 
-export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
+export const DigitalMenuClient = ({
+  menu,
+  previewMode = false,
+}: {
+  menu: DigitalMenuData
+  previewMode?: boolean
+}) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     menu.categories[0]?.id
   )
@@ -885,13 +891,21 @@ export const DigitalMenuClient = ({ menu }: { menu: DigitalMenuData }) => {
                 )}
               </div>
               <SheetFooter>
-                <Button size="lg" onClick={addSelectedItemToCart}>
+                <Button
+                  size="lg"
+                  onClick={addSelectedItemToCart}
+                  disabled={previewMode}
+                >
                   {editingCartId ? (
                     <Pencil className="size-4" />
                   ) : (
                     <Plus className="size-4" />
                   )}
-                  {editingCartId ? 'Salvar alteracoes' : 'Adicionar ao carrinho'}
+                  {previewMode
+                    ? 'Pedidos desativados na previa'
+                    : editingCartId
+                      ? 'Salvar alteracoes'
+                      : 'Adicionar ao carrinho'}
                 </Button>
               </SheetFooter>
             </>

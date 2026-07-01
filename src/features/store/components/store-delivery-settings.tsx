@@ -233,7 +233,7 @@ export const StoreDeliverySettings = () => {
 
   if (!selectedStoreId) {
     return (
-      <SettingsCategoryBlock title="Entrega do cardápio digital" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock id="digital-menu-delivery" title="Entrega do cardápio digital" contentClassName="grid-cols-1">
         <p className="text-sm text-muted-foreground">
           Selecione uma loja para configurar as regras de entrega.
         </p>
@@ -345,7 +345,7 @@ export const StoreDeliverySettings = () => {
         </form>
       </SettingsCategoryBlock>
 
-      <SettingsCategoryBlock title="Pagamentos do cardapio digital" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock id="digital-menu-payments" title="Pagamentos do cardapio digital" contentClassName="grid-cols-1">
         <form onSubmit={submitPaymentMethods} className="space-y-4">
           <div className="grid gap-3 xl:grid-cols-2">
             {paymentMethodsForm.map(method => {
