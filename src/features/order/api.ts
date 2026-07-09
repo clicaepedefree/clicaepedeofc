@@ -243,6 +243,18 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
     type: order.type,
     totalPrice: order.totalPrice,
     customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    orderNotes: order.orderNotes,
+    deliveryAddress: order.deliveryAddress,
+    deliveryAddressReference: order.deliveryAddressReference,
+    deliveryAddressComplement: order.deliveryAddressComplement,
+    deliveryNeighborhood: order.deliveryNeighborhood,
+    deliveryFee: order.deliveryFee,
+    deliveryEstimatedMinutes: order.deliveryEstimatedMinutes,
+    deliveryEta: order.deliveryEta,
+    rejectionReason: order.rejectionReason,
+    lastPrintedAt: order.lastPrintedAt,
+    printCount: order.printCount,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     items: order.items.map(item => ({
@@ -285,6 +297,7 @@ export const transitionOrderStatus = async (input: {
   storeId: number
   action: OrderTransitionAction
   reason?: string
+  estimatedMinutes?: number
 }) => {
   if (!orderTransitionActions.includes(input.action)) throw new Error('Acao invalida.')
   const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
@@ -420,7 +433,30 @@ export const generateOrderReceipt = async (orderId: number) => {
     items: receiptItems,
     totalPrice: getValueFromCurrencyString(order.totalPrice),
     payments: receiptPayments,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    customerAddress: [
+      order.deliveryAddress,
+      order.deliveryNeighborhood,
+      order.deliveryAddressComplement,
+      order.deliveryAddressReference,
+    ]
+      .filter(Boolean)
+      .join(' - '),
   })
+
+  await db
+    .update(ordersTable)
+    .set({
+      lastPrintedAt: new Date(),
+      printCount: sql`${ordersTable.printCount} + 1`,
+    })
+    .where(
+      and(
+        eq(ordersTable.id, authorizedOrder.id),
+        eq(ordersTable.storeId, authorizedOrder.storeId)
+      )
+    )
 
   return {
     receipt: receiptSvg,

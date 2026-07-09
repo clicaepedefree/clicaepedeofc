@@ -25,6 +25,7 @@ const statusCopy: Record<string, { title: string; description: string }> = {
   CREATED: { title: 'Aguardando a loja', description: 'Seu pedido esta na fila para confirmacao.' },
   SENT_TO_STORE: { title: 'Enviado para a loja', description: 'A equipe ja pode visualizar seu pedido.' },
   ACCEPTED: { title: 'Em preparo', description: 'A loja confirmou e esta preparando seu pedido.' },
+  IN_PREPARATION: { title: 'Em preparo', description: 'Seu pedido esta sendo preparado.' },
   READY: { title: 'Pedido pronto', description: 'Seu pedido esta pronto para a proxima etapa.' },
   OUT_FOR_DELIVERY: { title: 'Saiu para entrega', description: 'Seu pedido esta a caminho.' },
   COMPLETED: { title: 'Pedido finalizado', description: 'Tudo certo com este pedido.' },
@@ -32,7 +33,14 @@ const statusCopy: Record<string, { title: string; description: string }> = {
   CANCELLED: { title: 'Pedido cancelado', description: 'Este pedido foi cancelado.' },
 }
 
-const progressStatuses = ['RECEIVED', 'ACCEPTED', 'READY', 'COMPLETED']
+const progressStatuses = [
+  'RECEIVED',
+  'ACCEPTED',
+  'IN_PREPARATION',
+  'READY',
+  'OUT_FOR_DELIVERY',
+  'COMPLETED',
+]
 
 const formatDateTime = (value?: string | Date) => value
   ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -138,7 +146,7 @@ export function PublicOrderTracking({ token }: { token: string }) {
               const event = eventByStatus.get(status)
               const complete = index <= currentIndex || !!event
               const active = index === currentIndex
-              const Icon = status === 'COMPLETED' ? CheckCircle2 : status === 'READY' ? Truck : complete ? Check : Clock3
+              const Icon = status === 'COMPLETED' ? CheckCircle2 : status === 'READY' || status === 'OUT_FOR_DELIVERY' ? Truck : complete ? Check : Clock3
               return <li key={status} className="relative flex min-h-20 gap-4 last:min-h-0">
                 {index < progressStatuses.length - 1 && <span className={`absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px ${complete ? 'bg-primary' : 'bg-border'}`} />}
                 <span className={`relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border ${complete ? 'border-primary bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}><Icon className="size-4" aria-hidden="true" /></span>

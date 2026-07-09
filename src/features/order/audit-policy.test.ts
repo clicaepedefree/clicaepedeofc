@@ -23,6 +23,10 @@ describe('order audit policy', () => {
       reason: null,
     })
     expect(resolveOrderTransition('ACCEPTED', 'complete').toStatus).toBe('COMPLETED')
+    expect(resolveOrderTransition('ACCEPTED', 'start_preparation').toStatus).toBe('IN_PREPARATION')
+    expect(resolveOrderTransition('IN_PREPARATION', 'mark_ready').toStatus).toBe('READY')
+    expect(resolveOrderTransition('READY', 'dispatch').toStatus).toBe('OUT_FOR_DELIVERY')
+    expect(resolveOrderTransition('OUT_FOR_DELIVERY', 'complete').toStatus).toBe('COMPLETED')
   })
 
   test('keeps terminal statuses immutable', () => {

@@ -2,6 +2,9 @@ import type { SelectOrder } from '@/services/db/schema/orders'
 
 export const orderTransitionActions = [
   'accept',
+  'start_preparation',
+  'mark_ready',
+  'dispatch',
   'reject',
   'cancel',
   'complete',
@@ -35,15 +38,39 @@ const transitions: Record<
     from: ['PENDING', 'CREATED', 'SENT_TO_STORE', 'RECEIVED'],
     to: 'ACCEPTED',
   },
+  start_preparation: {
+    from: ['ACCEPTED'],
+    to: 'IN_PREPARATION',
+  },
+  mark_ready: {
+    from: ['ACCEPTED', 'IN_PREPARATION'],
+    to: 'READY',
+  },
+  dispatch: {
+    from: ['ACCEPTED', 'IN_PREPARATION', 'READY'],
+    to: 'OUT_FOR_DELIVERY',
+  },
   reject: {
     from: ['PENDING', 'CREATED', 'SENT_TO_STORE', 'RECEIVED'],
     to: 'REJECTED',
   },
   cancel: {
-    from: ['PENDING', 'CREATED', 'SENT_TO_STORE', 'RECEIVED', 'ACCEPTED'],
+    from: [
+      'PENDING',
+      'CREATED',
+      'SENT_TO_STORE',
+      'RECEIVED',
+      'ACCEPTED',
+      'IN_PREPARATION',
+      'READY',
+      'OUT_FOR_DELIVERY',
+    ],
     to: 'CANCELLED',
   },
-  complete: { from: ['ACCEPTED'], to: 'COMPLETED' },
+  complete: {
+    from: ['ACCEPTED', 'IN_PREPARATION', 'READY', 'OUT_FOR_DELIVERY'],
+    to: 'COMPLETED',
+  },
 }
 
 export function resolveOrderTransition(
