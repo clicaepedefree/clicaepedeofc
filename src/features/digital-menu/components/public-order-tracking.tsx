@@ -1,6 +1,11 @@
 'use client'
 
 import { getPublicOrderTracking } from '@/features/digital-menu/api'
+import {
+  getPublicOrderProgressStatuses,
+  getPublicOrderStatusCopy,
+  publicStageStatus,
+} from '@/features/digital-menu/order-status-copy'
 import type { PublicOrderTrackingDto } from '@/features/digital-menu/types'
 import { DarkModeToggle } from '@/features/theme/components/dark-mode-toggle'
 import { Badge } from '@/shared/badge'
@@ -22,23 +27,6 @@ type TrackingView = {
   estimatedMinutes?: number | null
   events: Array<{ status: string; occurredAt?: string | Date }>
 }
-
-const statusCopy: Record<string, { title: string; delivery: string; takeout: string }> = {
-  RECEIVED: { title: 'Pedido recebido', delivery: 'Recebemos seu pedido e avisamos a loja.', takeout: 'Recebemos seu pedido e avisamos a loja.' },
-  PENDING: { title: 'Aguardando confirmacao', delivery: 'A loja vai confirmar se consegue preparar e entregar seu pedido.', takeout: 'A loja vai confirmar se consegue preparar seu pedido para retirada.' },
-  CREATED: { title: 'Aguardando confirmacao', delivery: 'A loja vai confirmar se consegue preparar e entregar seu pedido.', takeout: 'A loja vai confirmar se consegue preparar seu pedido para retirada.' },
-  SENT_TO_STORE: { title: 'Enviado para a loja', delivery: 'Seu pedido ja esta disponivel para a equipe da loja.', takeout: 'Seu pedido ja esta disponivel para a equipe da loja.' },
-  ACCEPTED: { title: 'Pedido aceito', delivery: 'A loja confirmou seu pedido e vai iniciar o preparo.', takeout: 'A loja confirmou seu pedido e vai iniciar o preparo.' },
-  IN_PREPARATION: { title: 'Em preparo', delivery: 'Seu pedido esta sendo preparado para entrega.', takeout: 'Seu pedido esta sendo preparado para retirada.' },
-  READY: { title: 'Pronto para retirada', delivery: 'Seu pedido esta pronto para sair para entrega.', takeout: 'Seu pedido esta pronto para retirada no balcao.' },
-  OUT_FOR_DELIVERY: { title: 'Saiu para entrega', delivery: 'Seu pedido saiu da loja e esta a caminho.', takeout: 'Seu pedido esta pronto para retirada.' },
-  COMPLETED: { title: 'Pedido finalizado', delivery: 'Tudo certo com este pedido. Obrigado por comprar com a loja.', takeout: 'Tudo certo com este pedido. Obrigado por comprar com a loja.' },
-  REJECTED: { title: 'Pedido nao aceito', delivery: 'A loja nao conseguiu atender este pedido. Se ja combinou pagamento, fale com a loja.', takeout: 'A loja nao conseguiu atender este pedido. Se ja combinou pagamento, fale com a loja.' },
-  CANCELLED: { title: 'Pedido cancelado', delivery: 'Este pedido foi cancelado. Se precisar, entre em contato com a loja.', takeout: 'Este pedido foi cancelado. Se precisar, entre em contato com a loja.' },
-}
-
-const deliveryProgressStatuses = ['RECEIVED', 'PENDING', 'ACCEPTED', 'IN_PREPARATION', 'READY', 'OUT_FOR_DELIVERY', 'COMPLETED']
-const takeoutProgressStatuses = ['RECEIVED', 'PENDING', 'ACCEPTED', 'IN_PREPARATION', 'READY', 'COMPLETED']
 
 const formatDateTime = (value?: string | Date) => value
   ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -77,8 +65,6 @@ function normalizeTracking(data: PublicOrderTrackingDto): TrackingView {
 }
 
 const isTerminal = (status: string) => ['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(status)
-const publicStageStatus = (status: string) =>
-  ['PENDING', 'CREATED', 'SENT_TO_STORE'].includes(status) ? 'PENDING' : status
 
 export function PublicOrderTracking({ token }: { token: string }) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null)
@@ -117,11 +103,9 @@ export function PublicOrderTracking({ token }: { token: string }) {
   }
 
   const order = normalizeTracking(query.data)
-  const copy = statusCopy[order.status] ?? statusCopy.RECEIVED
+  const copy = getPublicOrderStatusCopy(order.status, order.orderType)
   const cancelled = order.status === 'CANCELLED' || order.status === 'REJECTED'
-  const progressStatuses = order.orderType === 'TAKEOUT'
-    ? takeoutProgressStatuses
-    : deliveryProgressStatuses
+  const progressStatuses = getPublicOrderProgressStatuses(order.orderType)
   const currentIndex = progressStatuses.indexOf(publicStageStatus(order.status))
   const eventByStatus = new Map(order.events.map(event => [publicStageStatus(event.status), event]))
   const trackingUrl = typeof window === 'undefined' ? `/pedido/${token}` : window.location.href
@@ -159,7 +143,7 @@ export function PublicOrderTracking({ token }: { token: string }) {
             <div>
               <Badge variant={cancelled ? 'destructive' : 'secondary'}>{order.orderType === 'TAKEOUT' ? 'Retirada' : 'Entrega'}</Badge>
               <h1 id="tracking-title" className="mt-3 text-2xl font-semibold sm:text-3xl">{copy.title}</h1>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{order.orderType === 'TAKEOUT' ? copy.takeout : copy.delivery}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.message}</p>
               {order.estimatedMinutes ? <p className="mt-3 flex items-center gap-2 text-sm font-medium"><Clock3 className="size-4 text-primary" /> Previsao de {order.estimatedMinutes} minutos</p> : null}
               <div className="mt-5 flex flex-wrap gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={copyTrackingLink}><Copy className="size-4" /> Copiar link</Button>
@@ -202,7 +186,7 @@ export function PublicOrderTracking({ token }: { token: string }) {
               return <li key={status} className="relative flex min-h-20 gap-4 last:min-h-0">
                 {index < progressStatuses.length - 1 && <span className={`absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px ${complete ? 'bg-primary' : 'bg-border'}`} />}
                 <span className={`relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border ${complete ? 'border-primary bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}><Icon className="size-4" aria-hidden="true" /></span>
-                <div className="pb-5"><p className={`text-sm font-medium ${active ? 'text-primary' : ''}`}>{statusCopy[status]?.title}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateTime(event?.occurredAt) ?? (active ? 'Etapa atual' : complete ? 'Concluida' : 'Aguardando')}</p></div>
+                <div className="pb-5"><p className={`text-sm font-medium ${active ? 'text-primary' : ''}`}>{getPublicOrderStatusCopy(status, order.orderType).title}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateTime(event?.occurredAt) ?? (active ? 'Etapa atual' : complete ? 'Concluida' : 'Aguardando')}</p></div>
               </li>
             })}
           </ol>
