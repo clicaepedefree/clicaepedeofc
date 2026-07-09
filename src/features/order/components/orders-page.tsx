@@ -8,6 +8,12 @@ import {
   transitionOrderStatus,
 } from '@/features/order/api'
 import { ordersCacheKey } from '@/features/order/cache-keys'
+import {
+  getBrowserNotificationPermission,
+  requestBrowserNotificationPermission,
+  showNewOrderBrowserNotification,
+  type BrowserNotificationPermission,
+} from '@/features/order/notifications'
 import { useOrderReceipt } from '@/features/receipt/hooks/use-order-receipt'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
@@ -343,6 +349,8 @@ export function OrdersPage() {
   const [now, setNow] = useState(() => Date.now())
   const [soundEnabled, setSoundEnabled] = useState(false)
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false)
+  const [browserNotificationPermission, setBrowserNotificationPermission] =
+    useState<BrowserNotificationPermission>('unsupported')
   const knownNewOrderIdsRef = useRef<Set<number> | null>(null)
 
   const {
@@ -356,6 +364,7 @@ export function OrdersPage() {
   useEffect(() => {
     setSoundEnabled(getStoredBoolean('digital-orders-sound-enabled', true))
     setAutoPrintEnabled(getStoredBoolean('digital-orders-auto-print', false))
+    setBrowserNotificationPermission(getBrowserNotificationPermission())
   }, [])
 
   useEffect(() => {
@@ -495,15 +504,35 @@ export function OrdersPage() {
     knownNewOrderIdsRef.current = currentIds
 
     if (!newOrders.length) return
-    const latestOrder = newOrders[0]
-    toast.info(`Novo pedido digital #${latestOrder.displayId}`, {
-      description: latestOrder.customerName ?? 'Cliente sem nome informado',
-    })
+    for (const order of newOrders) {
+      toast.info(`Novo pedido digital #${order.displayId}`, {
+        description: order.customerName ?? 'Cliente sem nome informado',
+        duration: 12_000,
+      })
+      showNewOrderBrowserNotification(order)
+    }
     if (soundEnabled) playNewOrderSound()
-    if (autoPrintEnabled && !printMutation.isPending) {
-      printMutation.mutate(latestOrder)
+    if (autoPrintEnabled) {
+      for (const order of newOrders) printMutation.mutate(order)
     }
   }, [autoPrintEnabled, ordersQuery.data, printMutation, soundEnabled])
+
+  const enableBrowserNotifications = async () => {
+    const permission = await requestBrowserNotificationPermission()
+    setBrowserNotificationPermission(permission)
+    if (permission === 'granted') {
+      toast.success('Notificacoes do navegador ativadas para novos pedidos.')
+      return
+    }
+    if (permission === 'denied') {
+      toast.warning('Notificacoes bloqueadas no navegador.', {
+        description:
+          'Libere a permissao nas configuracoes do site para receber alertas fora da aba.',
+      })
+      return
+    }
+    toast.info('Seu navegador nao permitiu ativar notificacoes agora.')
+  }
 
   useEffect(() => {
     if (!selectedOrder) return
@@ -621,6 +650,18 @@ export function OrdersPage() {
               <Printer className="size-4" />
               Impressao automatica
             </Button>
+            {browserNotificationPermission !== 'granted' && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={browserNotificationPermission === 'unsupported'}
+                onClick={enableBrowserNotifications}
+              >
+                <Bell className="size-4" />
+                Notificar navegador
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
