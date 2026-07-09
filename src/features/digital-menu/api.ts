@@ -14,6 +14,9 @@ import {
 import { db } from '@/services/db'
 import {
   categoriesTable,
+  digitalMenuPromotionItemsTable,
+  digitalMenuPromotionRedemptionsTable,
+  digitalMenuPromotionsTable,
   itemOfferingsTable,
   itemsTable,
   ordersTable,
@@ -32,11 +35,12 @@ import {
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createHash, createHmac } from 'node:crypto'
 import { headers } from 'next/headers'
+import { z } from 'zod'
 import {
   evaluateDigitalMenuAvailability,
   DigitalMenuAvailabilitySettings,
@@ -47,6 +51,7 @@ import {
   DigitalMenuCategory,
   DigitalMenuData,
   DigitalMenuDeliveryZone,
+  DigitalMenuCartItemInput,
   DigitalMenuItem,
   DigitalMenuPaymentMethod,
   DigitalMenuSettings,
@@ -71,6 +76,7 @@ import {
   submitDigitalMenuOrderSchema,
 } from './validation'
 import { getTurnstileSiteKey, verifyTurnstileToken } from './turnstile'
+import { mapDbPromotionToPublic, normalizeCouponCode } from './promotions'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
   logoImageUrl: null,
@@ -222,6 +228,44 @@ const normalizeOptionalMoney = (value: string | undefined) => {
 
   return new Decimal(numericValue).toFixed(4)
 }
+
+const digitalMenuCouponQuoteSchema = z.object({
+  storeSlug: z.string().min(1).max(80).transform(normalizeStoreSlug),
+  couponCode: z
+    .string()
+    .trim()
+    .min(1)
+    .max(40)
+    .transform(value => value.toUpperCase().replace(/\s+/g, '')),
+  orderType: z.enum(['DELIVERY', 'TAKEOUT']),
+  address: z
+    .object({
+      postalCode: z.string().max(16).optional(),
+      neighborhood: z.string().max(120).optional(),
+      latitude: z.coerce.number().min(-90).max(90).optional(),
+      longitude: z.coerce.number().min(-180).max(180).optional(),
+    })
+    .optional(),
+  items: z
+    .array(
+      z.object({
+        itemOfferingId: z.coerce.number().int().positive(),
+        quantity: z.coerce.number().int().min(1).max(99),
+        comment: z.string().max(240).optional(),
+        options: z
+          .array(
+            z.object({
+              optionId: z.coerce.number().int().positive(),
+              quantity: z.coerce.number().int().min(1).max(99),
+            })
+          )
+          .max(80)
+          .default([]),
+      })
+    )
+    .min(1)
+    .max(80),
+})
 
 const getUnavailableReason = (status: string, statusReason: string | null) => {
   if (status === 'pending_recovery') {
@@ -433,6 +477,71 @@ const getDeliveryZonesForPublicMenu = async (storeId: number) => {
   return zones
 }
 
+const getPublicPromotionsForStore = async (storeId: number) => {
+  const promotionRows = await db
+    .select()
+    .from(digitalMenuPromotionsTable)
+    .where(
+      and(
+        eq(digitalMenuPromotionsTable.storeId, storeId),
+        eq(digitalMenuPromotionsTable.status, 'ACTIVE')
+      )
+    )
+    .orderBy(
+      desc(digitalMenuPromotionsTable.priority),
+      asc(digitalMenuPromotionsTable.name)
+    )
+
+  if (promotionRows.length === 0) return []
+
+  const itemRows = await db
+    .select({
+      promotionId: digitalMenuPromotionItemsTable.promotionId,
+      itemOfferingId: digitalMenuPromotionItemsTable.itemOfferingId,
+      promotionalPrice: digitalMenuPromotionItemsTable.promotionalPrice,
+    })
+    .from(digitalMenuPromotionItemsTable)
+    .innerJoin(
+      digitalMenuPromotionsTable,
+      eq(
+        digitalMenuPromotionsTable.id,
+        digitalMenuPromotionItemsTable.promotionId
+      )
+    )
+    .where(eq(digitalMenuPromotionsTable.storeId, storeId))
+
+  const itemIdsByPromotion = new Map<number, number[]>()
+  for (const row of itemRows) {
+    itemIdsByPromotion.set(row.promotionId, [
+      ...(itemIdsByPromotion.get(row.promotionId) ?? []),
+      row.itemOfferingId,
+    ])
+  }
+
+  return promotionRows.map(promotion =>
+    mapDbPromotionToPublic(
+      promotion,
+      itemIdsByPromotion.get(promotion.id) ?? []
+    )
+  )
+}
+
+const isPromotionCurrentlyActive = (
+  promotion: {
+    startsAt: Date | null
+    endsAt: Date | null
+    usageLimit: number | null
+    usedCount: number
+  },
+  now = new Date()
+) => {
+  if (promotion.startsAt && promotion.startsAt > now) return false
+  if (promotion.endsAt && promotion.endsAt < now) return false
+  if (promotion.usageLimit && promotion.usedCount >= promotion.usageLimit)
+    return false
+  return true
+}
+
 const getAvailabilityForStore = async ({
   storeId,
   settings,
@@ -585,6 +694,7 @@ const getDigitalMenuBySlugInternal = async (
       },
       paymentMethods: [],
       deliveryZones: [],
+      promotions: [],
       categories: [],
       unavailableReason,
     }
@@ -601,31 +711,33 @@ const getDigitalMenuBySlugInternal = async (
         manualPauseUntil: null,
       }
     : settings
-  const [paymentMethods, deliveryZones, availabilities] = await Promise.all([
-    getPaymentMethodsForPublicMenu(store.id),
-    getDeliveryZonesForPublicMenu(store.id),
-    preview
-      ? Promise.resolve({
-          delivery: {
-            isOpen: true,
-            reason: null,
-            nextOpeningLabel: null,
-            canSchedule: false,
-            statusLabel: 'Previa',
-          },
-          takeout: {
-            isOpen: true,
-            reason: null,
-            nextOpeningLabel: null,
-            canSchedule: false,
-            statusLabel: 'Previa',
-          },
-        })
-      : getAvailabilitiesForStore({
-          storeId: store.id,
-          settings: effectiveSettings,
-        }),
-  ])
+  const [paymentMethods, deliveryZones, promotions, availabilities] =
+    await Promise.all([
+      getPaymentMethodsForPublicMenu(store.id),
+      getDeliveryZonesForPublicMenu(store.id),
+      getPublicPromotionsForStore(store.id),
+      preview
+        ? Promise.resolve({
+            delivery: {
+              isOpen: true,
+              reason: null,
+              nextOpeningLabel: null,
+              canSchedule: false,
+              statusLabel: 'Previa',
+            },
+            takeout: {
+              isOpen: true,
+              reason: null,
+              nextOpeningLabel: null,
+              canSchedule: false,
+              statusLabel: 'Previa',
+            },
+          })
+        : getAvailabilitiesForStore({
+            storeId: store.id,
+            settings: effectiveSettings,
+          }),
+    ])
   const availability =
     availabilities.delivery.isOpen || availabilities.delivery.canSchedule
       ? availabilities.delivery
@@ -643,6 +755,7 @@ const getDigitalMenuBySlugInternal = async (
       availabilities,
       paymentMethods,
       deliveryZones,
+      promotions,
       categories: [],
       unavailableReason: availability.reason ?? undefined,
     }
@@ -697,6 +810,11 @@ const getDigitalMenuBySlugInternal = async (
     .orderBy(asc(categoriesTable.index), asc(itemOfferingsTable.index))
 
   const itemOfferingIds = itemRows.map(item => item.itemOfferingId)
+  const activeItemPromotions = promotions.filter(
+    promotion =>
+      isPromotionCurrentlyActive(promotion) &&
+      ['FEATURED_ITEM', 'ITEM_PRICE', 'COMBO'].includes(promotion.type)
+  )
   const optionGroupsByOffering =
     itemOfferingIds.length > 0
       ? await getOptionGroupsByItemOfferingIds({
@@ -720,6 +838,19 @@ const getDigitalMenuBySlugInternal = async (
     const category = categoriesById.get(item.categoryId)
     if (!category) continue
 
+    const itemPromotions = activeItemPromotions.filter(promotion =>
+      promotion.itemOfferingIds.includes(item.itemOfferingId)
+    )
+    const itemPricePromotion = itemPromotions.find(
+      promotion =>
+        promotion.type === 'ITEM_PRICE' &&
+        typeof (promotion.metadata as { promotionalPrice?: unknown } | null)
+          ?.promotionalPrice === 'string'
+    )
+    const promotionalPrice =
+      (itemPricePromotion?.metadata as { promotionalPrice?: string } | null)
+        ?.promotionalPrice ?? null
+
     const menuItem: DigitalMenuItem = {
       itemOfferingId: item.itemOfferingId,
       itemId: item.itemId,
@@ -727,8 +858,16 @@ const getDigitalMenuBySlugInternal = async (
       name: item.name,
       description: item.description,
       imageUrl: item.imageUrl,
-      price: item.price,
-      originalPrice: item.originalPrice,
+      price: promotionalPrice ?? item.price,
+      originalPrice: promotionalPrice ? item.price : item.originalPrice,
+      promotionalStartsAt: itemPricePromotion?.startsAt?.toISOString() ?? null,
+      promotionalEndsAt: itemPricePromotion?.endsAt?.toISOString() ?? null,
+      isFeatured: itemPromotions.some(
+        promotion => promotion.type === 'FEATURED_ITEM' || promotion.isFeatured
+      ),
+      promotionBadges: itemPromotions
+        .filter(promotion => promotion.type !== 'ITEM_PRICE')
+        .map(promotion => promotion.name),
       inventory: item.inventory,
       externalCode: item.externalCode,
       ean: item.ean,
@@ -748,6 +887,19 @@ const getDigitalMenuBySlugInternal = async (
     availabilities,
     paymentMethods,
     deliveryZones,
+    promotions: promotions.map(promotion => ({
+      id: promotion.id,
+      code: null,
+      name: promotion.name,
+      description: promotion.description,
+      type: promotion.type,
+      minOrderAmount: promotion.minOrderAmount,
+      discountAmount: promotion.discountAmount,
+      discountPercent: promotion.discountPercent,
+      maxDiscountAmount: promotion.maxDiscountAmount,
+      freeDeliveryMinimum: promotion.freeDeliveryMinimum,
+      itemOfferingIds: promotion.itemOfferingIds,
+    })),
     categories: Array.from(categoriesById.values()).filter(
       category => category.items.length > 0
     ),
@@ -1002,6 +1154,8 @@ export const submitDigitalMenuOrder = async (
   const cartItemsForValidation = currentPublicSettings.allowItemObservations
     ? payload.items
     : payload.items.map(item => ({ ...item, comment: undefined }))
+  const currentPromotions = await getPublicPromotionsForStore(menu.store.id)
+  const normalizedCouponCode = normalizeCouponCode(payload.couponCode)
 
   let validatedCart
   try {
@@ -1010,6 +1164,9 @@ export const submitDigitalMenuOrder = async (
       categories: menu.categories,
       deliveryFee: '0',
       minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
+      promotions: currentPromotions,
+      couponCode: normalizedCouponCode,
+      allowDeliveryPromotions: payload.orderType === 'DELIVERY',
     })
     const deliveryQuote =
       payload.orderType === 'DELIVERY'
@@ -1038,6 +1195,9 @@ export const submitDigitalMenuOrder = async (
       minimumOrderAmount: deliveryQuote.minimumOrderAmount,
       deliveryZoneId: deliveryQuote.deliveryZoneId,
       deliveryEstimatedMinutes: deliveryQuote.deliveryEstimatedMinutes,
+      promotions: currentPromotions,
+      couponCode: normalizedCouponCode,
+      allowDeliveryPromotions: payload.orderType === 'DELIVERY',
     })
 
     if (
@@ -1112,6 +1272,7 @@ export const submitDigitalMenuOrder = async (
     scheduledFor: payload.scheduledFor ?? null,
     address: payload.address ?? null,
     payment: payload.payment,
+    couponCode: normalizedCouponCode,
     items: cartItemsForValidation,
   })
   const addressSnapshot =
@@ -1268,7 +1429,12 @@ export const submitDigitalMenuOrder = async (
           cartSnapshot: validatedCart.items,
           totalsSnapshot: {
             subtotal: validatedCart.subtotal,
+            discountAmount: validatedCart.discountAmount,
+            deliveryDiscountAmount: validatedCart.deliveryDiscountAmount,
+            deliveryFeeBeforeDiscount: validatedCart.deliveryFeeBeforeDiscount,
             deliveryFee: validatedCart.deliveryFee,
+            couponCode: normalizedCouponCode,
+            appliedPromotion: validatedCart.appliedPromotion,
             total: validatedCart.total,
           },
           catalogSnapshot: {
@@ -1360,6 +1526,7 @@ export const submitDigitalMenuOrder = async (
           deliveryAddressComplement: complement ?? null,
           deliveryNeighborhood: neighborhood ?? null,
           deliveryFee: validatedCart.deliveryFee,
+          couponCode: normalizedCouponCode,
           deliveryZoneId: validatedCart.deliveryZoneId,
           deliveryEstimatedMinutes: validatedCart.deliveryEstimatedMinutes,
           deliveryEta: validatedCart.deliveryEstimatedMinutes
@@ -1379,8 +1546,14 @@ export const submitDigitalMenuOrder = async (
             cart: validatedCart.items,
             totals: {
               subtotal: validatedCart.subtotal,
+              discountAmount: validatedCart.discountAmount,
+              deliveryDiscountAmount: validatedCart.deliveryDiscountAmount,
+              deliveryFeeBeforeDiscount:
+                validatedCart.deliveryFeeBeforeDiscount,
               deliveryFee: validatedCart.deliveryFee,
               minimumOrderAmount: validatedCart.minimumOrderAmount,
+              couponCode: normalizedCouponCode,
+              appliedPromotion: validatedCart.appliedPromotion,
               total: validatedCart.total,
             },
             deliveryZoneId: validatedCart.deliveryZoneId,
@@ -1473,6 +1646,77 @@ export const submitDigitalMenuOrder = async (
         },
         dbSession: tx,
       })
+
+      if (validatedCart.appliedPromotion) {
+        const appliedPromotionConfig = currentPromotions.find(
+          promotion =>
+            promotion.id === validatedCart.appliedPromotion?.promotionId
+        )
+        if (appliedPromotionConfig?.perCustomerLimit) {
+          const [customerRedemptions] = await tx
+            .select({ total: count() })
+            .from(digitalMenuPromotionRedemptionsTable)
+            .where(
+              and(
+                eq(
+                  digitalMenuPromotionRedemptionsTable.promotionId,
+                  validatedCart.appliedPromotion.promotionId
+                ),
+                eq(digitalMenuPromotionRedemptionsTable.customerHash, phoneHash)
+              )
+            )
+
+          if (
+            (customerRedemptions?.total ?? 0) >=
+            appliedPromotionConfig.perCustomerLimit
+          ) {
+            throw new Error(
+              'Este cupom ja atingiu o limite de uso para este telefone.'
+            )
+          }
+        }
+
+        const updatedPromotions = await tx
+          .update(digitalMenuPromotionsTable)
+          .set({
+            usedCount: sql`${digitalMenuPromotionsTable.usedCount} + 1`,
+          })
+          .where(
+            and(
+              eq(
+                digitalMenuPromotionsTable.id,
+                validatedCart.appliedPromotion.promotionId
+              ),
+              eq(digitalMenuPromotionsTable.storeId, menu.store.id),
+              eq(digitalMenuPromotionsTable.status, 'ACTIVE'),
+              or(
+                isNull(digitalMenuPromotionsTable.usageLimit),
+                sql`${digitalMenuPromotionsTable.usedCount} < ${digitalMenuPromotionsTable.usageLimit}`
+              )
+            )
+          )
+          .returning({ id: digitalMenuPromotionsTable.id })
+
+        if (updatedPromotions.length === 0) {
+          throw new Error('Este cupom ou promocao acabou de esgotar.')
+        }
+
+        await tx.insert(digitalMenuPromotionRedemptionsTable).values({
+          promotionId: validatedCart.appliedPromotion.promotionId,
+          storeId: menu.store.id,
+          orderId: createdOrder.id,
+          publicOrderId: created.id,
+          customerHash: phoneHash,
+          couponCode: normalizedCouponCode,
+          discountAmount: validatedCart.discountAmount,
+          deliveryDiscountAmount: validatedCart.deliveryDiscountAmount,
+          metadata: {
+            promotionName: validatedCart.appliedPromotion.name,
+            promotionType: validatedCart.appliedPromotion.type,
+            requestId,
+          },
+        })
+      }
 
       await tx
         .update(publicOrderSubmissionsTable)
@@ -1576,6 +1820,111 @@ export const submitDigitalMenuOrder = async (
       ok: false,
       message:
         'Nao conseguimos enviar o pedido agora. Tente novamente em alguns instantes.',
+    }
+  }
+}
+
+export const quoteDigitalMenuCoupon = async (input: {
+  storeSlug: string
+  couponCode: string
+  orderType: 'DELIVERY' | 'TAKEOUT'
+  address?: {
+    postalCode?: string
+    neighborhood?: string
+    latitude?: number
+    longitude?: number
+  }
+  items: DigitalMenuCartItemInput[]
+}): Promise<
+  | {
+      ok: true
+      couponCode: string
+      discountAmount: string
+      deliveryDiscountAmount: string
+      deliveryFeeBeforeDiscount: string
+      deliveryFee: string
+      subtotal: string
+      total: string
+      message: string
+    }
+  | { ok: false; message: string }
+> => {
+  noStore()
+  const parsed = digitalMenuCouponQuoteSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, message: 'Informe um cupom valido.' }
+  }
+
+  const payload = parsed.data
+  const menu = await getDigitalMenuBySlug(payload.storeSlug)
+  if (!menu?.store) return { ok: false, message: 'Loja nao encontrada.' }
+
+  const currentSettings = await getDigitalMenuSettings(menu.store.id)
+  const currentPublicSettings = toPublicSettings(currentSettings)
+  const currentPromotions = await getPublicPromotionsForStore(menu.store.id)
+
+  try {
+    const subtotalCart = validateAndPriceDigitalMenuCart({
+      items: payload.items,
+      categories: menu.categories,
+      deliveryFee: '0',
+      minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
+      allowDeliveryPromotions: payload.orderType === 'DELIVERY',
+    })
+    const deliveryQuote =
+      payload.orderType === 'DELIVERY'
+        ? quoteDigitalMenuDelivery({
+            zones: menu.deliveryZones,
+            neighborhood: payload.address?.neighborhood,
+            postalCode: payload.address?.postalCode,
+            customerLatitude: payload.address?.latitude,
+            customerLongitude: payload.address?.longitude,
+            subtotal: subtotalCart.subtotal,
+            settings: currentPublicSettings,
+          })
+        : {
+            deliveryFee: '0',
+            minimumOrderAmount: currentPublicSettings.minimumOrderAmount,
+            deliveryZoneId: null,
+            deliveryEstimatedMinutes:
+              currentPublicSettings.averagePreparationMinutes,
+            deliveryZoneSnapshot: null,
+          }
+
+    const validatedCart = validateAndPriceDigitalMenuCart({
+      items: payload.items,
+      categories: menu.categories,
+      deliveryFee: deliveryQuote.deliveryFee,
+      minimumOrderAmount: deliveryQuote.minimumOrderAmount,
+      deliveryZoneId: deliveryQuote.deliveryZoneId,
+      deliveryEstimatedMinutes: deliveryQuote.deliveryEstimatedMinutes,
+      promotions: currentPromotions,
+      couponCode: payload.couponCode,
+      allowDeliveryPromotions: payload.orderType === 'DELIVERY',
+    })
+
+    if (!validatedCart.appliedPromotion) {
+      return { ok: false, message: 'Cupom nao aplicavel a este pedido.' }
+    }
+
+    return {
+      ok: true,
+      couponCode: payload.couponCode,
+      discountAmount: validatedCart.discountAmount,
+      deliveryDiscountAmount: validatedCart.deliveryDiscountAmount,
+      deliveryFeeBeforeDiscount: validatedCart.deliveryFeeBeforeDiscount,
+      deliveryFee: validatedCart.deliveryFee,
+      subtotal: validatedCart.subtotal,
+      total: validatedCart.total,
+      message: validatedCart.appliedPromotion.message,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Nao foi possivel validar este cupom.',
     }
   }
 }

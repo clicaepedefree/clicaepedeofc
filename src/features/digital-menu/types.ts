@@ -26,6 +26,10 @@ export type DigitalMenuItem = {
   imageUrl: string | null
   price: string
   originalPrice: string | null
+  promotionalStartsAt: string | null
+  promotionalEndsAt: string | null
+  isFeatured: boolean
+  promotionBadges: string[]
   inventory: number | null
   externalCode: string | null
   ean: string | null
@@ -132,8 +136,30 @@ export type DigitalMenuData = {
   availabilities: DigitalMenuAvailabilities
   paymentMethods: DigitalMenuPaymentMethod[]
   deliveryZones: DigitalMenuDeliveryZone[]
+  promotions: DigitalMenuPublicPromotion[]
   categories: DigitalMenuCategory[]
   unavailableReason?: string
+}
+
+export type DigitalMenuPublicPromotion = {
+  id: number
+  code: string | null
+  name: string
+  description: string | null
+  type:
+    | 'FIXED_AMOUNT'
+    | 'PERCENTAGE'
+    | 'FREE_DELIVERY'
+    | 'FREE_DELIVERY_THRESHOLD'
+    | 'FEATURED_ITEM'
+    | 'COMBO'
+    | 'ITEM_PRICE'
+  minOrderAmount: string | null
+  discountAmount: string | null
+  discountPercent: number | null
+  maxDiscountAmount: string | null
+  freeDeliveryMinimum: string | null
+  itemOfferingIds: number[]
 }
 
 export type DigitalMenuCartOptionInput = {
@@ -183,6 +209,7 @@ export type DigitalMenuSubmitInput = {
     changeFor?: string
     needsChange?: boolean
   }
+  couponCode?: string
   items: DigitalMenuCartItemInput[]
 }
 
@@ -217,11 +244,23 @@ export type ValidatedDigitalMenuCartItem = {
 export type ValidatedDigitalMenuCart = {
   items: ValidatedDigitalMenuCartItem[]
   subtotal: string
+  discountAmount: string
+  deliveryDiscountAmount: string
+  deliveryFeeBeforeDiscount: string
   deliveryFee: string
   minimumOrderAmount: string
   deliveryZoneId: number | null
   deliveryEstimatedMinutes: number | null
   total: string
+  appliedPromotion: {
+    promotionId: number
+    code: string | null
+    name: string
+    type: string
+    discountAmount: string
+    deliveryDiscountAmount: string
+    message: string
+  } | null
 }
 
 export type DigitalMenuSubmissionResult =

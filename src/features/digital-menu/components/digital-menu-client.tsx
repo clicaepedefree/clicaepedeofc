@@ -1,7 +1,14 @@
 'use client'
 
-import { submitDigitalMenuOrder } from '@/features/digital-menu/api'
+import {
+  quoteDigitalMenuCoupon,
+  submitDigitalMenuOrder,
+} from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
+import {
+  normalizeCouponCode,
+  quoteDigitalMenuPromotion,
+} from '@/features/digital-menu/promotions'
 import { isValidCpf } from '@/features/digital-menu/validation'
 import {
   DigitalMenuCategory,
@@ -247,6 +254,17 @@ export const DigitalMenuClient = ({
   >(menu.paymentMethods[0]?.method ?? 'PIX')
   const [needsChange, setNeedsChange] = useState(false)
   const [changeFor, setChangeFor] = useState('')
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(
+    null
+  )
+  const [couponPreview, setCouponPreview] = useState<{
+    discountAmount: string
+    deliveryDiscountAmount: string
+    deliveryFee: string
+    total: string
+  } | null>(null)
+  const [couponMessage, setCouponMessage] = useState<string | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey)
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(
     null
@@ -362,8 +380,44 @@ export const DigitalMenuClient = ({
     postalCode,
   ])
 
-  const appliedDiscount = 0
-  const checkoutTotal = cartTotal + deliveryQuote.deliveryFee - appliedDiscount
+  const promotionQuote = useMemo(
+    () =>
+      quoteDigitalMenuPromotion({
+        promotions: menu.promotions.map(promotion => ({
+          ...promotion,
+          startsAt: null,
+          endsAt: null,
+          usageLimit: null,
+          usedCount: 0,
+          perCustomerLimit: null,
+          priority: 0,
+          isFeatured: false,
+          metadata: null,
+        })),
+        couponCode: appliedCouponCode,
+        subtotal: String(cartTotal),
+        deliveryFee: String(deliveryQuote.deliveryFee),
+        cartItemOfferingIds: cart.map(item => item.itemOfferingId),
+        allowDeliveryPromotions: orderType === 'DELIVERY',
+      }),
+    [
+      appliedCouponCode,
+      cart,
+      cartTotal,
+      deliveryQuote.deliveryFee,
+      menu.promotions,
+      orderType,
+    ]
+  )
+  const couponContextKey = `${cartTotal}|${deliveryQuote.deliveryFee}|${orderType}`
+  const lastCouponContextKey = useRef(couponContextKey)
+  const appliedDiscount =
+    Number(couponPreview?.discountAmount ?? promotionQuote.discountAmount) +
+    Number(
+      couponPreview?.deliveryDiscountAmount ??
+        promotionQuote.deliveryDiscountAmount
+    )
+  const checkoutTotal = Number(couponPreview?.total ?? promotionQuote.total)
   const selectedAvailability =
     orderType === 'DELIVERY'
       ? menu.availabilities.delivery
@@ -394,20 +448,30 @@ export const DigitalMenuClient = ({
     [menu.categories]
   )
   const recommendedItemIds = useMemo(() => {
-    const candidates = [...allItems].sort((first, second) => {
-      const secondScore =
-        (second.originalPrice ? 4 : 0) +
-        (second.imageUrl ? 2 : 0) +
-        (second.optionGroups.length > 0 ? 1 : 0)
-      const firstScore =
-        (first.originalPrice ? 4 : 0) +
-        (first.imageUrl ? 2 : 0) +
-        (first.optionGroups.length > 0 ? 1 : 0)
+    const featuredIds = allItems
+      .filter(item => item.isFeatured)
+      .map(item => item.itemOfferingId)
+    const candidates = [...allItems]
+      .filter(item => !featuredIds.includes(item.itemOfferingId))
+      .sort((first, second) => {
+        const secondScore =
+          (second.originalPrice ? 4 : 0) +
+          (second.imageUrl ? 2 : 0) +
+          (second.optionGroups.length > 0 ? 1 : 0)
+        const firstScore =
+          (first.originalPrice ? 4 : 0) +
+          (first.imageUrl ? 2 : 0) +
+          (first.optionGroups.length > 0 ? 1 : 0)
 
-      return secondScore - firstScore
-    })
+        return secondScore - firstScore
+      })
 
-    return new Set(candidates.slice(0, 6).map(item => item.itemOfferingId))
+    return new Set([
+      ...featuredIds,
+      ...candidates
+        .slice(0, Math.max(0, 6 - featuredIds.length))
+        .map(item => item.itemOfferingId),
+    ])
   }, [allItems])
   const displayCategories = useMemo<DisplayMenuCategory[]>(() => {
     const normalizedSearch = normalizeSearchText(searchTerm)
@@ -653,6 +717,7 @@ export const DigitalMenuClient = ({
         changeFor:
           paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
       },
+      couponCode: appliedCouponCode ?? undefined,
       scheduledFor: scheduledFor
         ? new Date(scheduledFor).toISOString()
         : undefined,
@@ -698,9 +763,7 @@ export const DigitalMenuClient = ({
         trackingToken:
           (result as typeof result & { trackingToken?: string })
             .trackingToken ?? null,
-        summary: cart
-          .map(item => `${item.quantity}x ${item.name}`)
-          .join(', '),
+        summary: cart.map(item => `${item.quantity}x ${item.name}`).join(', '),
       })
       setCart([])
       setCaptchaToken(null)
@@ -709,6 +772,72 @@ export const DigitalMenuClient = ({
       setIdempotencyKey(createIdempotencyKey())
       setCheckoutStep(false)
     })
+  }
+
+  useEffect(() => {
+    if (lastCouponContextKey.current === couponContextKey) return
+    lastCouponContextKey.current = couponContextKey
+    if (!appliedCouponCode) return
+    setAppliedCouponCode(null)
+    setCouponPreview(null)
+    setCouponMessage('Cupom removido porque o carrinho ou entrega mudou.')
+  }, [appliedCouponCode, couponContextKey])
+
+  const applyCoupon = () => {
+    const normalized = normalizeCouponCode(couponCode)
+    if (!normalized) {
+      setAppliedCouponCode(null)
+      setCouponPreview(null)
+      setCouponMessage('Informe um cupom para aplicar.')
+      return
+    }
+    startTransition(async () => {
+      const quote = await quoteDigitalMenuCoupon({
+        storeSlug: menu.store.subdomain,
+        couponCode: normalized,
+        orderType,
+        address:
+          orderType === 'DELIVERY'
+            ? {
+                postalCode,
+                neighborhood,
+                latitude: customerLatitude,
+                longitude: customerLongitude,
+              }
+            : undefined,
+        items: cart.map(item => ({
+          itemOfferingId: item.itemOfferingId,
+          quantity: item.quantity,
+          comment: item.comment,
+          options: item.options.map(option => ({
+            optionId: option.optionId,
+            quantity: option.quantity,
+          })),
+        })),
+      })
+      if (!quote.ok) {
+        setAppliedCouponCode(null)
+        setCouponPreview(null)
+        setCouponMessage(quote.message)
+        return
+      }
+      setAppliedCouponCode(quote.couponCode)
+      setCouponPreview({
+        discountAmount: quote.discountAmount,
+        deliveryDiscountAmount: quote.deliveryDiscountAmount,
+        deliveryFee: quote.deliveryFee,
+        total: quote.total,
+      })
+      setCouponCode(quote.couponCode)
+      setCouponMessage(quote.message)
+    })
+  }
+
+  const removeCoupon = () => {
+    setAppliedCouponCode(null)
+    setCouponPreview(null)
+    setCouponCode('')
+    setCouponMessage('Cupom removido.')
   }
 
   return (
@@ -1161,6 +1290,9 @@ export const DigitalMenuClient = ({
                 deliveryQuote={deliveryQuote}
                 cartSubtotal={cartTotal}
                 appliedDiscount={appliedDiscount}
+                couponCode={couponCode}
+                appliedCouponCode={appliedCouponCode}
+                couponMessage={couponMessage}
                 checkoutTotal={checkoutTotal}
                 missingMinimumAmount={missingMinimumAmount}
                 availablePaymentMethods={availablePaymentMethods}
@@ -1177,6 +1309,8 @@ export const DigitalMenuClient = ({
                 deliveryAvailable={menu.deliveryZones.length > 0}
                 onBack={() => setCheckoutStep(false)}
                 onSubmit={submitOrder}
+                onApplyCoupon={applyCoupon}
+                onRemoveCoupon={removeCoupon}
                 setCaptchaToken={setCaptchaToken}
                 setSubmissionMessage={setSubmissionMessage}
                 setCustomerName={setCustomerName}
@@ -1198,6 +1332,7 @@ export const DigitalMenuClient = ({
                 setChangeFor={setChangeFor}
                 setOrderType={setOrderType}
                 setScheduledFor={setScheduledFor}
+                setCouponCode={setCouponCode}
               />
             ) : (
               <>
@@ -1370,6 +1505,14 @@ const CategorySection = ({
                     Promo
                   </Badge>
                 )}
+                {item.promotionBadges.slice(0, 2).map(badge => (
+                  <Badge
+                    key={badge}
+                    className="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                  >
+                    {badge}
+                  </Badge>
+                ))}
               </div>
               {item.description && (
                 <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
@@ -1444,6 +1587,9 @@ const CheckoutForm = ({
   deliveryQuote,
   cartSubtotal,
   appliedDiscount,
+  couponCode,
+  appliedCouponCode,
+  couponMessage,
   checkoutTotal,
   missingMinimumAmount,
   availablePaymentMethods,
@@ -1460,6 +1606,8 @@ const CheckoutForm = ({
   deliveryAvailable,
   onBack,
   onSubmit,
+  onApplyCoupon,
+  onRemoveCoupon,
   setCaptchaToken,
   setSubmissionMessage,
   setCustomerName,
@@ -1481,6 +1629,7 @@ const CheckoutForm = ({
   setChangeFor,
   setOrderType,
   setScheduledFor,
+  setCouponCode,
 }: {
   customerName: string
   customerPhone: string
@@ -1513,6 +1662,9 @@ const CheckoutForm = ({
   }
   cartSubtotal: number
   appliedDiscount: number
+  couponCode: string
+  appliedCouponCode: string | null
+  couponMessage: string | null
   checkoutTotal: number
   missingMinimumAmount: number
   availablePaymentMethods: {
@@ -1549,6 +1701,8 @@ const CheckoutForm = ({
   deliveryAvailable: boolean
   onBack: () => void
   onSubmit: () => void
+  onApplyCoupon: () => void
+  onRemoveCoupon: () => void
   setCaptchaToken: (value: string | null) => void
   setSubmissionMessage: (value: string | null) => void
   setCustomerName: (value: string) => void
@@ -1570,6 +1724,7 @@ const CheckoutForm = ({
   setChangeFor: (value: string) => void
   setOrderType: (value: DigitalMenuSubmitInput['orderType']) => void
   setScheduledFor: (value: string) => void
+  setCouponCode: (value: string) => void
 }) => {
   const [validationAttempted, setValidationAttempted] = useState(false)
   const [remainingSeconds, setRemainingSeconds] = useState(retryAfterSeconds)
@@ -2102,6 +2257,42 @@ const CheckoutForm = ({
             </div>
           )}
       </div>
+
+      <section className="rounded-lg border bg-card p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 space-y-1 text-sm font-medium">
+            Cupom promocional
+            <Input
+              value={couponCode}
+              onChange={event => setCouponCode(event.target.value)}
+              placeholder="Ex: PRIMEIRA10"
+              disabled={!!appliedCouponCode}
+            />
+          </label>
+          {appliedCouponCode ? (
+            <Button type="button" variant="outline" onClick={onRemoveCoupon}>
+              Remover cupom
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={onApplyCoupon}>
+              Aplicar cupom
+            </Button>
+          )}
+        </div>
+        {couponMessage && (
+          <p
+            className={cn(
+              'mt-2 text-sm',
+              appliedCouponCode
+                ? 'text-emerald-600 dark:text-emerald-300'
+                : 'text-muted-foreground'
+            )}
+            aria-live="polite"
+          >
+            {couponMessage}
+          </p>
+        )}
+      </section>
 
       <section className="rounded-lg border bg-card p-4 text-sm">
         <h3 className="mb-3 font-medium">Resumo do pedido</h3>
