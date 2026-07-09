@@ -7,6 +7,10 @@ import {
   DigitalMenuOptionGroup,
   ValidatedDigitalMenuCart,
 } from './types'
+import {
+  PublicDigitalMenuPromotion,
+  quoteDigitalMenuPromotion,
+} from './promotions'
 import { sanitizePublicText } from './validation'
 
 type CatalogLookup = {
@@ -49,6 +53,9 @@ export const validateAndPriceDigitalMenuCart = ({
   minimumOrderAmount = '0',
   deliveryZoneId = null,
   deliveryEstimatedMinutes = null,
+  promotions = [],
+  couponCode = null,
+  allowDeliveryPromotions = true,
 }: {
   items: DigitalMenuCartItemInput[]
   categories: DigitalMenuCategory[]
@@ -56,6 +63,9 @@ export const validateAndPriceDigitalMenuCart = ({
   minimumOrderAmount?: string
   deliveryZoneId?: number | null
   deliveryEstimatedMinutes?: number | null
+  promotions?: PublicDigitalMenuPromotion[]
+  couponCode?: string | null
+  allowDeliveryPromotions?: boolean
 }): ValidatedDigitalMenuCart => {
   const { offeringById } = buildCatalogLookup(categories)
   let subtotal = new Decimal(0)
@@ -72,39 +82,46 @@ export const validateAndPriceDigitalMenuCart = ({
     }
 
     const optionQuantitiesByGroup = new Map<number, number>()
-    const selectedOptions = cartItem.options.map((selectedOption, optionIndex) => {
-      const option = getOptionById(offering.optionGroups, selectedOption.optionId)
-
-      if (!option) {
-        throw new Error(`Um adicional de ${offering.name} nao esta mais disponivel.`)
-      }
-
-      if (
-        selectedOption.quantity < option.minQuantity ||
-        selectedOption.quantity > option.maxQuantity
-      ) {
-        throw new Error(
-          `${option.name} precisa respeitar o limite de ${option.minQuantity} a ${option.maxQuantity}.`
+    const selectedOptions = cartItem.options.map(
+      (selectedOption, optionIndex) => {
+        const option = getOptionById(
+          offering.optionGroups,
+          selectedOption.optionId
         )
-      }
 
-      optionQuantitiesByGroup.set(
-        option.optionGroup.id,
-        (optionQuantitiesByGroup.get(option.optionGroup.id) ?? 0) +
-          selectedOption.quantity
-      )
+        if (!option) {
+          throw new Error(
+            `Um adicional de ${offering.name} nao esta mais disponivel.`
+          )
+        }
 
-      return {
-        optionId: option.id,
-        itemId: option.itemId,
-        optionGroupId: option.optionGroup.id,
-        optionGroupName: option.optionGroup.name,
-        optionName: option.name,
-        price: toMoney(option.price),
-        quantity: selectedOption.quantity,
-        index: optionIndex,
+        if (
+          selectedOption.quantity < option.minQuantity ||
+          selectedOption.quantity > option.maxQuantity
+        ) {
+          throw new Error(
+            `${option.name} precisa respeitar o limite de ${option.minQuantity} a ${option.maxQuantity}.`
+          )
+        }
+
+        optionQuantitiesByGroup.set(
+          option.optionGroup.id,
+          (optionQuantitiesByGroup.get(option.optionGroup.id) ?? 0) +
+            selectedOption.quantity
+        )
+
+        return {
+          optionId: option.id,
+          itemId: option.itemId,
+          optionGroupId: option.optionGroup.id,
+          optionGroupName: option.optionGroup.name,
+          optionName: option.name,
+          price: toMoney(option.price),
+          quantity: selectedOption.quantity,
+          index: optionIndex,
+        }
       }
-    })
+    )
 
     for (const optionGroup of offering.optionGroups) {
       const selectedQuantity = optionQuantitiesByGroup.get(optionGroup.id) ?? 0
@@ -134,7 +151,9 @@ export const validateAndPriceDigitalMenuCart = ({
       itemName: offering.name,
       categoryName: offering.categoryName,
       price: toMoney(offering.price),
-      originalPrice: offering.originalPrice ? toMoney(offering.originalPrice) : null,
+      originalPrice: offering.originalPrice
+        ? toMoney(offering.originalPrice)
+        : null,
       quantity: cartItem.quantity,
       externalCode: offering.externalCode,
       ean: offering.ean,
@@ -145,15 +164,27 @@ export const validateAndPriceDigitalMenuCart = ({
     }
   })
 
-  const deliveryFeeAsDecimal = new Decimal(deliveryFee)
+  const promotionQuote = quoteDigitalMenuPromotion({
+    promotions,
+    couponCode,
+    subtotal: toMoney(subtotal),
+    deliveryFee,
+    cartItemOfferingIds: validatedItems.map(item => item.itemOfferingId),
+    allowDeliveryPromotions,
+  })
+  if (promotionQuote.error) throw new Error(promotionQuote.error)
 
   return {
     items: validatedItems,
     subtotal: toMoney(subtotal),
-    deliveryFee: toMoney(deliveryFeeAsDecimal),
+    discountAmount: promotionQuote.discountAmount,
+    deliveryDiscountAmount: promotionQuote.deliveryDiscountAmount,
+    deliveryFeeBeforeDiscount: promotionQuote.deliveryFeeBeforeDiscount,
+    deliveryFee: promotionQuote.deliveryFee,
     minimumOrderAmount: toMoney(minimumOrderAmount),
     deliveryZoneId,
     deliveryEstimatedMinutes,
-    total: toMoney(subtotal.plus(deliveryFeeAsDecimal)),
+    total: promotionQuote.total,
+    appliedPromotion: promotionQuote.appliedPromotion,
   }
 }

@@ -140,6 +140,11 @@ export const submitDigitalMenuOrderSchema = z
       changeFor: z.string().max(40).optional(),
       needsChange: z.boolean().optional(),
     }),
+    couponCode: z
+      .string()
+      .max(40)
+      .transform(value => sanitizePublicText(value, 40).toUpperCase())
+      .optional(),
     items: z.array(cartItemSchema).min(1).max(80),
   })
   .superRefine((value, ctx) => {

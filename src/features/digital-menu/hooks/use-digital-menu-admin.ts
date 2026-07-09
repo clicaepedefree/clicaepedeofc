@@ -1,7 +1,9 @@
 'use client'
 
 import {
+  deleteDigitalMenuPromotion,
   getDigitalMenuAdminOverview,
+  saveDigitalMenuPromotion,
   updateDigitalMenuPublication,
 } from '@/features/digital-menu/admin-api'
 import { selectedStoreIdAtom } from '@/features/store/state'
@@ -52,11 +54,53 @@ export const useDigitalMenuAdmin = () => {
       })
     },
   })
+  const promotion = useMutation({
+    mutationFn: (input: Parameters<typeof saveDigitalMenuPromotion>[1]) => {
+      if (!selectedStoreId) throw new Error('Nenhuma loja selecionada.')
+      return saveDigitalMenuPromotion(selectedStoreId, input)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      dispatchToast({ type: 'success', message: 'Promocao salva.' })
+    },
+    onError: error => {
+      dispatchToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Nao foi possivel salvar a promocao.',
+      })
+    },
+  })
+  const promotionDelete = useMutation({
+    mutationFn: (promotionId: number) => {
+      if (!selectedStoreId) throw new Error('Nenhuma loja selecionada.')
+      return deleteDigitalMenuPromotion(selectedStoreId, promotionId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      dispatchToast({ type: 'success', message: 'Promocao removida.' })
+    },
+    onError: error => {
+      dispatchToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Nao foi possivel remover a promocao.',
+      })
+    },
+  })
 
   return {
     selectedStoreId,
     ...query,
     updatePublication: publication.mutate,
     isUpdatingPublication: publication.isPending,
+    savePromotion: promotion.mutate,
+    isSavingPromotion: promotion.isPending,
+    deletePromotion: promotionDelete.mutate,
+    isDeletingPromotion: promotionDelete.isPending,
   }
 }
