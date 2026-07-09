@@ -93,6 +93,11 @@ describe('public tracking DTO', () => {
     status: 'RECEIVED',
     orderType: 'DELIVERY' as const,
     total: '25.0000',
+    cartSnapshot: [
+      { itemName: 'Burger', quantity: 2 },
+      { itemName: 'Refrigerante', quantity: 1 },
+    ],
+    paymentSnapshot: { label: 'Pix', status: 'PENDING', pixKey: 'must-not-leak' },
     estimatedMinutes: 35,
     submittedAt: new Date('2026-06-01T10:00:00Z'),
     updatedAt: new Date('2026-06-01T10:01:00Z'),
@@ -111,6 +116,13 @@ describe('public tracking DTO', () => {
     expect(dto !== null).toBe(true)
     expect(Object.hasOwn(dto ?? {}, 'customerName')).toBe(false)
     expect(Object.hasOwn(dto ?? {}, 'customerPhone')).toBe(false)
+    expect(Object.hasOwn(dto ?? {}, 'publicOrderId')).toBe(false)
+    expect(JSON.stringify(dto).includes('must-not-leak')).toBe(false)
+    expect(dto?.orderSummary).toEqual([
+      { name: 'Burger', quantity: 2 },
+      { name: 'Refrigerante', quantity: 1 },
+    ])
+    expect(dto?.payment).toEqual({ label: 'Pix', status: 'PENDING' })
     expect(dto?.timeline).toEqual([
       { status: 'RECEIVED', occurredAt: '2026-06-01T10:00:05.000Z' },
     ])

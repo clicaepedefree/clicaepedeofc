@@ -2,6 +2,7 @@
 
 import {
   addOrderAuditNote,
+  createOrderPublicTrackingLink,
   generateOrderReceipt,
   listOrders,
   transitionOrderStatus,
@@ -51,6 +52,7 @@ import {
   CircleX,
   ClipboardList,
   Clock3,
+  Copy,
   FilePlus2,
   PackageCheck,
   Printer,
@@ -128,6 +130,8 @@ type Order = {
   deliveryFee?: number | string | null
   deliveryEstimatedMinutes?: number | null
   deliveryEta?: string | Date | null
+  hasPublicTracking?: boolean
+  publicTrackingExpiresAt?: string | Date | null
   rejectionReason?: string | null
   lastPrintedAt?: string | Date | null
   printCount?: number | null
@@ -438,6 +442,32 @@ export function OrdersPage() {
       }),
   })
 
+  const trackingLinkMutation = useMutation({
+    mutationFn: (order: Order) =>
+      createOrderPublicTrackingLink({
+        orderId: order.id,
+        storeId: storeId!,
+      }),
+    onSuccess: async (result, order) => {
+      const url = `${window.location.origin}/pedido/${result.token}`
+      try {
+        await navigator.clipboard.writeText(url)
+        toast.success(`Link publico do pedido #${order.displayId} copiado.`, {
+          description: `Valido ate ${formatDateTime(result.expiresAt)}.`,
+        })
+      } catch {
+        toast.success(`Link publico gerado para o pedido #${order.displayId}.`, {
+          description: url,
+        })
+      }
+      await invalidateOrders()
+    },
+    onError: error =>
+      toast.error('Nao foi possivel gerar o link publico.', {
+        description: error instanceof Error ? error.message : undefined,
+      }),
+  })
+
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(interval)
@@ -723,11 +753,12 @@ export function OrdersPage() {
       <OrderDetails
         order={selectedOrder}
         open={!!selectedOrder}
-        busy={transitionMutation.isPending || noteMutation.isPending || printMutation.isPending || isPrinting}
+        busy={transitionMutation.isPending || noteMutation.isPending || printMutation.isPending || trackingLinkMutation.isPending || isPrinting}
         onOpenChange={open => !open && setSelectedOrder(null)}
         onAction={requestAction}
         onAddNote={() => { setReason(''); setNoteOpen(true) }}
         onPrint={order => printMutation.mutate(order)}
+        onCopyTrackingLink={order => trackingLinkMutation.mutate(order)}
       />
 
       <ActionDialog
@@ -767,7 +798,7 @@ function StatePanel({ icon, title, description, action }: { icon: React.ReactNod
   return <div className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-md border border-dashed bg-background p-8 text-center"><div className="text-muted-foreground">{icon}</div><div><h2 className="font-semibold">{title}</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p></div>{action}</div>
 }
 
-function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, onPrint }: { order: Order | null; open: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onAction: (action: OrderAction) => void; onAddNote: () => void; onPrint: (order: Order) => void }) {
+function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, onPrint, onCopyTrackingLink }: { order: Order | null; open: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onAction: (action: OrderAction) => void; onAddNote: () => void; onPrint: (order: Order) => void; onCopyTrackingLink: (order: Order) => void }) {
   if (!order) return null
   const events = [...(order.auditEvents ?? [])].sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime())
   const actions = (validActions[order.status] ?? []).filter(action => !(action === 'dispatch' && order.type !== 'DELIVERY'))
@@ -787,6 +818,7 @@ function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, on
               <DetailTerm label="Total" value={formatCurrency(order.totalPrice)} />
               <DetailTerm label="Atualizado" value={formatDateTime(order.updatedAt)} />
               <DetailTerm label="Previsao" value={order.deliveryEstimatedMinutes ? `${order.deliveryEstimatedMinutes} min` : 'Nao informada'} />
+              <DetailTerm label="Link publico" value={order.hasPublicTracking ? `Ativo ate ${formatDateTime(order.publicTrackingExpiresAt)}` : 'Gerar ao copiar'} />
               <DetailTerm label="Impressoes" value={String(order.printCount ?? 0)} />
               <DetailTerm label="Ultima impressao" value={formatDateTime(order.lastPrintedAt)} />
               <DetailTerm label="Telefone" value={order.customerPhone || 'Nao informado'} />
@@ -818,6 +850,7 @@ function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, on
           <div className="flex gap-2">
             <IconButton label="Adicionar nota interna" variant="outline" size="icon" disabled={busy} onClick={onAddNote}><StickyNote className="size-4" /></IconButton>
             <IconButton label="Imprimir pedido" variant="outline" size="icon" disabled={busy} onClick={() => onPrint(order)}><Printer className="size-4" /></IconButton>
+            {order.salesChannel === 'DIGITAL_MENU' && <IconButton label="Copiar link publico" variant="outline" size="icon" disabled={busy} onClick={() => onCopyTrackingLink(order)}><Copy className="size-4" /></IconButton>}
           </div>
           <div className="flex flex-wrap justify-end gap-2">{actions.map(action => { const Icon = actionIcons[action]; return <Button key={action} variant={action === 'reject' || action === 'cancel' ? 'destructive' : action === 'complete' ? 'default' : 'secondary'} size="sm" disabled={busy} onClick={() => onAction(action)} title={actionLabels[action]}><Icon className="size-4" />{actionLabels[action]}</Button> })}</div>
         </div>

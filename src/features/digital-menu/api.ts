@@ -1617,6 +1617,8 @@ export const getPublicOrderTracking = async (
       status: publicOrderSubmissionsTable.status,
       orderType: publicOrderSubmissionsTable.orderType,
       total: ordersTable.totalPrice,
+      cartSnapshot: publicOrderSubmissionsTable.cartSnapshot,
+      paymentSnapshot: publicOrderSubmissionsTable.paymentSnapshot,
       estimatedMinutes: ordersTable.deliveryEstimatedMinutes,
       submittedAt: publicOrderSubmissionsTable.submittedAt,
       updatedAt: publicOrderSubmissionsTable.updatedAt,

@@ -261,6 +261,7 @@ export const DigitalMenuClient = ({
     requestId: string
     total: string
     trackingToken: string | null
+    summary: string
   } | null>(null)
   const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(
     null
@@ -697,6 +698,9 @@ export const DigitalMenuClient = ({
         trackingToken:
           (result as typeof result & { trackingToken?: string })
             .trackingToken ?? null,
+        summary: cart
+          .map(item => `${item.quantity}x ${item.name}`)
+          .join(', '),
       })
       setCart([])
       setCaptchaToken(null)
@@ -1110,11 +1114,21 @@ export const DigitalMenuClient = ({
                 {whatsappContactUrl && (
                   <Button asChild className="mt-4" variant="outline">
                     <a
-                      href={whatsappContactUrl}
+                      href={
+                        orderConfirmation.trackingToken
+                          ? `${whatsappContactUrl}?text=${encodeURIComponent(
+                              `Ola, acabei de fazer o pedido ${orderConfirmation.requestId} no cardapio digital da ${menu.store.name}. Total: ${currency(orderConfirmation.total)}. Link de acompanhamento: ${
+                                typeof window === 'undefined'
+                                  ? `/pedido/${orderConfirmation.trackingToken}`
+                                  : `${window.location.origin}/pedido/${orderConfirmation.trackingToken}`
+                              }. Resumo: ${orderConfirmation.summary || 'itens do carrinho'}`
+                            )}`
+                          : whatsappContactUrl
+                      }
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Falar com a loja
+                      Enviar resumo no WhatsApp
                     </a>
                   </Button>
                 )}

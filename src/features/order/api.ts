@@ -24,14 +24,28 @@ import { db } from '@/services/db'
 import {
   ordersTable,
   orderAuditEventsTable,
+  publicOrderSubmissionsTable,
   storesTable,
   userStorePermissionsTable,
   usersTable,
 } from '@/services/db/schema'
+import {
+  createPublicTrackingToken,
+  hashPublicIdentifier,
+  PUBLIC_ORDER_TRACKING_TTL_MS,
+} from '@/features/digital-menu/public-order-security'
 import { requireAuth } from '@/services/auth'
 import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+
+const getPublicOrderSecuritySecret = () => {
+  const secret =
+    process.env.PUBLIC_ORDER_SECURITY_SECRET ?? process.env.CLERK_SECRET_KEY
+  if (!secret)
+    throw new Error('Missing server-side public order security secret.')
+  return secret
+}
 
 export const createOrder = async (newOrder: NewOrder) => {
   const { user } = await validateUserPermissionsForStore(newOrder.storeId, 'admin')
@@ -252,6 +266,8 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
     deliveryFee: order.deliveryFee,
     deliveryEstimatedMinutes: order.deliveryEstimatedMinutes,
     deliveryEta: order.deliveryEta,
+    hasPublicTracking: !!order.publicTrackingTokenHash,
+    publicTrackingExpiresAt: order.publicTrackingExpiresAt,
     rejectionReason: order.rejectionReason,
     lastPrintedAt: order.lastPrintedAt,
     printCount: order.printCount,
@@ -325,6 +341,82 @@ export const addOrderAuditNote = async (input: {
       dbSession: tx,
     })
   )
+}
+
+export const createOrderPublicTrackingLink = async (input: {
+  orderId: number
+  storeId: number
+}) => {
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  const [order] = await db
+    .select({
+      id: ordersTable.id,
+      storeId: ordersTable.storeId,
+      salesChannel: ordersTable.salesChannel,
+    })
+    .from(ordersTable)
+    .where(
+      and(
+        eq(ordersTable.id, input.orderId),
+        eq(ordersTable.storeId, input.storeId)
+      )
+    )
+    .limit(1)
+
+  if (!order || order.salesChannel !== 'DIGITAL_MENU') {
+    throw new Error('Link publico disponivel apenas para pedidos digitais.')
+  }
+
+  const token = createPublicTrackingToken()
+  const tokenHash = hashPublicIdentifier(token, getPublicOrderSecuritySecret())
+  const expiresAt = new Date(Date.now() + PUBLIC_ORDER_TRACKING_TTL_MS)
+
+  await db.transaction(async tx => {
+    await tx
+      .update(ordersTable)
+      .set({
+        publicTrackingTokenHash: tokenHash,
+        publicTrackingExpiresAt: expiresAt,
+      })
+      .where(
+        and(
+          eq(ordersTable.id, input.orderId),
+          eq(ordersTable.storeId, input.storeId)
+        )
+      )
+
+    await tx
+      .update(publicOrderSubmissionsTable)
+      .set({
+        trackingTokenHash: tokenHash,
+        trackingExpiresAt: expiresAt,
+      })
+      .where(
+        and(
+          eq(publicOrderSubmissionsTable.orderId, input.orderId),
+          eq(publicOrderSubmissionsTable.storeId, input.storeId)
+        )
+      )
+
+    await createOrderAuditEventOnDb({
+      dbSession: tx,
+      event: {
+        orderId: input.orderId,
+        storeId: input.storeId,
+        eventType: 'note_added',
+        fromStatus: null,
+        toStatus: null,
+        actorType: 'store',
+        actorUserId: user.id,
+        origin: 'DIGITAL_MENU',
+        requestId: crypto.randomUUID(),
+        reason: 'Link publico de acompanhamento regenerado pela loja.',
+        metadata: { expiresAt: expiresAt.toISOString() },
+      },
+    })
+  })
+
+  return { token, expiresAt: expiresAt.toISOString() }
 }
 
 /**
