@@ -89,6 +89,7 @@ export const transitionOrderOnDb = async ({
   storeId,
   action,
   reason,
+  estimatedMinutes,
   actorUserId,
   requestId,
   dbSession,
@@ -97,6 +98,7 @@ export const transitionOrderOnDb = async ({
   storeId: number
   action: OrderTransitionAction
   reason?: string
+  estimatedMinutes?: number
   actorUserId: string
   requestId: string
   dbSession: DbSession
@@ -112,7 +114,37 @@ export const transitionOrderOnDb = async ({
 
   const transition = resolveOrderTransition(order.status, action, reason)
   const now = new Date()
-  const statusFields =
+  const normalizedEstimatedMinutes =
+    action === 'accept' &&
+    Number.isFinite(estimatedMinutes) &&
+    estimatedMinutes !== undefined &&
+    estimatedMinutes > 0
+      ? Math.min(Math.max(Math.round(estimatedMinutes), 5), 240)
+      : null
+  const orderStatusFields =
+    action === 'accept'
+      ? {
+          acceptedAt: now,
+          acceptedByUserId: actorUserId,
+          ...(normalizedEstimatedMinutes
+            ? {
+                deliveryEstimatedMinutes: normalizedEstimatedMinutes,
+                deliveryEta: new Date(
+                  now.getTime() + normalizedEstimatedMinutes * 60 * 1000
+                ),
+              }
+            : {}),
+        }
+      : action === 'reject'
+        ? {
+            rejectedAt: now,
+            rejectedByUserId: actorUserId,
+            rejectionReason: transition.reason,
+          }
+        : action === 'cancel'
+          ? { cancelledAt: now }
+          : { completedAt: now }
+  const publicOrderStatusFields =
     action === 'accept'
       ? { acceptedAt: now, acceptedByUserId: actorUserId }
       : action === 'reject'
@@ -127,13 +159,13 @@ export const transitionOrderOnDb = async ({
 
   const [updatedOrder] = await dbSession
     .update(ordersTable)
-    .set({ status: transition.toStatus, ...statusFields })
+    .set({ status: transition.toStatus, ...orderStatusFields })
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
     .returning()
 
   const [publicSubmission] = await dbSession
     .update(publicOrderSubmissionsTable)
-    .set({ status: transition.toStatus, ...statusFields })
+    .set({ status: transition.toStatus, ...publicOrderStatusFields })
     .where(
       and(
         eq(publicOrderSubmissionsTable.orderId, orderId),
@@ -152,7 +184,12 @@ export const transitionOrderOnDb = async ({
       actorType: 'store',
       actorUserId,
       requestId,
-      payload: transition.reason ? { reason: transition.reason } : null,
+      payload: {
+        ...(transition.reason ? { reason: transition.reason } : {}),
+        ...(normalizedEstimatedMinutes
+          ? { estimatedMinutes: normalizedEstimatedMinutes }
+          : {}),
+      },
     })
   }
 
@@ -169,7 +206,10 @@ export const transitionOrderOnDb = async ({
       origin: 'MANUAL',
       reason: transition.reason,
       requestId,
-      metadata: { salesChannel: order.salesChannel, displayId: order.displayId },
+      metadata: {
+        salesChannel: order.salesChannel,
+        displayId: order.displayId,
+      },
     },
   })
 

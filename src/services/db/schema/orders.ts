@@ -24,6 +24,9 @@ export const orderStatuses = [
   'SENT_TO_STORE',
   'RECEIVED',
   'ACCEPTED',
+  'IN_PREPARATION',
+  'READY',
+  'OUT_FOR_DELIVERY',
   'REJECTED',
 ] as const
 
