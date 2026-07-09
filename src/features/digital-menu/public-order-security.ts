@@ -65,6 +65,8 @@ export type PublicOrderTrackingRow = {
   status: string
   orderType: 'DELIVERY' | 'TAKEOUT'
   total: string
+  cartSnapshot: unknown
+  paymentSnapshot: unknown
   estimatedMinutes: number | null
   submittedAt: Date
   updatedAt: Date
@@ -82,14 +84,46 @@ export const buildPublicOrderTrackingDto = (
   now = new Date()
 ) => {
   if (order.trackingExpiresAt.getTime() <= now.getTime()) return null
+  const cartItems = Array.isArray(order.cartSnapshot)
+    ? order.cartSnapshot
+    : []
+  const payment =
+    order.paymentSnapshot &&
+    typeof order.paymentSnapshot === 'object' &&
+    !Array.isArray(order.paymentSnapshot)
+      ? (order.paymentSnapshot as Record<string, unknown>)
+      : null
 
   return {
-    publicOrderId: order.publicOrderId,
     displayId: order.displayId,
     storeName: order.storeName,
     status: order.status,
     orderType: order.orderType,
     total: order.total,
+    payment: payment
+      ? {
+          label:
+            typeof payment.label === 'string'
+              ? payment.label
+              : typeof payment.method === 'string'
+                ? payment.method
+                : 'Pagamento',
+          status: typeof payment.status === 'string' ? payment.status : null,
+        }
+      : null,
+    orderSummary: cartItems.slice(0, 8).flatMap(item => {
+      if (!item || typeof item !== 'object') return []
+      const value = item as Record<string, unknown>
+      const name =
+        typeof value.itemName === 'string'
+          ? value.itemName
+          : typeof value.name === 'string'
+            ? value.name
+            : null
+      const quantity = Number(value.quantity ?? 1)
+      if (!name) return []
+      return [{ name, quantity: Number.isFinite(quantity) ? quantity : 1 }]
+    }),
     estimatedMinutes: order.estimatedMinutes,
     submittedAt: order.submittedAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),

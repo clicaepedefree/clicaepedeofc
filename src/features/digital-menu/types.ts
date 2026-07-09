@@ -251,12 +251,19 @@ export type DigitalMenuSubmissionResult =
     }
 
 export type PublicOrderTrackingDto = {
-  publicOrderId: string
   displayId: string
   storeName: string
   status: string
   orderType: 'DELIVERY' | 'TAKEOUT'
   total: string
+  payment: {
+    label: string
+    status: string | null
+  } | null
+  orderSummary: Array<{
+    name: string
+    quantity: number
+  }>
   estimatedMinutes: number | null
   submittedAt: string
   updatedAt: string
