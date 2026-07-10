@@ -219,6 +219,9 @@ const createRequestHash = (value: unknown) => {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
+const toJsonSnapshot = <T>(value: T): T =>
+  JSON.parse(JSON.stringify(value)) as T
+
 const normalizeOptionalMoney = (value: string | undefined) => {
   const sanitized = sanitizePublicText(value, 40)
   if (!sanitized) return null
@@ -1431,8 +1434,8 @@ export const submitDigitalMenuOrder = async (
           technicalStatus: 'ACKED',
           salesChannel: 'DIGITAL_MENU',
           orderType: payload.orderType,
-          cartSnapshot: validatedCart.items,
-          totalsSnapshot: {
+          cartSnapshot: toJsonSnapshot(validatedCart.items),
+          totalsSnapshot: toJsonSnapshot({
             subtotal: validatedCart.subtotal,
             discountAmount: validatedCart.discountAmount,
             deliveryDiscountAmount: validatedCart.deliveryDiscountAmount,
@@ -1441,23 +1444,25 @@ export const submitDigitalMenuOrder = async (
             couponCode: normalizedCouponCode,
             appliedPromotion: validatedCart.appliedPromotion,
             total: validatedCart.total,
-          },
-          catalogSnapshot: {
+          }),
+          catalogSnapshot: toJsonSnapshot({
             store: menu.store,
             categories: menu.categories.map(category => ({
               id: category.id,
               name: category.name,
             })),
-          },
-          customerSnapshot: {
+          }),
+          customerSnapshot: toJsonSnapshot({
             name: payload.customerName,
             phone: payload.customerPhone,
             phoneLast4: payload.customerPhone.slice(-4),
             document: payload.customerDocument || null,
             orderNotes: payload.orderNotes || null,
-          },
-          addressSnapshot,
-          paymentSnapshot: {
+          }),
+          addressSnapshot: addressSnapshot
+            ? toJsonSnapshot(addressSnapshot)
+            : null,
+          paymentSnapshot: toJsonSnapshot({
             method: payload.payment.method,
             label: paymentMethod.label,
             changeFor: normalizedChangeFor,
@@ -1468,15 +1473,17 @@ export const submitDigitalMenuOrder = async (
             integrationProvider: paymentMethod.integrationProvider,
             availableFor: paymentMethod.availableFor,
             status: 'PENDING',
-          },
+          }),
           deliveryZoneSnapshot:
             validatedCart.deliveryZoneId === null
               ? null
-              : (menu.deliveryZones.find(
-                  zone => zone.id === validatedCart.deliveryZoneId
-                ) ?? null),
-          storeSettingsSnapshot: currentPublicSettings,
-          businessHoursSnapshot: orderAvailability,
+              : toJsonSnapshot(
+                  menu.deliveryZones.find(
+                    zone => zone.id === validatedCart.deliveryZoneId
+                  ) ?? null
+                ),
+          storeSettingsSnapshot: toJsonSnapshot(currentPublicSettings),
+          businessHoursSnapshot: toJsonSnapshot(orderAvailability),
           trackingTokenHash,
           trackingExpiresAt,
           customerIpHash: ipHash,
@@ -1546,7 +1553,7 @@ export const submitDigitalMenuOrder = async (
           requestId,
           publicTrackingTokenHash: trackingTokenHash,
           publicTrackingExpiresAt: trackingExpiresAt,
-          snapshot: {
+          snapshot: toJsonSnapshot({
             publicOrderId: created.id,
             cart: validatedCart.items,
             totals: {
@@ -1568,7 +1575,7 @@ export const submitDigitalMenuOrder = async (
               orderNotes: payload.orderNotes || null,
               termsAcceptedAt: submittedAt.toISOString(),
             },
-          },
+          }),
           technicalAckAt: submittedAt,
         },
         dbSession: tx,
