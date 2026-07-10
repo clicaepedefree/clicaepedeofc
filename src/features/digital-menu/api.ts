@@ -144,6 +144,7 @@ const getPublicOrderRisk = async (
   const since = new Date(
     Date.now() - PUBLIC_ORDER_RISK.lookbackMinutes * 60 * 1000
   )
+  const sinceIso = since.toISOString()
   const [row] = await db.execute<{
     invalidPayloads: number
     captchaFailures: number
@@ -155,7 +156,7 @@ const getPublicOrderRisk = async (
       count(*) filter (where event_type in ('RATE_LIMITED', 'TEMPORARILY_BLOCKED'))::integer as "rateLimits"
     from public.public_order_security_events
     where store_id = ${storeId}
-      and created_at >= ${since}
+      and created_at >= ${sinceIso}::timestamptz
       and (
         (${context.ipHash}::text is not null and ip_hash = ${context.ipHash})
         or (${context.deviceHash}::text is not null and device_hash = ${context.deviceHash})
