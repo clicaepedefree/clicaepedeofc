@@ -64,6 +64,25 @@ const sanitizeString = (value: unknown) => (isString(value) ? value : '')
 const sanitizeBoolean = (value: unknown) =>
   typeof value === 'boolean' ? value : false
 
+const sanitizeDatetimeLocal = (value: unknown) => {
+  if (!isString(value) || !value) return ''
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
+  if (!match) return ''
+
+  const [, year, month, day, hour, minute] = match
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+
+  return parsed.getFullYear() === Number(year) &&
+    parsed.getMonth() + 1 === Number(month) &&
+    parsed.getDate() === Number(day) &&
+    parsed.getHours() === Number(hour) &&
+    parsed.getMinutes() === Number(minute)
+    ? value
+    : ''
+}
+
 const sanitizeOrderType = (
   value: unknown
 ): DigitalMenuSubmitInput['orderType'] =>
@@ -143,7 +162,7 @@ export const parseDigitalMenuDraft = (
       reference: sanitizeString(parsed.reference),
       termsAccepted: sanitizeBoolean(parsed.termsAccepted),
       orderType: sanitizeOrderType(parsed.orderType),
-      scheduledFor: sanitizeString(parsed.scheduledFor),
+      scheduledFor: sanitizeDatetimeLocal(parsed.scheduledFor),
       paymentMethod: sanitizePaymentMethod(parsed.paymentMethod),
       needsChange: sanitizeBoolean(parsed.needsChange),
       changeFor: sanitizeString(parsed.changeFor),
