@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   DigitalMenuAvailabilitySettings,
   evaluateDigitalMenuAvailability,
+  getDigitalMenuOrderTypeControls,
 } from './availability'
 
 const baseSettings: DigitalMenuAvailabilitySettings = {
@@ -132,6 +133,100 @@ describe('evaluateDigitalMenuAvailability', () => {
         now: mondayNoon,
       }).isOpen
     ).toBe(true)
+  })
+
+  test('controles de modalidade trocam para retirada quando delivery esta bloqueado', () => {
+    const delivery = evaluateDigitalMenuAvailability({
+      settings: {
+        ...baseSettings,
+        operationalStatus: 'TAKEOUT_ONLY',
+        operationalStatusMessage: 'QA apenas retirada KAN-1',
+      },
+      businessHours: [
+        {
+          weekday: 1,
+          opensAt: '00:00:00',
+          closesAt: '23:59:59',
+          serviceType: 'ALL',
+          isActive: true,
+        },
+      ],
+      specialHours: [],
+      serviceType: 'DELIVERY',
+      now: mondayNoon,
+    })
+    const takeout = evaluateDigitalMenuAvailability({
+      settings: {
+        ...baseSettings,
+        operationalStatus: 'TAKEOUT_ONLY',
+        operationalStatusMessage: 'QA apenas retirada KAN-1',
+      },
+      businessHours: [
+        {
+          weekday: 1,
+          opensAt: '00:00:00',
+          closesAt: '23:59:59',
+          serviceType: 'ALL',
+          isActive: true,
+        },
+      ],
+      specialHours: [],
+      serviceType: 'TAKEOUT',
+      now: mondayNoon,
+    })
+
+    const controls = getDigitalMenuOrderTypeControls({
+      currentOrderType: 'DELIVERY',
+      delivery,
+      takeout,
+      deliveryConfigured: true,
+    })
+
+    expect(controls.preferredOrderType).toBe('TAKEOUT')
+    expect(controls.delivery.enabled).toBe(false)
+    expect(controls.delivery.reason).toBe('QA apenas retirada KAN-1')
+    expect(controls.takeout.enabled).toBe(true)
+  })
+
+  test('controles de modalidade trocam para entrega quando retirada esta bloqueada', () => {
+    const settings = {
+      ...baseSettings,
+      operationalStatus: 'DELIVERY_ONLY' as const,
+      operationalStatusMessage: 'QA apenas delivery KAN-1',
+    }
+    const businessHours = [
+      {
+        weekday: 1,
+        opensAt: '00:00:00',
+        closesAt: '23:59:59',
+        serviceType: 'ALL' as const,
+        isActive: true,
+      },
+    ]
+
+    const controls = getDigitalMenuOrderTypeControls({
+      currentOrderType: 'TAKEOUT',
+      delivery: evaluateDigitalMenuAvailability({
+        settings,
+        businessHours,
+        specialHours: [],
+        serviceType: 'DELIVERY',
+        now: mondayNoon,
+      }),
+      takeout: evaluateDigitalMenuAvailability({
+        settings,
+        businessHours,
+        specialHours: [],
+        serviceType: 'TAKEOUT',
+        now: mondayNoon,
+      }),
+      deliveryConfigured: true,
+    })
+
+    expect(controls.preferredOrderType).toBe('DELIVERY')
+    expect(controls.delivery.enabled).toBe(true)
+    expect(controls.takeout.enabled).toBe(false)
+    expect(controls.takeout.reason).toBe('QA apenas delivery KAN-1')
   })
 
   test('ausencia de horarios fecha pedidos com mensagem clara', () => {

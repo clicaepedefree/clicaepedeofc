@@ -6,6 +6,10 @@ import {
 } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
 import {
+  getDigitalMenuOrderTypeControls,
+  type DigitalMenuOrderTypeControls,
+} from '@/features/digital-menu/availability'
+import {
   buildDigitalMenuDraftStorageKey,
   parseDigitalMenuDraft,
   shouldPersistDigitalMenuDraft,
@@ -530,6 +534,21 @@ export const DigitalMenuClient = ({
     orderType === 'DELIVERY'
       ? menu.availabilities.delivery
       : menu.availabilities.takeout
+  const orderTypeControls = useMemo(
+    () =>
+      getDigitalMenuOrderTypeControls({
+        currentOrderType: orderType,
+        delivery: menu.availabilities.delivery,
+        takeout: menu.availabilities.takeout,
+        deliveryConfigured: menu.deliveryZones.length > 0,
+      }),
+    [
+      menu.availabilities.delivery,
+      menu.availabilities.takeout,
+      menu.deliveryZones.length,
+      orderType,
+    ]
+  )
   const availablePaymentMethods = useMemo(
     () =>
       menu.paymentMethods.filter(method =>
@@ -641,6 +660,13 @@ export const DigitalMenuClient = ({
 
     setCheckoutStep(false)
   }, [cart.length])
+
+  useEffect(() => {
+    if (orderType === orderTypeControls.preferredOrderType) return
+
+    setOrderType(orderTypeControls.preferredOrderType)
+    setScheduledFor('')
+  }, [orderType, orderTypeControls.preferredOrderType])
 
   const openItem = (item: DigitalMenuItem) => {
     if (isItemUnavailable(item)) {
@@ -1454,7 +1480,7 @@ export const DigitalMenuClient = ({
                 retryAfterSeconds={retryAfterSeconds}
                 isPending={isPending}
                 isApplyingCoupon={isApplyingCoupon}
-                deliveryAvailable={menu.deliveryZones.length > 0}
+                orderTypeControls={orderTypeControls}
                 onBack={() => setCheckoutStep(false)}
                 onSubmit={submitOrder}
                 onApplyCoupon={applyCoupon}
@@ -1757,7 +1783,7 @@ const CheckoutForm = ({
   retryAfterSeconds,
   isPending,
   isApplyingCoupon,
-  deliveryAvailable,
+  orderTypeControls,
   onBack,
   onSubmit,
   onApplyCoupon,
@@ -1853,7 +1879,7 @@ const CheckoutForm = ({
   retryAfterSeconds: number
   isPending: boolean
   isApplyingCoupon: boolean
-  deliveryAvailable: boolean
+  orderTypeControls: DigitalMenuOrderTypeControls
   onBack: () => void
   onSubmit: () => void
   onApplyCoupon: () => void
@@ -1950,9 +1976,13 @@ const CheckoutForm = ({
           : null,
   }
   const hasFieldErrors = Object.values(fieldErrors).some(Boolean)
+  const selectedOrderTypeControl =
+    orderType === 'DELIVERY'
+      ? orderTypeControls.delivery
+      : orderTypeControls.takeout
   const canAttemptOrder =
     (canCheckoutNow || canCheckoutScheduled) &&
-    (orderType === 'TAKEOUT' || deliveryAvailable) &&
+    selectedOrderTypeControl.enabled &&
     deliveryQuote.isAddressCovered &&
     missingMinimumAmount === 0 &&
     !!selectedPaymentMethod
@@ -1969,10 +1999,16 @@ const CheckoutForm = ({
   }
 
   useEffect(() => {
-    if (!deliveryAvailable && orderType === 'DELIVERY') {
-      setOrderType('TAKEOUT')
-    }
-  }, [deliveryAvailable, orderType, setOrderType])
+    if (orderType === orderTypeControls.preferredOrderType) return
+
+    setOrderType(orderTypeControls.preferredOrderType)
+    setScheduledFor('')
+  }, [
+    orderType,
+    orderTypeControls.preferredOrderType,
+    setOrderType,
+    setScheduledFor,
+  ])
 
   const requestCustomerLocation = () => {
     if (!navigator.geolocation) {
@@ -2017,7 +2053,7 @@ const CheckoutForm = ({
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          disabled={!deliveryAvailable}
+          disabled={!orderTypeControls.delivery.enabled}
           onClick={() => {
             setOrderType('DELIVERY')
             setScheduledFor('')
@@ -2034,12 +2070,13 @@ const CheckoutForm = ({
         </button>
         <button
           type="button"
+          disabled={!orderTypeControls.takeout.enabled}
           onClick={() => {
             setOrderType('TAKEOUT')
             setScheduledFor('')
           }}
           className={cn(
-            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm',
+            'flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50',
             orderType === 'TAKEOUT'
               ? 'border-primary bg-primary text-primary-foreground'
               : 'bg-background hover:bg-accent'
@@ -2050,10 +2087,14 @@ const CheckoutForm = ({
         </button>
       </div>
 
-      {!deliveryAvailable && (
+      {(!orderTypeControls.delivery.enabled ||
+        !orderTypeControls.takeout.enabled) && (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-          Entrega indisponivel no momento: a loja nao possui uma zona de entrega
-          configurada. Escolha retirada para continuar.
+          {!orderTypeControls.delivery.enabled
+            ? (orderTypeControls.delivery.reason ??
+              'Entrega indisponivel no momento.')
+            : (orderTypeControls.takeout.reason ??
+              'Retirada indisponivel no momento.')}
         </p>
       )}
 

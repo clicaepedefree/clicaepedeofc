@@ -42,6 +42,18 @@ export type DigitalMenuAvailabilityResult = {
   statusLabel: string
 }
 
+export type DigitalMenuOrderTypeControls = {
+  preferredOrderType: DigitalMenuServiceType
+  delivery: {
+    enabled: boolean
+    reason: string | null
+  }
+  takeout: {
+    enabled: boolean
+    reason: string | null
+  }
+}
+
 export const formatSaoPauloDateParts = (date = new Date()) => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Sao_Paulo',
@@ -71,8 +83,11 @@ export const formatSaoPauloDateParts = (date = new Date()) => {
   }
 }
 
-export const timeIsBetween = (time: string, opensAt: string, closesAt: string) =>
-  time >= opensAt && time <= closesAt
+export const timeIsBetween = (
+  time: string,
+  opensAt: string,
+  closesAt: string
+) => time >= opensAt && time <= closesAt
 
 const serviceTypeMatches = (
   current: DigitalMenuServiceType | 'ALL',
@@ -120,7 +135,8 @@ export const evaluateDigitalMenuAvailability = ({
     })
   }
 
-  const statusMessage = settings.operationalStatusMessage || settings.manualPauseReason
+  const statusMessage =
+    settings.operationalStatusMessage || settings.manualPauseReason
 
   if (!settings.isAcceptingOrders) {
     return buildClosedResult({
@@ -181,7 +197,9 @@ export const evaluateDigitalMenuAvailability = ({
 
   const current = formatSaoPauloDateParts(now)
   const matchingSpecialHours = specialHours.filter(
-    hour => hour.date === current.date && serviceTypeMatches(hour.serviceType, serviceType)
+    hour =>
+      hour.date === current.date &&
+      serviceTypeMatches(hour.serviceType, serviceType)
   )
 
   if (matchingSpecialHours.some(hour => hour.isClosed)) {
@@ -263,4 +281,43 @@ export const evaluateDigitalMenuAvailability = ({
       : null,
     statusLabel: 'Fora do horario',
   })
+}
+
+const canUseAvailability = (availability: DigitalMenuAvailabilityResult) =>
+  availability.isOpen || availability.canSchedule
+
+export const getDigitalMenuOrderTypeControls = ({
+  currentOrderType,
+  delivery,
+  takeout,
+  deliveryConfigured,
+}: {
+  currentOrderType: DigitalMenuServiceType
+  delivery: DigitalMenuAvailabilityResult
+  takeout: DigitalMenuAvailabilityResult
+  deliveryConfigured: boolean
+}): DigitalMenuOrderTypeControls => {
+  const deliveryEnabled = deliveryConfigured && canUseAvailability(delivery)
+  const takeoutEnabled = canUseAvailability(takeout)
+  const currentEnabled =
+    currentOrderType === 'DELIVERY' ? deliveryEnabled : takeoutEnabled
+  const preferredOrderType = currentEnabled
+    ? currentOrderType
+    : deliveryEnabled
+      ? 'DELIVERY'
+      : 'TAKEOUT'
+
+  return {
+    preferredOrderType,
+    delivery: {
+      enabled: deliveryEnabled,
+      reason: deliveryConfigured
+        ? delivery.reason
+        : 'Entrega indisponivel no momento: a loja nao possui uma zona de entrega configurada.',
+    },
+    takeout: {
+      enabled: takeoutEnabled,
+      reason: takeout.reason,
+    },
+  }
 }
