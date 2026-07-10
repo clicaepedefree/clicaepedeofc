@@ -178,6 +178,13 @@ const toDatetimeLocalInputValue = (date: Date) => {
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+const parseScheduledDate = (value: string) => {
+  if (!value) return null
+
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 const normalizeSearchText = (value: string) =>
   value
     .normalize('NFD')
@@ -793,6 +800,13 @@ export const DigitalMenuClient = ({
   }
 
   const submitOrder = () => {
+    const scheduledDate = parseScheduledDate(scheduledFor)
+
+    if (scheduledFor && !scheduledDate) {
+      setSubmissionMessage('Escolha um horario valido para agendar o pedido.')
+      return
+    }
+
     const payload: DigitalMenuSubmitInput = {
       storeSlug: menu.store.subdomain,
       idempotencyKey,
@@ -824,9 +838,7 @@ export const DigitalMenuClient = ({
           paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
       },
       couponCode: appliedCouponCode ?? undefined,
-      scheduledFor: scheduledFor
-        ? new Date(scheduledFor).toISOString()
-        : undefined,
+      scheduledFor: scheduledDate ? scheduledDate.toISOString() : undefined,
       items: cart.map(item => ({
         itemOfferingId: item.itemOfferingId,
         quantity: item.quantity,
@@ -840,7 +852,17 @@ export const DigitalMenuClient = ({
 
     startTransition(async () => {
       setSubmissionMessage(null)
-      const result = await submitDigitalMenuOrder(payload)
+      let result: Awaited<ReturnType<typeof submitDigitalMenuOrder>>
+
+      try {
+        result = await submitDigitalMenuOrder(payload)
+      } catch (error) {
+        console.error('Failed to submit digital menu order', error)
+        setSubmissionMessage(
+          'Nao conseguimos enviar seu pedido agora. Confira os dados e tente novamente.'
+        )
+        return
+      }
 
       if (!result.ok) {
         setSubmissionMessage(result.message)
@@ -1878,9 +1900,13 @@ const CheckoutForm = ({
   const maxScheduledDate = new Date(
     now.getTime() + scheduleMaxDaysAhead * 24 * 60 * 60 * 1000
   )
+  const scheduledDate = parseScheduledDate(scheduledFor)
   const canCheckoutNow = availability.isOpen
   const canCheckoutScheduled =
-    allowScheduledOrders && availability.canSchedule && !!scheduledFor
+    allowScheduledOrders &&
+    availability.canSchedule &&
+    !!scheduledFor &&
+    !!scheduledDate
   const phoneDigits = customerPhone.replace(/\D/g, '')
   const postalCodeDigits = postalCode.replace(/\D/g, '')
   const documentDigits = customerDocument.replace(/\D/g, '')
@@ -1914,6 +1940,14 @@ const CheckoutForm = ({
       paymentMethod === 'CASH' && needsChange && !changeFor.trim()
         ? 'Informe o valor para o troco.'
         : null,
+    scheduledFor:
+      scheduledFor && !scheduledDate
+        ? 'Escolha um horario valido para agendar o pedido.'
+        : scheduledDate &&
+            (scheduledDate < minScheduledDate ||
+              scheduledDate > maxScheduledDate)
+          ? `Escolha um horario entre ${scheduleMinLeadMinutes} minutos e ${scheduleMaxDaysAhead} dias a partir de agora.`
+          : null,
   }
   const hasFieldErrors = Object.values(fieldErrors).some(Boolean)
   const canAttemptOrder =
@@ -2048,12 +2082,18 @@ const CheckoutForm = ({
               min={toDatetimeLocalInputValue(minScheduledDate)}
               max={toDatetimeLocalInputValue(maxScheduledDate)}
               value={scheduledFor}
+              aria-invalid={validationAttempted && !!fieldErrors.scheduledFor}
               onChange={event => setScheduledFor(event.target.value)}
             />
             <span className="block text-xs font-normal opacity-80">
               Escolha um horario entre {scheduleMinLeadMinutes} minutos e{' '}
               {scheduleMaxDaysAhead} dias a partir de agora.
             </span>
+            {validationAttempted && fieldErrors.scheduledFor && (
+              <span className="block text-xs font-normal text-destructive">
+                {fieldErrors.scheduledFor}
+              </span>
+            )}
           </label>
         )}
         {availability.isOpen && allowScheduledOrders && (
@@ -2064,8 +2104,14 @@ const CheckoutForm = ({
               min={toDatetimeLocalInputValue(minScheduledDate)}
               max={toDatetimeLocalInputValue(maxScheduledDate)}
               value={scheduledFor}
+              aria-invalid={validationAttempted && !!fieldErrors.scheduledFor}
               onChange={event => setScheduledFor(event.target.value)}
             />
+            {validationAttempted && fieldErrors.scheduledFor && (
+              <span className="block text-xs font-normal text-destructive">
+                {fieldErrors.scheduledFor}
+              </span>
+            )}
           </label>
         )}
       </div>

@@ -910,18 +910,23 @@ export const submitDigitalMenuOrder = async (
   input: DigitalMenuSubmitInput
 ): Promise<DigitalMenuSubmissionResult> => {
   noStore()
-  const presentedTrackingToken = input.trackingToken
+  const rawInput =
+    input && typeof input === 'object' ? input : ({} as DigitalMenuSubmitInput)
+  const presentedTrackingToken =
+    typeof rawInput.trackingToken === 'string'
+      ? rawInput.trackingToken
+      : undefined
   const rawStoreSlug =
-    typeof input?.storeSlug === 'string'
-      ? normalizeStoreSlug(input.storeSlug)
+    typeof rawInput.storeSlug === 'string'
+      ? normalizeStoreSlug(rawInput.storeSlug)
       : ''
   const { remoteIp, ipHash, userAgentHash } = await getPublicRequestHashes()
   const securitySecret = getPublicOrderSecuritySecret()
   const rawDeviceId =
-    typeof input?.deviceId === 'string' ? input.deviceId.trim() : ''
+    typeof rawInput.deviceId === 'string' ? rawInput.deviceId.trim() : ''
   const rawPhone =
-    typeof input?.customerPhone === 'string'
-      ? input.customerPhone.replace(/\D/g, '').slice(0, 13)
+    typeof rawInput.customerPhone === 'string'
+      ? rawInput.customerPhone.replace(/\D/g, '').slice(0, 13)
       : ''
   const baseSecurityContext: PublicSecurityContext = {
     ipHash,
@@ -932,7 +937,7 @@ export const submitDigitalMenuOrder = async (
     userAgentHash,
   }
 
-  const parsed = submitDigitalMenuOrderSchema.safeParse(input)
+  const parsed = submitDigitalMenuOrderSchema.safeParse(rawInput)
   if (!parsed.success) {
     if (rawStoreSlug) {
       const invalidMenu = await getDigitalMenuBySlug(rawStoreSlug)

@@ -63,6 +63,26 @@ describe('digital menu draft storage', () => {
     expect(result?.paymentMethod).toBe('PIX')
   })
 
+  test('restores only valid scheduled datetime-local values', () => {
+    expect(
+      parseDigitalMenuDraft(
+        JSON.stringify({ ...draft, scheduledFor: '2026-07-17T11:30' })
+      )?.scheduledFor
+    ).toBe('2026-07-17T11:30')
+
+    expect(
+      parseDigitalMenuDraft(
+        JSON.stringify({ ...draft, scheduledFor: 'invalid-date' })
+      )?.scheduledFor
+    ).toBe('')
+
+    expect(
+      parseDigitalMenuDraft(
+        JSON.stringify({ ...draft, scheduledFor: '2026-02-31T11:30' })
+      )?.scheduledFor
+    ).toBe('')
+  })
+
   test('ignores malformed or unsafe drafts', () => {
     expect(parseDigitalMenuDraft('{broken')).toBe(null)
     expect(
