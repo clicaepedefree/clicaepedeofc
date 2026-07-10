@@ -105,6 +105,7 @@ type PromotionForm = {
   maxDiscountAmount: string
   freeDeliveryMinimum: string
   usageLimit: string
+  perCustomerLimit: string
   promotionalPrice: string
   priority: string
   itemOfferingIds: number[]
@@ -124,6 +125,7 @@ const emptyPromotionForm: PromotionForm = {
   maxDiscountAmount: '',
   freeDeliveryMinimum: '',
   usageLimit: '',
+  perCustomerLimit: '',
   promotionalPrice: '',
   priority: '0',
   itemOfferingIds: [],
@@ -226,28 +228,33 @@ export const DigitalMenuAdmin = () => {
   }
   const submitPromotion = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    savePromotion({
-      id: promotionForm.id,
-      name: promotionForm.name,
-      description: promotionForm.description || undefined,
-      code: promotionForm.code || undefined,
-      type: promotionForm.type,
-      status: promotionForm.status,
-      startsAt: toIsoOrUndefined(promotionForm.startsAt),
-      endsAt: toIsoOrUndefined(promotionForm.endsAt),
-      minOrderAmount: parseOptionalNumber(promotionForm.minOrderAmount),
-      discountAmount: parseOptionalNumber(promotionForm.discountAmount),
-      discountPercent: parseOptionalNumber(promotionForm.discountPercent),
-      maxDiscountAmount: parseOptionalNumber(promotionForm.maxDiscountAmount),
-      freeDeliveryMinimum: parseOptionalNumber(
-        promotionForm.freeDeliveryMinimum
-      ),
-      usageLimit: parseOptionalNumber(promotionForm.usageLimit),
-      promotionalPrice: parseOptionalNumber(promotionForm.promotionalPrice),
-      priority: parseOptionalNumber(promotionForm.priority) ?? 0,
-      itemOfferingIds: promotionForm.itemOfferingIds,
-    })
-    resetPromotionForm()
+    savePromotion(
+      {
+        id: promotionForm.id,
+        name: promotionForm.name,
+        description: promotionForm.description || undefined,
+        code: promotionForm.code || undefined,
+        type: promotionForm.type,
+        status: promotionForm.status,
+        startsAt: toIsoOrUndefined(promotionForm.startsAt),
+        endsAt: toIsoOrUndefined(promotionForm.endsAt),
+        minOrderAmount: parseOptionalNumber(promotionForm.minOrderAmount),
+        discountAmount: parseOptionalNumber(promotionForm.discountAmount),
+        discountPercent: parseOptionalNumber(promotionForm.discountPercent),
+        maxDiscountAmount: parseOptionalNumber(promotionForm.maxDiscountAmount),
+        freeDeliveryMinimum: parseOptionalNumber(
+          promotionForm.freeDeliveryMinimum
+        ),
+        usageLimit: parseOptionalNumber(promotionForm.usageLimit),
+        perCustomerLimit: parseOptionalNumber(promotionForm.perCustomerLimit),
+        promotionalPrice: parseOptionalNumber(promotionForm.promotionalPrice),
+        priority: parseOptionalNumber(promotionForm.priority) ?? 0,
+        itemOfferingIds: promotionForm.itemOfferingIds,
+      },
+      {
+        onSuccess: resetPromotionForm,
+      }
+    )
   }
 
   return (
@@ -714,6 +721,21 @@ export const DigitalMenuAdmin = () => {
               />
             </label>
             <label className="space-y-1 text-sm font-medium">
+              Limite por telefone
+              <Input
+                type="number"
+                min="1"
+                value={promotionForm.perCustomerLimit}
+                onChange={event =>
+                  setPromotionForm(current => ({
+                    ...current,
+                    perCustomerLimit: event.target.value,
+                  }))
+                }
+                placeholder="Opcional"
+              />
+            </label>
+            <label className="space-y-1 text-sm font-medium">
               Inicio
               <Input
                 type="datetime-local"
@@ -842,8 +864,15 @@ export const DigitalMenuAdmin = () => {
                     <PromotionRuleSummary promotion={promotion} />
                   </TableCell>
                   <TableCell>
-                    {promotion.usedCount}
-                    {promotion.usageLimit ? ` / ${promotion.usageLimit}` : ''}
+                    <div>
+                      {promotion.usedCount}
+                      {promotion.usageLimit ? ` / ${promotion.usageLimit}` : ''}
+                    </div>
+                    {promotion.perCustomerLimit && (
+                      <div className="text-xs text-muted-foreground">
+                        {promotion.perCustomerLimit} por telefone
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -890,6 +919,9 @@ export const DigitalMenuAdmin = () => {
                             usageLimit: promotion.usageLimit
                               ? String(promotion.usageLimit)
                               : '',
+                            perCustomerLimit: promotion.perCustomerLimit
+                              ? String(promotion.perCustomerLimit)
+                              : '',
                             promotionalPrice: promotion.promotionalPrice
                               ? String(Number(promotion.promotionalPrice))
                               : '',
@@ -900,15 +932,40 @@ export const DigitalMenuAdmin = () => {
                       >
                         <Edit3 className="size-4" />
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        disabled={isDeletingPromotion}
-                        onClick={() => deletePromotion(promotion.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={isDeletingPromotion}
+                            aria-label="Excluir campanha"
+                            title="Excluir campanha"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Excluir esta campanha?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              O cupom deixa de funcionar imediatamente para
+                              novos pedidos. Os pedidos ja criados continuam com
+                              o historico do desconto aplicado.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => deletePromotion(promotion.id)}
+                            >
+                              Excluir campanha
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -931,6 +988,7 @@ const PromotionRuleSummary = ({
     maxDiscountAmount: string | null
     minOrderAmount: string | null
     freeDeliveryMinimum: string | null
+    perCustomerLimit: number | null
     promotionalPrice: string | null
     itemOfferingIds: number[]
   }

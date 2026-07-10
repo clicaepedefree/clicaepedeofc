@@ -119,6 +119,50 @@ describe('validateAndPriceDigitalMenuCart', () => {
     expect(cart.deliveryEstimatedMinutes).toBe(45)
   })
 
+  test('recalcula desconto de cupom no servidor junto de adicionais e entrega', () => {
+    const cart = validateAndPriceDigitalMenuCart({
+      categories,
+      deliveryFee: '7.5000',
+      promotions: [
+        {
+          id: 1,
+          code: 'PRIMEIRA10',
+          name: 'Primeira compra',
+          description: null,
+          type: 'FIXED_AMOUNT',
+          startsAt: null,
+          endsAt: null,
+          minOrderAmount: null,
+          discountAmount: '10.0000',
+          discountPercent: null,
+          maxDiscountAmount: null,
+          freeDeliveryMinimum: null,
+          usageLimit: null,
+          usedCount: 0,
+          perCustomerLimit: 1,
+          priority: 0,
+          isFeatured: false,
+          itemOfferingIds: [],
+          metadata: null,
+        },
+      ],
+      couponCode: 'primeira10',
+      items: [
+        {
+          itemOfferingId: 10,
+          quantity: 2,
+          options: [{ optionId: 40, quantity: 1 }],
+        },
+      ],
+    })
+
+    expect(cart.subtotal).toBe('46.0000')
+    expect(cart.discountAmount).toBe('10.0000')
+    expect(cart.deliveryFee).toBe('7.5000')
+    expect(cart.total).toBe('43.5000')
+    expect(cart.appliedPromotion?.code).toBe('PRIMEIRA10')
+  })
+
   test('bloqueia grupo obrigatorio sem opcao selecionada', () => {
     let message = ''
 
