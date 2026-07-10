@@ -1653,6 +1653,15 @@ export const submitDigitalMenuOrder = async (
             promotion.id === validatedCart.appliedPromotion?.promotionId
         )
         if (appliedPromotionConfig?.perCustomerLimit) {
+          await tx.execute(sql`
+            select pg_advisory_xact_lock(
+              hashtextextended(
+                ${`${menu.store.id}:${validatedCart.appliedPromotion.promotionId}:${phoneHash}`},
+                0
+              )
+            )
+          `)
+
           const [customerRedemptions] = await tx
             .select({ total: count() })
             .from(digitalMenuPromotionRedemptionsTable)
@@ -1858,6 +1867,36 @@ export const quoteDigitalMenuCoupon = async (input: {
   const payload = parsed.data
   const menu = await getDigitalMenuBySlug(payload.storeSlug)
   if (!menu?.store) return { ok: false, message: 'Loja nao encontrada.' }
+
+  const { ipHash } = await getPublicRequestHashes()
+  const securitySecret = getPublicOrderSecuritySecret()
+  const quoteRateLimitHash = hashPublicIdentifier(
+    `coupon:${payload.couponCode}`,
+    securitySecret
+  )
+  const [rateLimit] = await db.execute<{
+    allowed: boolean
+    retryAfterSeconds: number
+  }>(sql`
+    select *
+    from public.consume_public_order_rate_limit(
+      ${menu.store.id},
+      ${ipHash ?? hashPublicIdentifier('unknown-coupon-ip', securitySecret)},
+      ${quoteRateLimitHash},
+      ${PUBLIC_ORDER_RATE_LIMIT.windowSeconds},
+      ${PUBLIC_ORDER_RATE_LIMIT.windowLimit},
+      ${PUBLIC_ORDER_RATE_LIMIT.burstSeconds},
+      ${PUBLIC_ORDER_RATE_LIMIT.burstLimit}
+    )
+  `)
+
+  if (!rateLimit?.allowed) {
+    return {
+      ok: false,
+      message:
+        'Muitas tentativas de cupom em sequencia. Aguarde um pouco e tente novamente.',
+    }
+  }
 
   const currentSettings = await getDigitalMenuSettings(menu.store.id)
   const currentPublicSettings = toPublicSettings(currentSettings)

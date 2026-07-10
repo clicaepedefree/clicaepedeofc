@@ -278,6 +278,7 @@ export const DigitalMenuClient = ({
     null
   )
   const [isPending, startTransition] = useTransition()
+  const [isApplyingCoupon, startCouponTransition] = useTransition()
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
   const draftStorageKey = useMemo(
     () => buildDigitalMenuDraftStorageKey(menu.store.subdomain),
@@ -901,7 +902,7 @@ export const DigitalMenuClient = ({
       setCouponMessage('Informe um cupom para aplicar.')
       return
     }
-    startTransition(async () => {
+    startCouponTransition(async () => {
       const quote = await quoteDigitalMenuCoupon({
         storeSlug: menu.store.subdomain,
         couponCode: normalized,
@@ -1430,6 +1431,7 @@ export const DigitalMenuClient = ({
                 captchaResetKey={captchaResetKey}
                 retryAfterSeconds={retryAfterSeconds}
                 isPending={isPending}
+                isApplyingCoupon={isApplyingCoupon}
                 deliveryAvailable={menu.deliveryZones.length > 0}
                 onBack={() => setCheckoutStep(false)}
                 onSubmit={submitOrder}
@@ -1557,7 +1559,11 @@ export const DigitalMenuClient = ({
               )}
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Desconto/cupom</span>
-                <strong>{currency(appliedDiscount)}</strong>
+                <strong>
+                  {appliedDiscount > 0
+                    ? `-${currency(appliedDiscount)}`
+                    : currency(0)}
+                </strong>
               </div>
               <div className="mb-3 flex items-center justify-between border-t pt-3 text-base">
                 <span className="font-medium">Total final</span>
@@ -1728,6 +1734,7 @@ const CheckoutForm = ({
   captchaResetKey,
   retryAfterSeconds,
   isPending,
+  isApplyingCoupon,
   deliveryAvailable,
   onBack,
   onSubmit,
@@ -1823,6 +1830,7 @@ const CheckoutForm = ({
   captchaResetKey: number
   retryAfterSeconds: number
   isPending: boolean
+  isApplyingCoupon: boolean
   deliveryAvailable: boolean
   onBack: () => void
   onSubmit: () => void
@@ -2399,7 +2407,13 @@ const CheckoutForm = ({
               Remover cupom
             </Button>
           ) : (
-            <Button type="button" variant="outline" onClick={onApplyCoupon}>
+            <Button
+              type="button"
+              variant="outline"
+              isLoading={isApplyingCoupon}
+              disabled={isApplyingCoupon}
+              onClick={onApplyCoupon}
+            >
               Aplicar cupom
             </Button>
           )}
@@ -2410,7 +2424,7 @@ const CheckoutForm = ({
               'mt-2 text-sm',
               appliedCouponCode
                 ? 'text-emerald-600 dark:text-emerald-300'
-                : 'text-muted-foreground'
+                : 'text-destructive'
             )}
             aria-live="polite"
           >
@@ -2490,7 +2504,11 @@ const CheckoutForm = ({
           </div>
           <div className="mt-2 flex justify-between">
             <span className="text-muted-foreground">Desconto/cupom</span>
-            <strong>{currency(appliedDiscount)}</strong>
+            <strong>
+              {appliedDiscount > 0
+                ? `-${currency(appliedDiscount)}`
+                : currency(0)}
+            </strong>
           </div>
           <div className="mt-2 flex justify-between">
             <span className="text-muted-foreground">Total final</span>

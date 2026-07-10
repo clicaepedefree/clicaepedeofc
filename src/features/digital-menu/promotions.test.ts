@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { quoteDigitalMenuPromotion } from './promotions'
+import { normalizeCouponCode, quoteDigitalMenuPromotion } from './promotions'
 
 const basePromotion = {
   id: 1,
@@ -23,6 +23,11 @@ const basePromotion = {
 }
 
 describe('quoteDigitalMenuPromotion', () => {
+  test('normaliza codigo removendo espacos e caixa', () => {
+    expect(normalizeCouponCode(' primeira 10 ')).toBe('PRIMEIRA10')
+    expect(normalizeCouponCode('')).toBe(null)
+  })
+
   test('aplica cupom de valor fixo sem deixar total negativo', () => {
     const quote = quoteDigitalMenuPromotion({
       promotions: [
@@ -103,6 +108,64 @@ describe('quoteDigitalMenuPromotion', () => {
           discountAmount: '10.0000',
           usageLimit: 3,
           usedCount: 3,
+        },
+      ],
+      couponCode: 'PROMO',
+      subtotal: '60.0000',
+      deliveryFee: '8.0000',
+      cartItemOfferingIds: [10],
+    })
+
+    expect(quote.error).toBe('Cupom invalido, expirado ou esgotado.')
+    expect(quote.total).toBe('68.0000')
+  })
+
+  test('recusa cupom expirado ou ainda nao iniciado', () => {
+    const now = new Date('2026-07-10T12:00:00.000Z')
+
+    const expired = quoteDigitalMenuPromotion({
+      promotions: [
+        {
+          ...basePromotion,
+          type: 'FIXED_AMOUNT',
+          discountAmount: '10.0000',
+          endsAt: new Date('2026-07-09T12:00:00.000Z'),
+        },
+      ],
+      couponCode: 'PROMO',
+      subtotal: '60.0000',
+      deliveryFee: '8.0000',
+      cartItemOfferingIds: [10],
+      now,
+    })
+    const future = quoteDigitalMenuPromotion({
+      promotions: [
+        {
+          ...basePromotion,
+          type: 'FIXED_AMOUNT',
+          discountAmount: '10.0000',
+          startsAt: new Date('2026-07-11T12:00:00.000Z'),
+        },
+      ],
+      couponCode: 'PROMO',
+      subtotal: '60.0000',
+      deliveryFee: '8.0000',
+      cartItemOfferingIds: [10],
+      now,
+    })
+
+    expect(expired.error).toBe('Cupom invalido, expirado ou esgotado.')
+    expect(future.error).toBe('Cupom invalido, expirado ou esgotado.')
+  })
+
+  test('isola cupom por produtos elegiveis do carrinho', () => {
+    const quote = quoteDigitalMenuPromotion({
+      promotions: [
+        {
+          ...basePromotion,
+          type: 'FIXED_AMOUNT',
+          discountAmount: '10.0000',
+          itemOfferingIds: [99],
         },
       ],
       couponCode: 'PROMO',
