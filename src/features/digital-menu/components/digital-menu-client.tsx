@@ -6,6 +6,14 @@ import {
 } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
 import {
+  buildDigitalMenuDraftStorageKey,
+  parseDigitalMenuDraft,
+  shouldPersistDigitalMenuDraft,
+  type DigitalMenuDraftCartItem,
+  type DigitalMenuDraftCartOption,
+  type DigitalMenuDraftState,
+} from '@/features/digital-menu/draft-storage'
+import {
   normalizeCouponCode,
   quoteDigitalMenuPromotion,
 } from '@/features/digital-menu/promotions'
@@ -62,23 +70,8 @@ import {
   useTransition,
 } from 'react'
 
-type CartOption = {
-  optionId: number
-  optionName: string
-  optionGroupName: string
-  price: string
-  quantity: number
-}
-
-type CartItem = {
-  cartId: string
-  itemOfferingId: number
-  name: string
-  price: string
-  quantity: number
-  comment: string
-  options: CartOption[]
-}
+type CartOption = DigitalMenuDraftCartOption
+type CartItem = DigitalMenuDraftCartItem
 
 type MenuFilter = 'ALL' | 'RECOMMENDED' | 'WITH_IMAGE' | 'PROMO'
 
@@ -285,6 +278,11 @@ export const DigitalMenuClient = ({
     null
   )
   const [isPending, startTransition] = useTransition()
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
+  const draftStorageKey = useMemo(
+    () => buildDigitalMenuDraftStorageKey(menu.store.subdomain),
+    [menu.store.subdomain]
+  )
 
   useEffect(() => {
     const storageKey = 'clica-public-device-id'
@@ -293,6 +291,108 @@ export const DigitalMenuClient = ({
     if (!stored) window.localStorage.setItem(storageKey, value)
     setDeviceId(value)
   }, [])
+
+  useEffect(() => {
+    let draft = null
+
+    try {
+      draft = parseDigitalMenuDraft(
+        window.sessionStorage.getItem(draftStorageKey)
+      )
+    } catch {
+      // Some mobile browsers can block session storage in private mode.
+      draft = null
+    }
+
+    if (draft) {
+      setCart(draft.cart)
+      setCustomerName(draft.customerName)
+      setCustomerPhone(draft.customerPhone)
+      setCustomerDocument(draft.customerDocument)
+      setOrderNotes(draft.orderNotes)
+      setPostalCode(draft.postalCode)
+      setStreet(draft.street)
+      setNumber(draft.number)
+      setNeighborhood(draft.neighborhood)
+      setComplement(draft.complement)
+      setReference(draft.reference)
+      setTermsAccepted(draft.termsAccepted)
+      setOrderType(draft.orderType)
+      setScheduledFor(draft.scheduledFor)
+      setPaymentMethod(draft.paymentMethod)
+      setNeedsChange(draft.needsChange)
+      setChangeFor(draft.changeFor)
+      setCouponCode(draft.couponCode)
+      setAppliedCouponCode(null)
+    }
+
+    setHasRestoredDraft(true)
+  }, [draftStorageKey])
+
+  useEffect(() => {
+    if (!hasRestoredDraft || orderConfirmation) return
+
+    const draft: DigitalMenuDraftState = {
+      version: 1,
+      cart,
+      customerName,
+      customerPhone,
+      customerDocument,
+      orderNotes,
+      postalCode,
+      street,
+      number,
+      neighborhood,
+      complement,
+      reference,
+      termsAccepted,
+      orderType,
+      scheduledFor,
+      paymentMethod,
+      needsChange,
+      changeFor,
+      couponCode,
+      appliedCouponCode: null,
+    }
+
+    if (!shouldPersistDigitalMenuDraft(draft)) {
+      try {
+        window.sessionStorage.removeItem(draftStorageKey)
+      } catch {
+        // Ignore unavailable storage; the draft is only a UX helper.
+      }
+      return
+    }
+
+    try {
+      window.sessionStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    } catch {
+      // Ignore unavailable storage; checkout remains fully functional.
+    }
+  }, [
+    appliedCouponCode,
+    cart,
+    changeFor,
+    complement,
+    couponCode,
+    customerDocument,
+    customerName,
+    customerPhone,
+    draftStorageKey,
+    hasRestoredDraft,
+    needsChange,
+    neighborhood,
+    number,
+    orderConfirmation,
+    orderNotes,
+    orderType,
+    paymentMethod,
+    postalCode,
+    reference,
+    scheduledFor,
+    street,
+    termsAccepted,
+  ])
 
   const cartTotal = useMemo(
     () =>
@@ -686,6 +786,11 @@ export const DigitalMenuClient = ({
     )
   }
 
+  const startCheckout = () => {
+    setIsCartOpen(true)
+    setCheckoutStep(true)
+  }
+
   const submitOrder = () => {
     const payload: DigitalMenuSubmitInput = {
       storeSlug: menu.store.subdomain,
@@ -766,6 +871,11 @@ export const DigitalMenuClient = ({
         summary: cart.map(item => `${item.quantity}x ${item.name}`).join(', '),
       })
       setCart([])
+      try {
+        window.sessionStorage.removeItem(draftStorageKey)
+      } catch {
+        // Ignore unavailable storage after successful order submission.
+      }
       setCaptchaToken(null)
       setChallengeSiteKey(null)
       setRetryAfterSeconds(0)
@@ -850,20 +960,22 @@ export const DigitalMenuClient = ({
               alt={`Banner de ${menu.store.name}`}
               fill
               priority
+              quality={72}
               sizes="100vw"
               className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-background/10 to-transparent" />
           </div>
         )}
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex size-12 items-center justify-center overflow-hidden rounded-xl border bg-primary/10 text-primary shadow-sm">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-primary/10 text-primary shadow-sm">
               {menu.settings.logoImageUrl ? (
                 <Image
                   src={menu.settings.logoImageUrl}
                   alt={`Logo de ${menu.store.name}`}
                   fill
+                  quality={80}
                   sizes="48px"
                   className="object-cover"
                 />
@@ -871,19 +983,21 @@ export const DigitalMenuClient = ({
                 <Store className="size-5" />
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wide text-primary">
                 Cardapio digital
               </p>
-              <h1 className="text-xl font-semibold">{menu.store.name}</h1>
+              <h1 className="truncate text-xl font-semibold">
+                {menu.store.name}
+              </h1>
             </div>
           </div>
-          <Badge className="border-primary/20 bg-primary/10 text-primary">
+          <Badge className="shrink-0 border-primary/20 bg-primary/10 text-primary">
             <Clock3 className="size-3" />{' '}
             {menu.settings.averagePreparationMinutes} min
           </Badge>
           {whatsappContactUrl && (
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" className="shrink-0">
               <a href={whatsappContactUrl} target="_blank" rel="noreferrer">
                 WhatsApp
               </a>
@@ -1004,7 +1118,8 @@ export const DigitalMenuClient = ({
                           src={item.imageUrl}
                           alt={item.name}
                           fill
-                          sizes="224px"
+                          quality={70}
+                          sizes="(max-width: 640px) 70vw, 224px"
                           className="object-cover transition-transform group-hover:scale-105"
                         />
                       ) : (
@@ -1055,20 +1170,27 @@ export const DigitalMenuClient = ({
       </div>
 
       {cartItemsCount > 0 && (
-        <div className="fixed inset-x-0 bottom-4 z-40 px-4">
-          <Button
-            size="xl"
-            className="mx-auto flex w-full max-w-2xl justify-between shadow-lg"
-            onClick={() => setIsCartOpen(true)}
-          >
-            <span className="flex items-center gap-2">
-              <ShoppingBag className="size-5" />
-              Ver carrinho
-            </span>
-            <span>
-              {cartItemsCount} itens - {currency(cartTotal)}
-            </span>
-          </Button>
+        <div className="fixed inset-x-0 bottom-3 z-40 px-3 pb-[env(safe-area-inset-bottom)] sm:bottom-4 sm:px-4">
+          <div className="mx-auto grid w-full max-w-2xl grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-2xl border bg-background/95 p-2 shadow-lg backdrop-blur">
+            <Button
+              size="lg"
+              variant="outline"
+              className="min-w-0 justify-between bg-card/70"
+              onClick={() => setIsCartOpen(true)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <ShoppingBag className="size-5 shrink-0" />
+                <span className="truncate">Carrinho</span>
+              </span>
+              <span className="shrink-0">
+                {cartItemsCount} - {currency(cartTotal)}
+              </span>
+            </Button>
+            <Button size="lg" className="px-5" onClick={startCheckout}>
+              <ReceiptText className="size-4" />
+              Finalizar
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1076,7 +1198,7 @@ export const DigitalMenuClient = ({
         open={!!selectedItem}
         onOpenChange={open => !open && closeSelectedItem()}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent className="h-dvh w-full overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:max-w-xl">
           {selectedItem && (
             <>
               <SheetHeader>
@@ -1090,6 +1212,8 @@ export const DigitalMenuClient = ({
                     alt={selectedItem.name}
                     width={640}
                     height={360}
+                    quality={72}
+                    sizes="(max-width: 640px) 100vw, 640px"
                     className="aspect-video rounded-lg object-cover"
                   />
                 )}
@@ -1181,7 +1305,7 @@ export const DigitalMenuClient = ({
       </Sheet>
 
       <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent className="h-dvh w-full overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Seu pedido</SheetTitle>
             <SheetDescription>
@@ -1488,7 +1612,7 @@ const CategorySection = ({
             onClick={() => onOpenItem(item)}
             disabled={isItemUnavailable(item)}
             className={cn(
-              'group flex min-h-32 overflow-hidden rounded-lg border bg-card text-left transition-all hover:border-primary/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60',
+              'group grid min-h-32 grid-cols-[minmax(0,1fr)_112px] overflow-hidden rounded-lg border bg-card text-left transition-all hover:border-primary/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:grid-cols-[minmax(0,1fr)_128px]',
               recommendedItemIds.has(item.itemOfferingId) && 'border-primary/30'
             )}
           >
@@ -1540,13 +1664,14 @@ const CategorySection = ({
                 )}
               </div>
             </div>
-            <div className="relative h-auto w-28 shrink-0 bg-muted md:w-32">
+            <div className="relative min-h-32 bg-muted">
               {item.imageUrl ? (
                 <Image
                   src={item.imageUrl}
                   alt={item.name}
                   fill
-                  sizes="160px"
+                  quality={70}
+                  sizes="(max-width: 640px) 112px, 128px"
                   className="object-cover transition-transform group-hover:scale-105"
                 />
               ) : (
