@@ -5,6 +5,7 @@ import {
   submitDigitalMenuOrder,
 } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
+import { buildDigitalMenuTurnstileOptions } from '@/features/digital-menu/turnstile-widget'
 import {
   getDigitalMenuOrderTypeControls,
   type DigitalMenuOrderTypeControls,
@@ -117,28 +118,35 @@ const ConditionalTurnstile = ({
   const containerId = `turnstile-${useId().replace(/:/g, '')}`
   const widgetId = useRef<string | null>(null)
   const [scriptReady, setScriptReady] = useState(false)
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'failed'>(
+    'loading'
+  )
 
   useEffect(() => {
     if (!scriptReady || !window.turnstile) return
-    if (widgetId.current) window.turnstile.remove(widgetId.current)
-    widgetId.current = window.turnstile.render(`#${containerId}`, {
-      sitekey: siteKey,
-      action: 'digital_menu_checkout',
-      theme: 'auto',
-      size: 'flexible',
-      appearance: 'interaction-only',
-      callback: (token: string) => onToken(token),
-      'expired-callback': () => {
-        onToken(null)
-        onError('A verificacao expirou. Faca novamente para enviar o pedido.')
-      },
-      'error-callback': () => {
-        onToken(null)
-        onError(
-          'Nao foi possivel carregar a verificacao. Confira sua conexao e tente novamente.'
-        )
-      },
-    })
+    setLoadState('loading')
+
+    try {
+      if (widgetId.current) window.turnstile.remove(widgetId.current)
+      widgetId.current = window.turnstile.render(
+        `#${containerId}`,
+        buildDigitalMenuTurnstileOptions({
+          siteKey,
+          onToken,
+          onError,
+        })
+      )
+      setLoadState('ready')
+    } catch (error) {
+      console.error('Failed to render Turnstile challenge', error)
+      widgetId.current = null
+      setLoadState('failed')
+      onToken(null)
+      onError(
+        'Nao foi possivel carregar a verificacao. Atualize a pagina e tente novamente.'
+      )
+    }
+
     return () => {
       if (widgetId.current && window.turnstile)
         window.turnstile.remove(widgetId.current)
@@ -152,8 +160,29 @@ const ConditionalTurnstile = ({
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
         onReady={() => setScriptReady(true)}
+        onError={() => {
+          setLoadState('failed')
+          onToken(null)
+          onError(
+            'Nao foi possivel carregar a verificacao. Confira sua conexao e tente novamente.'
+          )
+        }}
       />
-      <div id={containerId} className="min-h-16 w-full overflow-hidden" />
+      <div
+        id={containerId}
+        className="min-h-20 w-full overflow-hidden rounded-md bg-background/60"
+      />
+      {loadState === 'loading' && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Carregando verificacao...
+        </p>
+      )}
+      {loadState === 'failed' && (
+        <p className="mt-2 text-xs text-destructive">
+          A verificacao nao carregou. Atualize a pagina antes de tentar enviar
+          novamente.
+        </p>
+      )}
     </>
   )
 }
