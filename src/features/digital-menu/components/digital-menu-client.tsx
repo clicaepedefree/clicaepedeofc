@@ -21,6 +21,10 @@ import {
   normalizeCouponCode,
   quoteDigitalMenuPromotion,
 } from '@/features/digital-menu/promotions'
+import {
+  canSubmitDigitalMenuCheckout,
+  canValidateDigitalMenuCheckout,
+} from '@/features/digital-menu/checkout-readiness'
 import { isValidCpf } from '@/features/digital-menu/validation'
 import {
   DigitalMenuCategory,
@@ -1966,6 +1970,11 @@ const CheckoutForm = ({
       paymentMethod === 'CASH' && needsChange && !changeFor.trim()
         ? 'Informe o valor para o troco.'
         : null,
+    paymentMethod: !selectedPaymentMethod
+      ? availablePaymentMethods.length === 0
+        ? 'Esta loja ainda nao habilitou pagamentos para este tipo de pedido.'
+        : 'Escolha uma forma de pagamento.'
+      : null,
     scheduledFor:
       scheduledFor && !scheduledDate
         ? 'Escolha um horario valido para agendar o pedido.'
@@ -1974,23 +1983,33 @@ const CheckoutForm = ({
               scheduledDate > maxScheduledDate)
           ? `Escolha um horario entre ${scheduleMinLeadMinutes} minutos e ${scheduleMaxDaysAhead} dias a partir de agora.`
           : null,
+    captchaToken:
+      challengeSiteKey && !captchaToken
+        ? 'Complete a verificacao para enviar o pedido.'
+        : null,
   }
   const hasFieldErrors = Object.values(fieldErrors).some(Boolean)
   const selectedOrderTypeControl =
     orderType === 'DELIVERY'
       ? orderTypeControls.delivery
       : orderTypeControls.takeout
-  const canAttemptOrder =
-    (canCheckoutNow || canCheckoutScheduled) &&
-    selectedOrderTypeControl.enabled &&
-    deliveryQuote.isAddressCovered &&
-    missingMinimumAmount === 0 &&
-    !!selectedPaymentMethod
-  const canSubmitOrder =
-    canAttemptOrder &&
-    !hasFieldErrors &&
-    remainingSeconds === 0 &&
-    (!challengeSiteKey || !!captchaToken)
+  const checkoutReadiness = {
+    isOpenNow: canCheckoutNow,
+    allowScheduledOrders,
+    canSchedule: availability.canSchedule,
+    hasScheduledFor: !!scheduledFor,
+    hasValidScheduledDate: !!scheduledDate,
+    orderTypeEnabled: selectedOrderTypeControl.enabled,
+    isAddressCovered: deliveryQuote.isAddressCovered,
+    missingMinimumAmount,
+    hasSelectedPaymentMethod: !!selectedPaymentMethod,
+    hasFieldErrors,
+    remainingSeconds,
+    isCaptchaRequired: !!challengeSiteKey,
+    hasCaptchaToken: !!captchaToken,
+  }
+  const canValidateOrder = canValidateDigitalMenuCheckout(checkoutReadiness)
+  const canSubmitOrder = canSubmitDigitalMenuCheckout(checkoutReadiness)
 
   const submitValidatedOrder = () => {
     setValidationAttempted(true)
@@ -2402,6 +2421,11 @@ const CheckoutForm = ({
             {selectedPaymentMethod.instructions}
           </p>
         )}
+        {validationAttempted && fieldErrors.paymentMethod && (
+          <p className="mt-3 text-sm text-destructive">
+            {fieldErrors.paymentMethod}
+          </p>
+        )}
 
         {selectedPaymentMethod?.method === 'PIX' && (
           <div className="mt-3 space-y-3 rounded-md border bg-background p-3">
@@ -2651,6 +2675,11 @@ const CheckoutForm = ({
             onToken={setCaptchaToken}
             onError={setSubmissionMessage}
           />
+          {validationAttempted && fieldErrors.captchaToken && (
+            <p className="mt-2 text-sm text-destructive">
+              {fieldErrors.captchaToken}
+            </p>
+          )}
         </section>
       )}
 
@@ -2679,11 +2708,7 @@ const CheckoutForm = ({
         <Button
           onClick={submitValidatedOrder}
           isLoading={isPending}
-          disabled={
-            !canAttemptOrder ||
-            remainingSeconds > 0 ||
-            (!!challengeSiteKey && !captchaToken)
-          }
+          disabled={!canValidateOrder || remainingSeconds > 0}
         >
           {remainingSeconds > 0
             ? 'Aguarde para tentar novamente'
