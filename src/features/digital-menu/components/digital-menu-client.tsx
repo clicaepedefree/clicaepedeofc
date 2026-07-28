@@ -159,7 +159,11 @@ const ConditionalTurnstile = ({
 }
 
 const currency = (value: string | number) =>
-  formatValueToCurrency({ value, includeCurrencySymbol: true })
+  formatValueToCurrency({
+    value,
+    includeCurrencySymbol: true,
+    normalizeDisplayValue: true,
+  })
 
 const getItemUnitTotal = (item: CartItem) => {
   const optionsTotal = item.options.reduce(

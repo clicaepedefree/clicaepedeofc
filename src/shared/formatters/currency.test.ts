@@ -26,6 +26,16 @@ describe('currency formatter', () => {
     ).toBe('R$12,50')
   })
 
+  test('formats database decimal strings without treating dots as thousands', () => {
+    expect(
+      formatValueToCurrency({
+        value: '20.0000',
+        includeCurrencySymbol: true,
+        normalizeDisplayValue: true,
+      })
+    ).toBe('R$20,00')
+  })
+
   test('keeps zero as a valid formatted value', () => {
     expect(formatValueToCurrency({ value: 0 })).toBe('0.00')
   })
