@@ -2027,6 +2027,10 @@ export const getPublicOrderTracking = async (
     })
     .from(publicOrderSubmissionsTable)
     .innerJoin(
+      storesTable,
+      eq(storesTable.id, publicOrderSubmissionsTable.storeId)
+    )
+    .innerJoin(
       ordersTable,
       and(
         eq(ordersTable.id, publicOrderSubmissionsTable.orderId),
