@@ -3,11 +3,14 @@ import {
   calculatePublicOrderRiskScore,
   buildPublicOrderTrackingDto,
   createPublicTrackingToken,
+  decryptPublicTrackingToken,
+  encryptPublicTrackingToken,
   hashPublicIdentifier,
   isPublicTrackingToken,
   isPublicOrderRateLimitAllowed,
   PUBLIC_ORDER_RATE_LIMIT,
   publicTrackingTokenMatches,
+  recoverActivePublicTrackingToken,
 } from './public-order-security'
 
 describe('calculatePublicOrderRiskScore', () => {
@@ -64,6 +67,52 @@ describe('public order tracking token', () => {
     const hash = hashPublicIdentifier(token, secret)
     expect(publicTrackingTokenMatches('not-a-token', hash, secret)).toBe(false)
     expect(publicTrackingTokenMatches(undefined, hash, secret)).toBe(false)
+  })
+
+  test('encrypts the token for server-side recovery without exposing it in the stored value', () => {
+    const token = createPublicTrackingToken()
+    const encrypted = encryptPublicTrackingToken(token, secret)
+
+    expect(encrypted.includes(token)).toBe(false)
+    expect(decryptPublicTrackingToken(encrypted, secret)).toBe(token)
+    expect(decryptPublicTrackingToken(encrypted, 'wrong-secret')).toBe(null)
+  })
+
+  test('recovers only active encrypted tokens that match the stored hash', () => {
+    const token = createPublicTrackingToken()
+    const encrypted = encryptPublicTrackingToken(token, secret)
+    const hash = hashPublicIdentifier(token, secret)
+    const now = new Date('2026-07-01T10:00:00Z')
+
+    expect(
+      recoverActivePublicTrackingToken({
+        encryptedToken: encrypted,
+        tokenHash: hash,
+        expiresAt: new Date('2026-07-02T10:00:00Z'),
+        secret,
+        now,
+      })
+    ).toBe(token)
+
+    expect(
+      recoverActivePublicTrackingToken({
+        encryptedToken: encrypted,
+        tokenHash: hash,
+        expiresAt: now,
+        secret,
+        now,
+      })
+    ).toBe(null)
+
+    expect(
+      recoverActivePublicTrackingToken({
+        encryptedToken: encrypted,
+        tokenHash: hashPublicIdentifier(createPublicTrackingToken(), secret),
+        expiresAt: new Date('2026-07-02T10:00:00Z'),
+        secret,
+        now,
+      })
+    ).toBe(null)
   })
 })
 

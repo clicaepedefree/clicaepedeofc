@@ -62,6 +62,7 @@ import {
 import {
   buildPublicOrderTrackingDto,
   createPublicTrackingToken,
+  encryptPublicTrackingToken,
   hashPublicIdentifier,
   isPublicTrackingToken,
   PUBLIC_ORDER_RATE_LIMIT,
@@ -69,6 +70,7 @@ import {
   PUBLIC_ORDER_TRACKING_TTL_MS,
   calculatePublicOrderRiskScore,
   publicTrackingTokenMatches,
+  recoverActivePublicTrackingToken,
 } from './public-order-security'
 import {
   normalizeStoreSlug,
@@ -1266,6 +1268,10 @@ export const submitDigitalMenuOrder = async (
   )
   const trackingToken = createPublicTrackingToken()
   const trackingTokenHash = hashPublicIdentifier(trackingToken, securitySecret)
+  const trackingTokenEncrypted = encryptPublicTrackingToken(
+    trackingToken,
+    securitySecret
+  )
   const submittedAt = new Date()
   const trackingExpiresAt = new Date(
     submittedAt.getTime() + PUBLIC_ORDER_TRACKING_TTL_MS
@@ -1312,6 +1318,7 @@ export const submitDigitalMenuOrder = async (
           status: true,
           totalsSnapshot: true,
           trackingTokenHash: true,
+          trackingTokenEncrypted: true,
           trackingExpiresAt: true,
         },
       })
@@ -1326,14 +1333,23 @@ export const submitDigitalMenuOrder = async (
         }
 
         const totals = existing.totalsSnapshot as { total?: string }
-        const canReuseTrackingToken =
-          !!existing.trackingExpiresAt &&
-          existing.trackingExpiresAt > submittedAt &&
-          publicTrackingTokenMatches(
-            presentedTrackingToken,
-            existing.trackingTokenHash,
-            securitySecret
-          )
+        const reusableTrackingToken =
+          recoverActivePublicTrackingToken({
+            encryptedToken: existing.trackingTokenEncrypted,
+            tokenHash: existing.trackingTokenHash,
+            expiresAt: existing.trackingExpiresAt,
+            secret: securitySecret,
+            now: submittedAt,
+          }) ??
+          (existing.trackingExpiresAt &&
+            existing.trackingExpiresAt > submittedAt &&
+            publicTrackingTokenMatches(
+              presentedTrackingToken,
+              existing.trackingTokenHash,
+              securitySecret
+            )
+            ? presentedTrackingToken
+            : null)
         return {
           ok: true as const,
           publicOrderId: existing.id,
@@ -1341,8 +1357,8 @@ export const submitDigitalMenuOrder = async (
           status: existing.status,
           total: totals.total ?? validatedCart.total,
           reused: true,
-          ...(canReuseTrackingToken
-            ? { trackingToken: presentedTrackingToken }
+          ...(reusableTrackingToken
+            ? { trackingToken: reusableTrackingToken }
             : {}),
         }
       }
@@ -1486,6 +1502,7 @@ export const submitDigitalMenuOrder = async (
           storeSettingsSnapshot: toJsonSnapshot(currentPublicSettings),
           businessHoursSnapshot: toJsonSnapshot(orderAvailability),
           trackingTokenHash,
+          trackingTokenEncrypted,
           trackingExpiresAt,
           customerIpHash: ipHash,
           userAgentHash,
@@ -1553,6 +1570,7 @@ export const submitDigitalMenuOrder = async (
           idempotencyKey: payload.idempotencyKey,
           requestId,
           publicTrackingTokenHash: trackingTokenHash,
+          publicTrackingTokenEncrypted: trackingTokenEncrypted,
           publicTrackingExpiresAt: trackingExpiresAt,
           snapshot: toJsonSnapshot({
             publicOrderId: created.id,
@@ -1799,20 +1817,31 @@ export const submitDigitalMenuOrder = async (
           status: true,
           totalsSnapshot: true,
           trackingTokenHash: true,
+          trackingTokenEncrypted: true,
           trackingExpiresAt: true,
         },
       })
 
       if (existing?.requestHash === requestHash) {
         const totals = existing.totalsSnapshot as { total?: string }
-        const canReuseTrackingToken =
-          !!existing.trackingExpiresAt &&
-          existing.trackingExpiresAt > new Date() &&
-          publicTrackingTokenMatches(
-            presentedTrackingToken,
-            existing.trackingTokenHash,
-            securitySecret
-          )
+        const now = new Date()
+        const reusableTrackingToken =
+          recoverActivePublicTrackingToken({
+            encryptedToken: existing.trackingTokenEncrypted,
+            tokenHash: existing.trackingTokenHash,
+            expiresAt: existing.trackingExpiresAt,
+            secret: securitySecret,
+            now,
+          }) ??
+          (existing.trackingExpiresAt &&
+            existing.trackingExpiresAt > now &&
+            publicTrackingTokenMatches(
+              presentedTrackingToken,
+              existing.trackingTokenHash,
+              securitySecret
+            )
+            ? presentedTrackingToken
+            : null)
         return {
           ok: true,
           publicOrderId: existing.id,
@@ -1820,8 +1849,8 @@ export const submitDigitalMenuOrder = async (
           status: existing.status,
           total: totals.total ?? validatedCart.total,
           reused: true,
-          ...(canReuseTrackingToken
-            ? { trackingToken: presentedTrackingToken }
+          ...(reusableTrackingToken
+            ? { trackingToken: reusableTrackingToken }
             : {}),
         }
       }

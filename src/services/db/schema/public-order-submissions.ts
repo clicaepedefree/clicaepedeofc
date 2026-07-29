@@ -64,6 +64,7 @@ export const publicOrderSubmissionsTable = pgTable(
     termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     validationErrors: jsonb('validation_errors'),
     trackingTokenHash: text('tracking_token_hash'),
+    trackingTokenEncrypted: text('tracking_token_encrypted'),
     trackingExpiresAt: timestamp('tracking_expires_at', { withTimezone: true }),
     scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
     deliveryZoneSnapshot: jsonb('delivery_zone_snapshot'),

@@ -1,4 +1,11 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto'
 
 export const PUBLIC_ORDER_TRACKING_TTL_MS = 30 * 24 * 60 * 60 * 1000
 export const PUBLIC_ORDER_RATE_LIMIT = {
@@ -37,6 +44,9 @@ export const isPublicOrderRateLimitAllowed = (
 
 const TOKEN_BYTES = 32
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+const TOKEN_CIPHER_VERSION = 'v1'
+const TOKEN_CIPHER_IV_BYTES = 12
+const TOKEN_CIPHER_AUTH_TAG_BYTES = 16
 
 export const createPublicTrackingToken = () =>
   randomBytes(TOKEN_BYTES).toString('base64url')
@@ -56,6 +66,97 @@ export const publicTrackingTokenMatches = (
   const actual = Buffer.from(hashPublicIdentifier(token, secret), 'hex')
   const expected = Buffer.from(expectedHash, 'hex')
   return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
+const getPublicTrackingCipherKey = (secret: string) =>
+  createHash('sha256').update(`public-order-tracking:${secret}`).digest()
+
+export const encryptPublicTrackingToken = (token: string, secret: string) => {
+  if (!isPublicTrackingToken(token)) {
+    throw new Error('Invalid public tracking token.')
+  }
+
+  const iv = randomBytes(TOKEN_CIPHER_IV_BYTES)
+  const cipher = createCipheriv(
+    'aes-256-gcm',
+    getPublicTrackingCipherKey(secret),
+    iv
+  )
+  const encrypted = Buffer.concat([
+    cipher.update(token, 'utf8'),
+    cipher.final(),
+  ])
+  const authTag = cipher.getAuthTag()
+
+  return [
+    TOKEN_CIPHER_VERSION,
+    iv.toString('base64url'),
+    authTag.toString('base64url'),
+    encrypted.toString('base64url'),
+  ].join(':')
+}
+
+export const decryptPublicTrackingToken = (
+  encryptedToken: string | null | undefined,
+  secret: string
+) => {
+  if (!encryptedToken) return null
+  const [version, ivValue, authTagValue, encryptedValue] =
+    encryptedToken.split(':')
+  if (
+    version !== TOKEN_CIPHER_VERSION ||
+    !ivValue ||
+    !authTagValue ||
+    !encryptedValue
+  ) {
+    return null
+  }
+
+  try {
+    const iv = Buffer.from(ivValue, 'base64url')
+    const authTag = Buffer.from(authTagValue, 'base64url')
+    const encrypted = Buffer.from(encryptedValue, 'base64url')
+    if (
+      iv.length !== TOKEN_CIPHER_IV_BYTES ||
+      authTag.length !== TOKEN_CIPHER_AUTH_TAG_BYTES
+    ) {
+      return null
+    }
+
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      getPublicTrackingCipherKey(secret),
+      iv
+    )
+    decipher.setAuthTag(authTag)
+    const token = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]).toString('utf8')
+
+    return isPublicTrackingToken(token) ? token : null
+  } catch {
+    return null
+  }
+}
+
+export const recoverActivePublicTrackingToken = ({
+  encryptedToken,
+  tokenHash,
+  expiresAt,
+  secret,
+  now = new Date(),
+}: {
+  encryptedToken: string | null | undefined
+  tokenHash: string | null | undefined
+  expiresAt: Date | null | undefined
+  secret: string
+  now?: Date
+}) => {
+  if (!expiresAt || expiresAt.getTime() <= now.getTime()) return null
+  const token = decryptPublicTrackingToken(encryptedToken, secret)
+  if (!publicTrackingTokenMatches(token, tokenHash, secret)) return null
+  return token
 }
 
 export type PublicOrderTrackingRow = {

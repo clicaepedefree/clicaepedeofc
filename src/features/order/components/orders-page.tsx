@@ -459,13 +459,14 @@ export function OrdersPage() {
       }),
     onSuccess: async (result, order) => {
       const url = `${window.location.origin}/pedido/${result.token}`
+      const actionLabel = result.reused ? 'copiado' : 'gerado'
       try {
         await navigator.clipboard.writeText(url)
-        toast.success(`Link publico do pedido #${order.displayId} copiado.`, {
+        toast.success(`Link publico do pedido #${order.displayId} ${actionLabel}.`, {
           description: `Valido ate ${formatDateTime(result.expiresAt)}.`,
         })
       } catch {
-        toast.success(`Link publico gerado para o pedido #${order.displayId}.`, {
+        toast.success(`Link publico ${actionLabel} para o pedido #${order.displayId}.`, {
           description: url,
         })
       }
