@@ -36,6 +36,28 @@ describe('currency formatter', () => {
     ).toBe('R$20,00')
   })
 
+  test('preserves cents instead of rounding to significant digits', () => {
+    expect(
+      formatValueToCurrency({
+        value: 28.4,
+        includeCurrencySymbol: true,
+      })
+    ).toBe('R$28,40')
+    expect(
+      formatValueToCurrency({
+        value: 56.8,
+        includeCurrencySymbol: true,
+      })
+    ).toBe('R$56,80')
+    expect(
+      formatValueToCurrency({
+        value: '29.9000',
+        includeCurrencySymbol: true,
+        normalizeDisplayValue: true,
+      })
+    ).toBe('R$29,90')
+  })
+
   test('keeps zero as a valid formatted value', () => {
     expect(formatValueToCurrency({ value: 0 })).toBe('0.00')
   })

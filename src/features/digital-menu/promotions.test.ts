@@ -28,6 +28,20 @@ describe('quoteDigitalMenuPromotion', () => {
     expect(normalizeCouponCode('')).toBe(null)
   })
 
+  test('preserva centavos no total sem promocao aplicada', () => {
+    const quote = quoteDigitalMenuPromotion({
+      promotions: [],
+      couponCode: null,
+      subtotal: '28.4000',
+      deliveryFee: '0.0000',
+      cartItemOfferingIds: [10],
+    })
+
+    expect(quote.discountAmount).toBe('0.0000')
+    expect(quote.deliveryFee).toBe('0.0000')
+    expect(quote.total).toBe('28.4000')
+  })
+
   test('aplica cupom de valor fixo sem deixar total negativo', () => {
     const quote = quoteDigitalMenuPromotion({
       promotions: [
