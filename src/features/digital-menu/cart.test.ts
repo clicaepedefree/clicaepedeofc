@@ -119,6 +119,24 @@ describe('validateAndPriceDigitalMenuCart', () => {
     expect(cart.deliveryEstimatedMinutes).toBe(45)
   })
 
+  test('preserva centavos no total final com subtotal e entrega', () => {
+    const cart = validateAndPriceDigitalMenuCart({
+      categories,
+      deliveryFee: '5.0000',
+      items: [
+        {
+          itemOfferingId: 10,
+          quantity: 1,
+          options: [{ optionId: 41, quantity: 1 }],
+        },
+      ],
+    })
+
+    expect(cart.subtotal).toBe('22.5000')
+    expect(cart.deliveryFee).toBe('5.0000')
+    expect(cart.total).toBe('27.5000')
+  })
+
   test('recalcula desconto de cupom no servidor junto de adicionais e entrega', () => {
     const cart = validateAndPriceDigitalMenuCart({
       categories,
