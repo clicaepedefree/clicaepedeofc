@@ -79,6 +79,10 @@ import {
 } from './validation'
 import { getTurnstileSiteKey, verifyTurnstileToken } from './turnstile'
 import { mapDbPromotionToPublic, normalizeCouponCode } from './promotions'
+import {
+  DigitalMenuOrderDomainError,
+  getDigitalMenuOrderDomainFailure,
+} from './submission-errors'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
   logoImageUrl: null,
@@ -1710,7 +1714,7 @@ export const submitDigitalMenuOrder = async (
             (customerRedemptions?.total ?? 0) >=
             appliedPromotionConfig.perCustomerLimit
           ) {
-            throw new Error(
+            throw new DigitalMenuOrderDomainError(
               'Este cupom ja atingiu o limite de uso para este telefone.'
             )
           }
@@ -1738,7 +1742,9 @@ export const submitDigitalMenuOrder = async (
           .returning({ id: digitalMenuPromotionsTable.id })
 
         if (updatedPromotions.length === 0) {
-          throw new Error('Este cupom ou promocao acabou de esgotar.')
+          throw new DigitalMenuOrderDomainError(
+            'Este cupom ou promocao acabou de esgotar.'
+          )
         }
 
         await tx.insert(digitalMenuPromotionRedemptionsTable).values({
@@ -1860,6 +1866,9 @@ export const submitDigitalMenuOrder = async (
         message: 'Este identificador de pedido ja foi usado com outros dados.',
       }
     }
+
+    const domainFailure = getDigitalMenuOrderDomainFailure(error)
+    if (domainFailure) return domainFailure
 
     console.error('Failed to submit digital menu order', {
       requestId,
