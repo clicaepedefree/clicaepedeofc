@@ -1284,7 +1284,7 @@ export const DigitalMenuClient = ({
         open={!!selectedItem}
         onOpenChange={open => !open && closeSelectedItem()}
       >
-        <SheetContent className="h-dvh w-full overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:max-w-xl">
+        <SheetContent className="right-auto left-0 h-dvh w-dvw max-w-dvw overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:right-0 sm:left-auto sm:max-w-xl">
           {selectedItem && (
             <>
               <SheetHeader>
@@ -1391,7 +1391,7 @@ export const DigitalMenuClient = ({
       </Sheet>
 
       <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
-        <SheetContent className="h-dvh w-full overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:max-w-xl">
+        <SheetContent className="right-auto left-0 h-dvh w-dvw max-w-dvw overflow-y-auto pb-[env(safe-area-inset-bottom)] sm:right-0 sm:left-auto sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Seu pedido</SheetTitle>
             <SheetDescription>
@@ -1560,8 +1560,8 @@ export const DigitalMenuClient = ({
                       key={item.cartId}
                       className="rounded-lg border bg-card p-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
                           <h3 className="font-medium">{item.name}</h3>
                           <p className="text-sm text-muted-foreground">
                             {currency(getItemUnitTotal(item))} un.
@@ -1576,14 +1576,16 @@ export const DigitalMenuClient = ({
                             </ul>
                           )}
                         </div>
-                        <button
+                        <Button
                           type="button"
-                          className="text-muted-foreground hover:text-destructive"
+                          variant="ghost"
+                          size="icon"
+                          className="size-11 shrink-0 touch-manipulation border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10"
                           onClick={() => updateCartQuantity(item.cartId, 0)}
                           aria-label={`Remover ${item.name}`}
                         >
                           <Trash2 className="size-4" />
-                        </button>
+                        </Button>
                       </div>
                       <Button
                         type="button"
@@ -1600,6 +1602,7 @@ export const DigitalMenuClient = ({
                           <Button
                             size="icon"
                             variant="outline"
+                            aria-label={`Diminuir quantidade de ${item.name}`}
                             onClick={() =>
                               updateCartQuantity(item.cartId, item.quantity - 1)
                             }
@@ -1612,6 +1615,7 @@ export const DigitalMenuClient = ({
                           <Button
                             size="icon"
                             variant="outline"
+                            aria-label={`Aumentar quantidade de ${item.name}`}
                             onClick={() =>
                               updateCartQuantity(item.cartId, item.quantity + 1)
                             }
