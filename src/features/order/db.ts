@@ -26,6 +26,7 @@ import {
   resolveOrderTransition,
   sanitizeOrderAuditMetadata,
 } from './audit-policy'
+import { buildOrderTransitionPersistenceFields } from './transition-fields'
 import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
 import { DbSession } from '@/services/db/types'
 import { decrementColumnValue } from '@/services/db/utils/decrement-column-value'
@@ -114,48 +115,17 @@ export const transitionOrderOnDb = async ({
 
   const transition = resolveOrderTransition(order.status, action, reason)
   const now = new Date()
-  const normalizedEstimatedMinutes =
-    action === 'accept' &&
-    Number.isFinite(estimatedMinutes) &&
-    estimatedMinutes !== undefined &&
-    estimatedMinutes > 0
-      ? Math.min(Math.max(Math.round(estimatedMinutes), 5), 240)
-      : null
-  const orderStatusFields =
-    action === 'accept'
-      ? {
-          acceptedAt: now,
-          acceptedByUserId: actorUserId,
-          ...(normalizedEstimatedMinutes
-            ? {
-                deliveryEstimatedMinutes: normalizedEstimatedMinutes,
-                deliveryEta: new Date(
-                  now.getTime() + normalizedEstimatedMinutes * 60 * 1000
-                ),
-              }
-            : {}),
-        }
-      : action === 'reject'
-        ? {
-            rejectedAt: now,
-            rejectedByUserId: actorUserId,
-            rejectionReason: transition.reason,
-          }
-        : action === 'cancel'
-          ? { cancelledAt: now }
-          : { completedAt: now }
-  const publicOrderStatusFields =
-    action === 'accept'
-      ? { acceptedAt: now, acceptedByUserId: actorUserId }
-      : action === 'reject'
-        ? {
-            rejectedAt: now,
-            rejectedByUserId: actorUserId,
-            rejectionReason: transition.reason,
-          }
-        : action === 'cancel'
-          ? { cancelledAt: now }
-          : { completedAt: now }
+  const {
+    normalizedEstimatedMinutes,
+    orderStatusFields,
+    publicOrderStatusFields,
+  } = buildOrderTransitionPersistenceFields({
+    action,
+    now,
+    actorUserId,
+    reason: transition.reason,
+    estimatedMinutes,
+  })
 
   const [updatedOrder] = await dbSession
     .update(ordersTable)
