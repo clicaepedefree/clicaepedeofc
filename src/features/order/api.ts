@@ -31,8 +31,10 @@ import {
 } from '@/services/db/schema'
 import {
   createPublicTrackingToken,
+  encryptPublicTrackingToken,
   hashPublicIdentifier,
   PUBLIC_ORDER_TRACKING_TTL_MS,
+  recoverActivePublicTrackingToken,
 } from '@/features/digital-menu/public-order-security'
 import { requireAuth } from '@/services/auth'
 import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
@@ -348,34 +350,86 @@ export const createOrderPublicTrackingLink = async (input: {
   storeId: number
 }) => {
   const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
-  const [order] = await db
-    .select({
-      id: ordersTable.id,
-      storeId: ordersTable.storeId,
-      salesChannel: ordersTable.salesChannel,
-    })
-    .from(ordersTable)
-    .where(
-      and(
-        eq(ordersTable.id, input.orderId),
-        eq(ordersTable.storeId, input.storeId)
+  const securitySecret = getPublicOrderSecuritySecret()
+
+  return await db.transaction(async tx => {
+    const [order] = await tx
+      .select({
+        id: ordersTable.id,
+        storeId: ordersTable.storeId,
+        salesChannel: ordersTable.salesChannel,
+        publicTrackingTokenHash: ordersTable.publicTrackingTokenHash,
+        publicTrackingTokenEncrypted: ordersTable.publicTrackingTokenEncrypted,
+        publicTrackingExpiresAt: ordersTable.publicTrackingExpiresAt,
+      })
+      .from(ordersTable)
+      .where(
+        and(
+          eq(ordersTable.id, input.orderId),
+          eq(ordersTable.storeId, input.storeId)
+        )
       )
-    )
-    .limit(1)
+      .limit(1)
+      .for('update')
 
-  if (!order || order.salesChannel !== 'DIGITAL_MENU') {
-    throw new Error('Link publico disponivel apenas para pedidos digitais.')
-  }
+    if (!order || order.salesChannel !== 'DIGITAL_MENU') {
+      throw new Error('Link publico disponivel apenas para pedidos digitais.')
+    }
 
-  const token = createPublicTrackingToken()
-  const tokenHash = hashPublicIdentifier(token, getPublicOrderSecuritySecret())
-  const expiresAt = new Date(Date.now() + PUBLIC_ORDER_TRACKING_TTL_MS)
+    const now = new Date()
+    const activeToken = recoverActivePublicTrackingToken({
+      encryptedToken: order.publicTrackingTokenEncrypted,
+      tokenHash: order.publicTrackingTokenHash,
+      expiresAt: order.publicTrackingExpiresAt,
+      secret: securitySecret,
+      now,
+    })
 
-  await db.transaction(async tx => {
+    if (activeToken && order.publicTrackingExpiresAt) {
+      await createOrderAuditEventOnDb({
+        dbSession: tx,
+        event: {
+          orderId: input.orderId,
+          storeId: input.storeId,
+          eventType: 'note_added',
+          fromStatus: null,
+          toStatus: null,
+          actorType: 'store',
+          actorUserId: user.id,
+          origin: 'DIGITAL_MENU',
+          requestId: crypto.randomUUID(),
+          reason: 'Link publico de acompanhamento copiado pela loja.',
+          metadata: { expiresAt: order.publicTrackingExpiresAt.toISOString() },
+        },
+      })
+
+      return {
+        token: activeToken,
+        expiresAt: order.publicTrackingExpiresAt.toISOString(),
+        reused: true,
+      }
+    }
+
+    if (
+      order.publicTrackingTokenHash &&
+      order.publicTrackingExpiresAt &&
+      order.publicTrackingExpiresAt > now
+    ) {
+      throw new Error(
+        'Este pedido ja possui um link publico ativo criado antes da recuperacao segura de links. Para nao invalidar o link do cliente, aguarde a expiracao ou crie um novo pedido.'
+      )
+    }
+
+    const token = createPublicTrackingToken()
+    const tokenHash = hashPublicIdentifier(token, securitySecret)
+    const tokenEncrypted = encryptPublicTrackingToken(token, securitySecret)
+    const expiresAt = new Date(now.getTime() + PUBLIC_ORDER_TRACKING_TTL_MS)
+
     await tx
       .update(ordersTable)
       .set({
         publicTrackingTokenHash: tokenHash,
+        publicTrackingTokenEncrypted: tokenEncrypted,
         publicTrackingExpiresAt: expiresAt,
       })
       .where(
@@ -389,6 +443,7 @@ export const createOrderPublicTrackingLink = async (input: {
       .update(publicOrderSubmissionsTable)
       .set({
         trackingTokenHash: tokenHash,
+        trackingTokenEncrypted: tokenEncrypted,
         trackingExpiresAt: expiresAt,
       })
       .where(
@@ -411,12 +466,15 @@ export const createOrderPublicTrackingLink = async (input: {
         origin: 'DIGITAL_MENU',
         requestId: crypto.randomUUID(),
         reason: 'Link publico de acompanhamento regenerado pela loja.',
-        metadata: { expiresAt: expiresAt.toISOString() },
+        metadata: {
+          expiresAt: expiresAt.toISOString(),
+          regenerationReason: 'missing_or_expired_token',
+        },
       },
     })
-  })
 
-  return { token, expiresAt: expiresAt.toISOString() }
+    return { token, expiresAt: expiresAt.toISOString(), reused: false }
+  })
 }
 
 /**

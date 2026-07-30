@@ -66,6 +66,7 @@ export const ordersTable = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     publicTrackingTokenHash: text('public_tracking_token_hash'),
+    publicTrackingTokenEncrypted: text('public_tracking_token_encrypted'),
     publicTrackingExpiresAt: timestamp('public_tracking_expires_at', { withTimezone: true }),
     lastPrintedAt: timestamp('last_printed_at', { withTimezone: true }),
     printCount: integer('print_count').notNull().default(0),
