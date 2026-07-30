@@ -1114,9 +1114,9 @@ export const DigitalMenuClient = ({
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[220px_1fr]">
-        <aside className="lg:sticky lg:top-5 lg:h-fit">
-          <nav className="flex gap-2 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+      <div className="mx-auto grid w-full max-w-6xl min-w-0 grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="min-w-0 lg:sticky lg:top-5 lg:h-fit">
+          <nav className="flex min-w-0 max-w-full gap-2 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
             {menu.categories.map(category => (
               <button
                 key={category.id}
@@ -1140,8 +1140,8 @@ export const DigitalMenuClient = ({
           </nav>
         </aside>
 
-        <section className="space-y-8 pb-24">
-          <div className="sticky top-0 z-20 -mx-4 border-b bg-background/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:rounded-xl lg:border lg:bg-card/70 lg:p-4">
+        <section className="min-w-0 space-y-8 pb-24">
+          <div className="sticky top-0 z-20 -mx-4 max-w-[calc(100%+2rem)] border-b bg-background/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:max-w-full lg:rounded-xl lg:border lg:bg-card/70 lg:p-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -1151,7 +1151,7 @@ export const DigitalMenuClient = ({
                 className="h-11 pl-9"
               />
             </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mt-3 flex max-w-full gap-2 overflow-x-auto pb-1">
               {[
                 ['ALL', 'Todos'],
                 ['RECOMMENDED', 'Recomendados'],
@@ -1190,7 +1190,7 @@ export const DigitalMenuClient = ({
                   Recomendados para pedir agora
                 </h2>
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-1">
+              <div className="flex max-w-full gap-3 overflow-x-auto pb-1">
                 {recommendedItems.map(item => (
                   <button
                     key={item.itemOfferingId}
