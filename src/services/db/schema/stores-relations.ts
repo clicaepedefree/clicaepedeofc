@@ -7,6 +7,7 @@ import { storeBillingPaymentsTable } from '@/services/db/schema/store-billing-pa
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
 import { storeFilesTable } from '@/services/db/schema/store-files'
 import { storeMenusTable } from '@/services/db/schema/store-menus'
+import { storeModuleEntitlementsTable } from '@/services/db/schema/store-module-entitlements'
 import { storeSubscriptionsTable } from '@/services/db/schema/store-subscriptions'
 import { storesTable } from '@/services/db/schema/stores'
 import { relations } from 'drizzle-orm'
@@ -22,4 +23,5 @@ export const storeRelations = relations(storesTable, ({ many }) => ({
   billingInvoices: many(storeBillingInvoicesTable),
   billingPayments: many(storeBillingPaymentsTable),
   billingEvents: many(storeBillingEventsTable),
+  moduleEntitlements: many(storeModuleEntitlementsTable),
 }))

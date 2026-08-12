@@ -83,6 +83,11 @@ export const storeSubscriptionsTable = pgTable(
       .where(
         sql`${table.status} in ('trialing', 'active', 'past_due', 'paused')`
       ),
+    uniqueIndex('store_subscriptions_id_store_plan_unique').on(
+      table.id,
+      table.storeId,
+      table.planId
+    ),
   ]
 )
 
