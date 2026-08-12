@@ -26,7 +26,10 @@ export const isUserAdminOfAnyStore = async (userId: string) => {
   const [store] = await db
     .select({ id: storesTable.id })
     .from(userStorePermissionsTable)
-    .innerJoin(storesTable, eq(storesTable.id, userStorePermissionsTable.storeId))
+    .innerJoin(
+      storesTable,
+      eq(storesTable.id, userStorePermissionsTable.storeId)
+    )
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
     .where(
       and(
@@ -52,7 +55,10 @@ export const getUserStorePermissions = async (
       store: storesTable,
     })
     .from(userStorePermissionsTable)
-    .innerJoin(storesTable, eq(storesTable.id, userStorePermissionsTable.storeId))
+    .innerJoin(
+      storesTable,
+      eq(storesTable.id, userStorePermissionsTable.storeId)
+    )
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
     .where(
       and(
@@ -131,6 +137,8 @@ const createStoreWithAdminPermission = async ({
       userId,
       storeId: createdStore.id,
       role: 'admin',
+      isPrimaryResponsible: true,
+      assignedPrimaryAt: new Date(),
     })
 
     return createdStore
