@@ -1,14 +1,61 @@
 import { currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 
-export const internalRoles = ['viewer', 'support', 'ops_admin'] as const
+export const internalRoles = [
+  'superadmin',
+  'finance',
+  'support',
+  'sales',
+  'implementation',
+  'viewer',
+] as const
 
 export type InternalRole = (typeof internalRoles)[number]
 
-const roleRank: Record<InternalRole, number> = {
-  viewer: 1,
-  support: 2,
-  ops_admin: 3,
+export const internalRoleLabels: Record<InternalRole, string> = {
+  superadmin: 'Superadmin',
+  finance: 'Financeiro',
+  support: 'Suporte',
+  sales: 'Comercial',
+  implementation: 'Implantacao',
+  viewer: 'Leitura',
+}
+
+export const internalPermissions = [
+  'view_internal_operations',
+  'reactivate_store',
+  'archive_store',
+  'manage_billing_values',
+  'manage_billing_invoices',
+  'apply_billing_discounts',
+  'cancel_billing',
+  'block_store',
+] as const
+
+export type InternalPermission = (typeof internalPermissions)[number]
+
+const rolePermissionMap: Record<InternalRole, ReadonlySet<InternalPermission>> = {
+  superadmin: new Set(internalPermissions),
+  finance: new Set([
+    'view_internal_operations',
+    'manage_billing_values',
+    'manage_billing_invoices',
+    'apply_billing_discounts',
+    'cancel_billing',
+  ]),
+  support: new Set([
+    'view_internal_operations',
+    'reactivate_store',
+  ]),
+  sales: new Set([
+    'view_internal_operations',
+    'apply_billing_discounts',
+  ]),
+  implementation: new Set([
+    'view_internal_operations',
+    'reactivate_store',
+  ]),
+  viewer: new Set(['view_internal_operations']),
 }
 
 export type InternalOperator = {
@@ -20,21 +67,43 @@ export type InternalOperator = {
 
 export function parseInternalRole(value: unknown): InternalRole | null {
   if (typeof value !== 'string') return null
+
+  if (value === 'ops_admin') return 'superadmin'
   if (!internalRoles.includes(value as InternalRole)) return null
 
   return value as InternalRole
 }
 
-export function canUseInternalRole({
+export function canUseInternalPermission({
+  currentRole,
+  permission,
+}: {
+  currentRole: InternalRole | null
+  permission: InternalPermission
+}) {
+  if (!currentRole) return false
+
+  return rolePermissionMap[currentRole].has(permission)
+}
+
+export const canUseInternalRole = ({
   currentRole,
   minimumRole,
 }: {
   currentRole: InternalRole | null
   minimumRole: InternalRole
-}) {
+}) => {
   if (!currentRole) return false
 
-  return roleRank[currentRole] >= roleRank[minimumRole]
+  return (
+    currentRole === minimumRole ||
+    currentRole === 'superadmin' ||
+    (minimumRole === 'viewer' &&
+      canUseInternalPermission({
+        currentRole,
+        permission: 'view_internal_operations',
+      }))
+  )
 }
 
 export async function getInternalOperator(): Promise<InternalOperator | null> {
@@ -66,6 +135,21 @@ export async function getInternalOperatorSafe(): Promise<InternalOperator | null
     console.error('[internal-operations] Failed to resolve internal operator', error)
     return null
   }
+}
+
+export async function requireInternalPermission(
+  permission: InternalPermission
+): Promise<InternalOperator> {
+  const operator = await getInternalOperator()
+
+  if (
+    !operator ||
+    !canUseInternalPermission({ currentRole: operator.role, permission })
+  ) {
+    redirect('/unauthorized')
+  }
+
+  return operator
 }
 
 export async function requireInternalOperator(

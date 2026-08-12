@@ -1,5 +1,8 @@
 import { AdminHeader } from '@/features/admin/components/admin-header'
-import { getInternalOperatorSafe } from '@/features/internal-operations/access'
+import {
+  canUseInternalPermission,
+  getInternalOperatorSafe,
+} from '@/features/internal-operations/access'
 import { validateAdminAccess } from '@/features/store/api'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { AppSidebar } from '@/shared/sidebar/app-sidebar'
@@ -98,7 +101,13 @@ export default async function AdminLayout({
   await validateAdminAccess()
   const internalOperator = await getInternalOperatorSafe()
   const internalOperationHref =
-    internalOperator?.role === 'ops_admin' ? '/internal-operations' : undefined
+    internalOperator &&
+    canUseInternalPermission({
+      currentRole: internalOperator.role,
+      permission: 'view_internal_operations',
+    })
+      ? '/internal-operations'
+      : undefined
 
   return (
     <AuthProviders clerkProviderProps={{ afterSignOutUrl: '/login' }}>

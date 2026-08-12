@@ -1,4 +1,7 @@
-import { canUseInternalRole, type InternalOperator } from '@/features/internal-operations/access'
+import {
+  canUseInternalPermission,
+  type InternalOperator,
+} from '@/features/internal-operations/access'
 import {
   InternalStoresTable,
   type SerializableInternalStoreListItem,
@@ -116,7 +119,7 @@ export async function InternalStoresPanel({
         <p className="text-sm text-rose-800 dark:text-rose-200">
           O acesso interno foi validado, mas a consulta dos dados falhou no servidor.
         </p>
-        {operator.role === 'ops_admin' && (
+        {operator.role === 'superadmin' && (
           <pre className="overflow-auto rounded-md border border-rose-200 bg-card p-3 text-xs text-rose-900 dark:border-rose-900 dark:text-rose-100">
             {getErrorMessage(error)}
           </pre>
@@ -125,13 +128,13 @@ export async function InternalStoresPanel({
     )
   }
 
-  const canReactivate = canUseInternalRole({
+  const canReactivate = canUseInternalPermission({
     currentRole: operator.role,
-    minimumRole: 'support',
+    permission: 'reactivate_store',
   })
-  const canArchive = canUseInternalRole({
+  const canArchive = canUseInternalPermission({
     currentRole: operator.role,
-    minimumRole: 'ops_admin',
+    permission: 'archive_store',
   })
 
   return (
