@@ -25,6 +25,6 @@ describe('getDigitalMenuOrderDomainFailure', () => {
       new Error('database connection failed')
     )
 
-    expect(result).toBeNull()
+    expect(result).toBe(null)
   })
 })
