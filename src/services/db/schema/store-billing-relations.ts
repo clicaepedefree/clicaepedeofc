@@ -1,4 +1,5 @@
 import { billingPlansTable } from '@/services/db/schema/billing-plans'
+import { billingPlanModulesTable } from '@/services/db/schema/billing-plan-modules'
 import { storesTable } from '@/services/db/schema/stores'
 import { storeBillingEventsTable } from '@/services/db/schema/store-billing-events'
 import { storeBillingInvoicesTable } from '@/services/db/schema/store-billing-invoices'
@@ -9,6 +10,7 @@ import { relations } from 'drizzle-orm'
 export const billingPlanRelations = relations(
   billingPlansTable,
   ({ many }) => ({
+    modules: many(billingPlanModulesTable),
     subscriptions: many(storeSubscriptionsTable),
     invoices: many(storeBillingInvoicesTable),
   })
