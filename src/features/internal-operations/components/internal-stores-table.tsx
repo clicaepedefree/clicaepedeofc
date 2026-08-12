@@ -11,12 +11,14 @@ import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
 import { Textarea } from '@/shared/textarea'
-import { Archive, RotateCcw } from 'lucide-react'
+import { Archive, History, RotateCcw } from 'lucide-react'
+import Link from 'next/link'
 
 type InternalStoresTableProps = {
   stores: SerializableInternalStoreListItem[]
   canReactivate: boolean
   canArchive: boolean
+  canViewSensitiveAuditLogs: boolean
   returnTo: string
 }
 
@@ -69,6 +71,7 @@ export function InternalStoresTable({
   stores,
   canReactivate,
   canArchive,
+  canViewSensitiveAuditLogs,
   returnTo,
 }: InternalStoresTableProps) {
   if (stores.length === 0) {
@@ -103,7 +106,7 @@ export function InternalStoresTable({
                   <div className="space-y-1">
                     <div className="font-medium text-foreground">{store.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      #{store.id} · {store.subdomain}
+                      #{store.id} - {store.subdomain}
                     </div>
                     {store.statusReason && (
                       <div className="max-w-[420px] text-xs text-muted-foreground">
@@ -129,11 +132,11 @@ export function InternalStoresTable({
                         <div key={`${store.id}-${admin.userId}`} className="text-sm">
                           <div className="font-medium text-foreground">{admin.email}</div>
                           <div className="text-xs text-muted-foreground">
-                            {admin.name ?? 'Sem nome'} · {admin.userStatus}
+                            {admin.name ?? 'Sem nome'} - {admin.userStatus}
                             {admin.revokedAt && (
                               <>
                                 {' '}
-                                · revogado em {formatDateTime(admin.revokedAt)}
+                                - revogado em {formatDateTime(admin.revokedAt)}
                               </>
                             )}
                           </div>
@@ -147,6 +150,15 @@ export function InternalStoresTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
+                    {canViewSensitiveAuditLogs && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/internal/stores/${store.id}/audit`}>
+                          <History className="size-4" />
+                          Auditoria
+                        </Link>
+                      </Button>
+                    )}
+
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button

@@ -1,5 +1,6 @@
 export * from './categories'
 export * from './categories-relations'
+export * from './administrative-audit-logs'
 export * from './billing-module-relations'
 export * from './billing-modules'
 export * from './billing-plan-modules'

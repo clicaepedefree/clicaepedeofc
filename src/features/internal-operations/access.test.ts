@@ -74,6 +74,7 @@ describe('internal operation access policy', () => {
         'manage_billing_invoices',
         'apply_billing_discounts',
         'cancel_billing',
+        'view_sensitive_audit_logs',
       ],
     })
   })
@@ -81,7 +82,11 @@ describe('internal operation access policy', () => {
   test('limits support to support operations without billing changes', () => {
     expectPermissions({
       role: 'support',
-      allowed: ['view_internal_operations', 'reactivate_store'],
+      allowed: [
+        'view_internal_operations',
+        'reactivate_store',
+        'view_sensitive_audit_logs',
+      ],
     })
   })
 

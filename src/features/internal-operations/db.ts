@@ -2,13 +2,15 @@ import type { InternalOperator } from '@/features/internal-operations/access'
 import { normalizeUserEmail } from '@/features/user/user-policy'
 import { db } from '@/services/db'
 import {
+  administrativeAuditLogsTable,
   internalOperationAuditLogsTable,
   storesTable,
   userStorePermissionsTable,
   usersTable,
   type SelectStore,
 } from '@/services/db/schema'
-import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, lt, ne, or, sql } from 'drizzle-orm'
+import { buildAdministrativeAuditLogInput } from './administrative-audit-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -34,6 +36,8 @@ export type InternalStoreListItem = Pick<
 }
 
 export type InternalAuditLog = typeof internalOperationAuditLogsTable.$inferSelect
+export type AdministrativeAuditLog =
+  typeof administrativeAuditLogsTable.$inferSelect
 
 const storeStatusValues: InternalStoreStatus[] = [
   'active',
@@ -41,6 +45,24 @@ const storeStatusValues: InternalStoreStatus[] = [
   'pending_recovery',
   'archived',
 ]
+
+const serializePermissionSnapshot = (permission: {
+  userId: string
+  storeId: number
+  role: string
+  isPrimaryResponsible?: boolean | null
+  revokedAt?: Date | null
+  revokedReason?: string | null
+  email?: string | null
+}) => ({
+  userId: permission.userId,
+  storeId: permission.storeId,
+  role: permission.role,
+  email: permission.email ?? null,
+  isPrimaryResponsible: permission.isPrimaryResponsible ?? null,
+  revokedAt: permission.revokedAt?.toISOString() ?? null,
+  revokedReason: permission.revokedReason ?? null,
+})
 
 export function parseStoreStatus(value: unknown): InternalStoreStatus | undefined {
   if (typeof value !== 'string') return undefined
@@ -164,6 +186,59 @@ export async function getRecentInternalAuditLogs(limit = 25) {
     .limit(limit)
 }
 
+export async function listAdministrativeAuditLogsByStore({
+  storeId,
+  limit = 20,
+  cursor,
+}: {
+  storeId: number
+  limit?: number
+  cursor?: {
+    createdAt: Date
+    id: number
+  }
+}) {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 50)
+
+  const rows = await db
+    .select()
+    .from(administrativeAuditLogsTable)
+    .where(
+      and(
+        eq(administrativeAuditLogsTable.storeId, storeId),
+        cursor
+          ? or(
+              lt(administrativeAuditLogsTable.createdAt, cursor.createdAt),
+              and(
+                eq(administrativeAuditLogsTable.createdAt, cursor.createdAt),
+                lt(administrativeAuditLogsTable.id, cursor.id)
+              )
+            )
+          : undefined
+      )
+    )
+    .orderBy(
+      desc(administrativeAuditLogsTable.createdAt),
+      desc(administrativeAuditLogsTable.id)
+    )
+    .limit(safeLimit + 1)
+
+  const hasNextPage = rows.length > safeLimit
+  const items = hasNextPage ? rows.slice(0, safeLimit) : rows
+  const lastItem = items.at(-1)
+
+  return {
+    items,
+    nextCursor:
+      hasNextPage && lastItem
+        ? {
+            id: lastItem.id,
+            createdAt: lastItem.createdAt,
+          }
+        : null,
+  }
+}
+
 export async function reactivateStoreWithAdmin({
   storeId,
   adminEmail,
@@ -202,6 +277,26 @@ export async function reactivateStoreWithAdmin({
       .limit(1)
 
     if (!targetUser) throw new Error('TARGET_USER_NOT_FOUND')
+
+    const [previousTargetPermission] = await tx
+      .select({
+        userId: userStorePermissionsTable.userId,
+        storeId: userStorePermissionsTable.storeId,
+        role: userStorePermissionsTable.role,
+        isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
+        revokedAt: userStorePermissionsTable.revokedAt,
+        revokedReason: userStorePermissionsTable.revokedReason,
+        email: usersTable.email,
+      })
+      .from(userStorePermissionsTable)
+      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .where(
+        and(
+          eq(userStorePermissionsTable.userId, targetUser.id),
+          eq(userStorePermissionsTable.storeId, storeId)
+        )
+      )
+      .limit(1)
 
     await tx
       .insert(userStorePermissionsTable)
@@ -256,6 +351,41 @@ export async function reactivateStoreWithAdmin({
       reason,
     })
 
+    await tx.insert(administrativeAuditLogsTable).values(
+      buildAdministrativeAuditLogInput({
+        operator,
+        storeId,
+        scope: 'access',
+        action: 'reactivate',
+        entityType: 'store',
+        entityId: storeId,
+        targetUserId: targetUser.id,
+        targetUserEmail: targetUser.email,
+        reason,
+        previousValues: {
+          storeStatus: store.status,
+          targetPermission: previousTargetPermission
+            ? serializePermissionSnapshot(previousTargetPermission)
+            : null,
+        },
+        newValues: {
+          storeStatus: updatedStore.status,
+          targetPermission: serializePermissionSnapshot({
+            userId: targetUser.id,
+            storeId,
+            role: 'admin',
+            revokedAt: null,
+            revokedReason: null,
+            email: targetUser.email,
+          }),
+        },
+        metadata: {
+          source: 'internal_operations',
+          legacyAuditAction: 'reactivate_store',
+        },
+      })
+    )
+
     return updatedStore
   })
 }
@@ -286,7 +416,26 @@ export async function archiveStore({
       throw new Error('STORE_CONFIRMATION_MISMATCH')
     }
 
-    await tx
+    const activePermissionsBeforeArchive = await tx
+      .select({
+        userId: userStorePermissionsTable.userId,
+        storeId: userStorePermissionsTable.storeId,
+        role: userStorePermissionsTable.role,
+        isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
+        revokedAt: userStorePermissionsTable.revokedAt,
+        revokedReason: userStorePermissionsTable.revokedReason,
+        email: usersTable.email,
+      })
+      .from(userStorePermissionsTable)
+      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .where(
+        and(
+          eq(userStorePermissionsTable.storeId, storeId),
+          sql`${userStorePermissionsTable.revokedAt} is null`
+        )
+      )
+
+    const revokedPermissions = await tx
       .update(userStorePermissionsTable)
       .set({
         revokedAt: now,
@@ -299,6 +448,14 @@ export async function archiveStore({
           sql`${userStorePermissionsTable.revokedAt} is null`
         )
       )
+      .returning({
+        userId: userStorePermissionsTable.userId,
+        storeId: userStorePermissionsTable.storeId,
+        role: userStorePermissionsTable.role,
+        isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
+        revokedAt: userStorePermissionsTable.revokedAt,
+        revokedReason: userStorePermissionsTable.revokedReason,
+      })
 
     const [updatedStore] = await tx
       .update(storesTable)
@@ -324,6 +481,32 @@ export async function archiveStore({
       newStoreStatus: updatedStore.status,
       reason,
     })
+
+    await tx.insert(administrativeAuditLogsTable).values(
+      buildAdministrativeAuditLogInput({
+        operator,
+        storeId,
+        scope: 'access',
+        action: 'archive',
+        entityType: 'store',
+        entityId: storeId,
+        reason,
+        previousValues: {
+          storeStatus: store.status,
+          activePermissions: activePermissionsBeforeArchive.map(
+            serializePermissionSnapshot
+          ),
+        },
+        newValues: {
+          storeStatus: updatedStore.status,
+          revokedPermissions: revokedPermissions.map(serializePermissionSnapshot),
+        },
+        metadata: {
+          source: 'internal_operations',
+          legacyAuditAction: 'archive_store',
+        },
+      })
+    )
 
     return updatedStore
   })

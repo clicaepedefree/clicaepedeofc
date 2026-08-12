@@ -30,6 +30,7 @@ export const internalPermissions = [
   'apply_billing_discounts',
   'cancel_billing',
   'block_store',
+  'view_sensitive_audit_logs',
 ] as const
 
 export type InternalPermission = (typeof internalPermissions)[number]
@@ -42,10 +43,12 @@ const rolePermissionMap: Record<InternalRole, ReadonlySet<InternalPermission>> =
     'manage_billing_invoices',
     'apply_billing_discounts',
     'cancel_billing',
+    'view_sensitive_audit_logs',
   ]),
   support: new Set([
     'view_internal_operations',
     'reactivate_store',
+    'view_sensitive_audit_logs',
   ]),
   sales: new Set([
     'view_internal_operations',

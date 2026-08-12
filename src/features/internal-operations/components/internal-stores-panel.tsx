@@ -136,6 +136,10 @@ export async function InternalStoresPanel({
     currentRole: operator.role,
     permission: 'archive_store',
   })
+  const canViewSensitiveAuditLogs = canUseInternalPermission({
+    currentRole: operator.role,
+    permission: 'view_sensitive_audit_logs',
+  })
 
   return (
     <div className="space-y-6">
@@ -229,6 +233,7 @@ export async function InternalStoresPanel({
           stores={serializeStoresForClient(stores)}
           canReactivate={canReactivate}
           canArchive={canArchive}
+          canViewSensitiveAuditLogs={canViewSensitiveAuditLogs}
           returnTo={basePath}
         />
       </section>
