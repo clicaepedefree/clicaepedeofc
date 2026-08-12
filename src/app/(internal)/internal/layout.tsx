@@ -1,4 +1,7 @@
-import { requireInternalOperator } from '@/features/internal-operations/access'
+import {
+  internalRoleLabels,
+  requireInternalOperator,
+} from '@/features/internal-operations/access'
 import { Badge } from '@/shared/badge'
 import { UserButton } from '@clerk/nextjs'
 import { ShieldCheck } from 'lucide-react'
@@ -25,7 +28,7 @@ export default async function InternalLayout({
                 Operacao Clica e Pede
               </Link>
               <Badge variant="outline" className="bg-muted">
-                {operator.role}
+                {internalRoleLabels[operator.role]}
               </Badge>
             </div>
             <div className="flex items-center gap-3 text-sm text-muted-foreground">

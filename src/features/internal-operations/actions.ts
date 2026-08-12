@@ -1,10 +1,10 @@
 'use server'
 
-import { requireInternalOperator } from '@/features/internal-operations/access'
 import {
   archiveStore,
   reactivateStoreWithAdmin,
 } from '@/features/internal-operations/db'
+import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -29,7 +29,7 @@ const redirectWithError = (returnPath: string, message: string): never => {
 }
 
 export async function reactivateStoreAction(formData: FormData) {
-  const operator = await requireInternalOperator('support')
+  const operator = await requireInternalOperation('reactivateStore')
   const storeId = Number(getRequiredString(formData, 'storeId'))
   const adminEmail = getRequiredString(formData, 'adminEmail')
   const reason = getRequiredString(formData, 'reason')
@@ -75,7 +75,7 @@ export async function reactivateStoreAction(formData: FormData) {
 }
 
 export async function archiveStoreAction(formData: FormData) {
-  const operator = await requireInternalOperator('ops_admin')
+  const operator = await requireInternalOperation('archiveStore')
   const storeId = Number(getRequiredString(formData, 'storeId'))
   const confirmation = getRequiredString(formData, 'confirmation')
   const reason = getRequiredString(formData, 'reason')

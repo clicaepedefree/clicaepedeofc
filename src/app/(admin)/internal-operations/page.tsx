@@ -1,5 +1,5 @@
 import {
-  canUseInternalRole,
+  canUseInternalPermission,
   getInternalOperatorSafe,
 } from '@/features/internal-operations/access'
 import { InternalStoresPanel } from '@/features/internal-operations/components/internal-stores-panel'
@@ -23,7 +23,10 @@ export default async function InternalOperationsPage({
 
   if (
     !operator ||
-    !canUseInternalRole({ currentRole: operator.role, minimumRole: 'viewer' })
+    !canUseInternalPermission({
+      currentRole: operator.role,
+      permission: 'view_internal_operations',
+    })
   ) {
     redirect('/unauthorized')
   }
