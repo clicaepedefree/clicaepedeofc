@@ -88,7 +88,11 @@ describe('internal operation access policy', () => {
   test('allows sales to apply commercial discounts without changing invoices', () => {
     expectPermissions({
       role: 'sales',
-      allowed: ['view_internal_operations', 'apply_billing_discounts'],
+      allowed: [
+        'view_internal_operations',
+        'create_store',
+        'apply_billing_discounts',
+      ],
     })
   })
 
@@ -109,6 +113,7 @@ describe('internal operation access policy', () => {
 
   test('maps backend internal operations to explicit permissions', () => {
     expect(internalOperationPermissionRequirements).toEqual({
+      createStore: 'create_store',
       reactivateStore: 'reactivate_store',
       archiveStore: 'archive_store',
       manageBillingValues: 'manage_billing_values',
@@ -120,6 +125,18 @@ describe('internal operation access policy', () => {
   })
 
   test('authorizes backend operations through the operation permission map', () => {
+    expect(
+      canRunInternalOperation({
+        operator: { role: 'sales' },
+        operation: 'createStore',
+      })
+    ).toBe(true)
+    expect(
+      canRunInternalOperation({
+        operator: { role: 'support' },
+        operation: 'createStore',
+      })
+    ).toBe(false)
     expect(
       canRunInternalOperation({
         operator: { role: 'implementation' },

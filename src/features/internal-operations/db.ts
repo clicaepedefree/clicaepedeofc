@@ -2,13 +2,23 @@ import type { InternalOperator } from '@/features/internal-operations/access'
 import { normalizeUserEmail } from '@/features/user/user-policy'
 import { db } from '@/services/db'
 import {
+  billingModulesTable,
+  billingPlanModulesTable,
+  billingPlansTable,
   internalOperationAuditLogsTable,
+  storeAddressesTable,
+  storeBillingEventsTable,
+  storeCompanyProfilesTable,
+  storeModuleEntitlementsTable,
+  storeSubscriptionsTable,
   storesTable,
   userStorePermissionsTable,
   usersTable,
   type SelectStore,
 } from '@/services/db/schema'
 import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import type { InternalStoreCreationValues } from './internal-store-creation-policy'
+import { normalizeCurrencyAmount } from './internal-store-creation-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -34,6 +44,26 @@ export type InternalStoreListItem = Pick<
 }
 
 export type InternalAuditLog = typeof internalOperationAuditLogsTable.$inferSelect
+
+export type InternalBillingPlanOption = {
+  id: number
+  code: string
+  name: string
+  description: string | null
+  defaultAmount: string
+  currency: string
+  billingInterval: string
+  billingIntervalCount: number
+  trialDays: number
+}
+
+export type InternalBillingModuleOption = {
+  id: number
+  code: string
+  name: string
+  description: string | null
+  includedPlanIds: number[]
+}
 
 const storeStatusValues: InternalStoreStatus[] = [
   'active',
@@ -162,6 +192,394 @@ export async function getRecentInternalAuditLogs(limit = 25) {
     .from(internalOperationAuditLogsTable)
     .orderBy(desc(internalOperationAuditLogsTable.createdAt))
     .limit(limit)
+}
+
+export async function listActiveBillingPlansForInternalCreation(): Promise<
+  InternalBillingPlanOption[]
+> {
+  return await db
+    .select({
+      id: billingPlansTable.id,
+      code: billingPlansTable.code,
+      name: billingPlansTable.name,
+      description: billingPlansTable.description,
+      defaultAmount: billingPlansTable.defaultAmount,
+      currency: billingPlansTable.currency,
+      billingInterval: billingPlansTable.billingInterval,
+      billingIntervalCount: billingPlansTable.billingIntervalCount,
+      trialDays: billingPlansTable.trialDays,
+    })
+    .from(billingPlansTable)
+    .where(eq(billingPlansTable.status, 'active'))
+    .orderBy(billingPlansTable.name)
+}
+
+export async function listBillingModulesForInternalCreation(): Promise<
+  InternalBillingModuleOption[]
+> {
+  const rows = await db
+    .select({
+      id: billingModulesTable.id,
+      code: billingModulesTable.code,
+      name: billingModulesTable.name,
+      description: billingModulesTable.description,
+      planId: billingPlanModulesTable.planId,
+    })
+    .from(billingModulesTable)
+    .leftJoin(
+      billingPlanModulesTable,
+      and(
+        eq(billingPlanModulesTable.moduleId, billingModulesTable.id),
+        eq(billingPlanModulesTable.status, 'active'),
+        sql`${billingPlanModulesTable.endsAt} is null`
+      )
+    )
+    .where(eq(billingModulesTable.status, 'active'))
+    .orderBy(billingModulesTable.name)
+
+  const modulesById = new Map<number, InternalBillingModuleOption>()
+
+  for (const row of rows) {
+    const current = modulesById.get(row.id) ?? {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      description: row.description,
+      includedPlanIds: [],
+    }
+
+    if (row.planId && !current.includedPlanIds.includes(row.planId)) {
+      current.includedPlanIds.push(row.planId)
+    }
+
+    modulesById.set(row.id, current)
+  }
+
+  return [...modulesById.values()]
+}
+
+const addDays = (date: Date, days: number) => {
+  const result = new Date(date)
+  result.setUTCDate(result.getUTCDate() + days)
+  return result
+}
+
+const lastDayOfMonth = (year: number, monthIndex: number) =>
+  new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
+
+const addMonthsClamped = (date: Date, months: number) => {
+  const year = date.getUTCFullYear()
+  const month = date.getUTCMonth()
+  const day = date.getUTCDate()
+  const result = new Date(
+    Date.UTC(
+      year,
+      month + months,
+      1,
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds(),
+      date.getUTCMilliseconds()
+    )
+  )
+  result.setUTCDate(
+    Math.min(day, lastDayOfMonth(result.getUTCFullYear(), result.getUTCMonth()))
+  )
+  return result
+}
+
+const intervalToMonths: Record<string, number> = {
+  monthly: 1,
+  quarterly: 3,
+  semiannual: 6,
+  annual: 12,
+}
+
+const getSubscriptionPeriod = ({
+  startsAt,
+  billingInterval,
+  billingIntervalCount,
+  trialDays,
+}: {
+  startsAt: Date
+  billingInterval: string
+  billingIntervalCount: number
+  trialDays: number
+}) => {
+  if (trialDays > 0) {
+    const periodEnd = addDays(startsAt, trialDays)
+    return {
+      status: 'trialing' as const,
+      periodStart: startsAt,
+      periodEnd,
+      nextBillingAt: periodEnd,
+    }
+  }
+
+  const periodEnd = addMonthsClamped(
+    startsAt,
+    (intervalToMonths[billingInterval] ?? 1) * billingIntervalCount
+  )
+
+  return {
+    status: 'active' as const,
+    periodStart: startsAt,
+    periodEnd,
+    nextBillingAt: periodEnd,
+  }
+}
+
+export async function createInternalStore({
+  values,
+  operator,
+}: {
+  values: InternalStoreCreationValues
+  operator: InternalOperator
+}) {
+  const responsibleEmail = normalizeUserEmail(values.responsibleEmail)
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [responsibleUser] = await tx
+      .select()
+      .from(usersTable)
+      .where(
+        and(
+          eq(usersTable.status, 'active'),
+          sql`lower(${usersTable.email}) = ${responsibleEmail}`
+        )
+      )
+      .limit(1)
+
+    if (!responsibleUser) throw new Error('RESPONSIBLE_USER_NOT_FOUND')
+
+    const [plan] = await tx
+      .select()
+      .from(billingPlansTable)
+      .where(
+        and(
+          eq(billingPlansTable.id, values.planId),
+          eq(billingPlansTable.status, 'active')
+        )
+      )
+      .limit(1)
+
+    if (!plan) throw new Error('BILLING_PLAN_NOT_FOUND')
+
+    const [store] = await tx
+      .insert(storesTable)
+      .values({
+        name: values.storeName,
+        subdomain: values.subdomain,
+        status: 'active',
+        statusReason: values.reason,
+        statusUpdatedAt: now,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(userStorePermissionsTable).values({
+      userId: responsibleUser.id,
+      storeId: store.id,
+      role: 'admin',
+      isPrimaryResponsible: true,
+      assignedPrimaryAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(storeCompanyProfilesTable).values({
+      storeId: store.id,
+      companyTaxNumber: values.companyTaxNumber || null,
+      companyName: values.companyName || values.storeName,
+      phone1: values.phone1 || values.responsiblePhone || null,
+      email: values.companyEmail || values.responsibleEmail,
+      responsibleName: values.responsibleName,
+      responsibleTaxNumber: values.responsibleTaxNumber || null,
+      responsiblePhone: values.responsiblePhone || null,
+      responsibleEmail: values.responsibleEmail,
+      postalCode: values.postalCode,
+      street: values.street,
+      number: values.number,
+      district: values.district,
+      city: values.city,
+      stateCode: values.stateCode,
+      updatedAt: now,
+    })
+
+    await tx.insert(storeAddressesTable).values({
+      storeId: store.id,
+      addressType: 'business',
+      label: 'Endereco principal',
+      postalCode: values.postalCode,
+      street: values.street,
+      number: values.number,
+      district: values.district,
+      city: values.city,
+      stateCode: values.stateCode,
+      isPrimary: true,
+      updatedAt: now,
+    })
+
+    const period = getSubscriptionPeriod({
+      startsAt: now,
+      billingInterval: plan.billingInterval,
+      billingIntervalCount: plan.billingIntervalCount,
+      trialDays: plan.trialDays,
+    })
+    const discountType =
+      values.discountType === 'none' ? null : values.discountType
+    const discountValue =
+      values.discountType === 'none' || !values.discountValue
+        ? null
+        : normalizeCurrencyAmount(values.discountValue)
+
+    const [subscription] = await tx
+      .insert(storeSubscriptionsTable)
+      .values({
+        storeId: store.id,
+        planId: plan.id,
+        status: period.status,
+        contractedAmount: normalizeCurrencyAmount(values.contractedAmount),
+        currency: plan.currency,
+        billingInterval: plan.billingInterval,
+        billingIntervalCount: plan.billingIntervalCount,
+        discountType,
+        discountValue,
+        startsAt: now,
+        currentPeriodStart: period.periodStart,
+        currentPeriodEnd: period.periodEnd,
+        nextBillingAt: period.nextBillingAt,
+        metadata: {
+          source: 'internal_store_creation',
+          createdBy: operator.email,
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    const planModules = await tx
+      .select({
+        id: billingPlanModulesTable.id,
+        moduleId: billingPlanModulesTable.moduleId,
+      })
+      .from(billingPlanModulesTable)
+      .innerJoin(
+        billingModulesTable,
+        and(
+          eq(billingModulesTable.id, billingPlanModulesTable.moduleId),
+          eq(billingModulesTable.status, 'active')
+        )
+      )
+      .where(
+        and(
+          eq(billingPlanModulesTable.planId, plan.id),
+          eq(billingPlanModulesTable.status, 'active'),
+          sql`${billingPlanModulesTable.endsAt} is null`
+        )
+      )
+
+    const selectedModuleIds = new Set(values.selectedModuleIds)
+    const selectedActiveModules =
+      selectedModuleIds.size === 0
+        ? []
+        : await tx
+            .select({ id: billingModulesTable.id })
+            .from(billingModulesTable)
+            .where(
+              and(
+                inArray(billingModulesTable.id, [...selectedModuleIds]),
+                eq(billingModulesTable.status, 'active')
+              )
+            )
+
+    if (selectedActiveModules.length !== selectedModuleIds.size) {
+      throw new Error('INVALID_MODULE_SELECTION')
+    }
+
+    const planModuleIds = new Set(planModules.map(module => module.moduleId))
+    const additionalModuleIds = [...selectedModuleIds].filter(
+      moduleId => !planModuleIds.has(moduleId)
+    )
+
+    if (planModules.length > 0) {
+      await tx.insert(storeModuleEntitlementsTable).values(
+        planModules.map(module => ({
+          storeId: store.id,
+          moduleId: module.moduleId,
+          subscriptionId: subscription.id,
+          planId: plan.id,
+          planModuleId: module.id,
+          origin: 'plan' as const,
+          status: 'active' as const,
+          isAdditional: false,
+          additionalAmount: '0',
+          currency: plan.currency,
+          startsAt: now,
+          reason: values.reason,
+          actorClerkId: operator.clerkId,
+          metadata: { source: 'internal_store_creation' },
+          updatedAt: now,
+        }))
+      )
+    }
+
+    if (additionalModuleIds.length > 0) {
+      await tx.insert(storeModuleEntitlementsTable).values(
+        additionalModuleIds.map(moduleId => ({
+          storeId: store.id,
+          moduleId,
+          origin: 'manual' as const,
+          status: 'active' as const,
+          isAdditional: false,
+          additionalAmount: '0',
+          currency: plan.currency,
+          startsAt: now,
+          reason: values.reason,
+          actorClerkId: operator.clerkId,
+          metadata: { source: 'internal_store_creation' },
+          updatedAt: now,
+        }))
+      )
+    }
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: store.id,
+      subscriptionId: subscription.id,
+      eventType: 'subscription_created',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: null,
+      newValues: {
+        storeId: store.id,
+        responsibleUserId: responsibleUser.id,
+        planId: plan.id,
+        subscriptionId: subscription.id,
+        planModuleCount: planModules.length,
+        additionalModuleIds,
+      },
+      metadata: { source: 'internal_store_creation' },
+    })
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'create_store',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: store.id,
+      targetUserId: responsibleUser.id,
+      targetUserEmail: responsibleUser.email,
+      previousStoreStatus: 'none',
+      newStoreStatus: store.status,
+      reason: values.reason,
+    })
+
+    return {
+      store,
+      subscription,
+      responsibleUser,
+    }
+  })
 }
 
 export async function reactivateStoreWithAdmin({

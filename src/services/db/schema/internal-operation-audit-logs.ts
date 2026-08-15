@@ -4,6 +4,7 @@ import { storesTable } from './stores'
 import { usersTable } from './users'
 
 export const internalOperationActions = [
+  'create_store',
   'reactivate_store',
   'archive_store',
 ] as const

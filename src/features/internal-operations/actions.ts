@@ -2,8 +2,10 @@
 
 import {
   archiveStore,
+  createInternalStore,
   reactivateStoreWithAdmin,
 } from '@/features/internal-operations/db'
+import { internalStoreCreationSchema } from '@/features/internal-operations/internal-store-creation-policy'
 import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -26,6 +28,68 @@ const getReturnPath = (formData: FormData) => {
 
 const redirectWithError = (returnPath: string, message: string): never => {
   redirect(`${returnPath}?error=${encodeURIComponent(message)}`)
+}
+
+type CreateInternalStoreActionResult =
+  | { success: true; storeId: number }
+  | { success: false; error: string }
+
+const getInternalStoreCreationErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    if (error.message === 'RESPONSIBLE_USER_NOT_FOUND') {
+      return 'O responsavel precisa ter uma conta ativa no app antes do cadastro.'
+    }
+
+    if (error.message === 'BILLING_PLAN_NOT_FOUND') {
+      return 'Selecione um plano ativo para continuar.'
+    }
+
+    if (error.message === 'INVALID_MODULE_SELECTION') {
+      return 'Selecione apenas modulos ativos para continuar.'
+    }
+
+    if (
+      error.message.includes('stores_subdomain_unique') ||
+      error.message.includes('duplicate key')
+    ) {
+      return 'Esse endereco publico ja esta em uso. Tente outro subdominio.'
+    }
+  }
+
+  return 'Nao foi possivel cadastrar a loja agora.'
+}
+
+export async function createInternalStoreAction(
+  payload: unknown
+): Promise<CreateInternalStoreActionResult> {
+  const operator = await requireInternalOperation('createStore')
+  const parsedPayload = internalStoreCreationSchema.safeParse(payload)
+
+  if (!parsedPayload.success) {
+    return {
+      success: false,
+      error: parsedPayload.error.issues[0]?.message ?? 'Dados invalidos',
+    }
+  }
+
+  try {
+    const result = await createInternalStore({
+      values: parsedPayload.data,
+      operator,
+    })
+
+    revalidatePath('/internal/stores')
+    revalidatePath('/internal-operations')
+
+    return { success: true, storeId: result.store.id }
+  } catch (error) {
+    console.error('[internal-operations] Failed to create internal store', error)
+
+    return {
+      success: false,
+      error: getInternalStoreCreationErrorMessage(error),
+    }
+  }
 }
 
 export async function reactivateStoreAction(formData: FormData) {
