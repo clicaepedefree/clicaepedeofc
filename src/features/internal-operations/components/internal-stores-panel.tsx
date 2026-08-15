@@ -17,7 +17,7 @@ import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/card'
 import { Input } from '@/shared/input'
-import { Search } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import Link from 'next/link'
 
 type InternalStoresPanelProps = {
@@ -42,6 +42,7 @@ const statusTabs: { value?: InternalStoreStatus; label: string }[] = [
 const resultMessages: Record<string, string> = {
   'loja-reativada': 'Loja reativada e administrador vinculado com sucesso.',
   'loja-arquivada': 'Loja arquivada e acessos ativos revogados com sucesso.',
+  'loja-cadastrada': 'Loja cadastrada com responsavel, plano e modulos com sucesso.',
 }
 
 const formatDateTime = (date: Date | string) =>
@@ -52,6 +53,12 @@ const formatDateTime = (date: Date | string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date))
+
+const auditActionLabels: Record<string, string> = {
+  create_store: 'Cadastro',
+  reactivate_store: 'Reativacao',
+  archive_store: 'Arquivamento',
+}
 
 const buildStatusHref = ({
   basePath,
@@ -136,6 +143,10 @@ export async function InternalStoresPanel({
     currentRole: operator.role,
     permission: 'archive_store',
   })
+  const canCreateStore = canUseInternalPermission({
+    currentRole: operator.role,
+    permission: 'create_store',
+  })
 
   return (
     <div className="space-y-6">
@@ -147,19 +158,29 @@ export async function InternalStoresPanel({
             Gerencie lojas por status, reative contas recuperadas e arquive lojas manualmente com auditoria.
           </p>
         </div>
-        <form className="flex w-full gap-2 md:w-[380px]" action={basePath}>
-          {status && <input type="hidden" name="status" value={status} />}
-          <Input
-            name="q"
-            defaultValue={search}
-            placeholder="Buscar loja, subdominio ou admin"
-            containerClassName="flex-1"
-          />
-          <Button type="submit" isClickable>
-            <Search className="size-4" />
-            Buscar
-          </Button>
-        </form>
+        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+          {canCreateStore && (
+            <Button asChild isClickable>
+              <Link href="/internal/stores/new">
+                <Plus className="size-4" />
+                Cadastrar loja
+              </Link>
+            </Button>
+          )}
+          <form className="flex w-full gap-2 md:w-[380px]" action={basePath}>
+            {status && <input type="hidden" name="status" value={status} />}
+            <Input
+              name="q"
+              defaultValue={search}
+              placeholder="Buscar loja, subdominio ou admin"
+              containerClassName="flex-1"
+            />
+            <Button type="submit" isClickable>
+              <Search className="size-4" />
+              Buscar
+            </Button>
+          </form>
+        </div>
       </section>
 
       {searchParams.result && resultMessages[searchParams.result] && (
@@ -249,7 +270,7 @@ export async function InternalStoresPanel({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="outline">
-                      {log.action === 'reactivate_store' ? 'Reativacao' : 'Arquivamento'}
+                      {auditActionLabels[log.action] ?? log.action}
                     </Badge>
                     <span className="text-sm font-medium">
                       Loja #{log.storeId} - {log.previousStoreStatus} para {log.newStoreStatus}

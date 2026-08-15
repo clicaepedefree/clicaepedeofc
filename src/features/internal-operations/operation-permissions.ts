@@ -6,6 +6,7 @@ import {
 } from './access'
 
 export const internalOperationPermissionRequirements = {
+  createStore: 'create_store',
   reactivateStore: 'reactivate_store',
   archiveStore: 'archive_store',
   manageBillingValues: 'manage_billing_values',

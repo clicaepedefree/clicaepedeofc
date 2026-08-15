@@ -23,6 +23,7 @@ export const internalRoleLabels: Record<InternalRole, string> = {
 
 export const internalPermissions = [
   'view_internal_operations',
+  'create_store',
   'reactivate_store',
   'archive_store',
   'manage_billing_values',
@@ -49,6 +50,7 @@ const rolePermissionMap: Record<InternalRole, ReadonlySet<InternalPermission>> =
   ]),
   sales: new Set([
     'view_internal_operations',
+    'create_store',
     'apply_billing_discounts',
   ]),
   implementation: new Set([
