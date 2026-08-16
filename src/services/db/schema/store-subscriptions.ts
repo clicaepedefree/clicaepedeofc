@@ -59,6 +59,8 @@ export const storeSubscriptionsTable = pgTable(
       enum: storeSubscriptionDiscountTypes,
     }),
     discountValue: baseCurrencyColumnGenerator('discount_value'),
+    discountValidUntil: baseTimestampColumnGenerator('discount_valid_until'),
+    paymentGraceDays: integer('payment_grace_days').notNull().default(0),
     startsAt: baseTimestampColumnGenerator('starts_at').notNull(),
     currentPeriodStart: baseTimestampColumnGenerator(
       'current_period_start'

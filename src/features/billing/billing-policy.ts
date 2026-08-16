@@ -41,6 +41,7 @@ export type BillingInvoiceDraftInput = {
     | 'billingIntervalCount'
     | 'discountType'
     | 'discountValue'
+    | 'discountValidUntil'
     | 'currentPeriodStart'
     | 'currentPeriodEnd'
   >
@@ -112,16 +113,24 @@ export const calculateBillingInvoiceAmounts = ({
   contractedAmount,
   discountType,
   discountValue,
+  discountValidUntil,
+  referenceDate = new Date(),
 }: Pick<
   SelectStoreSubscription,
   'contractedAmount' | 'discountType' | 'discountValue'
->) => {
+> & {
+  discountValidUntil?: Date | null
+  referenceDate?: Date
+}) => {
   const subtotal = new Decimal(contractedAmount)
-  const rawDiscount = new Decimal(discountValue ?? 0)
+  const discountExpired =
+    discountValidUntil instanceof Date &&
+    discountValidUntil.getTime() < referenceDate.getTime()
+  const rawDiscount = new Decimal(discountExpired ? 0 : (discountValue ?? 0))
   const discount =
-    discountType === 'percentage'
+    !discountExpired && discountType === 'percentage'
       ? subtotal.mul(rawDiscount).div(100)
-      : discountType === 'fixed_amount'
+      : !discountExpired && discountType === 'fixed_amount'
         ? rawDiscount
         : new Decimal(0)
   const safeDiscount = Decimal.min(Decimal.max(discount, 0), subtotal)
@@ -144,7 +153,10 @@ export const buildBillingInvoiceDraft = ({
     throw new Error('Billing plan does not match subscription plan')
   }
 
-  const amounts = calculateBillingInvoiceAmounts(subscription)
+  const amounts = calculateBillingInvoiceAmounts({
+    ...subscription,
+    referenceDate: dueAt,
+  })
 
   return {
     storeId: subscription.storeId,
@@ -175,6 +187,7 @@ export const buildBillingInvoiceDraft = ({
       billingIntervalCount: subscription.billingIntervalCount,
       discountType: subscription.discountType,
       discountValue: subscription.discountValue,
+      discountValidUntil: subscription.discountValidUntil,
     },
     metadata: {},
   }
