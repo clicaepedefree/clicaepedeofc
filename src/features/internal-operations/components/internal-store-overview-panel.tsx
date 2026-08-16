@@ -2,6 +2,7 @@ import type { InternalOperator } from '@/features/internal-operations/access'
 import {
   changeStoreSubscriptionPlanAction,
   blockStoreAccessAction,
+  manageStoreModuleEntitlementAction,
   unblockStoreAccessAction,
   updateInternalStoreProfileAction,
   updateStoreCommercialLifecycleAction,
@@ -21,7 +22,21 @@ import {
   getPlanChangeTimingLabel,
   getProrationPolicyLabel,
 } from '@/features/internal-operations/subscription-plan-change-policy'
+import {
+  getModuleEntitlementOriginLabel,
+} from '@/features/internal-operations/store-module-management-policy'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/shared/alert-dialog'
 import {
   getBillingIntervalLabel,
   getDiscountLabel,
@@ -63,8 +78,10 @@ import {
   History,
   KeyRound,
   Layers3,
+  LockKeyhole,
   Pencil,
   Power,
+  PowerOff,
   ReceiptText,
   ShieldAlert,
   ShieldOff,
@@ -383,7 +400,9 @@ export function InternalStoreOverviewPanel({
           billingPlans={billingPlans}
         />
       )}
-      {activeTab === 'modulos' && <ModulosTab store={store} />}
+      {activeTab === 'modulos' && (
+        <ModulosTab store={store} operator={operator} basePath={basePath} />
+      )}
       {activeTab === 'metricas' && <MetricasTab store={store} />}
       {activeTab === 'usuarios' && <UsuariosTab store={store} />}
       {activeTab === 'historico' && <HistoricoTab store={store} />}
@@ -2380,26 +2399,352 @@ function SubscriptionTermsDialog({
   )
 }
 
-function ModulosTab({ store }: { store: InternalStoreOverview }) {
+function ModulosTab({
+  store,
+  operator,
+  basePath,
+}: {
+  store: InternalStoreOverview
+  operator: InternalOperator
+  basePath: string
+}) {
   if (store.modules.length === 0) {
-    return <EmptyState>Nenhum modulo liberado para esta loja.</EmptyState>
+    return <EmptyState>Nenhum modulo cadastrado no catalogo.</EmptyState>
   }
 
+  const canManageModules = canRunInternalOperation({
+    operator,
+    operation: 'manageStoreModules',
+  })
+  const activeModules = store.modules.filter(module => module.status === 'active')
+  const planModules = activeModules.filter(module => module.origin === 'plan')
+  const paidModules = activeModules.filter(module => module.isAdditional)
+  const exceptionModules = activeModules.filter(module =>
+    ['courtesy', 'manual'].includes(module.origin ?? '')
+  )
+  const inactiveModules = store.modules.filter(
+    module => module.status !== 'active'
+  )
+
   return (
-    <div className="rounded-lg border bg-card">
-      <TableLike
-        headers={['Modulo', 'Origem', 'Status', 'Adicional', 'Vigencia']}
-        rows={store.modules.map(module => [
-          module.name,
-          module.origin,
-          module.status,
-          module.isAdditional
-            ? formatCurrency(module.additionalAmount, module.currency)
-            : 'Nao',
-          `${formatDate(module.startsAt)} ate ${formatDate(module.endsAt)}`,
-        ])}
-      />
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-4">
+        <SummaryCard
+          icon={Layers3}
+          label="Modulos ativos"
+          value={String(activeModules.length)}
+          detail={`${planModules.length} pelo plano atual`}
+        />
+        <SummaryCard
+          icon={CircleDollarSign}
+          label="Adicionais"
+          value={String(paidModules.length)}
+          detail="Liberacoes com valor proprio"
+        />
+        <SummaryCard
+          icon={ShieldAlert}
+          label="Excecoes"
+          value={String(exceptionModules.length)}
+          detail="Cortesia ou liberacao manual"
+        />
+        <SummaryCard
+          icon={PowerOff}
+          label="Nao ativos"
+          value={String(inactiveModules.length)}
+          detail="Disponiveis ou historicos"
+        />
+      </div>
+
+      <div className="rounded-lg border bg-card">
+        <div className="border-b p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-foreground">
+                Catalogo de modulos da loja
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Ative excecoes, acompanhe vigencia e preserve o historico de
+                liberacoes.
+              </p>
+            </div>
+            {!canManageModules && (
+              <Badge variant="outline">
+                <LockKeyhole className="mr-1 size-3" />
+                Somente leitura
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className="divide-y">
+          {store.modules.map(module => {
+            const isActive = module.status === 'active'
+            const valueLabel = module.isAdditional
+              ? formatCurrency(module.additionalAmount, module.currency)
+              : module.origin === 'plan'
+                ? 'Incluido no plano'
+                : module.origin
+                  ? 'Sem cobranca'
+                  : 'Nao contratado'
+            const periodLabel = module.startsAt
+              ? `${formatDate(module.startsAt)} ate ${
+                  module.endsAt ? formatDate(module.endsAt) : 'sem fim'
+                }`
+              : 'Sem vigencia'
+
+            return (
+              <div
+                key={module.moduleId}
+                className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1.4fr)_0.8fr_0.8fr_0.8fr_auto]"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="font-medium text-foreground">
+                      {module.name}
+                    </h4>
+                    <Badge variant={isActive ? 'default' : 'outline'}>
+                      {module.statusLabel}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {module.description || module.code}
+                  </p>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Codigo: <span className="font-mono">{module.code}</span>
+                    {module.historyCount > 0 && (
+                      <span>
+                        {' '}
+                        - {module.historyCount} registro(s) historico(s)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <DetailField label="Origem" value={module.originLabel} />
+                <DetailField label="Valor" value={valueLabel} />
+                <DetailField label="Vigencia" value={periodLabel} />
+                <div className="flex flex-col gap-2 lg:items-end">
+                  {canManageModules && module.canActivate && (
+                    <ActivateModuleDialog
+                      module={module}
+                      storeId={store.id}
+                      basePath={basePath}
+                    />
+                  )}
+                  {canManageModules && module.canDeactivate && (
+                    <DeactivateModuleDialog
+                      module={module}
+                      storeId={store.id}
+                      basePath={basePath}
+                    />
+                  )}
+                  {canManageModules &&
+                    !module.canActivate &&
+                    !module.canDeactivate &&
+                    module.deactivateBlockedReason && (
+                      <p className="max-w-48 text-right text-xs text-muted-foreground">
+                        {module.deactivateBlockedReason}
+                      </p>
+                    )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
+  )
+}
+
+function ActivateModuleDialog({
+  module,
+  storeId,
+  basePath,
+}: {
+  module: InternalStoreOverview['modules'][number]
+  storeId: number
+  basePath: string
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline">
+          <Power className="size-4" />
+          Ativar
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Ativar modulo {module.name}</DialogTitle>
+          <DialogDescription>
+            Libere o modulo como adicional, cortesia ou excecao manual para esta
+            loja.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={manageStoreModuleEntitlementAction} className="space-y-4">
+          <input type="hidden" name="returnTo" value={`${basePath}?tab=modulos`} />
+          <input type="hidden" name="storeId" value={storeId} />
+          <input type="hidden" name="moduleId" value={module.moduleId} />
+          <input type="hidden" name="action" value="activate" />
+          <FormSection title="Liberacao">
+            <FormField label="Origem" htmlFor={`module-${module.moduleId}-origin`}>
+              <select
+                id={`module-${module.moduleId}-origin`}
+                name="origin"
+                className={selectClassName}
+                defaultValue="manual"
+              >
+                <option value="manual">
+                  {getModuleEntitlementOriginLabel('manual')}
+                </option>
+                <option value="courtesy">
+                  {getModuleEntitlementOriginLabel('courtesy')}
+                </option>
+                <option value="addon">
+                  {getModuleEntitlementOriginLabel('addon')}
+                </option>
+              </select>
+            </FormField>
+            <FormField
+              label="Valor adicional"
+              htmlFor={`module-${module.moduleId}-amount`}
+            >
+              <Input
+                id={`module-${module.moduleId}-amount`}
+                name="additionalAmount"
+                inputMode="decimal"
+                placeholder="Obrigatorio apenas para adicional"
+              />
+            </FormField>
+            <FormField
+              label="Fim da vigencia"
+              htmlFor={`module-${module.moduleId}-ends-at`}
+            >
+              <Input
+                id={`module-${module.moduleId}-ends-at`}
+                name="endsAt"
+                type="datetime-local"
+              />
+            </FormField>
+            <FormField
+              label="Motivo da liberacao"
+              htmlFor={`module-${module.moduleId}-reason`}
+            >
+              <Textarea
+                id={`module-${module.moduleId}-reason`}
+                name="reason"
+                placeholder="Ex.: modulo liberado como cortesia comercial."
+                required
+              />
+            </FormField>
+          </FormSection>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit">
+              <CheckCircle2 className="size-4" />
+              Ativar modulo
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeactivateModuleDialog({
+  module,
+  storeId,
+  basePath,
+}: {
+  module: InternalStoreOverview['modules'][number]
+  storeId: number
+  basePath: string
+}) {
+  const formId = `deactivate-module-${module.moduleId}`
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button size="sm" variant="destructive">
+          <PowerOff className="size-4" />
+          Desativar
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Desativar modulo {module.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            A loja pode perder acesso imediato aos recursos ligados a este
+            modulo. O registro historico sera preservado como revogado.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <DetailField label="Origem" value={module.originLabel} />
+            <DetailField
+              label="Valor"
+              value={
+                module.isAdditional
+                  ? formatCurrency(module.additionalAmount, module.currency)
+                  : 'Sem cobranca'
+              }
+            />
+            <DetailField label="Desde" value={formatDate(module.startsAt)} />
+            <DetailField
+              label="Vigencia"
+              value={module.endsAt ? formatDate(module.endsAt) : 'Sem fim'}
+            />
+          </div>
+        </div>
+        <form
+          id={formId}
+          action={manageStoreModuleEntitlementAction}
+          className="space-y-3"
+        >
+          <input type="hidden" name="returnTo" value={`${basePath}?tab=modulos`} />
+          <input type="hidden" name="storeId" value={storeId} />
+          <input type="hidden" name="moduleId" value={module.moduleId} />
+          <input
+            type="hidden"
+            name="entitlementId"
+            value={module.entitlementId ?? ''}
+          />
+          <input type="hidden" name="action" value="deactivate" />
+          <FormField
+            label="Motivo da desativacao"
+            htmlFor={`${formId}-reason`}
+          >
+            <Textarea
+              id={`${formId}-reason`}
+              name="reason"
+              placeholder="Ex.: cliente cancelou o adicional."
+              required
+            />
+          </FormField>
+          <FormField
+            label="Confirmacao"
+            htmlFor={`${formId}-confirmation`}
+          >
+            <Input
+              id={`${formId}-confirmation`}
+              name="confirmation"
+              placeholder="Digite DESATIVAR"
+              required
+            />
+          </FormField>
+        </form>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button type="submit" form={formId} variant="destructive">
+              Desativar modulo
+            </Button>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

@@ -34,6 +34,7 @@ export const internalPermissions = [
   'manage_billing_invoices',
   'apply_billing_discounts',
   'cancel_billing',
+  'manage_store_modules',
   'block_store',
 ] as const
 
@@ -50,6 +51,7 @@ const rolePermissionMap: Record<
     'manage_billing_invoices',
     'apply_billing_discounts',
     'cancel_billing',
+    'manage_store_modules',
   ]),
   support: new Set([
     'view_internal_operations',
@@ -63,6 +65,7 @@ const rolePermissionMap: Record<
     'manage_implementation_checklist',
     'manage_store_lifecycle',
     'apply_billing_discounts',
+    'manage_store_modules',
   ]),
   implementation: new Set([
     'view_internal_operations',
@@ -71,6 +74,7 @@ const rolePermissionMap: Record<
     'activate_implemented_store',
     'manage_store_lifecycle',
     'reactivate_store',
+    'manage_store_modules',
   ]),
   viewer: new Set(['view_internal_operations']),
 }

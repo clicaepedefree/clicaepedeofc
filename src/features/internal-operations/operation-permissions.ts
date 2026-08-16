@@ -17,6 +17,7 @@ export const internalOperationPermissionRequirements = {
   manageBillingInvoices: 'manage_billing_invoices',
   applyBillingDiscounts: 'apply_billing_discounts',
   cancelBilling: 'cancel_billing',
+  manageStoreModules: 'manage_store_modules',
   blockStore: 'block_store',
 } as const satisfies Record<string, InternalPermission>
 

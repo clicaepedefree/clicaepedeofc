@@ -53,6 +53,6 @@ describe('internal store detail tabs policy', () => {
     ).toEqual(['dados', 'metricas', 'historico'])
     expect(
       getVisibleInternalStoreDetailTabs('implementation').map(tab => tab.value)
-    ).toEqual(['dados', 'metricas', 'usuarios', 'historico'])
+    ).toEqual(['dados', 'modulos', 'metricas', 'usuarios', 'historico'])
   })
 })

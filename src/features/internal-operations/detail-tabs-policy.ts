@@ -47,7 +47,7 @@ export const internalStoreDetailTabDefinitions: InternalStoreDetailTabDefinition
       value: 'modulos',
       label: 'Modulos',
       description: 'Modulos liberados por plano, adicional ou cortesia.',
-      requiredPermissions: ['manage_billing_values'],
+      requiredPermissions: ['manage_store_modules'],
     },
     {
       value: 'metricas',

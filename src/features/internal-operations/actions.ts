@@ -8,6 +8,7 @@ import {
   createInternalStore,
   findInternalStoreCreationDuplicates,
   findInternalStoreProfileUpdateDuplicates,
+  manageStoreModuleEntitlement,
   reactivateStoreWithAdmin,
   resendStoreAccessInvite,
   unblockStoreAccess,
@@ -49,6 +50,10 @@ import {
   storeSubscriptionPlanChangeSchema,
   type StoreSubscriptionPlanChangeValues,
 } from '@/features/internal-operations/subscription-plan-change-policy'
+import {
+  storeModuleManagementSchema,
+  type StoreModuleManagementValues,
+} from '@/features/internal-operations/store-module-management-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -1108,5 +1113,108 @@ export async function changeStoreSubscriptionPlanAction(formData: FormData) {
     wasAppliedImmediately
       ? 'mudanca-plano-aplicada'
       : 'mudanca-plano-programada'
+  )
+}
+
+export async function manageStoreModuleEntitlementAction(formData: FormData) {
+  const operator = await requireInternalOperation('manageStoreModules')
+  const returnPath = getReturnPath(formData)
+  let action: StoreModuleManagementValues['action'] = 'activate'
+  const values: StoreModuleManagementValues = (() => {
+    try {
+      const parsed = storeModuleManagementSchema.parse({
+        storeId: formData.get('storeId'),
+        moduleId: formData.get('moduleId'),
+        entitlementId: formData.get('entitlementId') || undefined,
+        action: formData.get('action'),
+        origin: formData.get('origin'),
+        additionalAmount: formData.get('additionalAmount'),
+        endsAt: formData.get('endsAt'),
+        confirmation: formData.get('confirmation'),
+        reason: formData.get('reason'),
+      })
+      action = parsed.action
+      return parsed
+    } catch (error) {
+      const message =
+        error instanceof Error && 'issues' in error
+          ? String(
+              (error as { issues?: { message?: string }[] }).issues?.[0]
+                ?.message
+            )
+          : 'Revise modulo, origem, valor, vigencia e motivo.'
+
+      redirectWithError(returnPath, message)
+      throw new Error('INVALID_STORE_MODULE_MANAGEMENT_FORM')
+    }
+  })()
+
+  try {
+    await manageStoreModuleEntitlement({ values, operator })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao permite alterar modulos.'
+      )
+    }
+
+    if (error instanceof Error && error.message === 'BILLING_MODULE_NOT_FOUND') {
+      redirectWithError(returnPath, 'Modulo ativo nao encontrado no catalogo.')
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_MODULE_ALREADY_ACTIVE'
+    ) {
+      redirectWithError(returnPath, 'Este modulo ja esta ativo para a loja.')
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_MODULE_FINANCE_PERMISSION_REQUIRED'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Apenas perfis financeiros podem ativar adicional pago.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_MODULE_INCLUDED_IN_PLAN'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Modulo incluido no plano atual. Use mudanca de plano para remover.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_MODULE_ENTITLEMENT_NOT_ACTIVE'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Liberacao ativa do modulo nao encontrada para desativar.'
+      )
+    }
+
+    if (error instanceof Error && error.message === 'INVALID_MODULE_END_DATE') {
+      redirectWithError(returnPath, 'A vigencia final precisa estar no futuro.')
+    }
+
+    console.error(
+      '[internal-operations] Failed to manage store module entitlement',
+      error
+    )
+    redirectWithError(returnPath, 'Nao foi possivel alterar o modulo agora.')
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(
+    returnPath,
+    action === 'activate' ? 'modulo-ativado' : 'modulo-desativado'
   )
 }
