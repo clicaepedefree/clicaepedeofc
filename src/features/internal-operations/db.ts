@@ -32,6 +32,7 @@ import {
 } from '@/services/db/schema'
 import { createHash } from 'node:crypto'
 import { and, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
 import {
   normalizeCurrencyAmount,
@@ -126,6 +127,33 @@ export type InternalStoreAccessInviteResult = {
   expiresAt: Date
 }
 
+export type InternalStoreDashboardIndicators = {
+  updatedAt: Date
+  totalStores: number
+  filteredBy: {
+    status?: InternalStoreStatus
+    search?: string
+  }
+  commercialStatusCounts: Record<InternalStoreStatus, number>
+  subscriptionStatusCounts: Record<
+    'trialing' | 'active' | 'past_due' | 'paused' | 'canceled',
+    number
+  >
+  financial: {
+    monthlyContractedRevenue: number
+    openReceivables: number
+    overdueReceivables: number
+    openInvoices: number
+    overdueInvoices: number
+  }
+  access: {
+    storesWithActiveAdmin: number
+    storesWithoutActiveAdmin: number
+    activeAdminLinks: number
+    revokedAdminLinks: number
+  }
+}
+
 type InternalStoreTransaction = Parameters<
   Parameters<typeof db.transaction>[0]
 >[0]
@@ -137,6 +165,31 @@ const storeStatusValues: InternalStoreStatus[] = [
   'pending_recovery',
   'archived',
 ]
+
+const subscriptionStatusValues = [
+  'trialing',
+  'active',
+  'past_due',
+  'paused',
+  'canceled',
+] as const
+
+const revenueSubscriptionStatuses: readonly string[] = [
+  'trialing',
+  'active',
+  'past_due',
+  'paused',
+] as const
+
+const receivableInvoiceStatuses: readonly string[] = ['pending', 'overdue']
+
+const intervalToMonths: Record<string, number> = {
+  monthly: 1,
+  quarterly: 3,
+  semiannual: 6,
+  yearly: 12,
+  annual: 12,
+}
 
 const buildStoreImplementationChecklistRows = ({
   storeId,
@@ -202,6 +255,112 @@ export function parseStoreStatus(
   return value as InternalStoreStatus
 }
 
+function buildInternalStoreWhere({
+  status,
+  search,
+}: {
+  status?: InternalStoreStatus
+  search?: string
+}): SQL | undefined {
+  const trimmedSearch = search?.trim()
+  const searchPattern = trimmedSearch
+    ? `%${trimmedSearch.toLowerCase()}%`
+    : null
+
+  return and(
+    status ? eq(storesTable.status, status) : undefined,
+    searchPattern
+      ? sql`(
+          lower(${storesTable.name}) like ${searchPattern}
+          or lower(${storesTable.subdomain}) like ${searchPattern}
+          or ${storesTable.id}::text = ${trimmedSearch}
+          or exists (
+            select 1
+            from ${userStorePermissionsTable}
+            join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
+            where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+              and lower(${usersTable.email}) like ${searchPattern}
+          )
+        )`
+      : undefined
+  )
+}
+
+export function parseInternalDashboardAmount(value: string | number | null) {
+  if (value === null) return 0
+
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed)) return 0
+
+  return parsed
+}
+
+export function getMonthlyContractedRevenue({
+  contractedAmount,
+  billingInterval,
+  billingIntervalCount,
+}: {
+  contractedAmount: string | number | null
+  billingInterval: string
+  billingIntervalCount: number
+}) {
+  const months =
+    (intervalToMonths[billingInterval] ?? 1) *
+    Math.max(1, billingIntervalCount)
+
+  return parseInternalDashboardAmount(contractedAmount) / months
+}
+
+export function getInvoiceReceivableAmount({
+  totalAmount,
+  amountPaid,
+}: {
+  totalAmount: string | number | null
+  amountPaid: string | number | null
+}) {
+  return Math.max(
+    0,
+    parseInternalDashboardAmount(totalAmount) -
+      parseInternalDashboardAmount(amountPaid)
+  )
+}
+
+function emptyInternalDashboardIndicators({
+  status,
+  search,
+}: {
+  status?: InternalStoreStatus
+  search?: string
+}): InternalStoreDashboardIndicators {
+  return {
+    updatedAt: new Date(),
+    totalStores: 0,
+    filteredBy: {
+      status,
+      search: search?.trim() || undefined,
+    },
+    commercialStatusCounts: Object.fromEntries(
+      storeStatusValues.map(statusValue => [statusValue, 0])
+    ) as Record<InternalStoreStatus, number>,
+    subscriptionStatusCounts: Object.fromEntries(
+      subscriptionStatusValues.map(statusValue => [statusValue, 0])
+    ) as InternalStoreDashboardIndicators['subscriptionStatusCounts'],
+    financial: {
+      monthlyContractedRevenue: 0,
+      openReceivables: 0,
+      overdueReceivables: 0,
+      openInvoices: 0,
+      overdueInvoices: 0,
+    },
+    access: {
+      storesWithActiveAdmin: 0,
+      storesWithoutActiveAdmin: 0,
+      activeAdminLinks: 0,
+      revokedAdminLinks: 0,
+    },
+  }
+}
+
 export async function getInternalStoreStatusCounts() {
   const rows = await db
     .select({
@@ -222,6 +381,108 @@ export async function getInternalStoreStatusCounts() {
   return counts
 }
 
+export async function getInternalStoreDashboardIndicators({
+  status,
+  search,
+}: {
+  status?: InternalStoreStatus
+  search?: string
+}): Promise<InternalStoreDashboardIndicators> {
+  const indicators = emptyInternalDashboardIndicators({ status, search })
+
+  const filteredStores = await db
+    .select({
+      id: storesTable.id,
+      status: storesTable.status,
+    })
+    .from(storesTable)
+    .where(buildInternalStoreWhere({ status, search }))
+
+  if (filteredStores.length === 0) return indicators
+
+  const storeIds = filteredStores.map(store => store.id)
+  indicators.totalStores = filteredStores.length
+
+  for (const store of filteredStores) {
+    indicators.commercialStatusCounts[store.status] += 1
+  }
+
+  const [subscriptionRows, invoiceRows, permissionRows] = await Promise.all([
+    db
+      .select({
+        status: storeSubscriptionsTable.status,
+        contractedAmount: storeSubscriptionsTable.contractedAmount,
+        billingInterval: storeSubscriptionsTable.billingInterval,
+        billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+      })
+      .from(storeSubscriptionsTable)
+      .where(inArray(storeSubscriptionsTable.storeId, storeIds)),
+    db
+      .select({
+        status: storeBillingInvoicesTable.status,
+        totalAmount: storeBillingInvoicesTable.totalAmount,
+        amountPaid: storeBillingInvoicesTable.amountPaid,
+        dueAt: storeBillingInvoicesTable.dueAt,
+      })
+      .from(storeBillingInvoicesTable)
+      .where(inArray(storeBillingInvoicesTable.storeId, storeIds)),
+    db
+      .select({
+        storeId: userStorePermissionsTable.storeId,
+        revokedAt: userStorePermissionsTable.revokedAt,
+      })
+      .from(userStorePermissionsTable)
+      .where(
+        and(
+          inArray(userStorePermissionsTable.storeId, storeIds),
+          eq(userStorePermissionsTable.role, 'admin')
+        )
+      ),
+  ])
+
+  for (const subscription of subscriptionRows) {
+    indicators.subscriptionStatusCounts[subscription.status] += 1
+
+    if (revenueSubscriptionStatuses.includes(subscription.status)) {
+      indicators.financial.monthlyContractedRevenue +=
+        getMonthlyContractedRevenue(subscription)
+    }
+  }
+
+  const now = indicators.updatedAt.getTime()
+
+  for (const invoice of invoiceRows) {
+    if (!receivableInvoiceStatuses.includes(invoice.status)) continue
+
+    const receivableAmount = getInvoiceReceivableAmount(invoice)
+    indicators.financial.openReceivables += receivableAmount
+    indicators.financial.openInvoices += 1
+
+    if (invoice.status === 'overdue' || invoice.dueAt.getTime() < now) {
+      indicators.financial.overdueReceivables += receivableAmount
+      indicators.financial.overdueInvoices += 1
+    }
+  }
+
+  const storesWithActiveAdmin = new Set<number>()
+
+  for (const permission of permissionRows) {
+    if (permission.revokedAt) {
+      indicators.access.revokedAdminLinks += 1
+      continue
+    }
+
+    indicators.access.activeAdminLinks += 1
+    storesWithActiveAdmin.add(permission.storeId)
+  }
+
+  indicators.access.storesWithActiveAdmin = storesWithActiveAdmin.size
+  indicators.access.storesWithoutActiveAdmin =
+    indicators.totalStores - storesWithActiveAdmin.size
+
+  return indicators
+}
+
 export async function listInternalStores({
   status,
   search,
@@ -229,11 +490,6 @@ export async function listInternalStores({
   status?: InternalStoreStatus
   search?: string
 }): Promise<InternalStoreListItem[]> {
-  const trimmedSearch = search?.trim()
-  const searchPattern = trimmedSearch
-    ? `%${trimmedSearch.toLowerCase()}%`
-    : null
-
   const stores = await db
     .select({
       id: storesTable.id,
@@ -246,25 +502,7 @@ export async function listInternalStores({
       updatedAt: storesTable.updatedAt,
     })
     .from(storesTable)
-    .where(
-      and(
-        status ? eq(storesTable.status, status) : undefined,
-        searchPattern
-          ? sql`(
-              lower(${storesTable.name}) like ${searchPattern}
-              or lower(${storesTable.subdomain}) like ${searchPattern}
-              or ${storesTable.id}::text = ${trimmedSearch}
-              or exists (
-                select 1
-                from ${userStorePermissionsTable}
-                join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
-                where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-                  and lower(${usersTable.email}) like ${searchPattern}
-              )
-            )`
-          : undefined
-      )
-    )
+    .where(buildInternalStoreWhere({ status, search }))
     .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
     .limit(100)
 
@@ -729,13 +967,6 @@ const addMonthsClamped = (date: Date, months: number) => {
     Math.min(day, lastDayOfMonth(result.getUTCFullYear(), result.getUTCMonth()))
   )
   return result
-}
-
-const intervalToMonths: Record<string, number> = {
-  monthly: 1,
-  quarterly: 3,
-  semiannual: 6,
-  annual: 12,
 }
 
 const getSubscriptionPeriod = ({
