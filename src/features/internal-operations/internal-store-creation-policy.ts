@@ -205,6 +205,11 @@ export const internalStoreCreationSchema = z
     selectedModuleIds: z.array(z.number().int().positive()).default([]),
     duplicateOverrideConfirmed: z.boolean().default(false),
     duplicateReviewToken: z.string().trim().optional().or(z.literal('')),
+    provisioningIdempotencyKey: z
+      .string()
+      .trim()
+      .min(12, 'Recarregue a pagina antes de tentar novamente')
+      .max(120, 'Recarregue a pagina antes de tentar novamente'),
     reason: z
       .string()
       .trim()
@@ -294,6 +299,7 @@ export const internalStoreCreationInitialValues: InternalStoreCreationValues = {
   selectedModuleIds: [],
   duplicateOverrideConfirmed: false,
   duplicateReviewToken: '',
+  provisioningIdempotencyKey: '',
   reason: '',
 }
 

@@ -70,6 +70,11 @@ export const storeBillingInvoicesTable = pgTable(
     unique('store_billing_invoices_invoice_number_unique').on(
       table.invoiceNumber
     ),
+    unique('store_billing_invoices_subscription_period_unique').on(
+      table.subscriptionId,
+      table.periodStart,
+      table.periodEnd
+    ),
     index('store_billing_invoices_store_status_idx').on(
       table.storeId,
       table.status

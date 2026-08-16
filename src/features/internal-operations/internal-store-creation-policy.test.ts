@@ -33,6 +33,7 @@ const validValues: InternalStoreCreationValues = {
   selectedModuleIds: [1, 2],
   duplicateOverrideConfirmed: false,
   duplicateReviewToken: '',
+  provisioningIdempotencyKey: 'kan-40-idempotency-key',
   reason: 'Novo cliente aprovado pelo comercial.',
 }
 
