@@ -4,6 +4,7 @@ import {
   unblockStoreAccessAction,
   updateInternalStoreProfileAction,
   updateStoreCommercialLifecycleAction,
+  updateStoreSubscriptionTermsAction,
 } from '@/features/internal-operations/actions'
 import {
   getVisibleInternalStoreDetailTabs,
@@ -12,6 +13,11 @@ import {
 } from '@/features/internal-operations/detail-tabs-policy'
 import type { InternalStoreOverview } from '@/features/internal-operations/db'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
+import {
+  getBillingIntervalLabel,
+  getDiscountLabel,
+  getExpectedSubscriptionBlockAt,
+} from '@/features/internal-operations/subscription-terms-policy'
 import {
   getDefaultStoreLifecycleSubscriptionEffect,
   isFinanciallyValidForStoreActivation,
@@ -44,6 +50,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock,
+  FilePenLine,
   History,
   KeyRound,
   Layers3,
@@ -106,6 +113,16 @@ const formatDate = (date: Date | string | null) => {
     month: '2-digit',
     year: 'numeric',
   }).format(new Date(date))
+}
+
+const formatDateTimeLocalValue = (date: Date | string | null) => {
+  if (!date) return ''
+
+  const parsedDate = new Date(date)
+  if (Number.isNaN(parsedDate.getTime())) return ''
+
+  const offsetMs = parsedDate.getTimezoneOffset() * 60 * 1000
+  return new Date(parsedDate.getTime() - offsetMs).toISOString().slice(0, 16)
 }
 
 const formatCurrency = (value: string | number | null, currency = 'BRL') => {
@@ -281,6 +298,11 @@ export function InternalStoreOverviewPanel({
           Acesso da loja desbloqueado sem alterar o historico.
         </div>
       )}
+      {result === 'condicao-plano-atualizada' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Condicao especifica do plano atualizada com auditoria financeira.
+        </div>
+      )}
 
       {activeTab === 'dados' && (
         <DadosTab
@@ -291,7 +313,9 @@ export function InternalStoreOverviewPanel({
         />
       )}
       {activeTab === 'faturas' && <FaturasTab store={store} />}
-      {activeTab === 'plano' && <PlanoTab store={store} />}
+      {activeTab === 'plano' && (
+        <PlanoTab store={store} operator={operator} basePath={basePath} />
+      )}
       {activeTab === 'modulos' && <ModulosTab store={store} />}
       {activeTab === 'metricas' && <MetricasTab store={store} />}
       {activeTab === 'usuarios' && <UsuariosTab store={store} />}
@@ -431,7 +455,10 @@ function DadosTab({
                       defaultValue={store.company.companyName ?? ''}
                     />
                   </FormField>
-                  <FormField label="Novo CNPJ" htmlFor="companyTaxNumberReplacement">
+                  <FormField
+                    label="Novo CNPJ"
+                    htmlFor="companyTaxNumberReplacement"
+                  >
                     <Input
                       id="companyTaxNumberReplacement"
                       name="companyTaxNumberReplacement"
@@ -471,7 +498,10 @@ function DadosTab({
                       required
                     />
                   </FormField>
-                  <FormField label="Novo CPF" htmlFor="responsibleTaxNumberReplacement">
+                  <FormField
+                    label="Novo CPF"
+                    htmlFor="responsibleTaxNumberReplacement"
+                  >
                     <Input
                       id="responsibleTaxNumberReplacement"
                       name="responsibleTaxNumberReplacement"
@@ -548,7 +578,10 @@ function DadosTab({
                 </FormSection>
 
                 <div className="grid gap-4">
-                  <FormField label="Observacoes internas" htmlFor="internalNotes">
+                  <FormField
+                    label="Observacoes internas"
+                    htmlFor="internalNotes"
+                  >
                     <Textarea
                       id="internalNotes"
                       name="internalNotes"
@@ -578,8 +611,8 @@ function DadosTab({
                       Confirmo mudancas sensiveis
                     </span>
                     <span className="mt-1 block text-xs">
-                      Obrigatorio quando alterar nome da loja, endereco
-                      publico, CNPJ, CPF ou e-mail do responsavel.
+                      Obrigatorio quando alterar nome da loja, endereco publico,
+                      CNPJ, CPF ou e-mail do responsavel.
                     </span>
                   </span>
                 </label>
@@ -626,11 +659,20 @@ function DadosTab({
             <CardTitle>Dados da empresa</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
-            <DetailField label="Razao/Nome fantasia" value={store.company.companyName} />
+            <DetailField
+              label="Razao/Nome fantasia"
+              value={store.company.companyName}
+            />
             <DetailField label="CNPJ" value={store.company.companyTaxNumber} />
             <DetailField label="E-mail" value={store.company.email} />
-            <DetailField label="Telefone principal" value={store.company.phone1} />
-            <DetailField label="Telefone secundario" value={store.company.phone2} />
+            <DetailField
+              label="Telefone principal"
+              value={store.company.phone1}
+            />
+            <DetailField
+              label="Telefone secundario"
+              value={store.company.phone2}
+            />
             <DetailField label="Endereco" value={address || null} />
           </CardContent>
         </Card>
@@ -640,13 +682,31 @@ function DadosTab({
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             <DetailField label="Nome" value={store.company.responsibleName} />
-            <DetailField label="CPF" value={store.company.responsibleTaxNumber} />
-            <DetailField label="E-mail" value={store.company.responsibleEmail} />
-            <DetailField label="Telefone" value={store.company.responsiblePhone} />
-            <DetailField label="Status da loja" value={statusLabels[store.status]} />
+            <DetailField
+              label="CPF"
+              value={store.company.responsibleTaxNumber}
+            />
+            <DetailField
+              label="E-mail"
+              value={store.company.responsibleEmail}
+            />
+            <DetailField
+              label="Telefone"
+              value={store.company.responsiblePhone}
+            />
+            <DetailField
+              label="Status da loja"
+              value={statusLabels[store.status]}
+            />
             <DetailField label="Motivo/status" value={store.statusReason} />
-            <DetailField label="Cancelada em" value={formatDateTime(store.cancelledAt)} />
-            <DetailField label="Motivo do cancelamento" value={store.cancellationReason} />
+            <DetailField
+              label="Cancelada em"
+              value={formatDateTime(store.cancelledAt)}
+            />
+            <DetailField
+              label="Motivo do cancelamento"
+              value={store.cancellationReason}
+            />
           </CardContent>
         </Card>
         <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs lg:col-span-2">
@@ -654,9 +714,15 @@ function DadosTab({
             <CardTitle>Dados comerciais</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-3">
-            <DetailField label="Origem" value={store.commercial.acquisitionSource} />
+            <DetailField
+              label="Origem"
+              value={store.commercial.acquisitionSource}
+            />
             <DetailField label="Vendedor" value={store.commercial.salesOwner} />
-            <DetailField label="Observacoes internas" value={store.commercial.internalNotes} />
+            <DetailField
+              label="Observacoes internas"
+              value={store.commercial.internalNotes}
+            />
           </CardContent>
         </Card>
       </div>
@@ -724,7 +790,8 @@ function StoreLifecyclePanel({
         subscriptionStatus: store.billing.subscriptionStatus,
       }),
       defaultAccessEffect: 'keep_access',
-      reasonPlaceholder: 'Ex.: cliente regularizou assinatura e liberamos a operacao.',
+      reasonPlaceholder:
+        'Ex.: cliente regularizou assinatura e liberamos a operacao.',
       blockedReason: !hasValidFinancialConfig
         ? 'Configure plano, valor e periodo financeiro antes de ativar.'
         : undefined,
@@ -744,8 +811,12 @@ function StoreLifecyclePanel({
       variant: 'outline',
       defaultSubscriptionEffect: 'pause_subscription',
       defaultAccessEffect: 'keep_access',
-      reasonPlaceholder: 'Ex.: cliente pausou operacao por negociacao comercial.',
-      changes: ['Status comercial da loja', 'Opcionalmente assinatura e acesso'],
+      reasonPlaceholder:
+        'Ex.: cliente pausou operacao por negociacao comercial.',
+      changes: [
+        'Status comercial da loja',
+        'Opcionalmente assinatura e acesso',
+      ],
       unchanged: ['Pedidos, faturas, produtos e historico cadastral'],
     },
     {
@@ -759,7 +830,8 @@ function StoreLifecyclePanel({
       defaultSubscriptionEffect: 'cancel_subscription',
       defaultAccessEffect: 'revoke_access',
       confirmationLabel: `Digite ${store.subdomain} para confirmar`,
-      reasonPlaceholder: 'Ex.: cliente solicitou cancelamento definitivo em atendimento.',
+      reasonPlaceholder:
+        'Ex.: cliente solicitou cancelamento definitivo em atendimento.',
       changes: [
         'Status comercial para Arquivada',
         'Data e motivo de cancelamento',
@@ -785,7 +857,10 @@ function StoreLifecyclePanel({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <DetailField label="Status atual" value={statusLabels[store.status]} />
+          <DetailField
+            label="Status atual"
+            value={statusLabels[store.status]}
+          />
           <DetailField
             label="Assinatura"
             value={store.billing.subscriptionStatus ?? 'Sem assinatura aberta'}
@@ -905,7 +980,11 @@ function StoreLifecycleActionDialog({
             className="space-y-5"
           >
             <input type="hidden" name="storeId" value={store.id} />
-            <input type="hidden" name="targetStatus" value={action.targetStatus} />
+            <input
+              type="hidden"
+              name="targetStatus"
+              value={action.targetStatus}
+            />
             <input
               type="hidden"
               name="returnTo"
@@ -936,27 +1015,39 @@ function StoreLifecycleActionDialog({
               </div>
             </div>
 
-            <FormField label="Efeito sobre assinatura" htmlFor={`subscriptionEffect-${action.targetStatus}`}>
+            <FormField
+              label="Efeito sobre assinatura"
+              htmlFor={`subscriptionEffect-${action.targetStatus}`}
+            >
               <select
                 id={`subscriptionEffect-${action.targetStatus}`}
                 name="subscriptionEffect"
                 className={selectClassName}
                 defaultValue={action.defaultSubscriptionEffect}
               >
-                <option value="keep_subscription">Manter assinatura como esta</option>
+                <option value="keep_subscription">
+                  Manter assinatura como esta
+                </option>
                 {action.targetStatus !== 'active' && (
                   <option value="pause_subscription">Pausar assinatura</option>
                 )}
                 {action.targetStatus === 'active' && (
-                  <option value="resume_subscription">Retomar assinatura pausada</option>
+                  <option value="resume_subscription">
+                    Retomar assinatura pausada
+                  </option>
                 )}
                 {action.targetStatus === 'archived' && (
-                  <option value="cancel_subscription">Cancelar assinatura</option>
+                  <option value="cancel_subscription">
+                    Cancelar assinatura
+                  </option>
                 )}
               </select>
             </FormField>
 
-            <FormField label="Efeito sobre acesso" htmlFor={`accessEffect-${action.targetStatus}`}>
+            <FormField
+              label="Efeito sobre acesso"
+              htmlFor={`accessEffect-${action.targetStatus}`}
+            >
               <select
                 id={`accessEffect-${action.targetStatus}`}
                 name="accessEffect"
@@ -1070,14 +1161,15 @@ function StoreAccessBlockPanel({
 
         {store.accessBlock && !store.accessBlock.isActive && (
           <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-            Ultimo bloqueio encerrado: {store.accessBlock.unblockReason ?? 'sem motivo informado'}.
+            Ultimo bloqueio encerrado:{' '}
+            {store.accessBlock.unblockReason ?? 'sem motivo informado'}.
           </div>
         )}
 
         {!canManageAccessBlock && (
           <EmptyState>
-            Seu perfil pode consultar o acesso da loja, mas nao pode bloquear
-            ou desbloquear login dos usuarios.
+            Seu perfil pode consultar o acesso da loja, mas nao pode bloquear ou
+            desbloquear login dos usuarios.
           </EmptyState>
         )}
 
@@ -1208,7 +1300,10 @@ function StoreAccessBlockDialog({
               </span>
             </label>
 
-            <FormField label="Desbloqueio automatico em" htmlFor="scheduledUnblockAt">
+            <FormField
+              label="Desbloqueio automatico em"
+              htmlFor="scheduledUnblockAt"
+            >
               <Input
                 id="scheduledUnblockAt"
                 name="scheduledUnblockAt"
@@ -1308,7 +1403,10 @@ function StoreAccessUnblockDialog({
               ]}
             />
 
-            <FormField label="Motivo do desbloqueio" htmlFor="accessUnblockReason">
+            <FormField
+              label="Motivo do desbloqueio"
+              htmlFor="accessUnblockReason"
+            >
               <Textarea
                 id="accessUnblockReason"
                 name="reason"
@@ -1422,29 +1520,388 @@ function FaturasTab({ store }: { store: InternalStoreOverview }) {
   )
 }
 
-function PlanoTab({ store }: { store: InternalStoreOverview }) {
+function PlanoTab({
+  store,
+  operator,
+  basePath,
+}: {
+  store: InternalStoreOverview
+  operator: InternalOperator
+  basePath: string
+}) {
   const currency = store.billing.currency ?? 'BRL'
+  const planCurrency = store.billing.planCurrency ?? currency
+  const expectedBlockAt =
+    store.billing.expectedBlockAt ??
+    getExpectedSubscriptionBlockAt({
+      nextBillingAt: store.billing.nextBillingAt,
+      paymentGraceDays: store.billing.paymentGraceDays,
+    })
+  const billingIntervalLabel = getBillingIntervalLabel({
+    billingInterval: store.billing.billingInterval,
+    billingIntervalCount: store.billing.billingIntervalCount,
+  })
+  const planIntervalLabel = getBillingIntervalLabel({
+    billingInterval:
+      store.billing.planBillingInterval ?? store.billing.billingInterval,
+    billingIntervalCount:
+      store.billing.planBillingIntervalCount ??
+      store.billing.billingIntervalCount,
+  })
+  const canManageFinancialValues = canRunInternalOperation({
+    operator,
+    operation: 'manageBillingValues',
+  })
+  const canApplyBillingDiscounts = canRunInternalOperation({
+    operator,
+    operation: 'applyBillingDiscounts',
+  })
+  const canEditTerms =
+    (canManageFinancialValues || canApplyBillingDiscounts) &&
+    store.status !== 'archived' &&
+    Boolean(store.billing.subscriptionId)
+
+  if (!store.billing.subscriptionId) {
+    return (
+      <EmptyState>
+        Esta loja ainda nao possui assinatura ativa para gerenciamento.
+      </EmptyState>
+    )
+  }
 
   return (
-    <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
-      <CardHeader>
-        <CardTitle>Assinatura</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-3">
-        <DetailField label="Plano" value={store.billing.planName} />
-        <DetailField label="Codigo" value={store.billing.planCode} />
-        <DetailField
-          label="Valor contratado"
-          value={formatCurrency(store.billing.contractedAmount, currency)}
-        />
-        <DetailField
-          label="Status"
-          value={store.billing.subscriptionStatus ?? 'Sem assinatura ativa'}
-        />
-        <DetailField label="Inicio do periodo" value={formatDate(store.billing.currentPeriodStart)} />
-        <DetailField label="Fim do periodo" value={formatDate(store.billing.currentPeriodEnd)} />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card className="overflow-hidden rounded-lg py-0 shadow-xs hover:shadow-xs">
+        <div className="border-b bg-muted/30 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Plano contratado</Badge>
+                <Badge variant="outline">
+                  {store.billing.subscriptionStatus ?? 'sem assinatura'}
+                </Badge>
+                <Badge variant="outline">{billingIntervalLabel}</Badge>
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold text-foreground">
+                  {store.billing.planName ?? 'Plano sem nome'}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Codigo {store.billing.planCode ?? 'nao informado'} com
+                  condicao individual preservada para esta loja.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-background p-4 text-left lg:min-w-[260px]">
+              <div className="text-xs font-medium text-muted-foreground">
+                Valor contratado da loja
+              </div>
+              <div className="mt-1 text-2xl font-semibold text-foreground">
+                {formatCurrency(store.billing.contractedAmount, currency)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Catalogo:{' '}
+                {formatCurrency(store.billing.planDefaultAmount, planCurrency)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <CardContent className="space-y-4 p-5">
+          <div className="grid gap-3 md:grid-cols-3">
+            <DetailField
+              label="Periodicidade contratada"
+              value={billingIntervalLabel}
+            />
+            <DetailField
+              label="Proxima cobranca"
+              value={formatDate(store.billing.nextBillingAt)}
+            />
+            <DetailField
+              label="Periodo atual"
+              value={`${formatDate(store.billing.currentPeriodStart)} ate ${formatDate(store.billing.currentPeriodEnd)}`}
+            />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <PlanTermsCard
+              icon={CircleDollarSign}
+              title="Resumo do contrato"
+              items={[
+                [
+                  'Plano do catalogo',
+                  store.billing.planName ?? 'Nao informado',
+                ],
+                [
+                  'Valor padrao',
+                  formatCurrency(store.billing.planDefaultAmount, planCurrency),
+                ],
+                ['Periodicidade do catalogo', planIntervalLabel],
+                ['Trial do plano', `${store.billing.trialDays ?? 0} dias`],
+              ]}
+            />
+            <PlanTermsCard
+              icon={FilePenLine}
+              title="Condicao especifica da loja"
+              items={[
+                [
+                  'Valor contratado',
+                  formatCurrency(store.billing.contractedAmount, currency),
+                ],
+                [
+                  'Desconto',
+                  getDiscountLabel({
+                    discountType: store.billing.discountType,
+                    discountValue: store.billing.discountValue,
+                    currency,
+                  }),
+                ],
+                [
+                  'Validade do desconto',
+                  formatDate(store.billing.discountValidUntil),
+                ],
+                ['Catalogo alterado', 'Nao'],
+              ]}
+            />
+            <PlanTermsCard
+              icon={CalendarClock}
+              title="Risco de bloqueio"
+              items={[
+                ['Tolerancia', `${store.billing.paymentGraceDays} dias`],
+                ['Bloqueio previsto', formatDate(expectedBlockAt)],
+                ['Base do calculo', formatDate(store.billing.nextBillingAt)],
+                [
+                  'Acesso atual',
+                  store.accessBlock?.isActive ? 'Bloqueado' : 'Liberado',
+                ],
+              ]}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-foreground">
+                Editar condicao especifica
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Altera a assinatura desta loja sem mudar o catalogo de planos.
+              </p>
+            </div>
+            {canEditTerms ? (
+              <SubscriptionTermsDialog
+                store={store}
+                basePath={basePath}
+                canManageFinancialValues={canManageFinancialValues}
+              />
+            ) : (
+              <Button variant="outline" disabled>
+                <Pencil className="size-4" />
+                Editar condicao
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function PlanTermsCard({
+  icon: Icon,
+  title,
+  items,
+}: {
+  icon: typeof Store
+  title: string
+  items: [string, string][]
+}) {
+  return (
+    <div className="rounded-lg border bg-background/70 p-4">
+      <div className="flex items-center gap-2 font-semibold text-foreground">
+        <Icon className="size-4 text-primary" />
+        {title}
+      </div>
+      <div className="mt-4 space-y-3">
+        {items.map(([label, value]) => (
+          <div key={label} className="flex items-start justify-between gap-3">
+            <span className="text-sm text-muted-foreground">{label}</span>
+            <span className="max-w-[55%] text-right text-sm font-medium text-foreground">
+              {value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SubscriptionTermsDialog({
+  store,
+  basePath,
+  canManageFinancialValues,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  canManageFinancialValues: boolean
+}) {
+  const currency = store.billing.currency ?? 'BRL'
+  const contractedAmount = store.billing.contractedAmount ?? ''
+  const paymentGraceDays = store.billing.paymentGraceDays
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button>
+          <Pencil className="size-4" />
+          Editar condicao
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Editar condicao desta loja</DialogTitle>
+          <DialogDescription>
+            Atualize a negociacao vigente sem alterar o plano no catalogo.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form action={updateStoreSubscriptionTermsAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input
+            type="hidden"
+            name="subscriptionId"
+            value={store.billing.subscriptionId ?? ''}
+          />
+          <input
+            type="hidden"
+            name="returnTo"
+            value={`${basePath}?tab=plano`}
+          />
+
+          <StoreAccessImpactGrid
+            changes={[
+              'Valor contratado desta loja',
+              'Desconto e validade',
+              'Tolerancia e bloqueio previsto',
+              'Auditoria financeira',
+            ]}
+            unchanged={[
+              'Catalogo de planos',
+              'Modulos do plano',
+              'Faturas historicas',
+              'Status comercial da loja',
+            ]}
+          />
+
+          <FormSection title="Contrato da loja">
+            <FormField
+              label={`Valor contratado (${currency})`}
+              htmlFor="contractedAmount"
+            >
+              <Input
+                id="contractedAmount"
+                name="contractedAmount"
+                inputMode="decimal"
+                defaultValue={contractedAmount}
+                disabled={!canManageFinancialValues}
+                required
+              />
+              {!canManageFinancialValues && (
+                <input
+                  type="hidden"
+                  name="contractedAmount"
+                  value={contractedAmount}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Tolerancia apos vencimento"
+              htmlFor="paymentGraceDays"
+            >
+              <Input
+                id="paymentGraceDays"
+                name="paymentGraceDays"
+                type="number"
+                min={0}
+                max={90}
+                defaultValue={paymentGraceDays}
+                disabled={!canManageFinancialValues}
+                required
+              />
+              {!canManageFinancialValues && (
+                <input
+                  type="hidden"
+                  name="paymentGraceDays"
+                  value={paymentGraceDays}
+                />
+              )}
+            </FormField>
+          </FormSection>
+
+          {!canManageFinancialValues && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+              Seu perfil pode ajustar desconto comercial, mas valor contratado e
+              tolerancia ficam travados para o financeiro.
+            </div>
+          )}
+
+          <FormSection title="Desconto negociado">
+            <FormField label="Tipo de desconto" htmlFor="discountType">
+              <select
+                id="discountType"
+                name="discountType"
+                className={selectClassName}
+                defaultValue={store.billing.discountType ?? 'none'}
+              >
+                <option value="none">Sem desconto</option>
+                <option value="percentage">Percentual</option>
+                <option value="fixed_amount">Valor fixo</option>
+              </select>
+            </FormField>
+            <FormField label="Valor do desconto" htmlFor="discountValue">
+              <Input
+                id="discountValue"
+                name="discountValue"
+                inputMode="decimal"
+                defaultValue={store.billing.discountValue ?? ''}
+                placeholder="Ex.: 10 ou 50,00"
+              />
+            </FormField>
+            <FormField
+              label="Validade do desconto"
+              htmlFor="discountValidUntil"
+            >
+              <Input
+                id="discountValidUntil"
+                name="discountValidUntil"
+                type="datetime-local"
+                defaultValue={formatDateTimeLocalValue(
+                  store.billing.discountValidUntil
+                )}
+              />
+            </FormField>
+            <FormField label="Motivo da alteracao" htmlFor="reason">
+              <Textarea
+                id="reason"
+                name="reason"
+                placeholder="Ex.: condicao negociada na renovacao comercial."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit">
+              <CheckCircle2 className="size-4" />
+              Salvar condicao
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1495,7 +1952,10 @@ function MetricasTab({ store }: { store: InternalStoreOverview }) {
       <SummaryCard
         icon={CircleDollarSign}
         label="Receita bruta"
-        value={formatCurrency(store.metrics.grossRevenue, store.billing.currency ?? 'BRL')}
+        value={formatCurrency(
+          store.metrics.grossRevenue,
+          store.billing.currency ?? 'BRL'
+        )}
         detail="Soma historica dos pedidos"
       />
     </section>
@@ -1572,13 +2032,7 @@ function HistoricoTab({ store }: { store: InternalStoreOverview }) {
   )
 }
 
-function TableLike({
-  headers,
-  rows,
-}: {
-  headers: string[]
-  rows: string[][]
-}) {
+function TableLike({ headers, rows }: { headers: string[]; rows: string[][] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">

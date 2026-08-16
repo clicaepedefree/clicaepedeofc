@@ -1,4 +1,7 @@
-import type { InternalOperator } from '@/features/internal-operations/access'
+import {
+  canUseInternalPermission,
+  type InternalOperator,
+} from '@/features/internal-operations/access'
 import { buildBillingInvoiceDraft } from '@/features/billing/billing-policy'
 import {
   buildStoreAccessInviteUrl,
@@ -80,6 +83,10 @@ import {
   type StoreAccessBlockActionValues,
   type StoreAccessUnblockActionValues,
 } from './store-access-block-policy'
+import {
+  getExpectedSubscriptionBlockAt,
+  type StoreSubscriptionTermsValues,
+} from './subscription-terms-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -291,6 +298,16 @@ export type InternalStoreOverview = Pick<
     currency: string | null
     billingInterval: string | null
     billingIntervalCount: number | null
+    planDefaultAmount: string | null
+    planCurrency: string | null
+    planBillingInterval: string | null
+    planBillingIntervalCount: number | null
+    trialDays: number | null
+    discountType: string | null
+    discountValue: string | null
+    discountValidUntil: Date | null
+    paymentGraceDays: number
+    expectedBlockAt: Date | null
     nextBillingAt: Date | null
     currentPeriodStart: Date | null
     currentPeriodEnd: Date | null
@@ -628,8 +645,7 @@ export function getMonthlyContractedRevenue({
   billingIntervalCount: number
 }) {
   const months =
-    (intervalToMonths[billingInterval] ?? 1) *
-    Math.max(1, billingIntervalCount)
+    (intervalToMonths[billingInterval] ?? 1) * Math.max(1, billingIntervalCount)
 
   return parseInternalDashboardAmount(contractedAmount) / months
 }
@@ -943,7 +959,10 @@ export async function listInternalStores({
         sql`${storeSubscriptionsTable.status} in ('trialing', 'active', 'past_due', 'paused')`
       )
     )
-    .leftJoin(billingPlansTable, eq(billingPlansTable.id, storeSubscriptionsTable.planId))
+    .leftJoin(
+      billingPlansTable,
+      eq(billingPlansTable.id, storeSubscriptionsTable.planId)
+    )
     .where(where)
     .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
     .limit(safePerPage)
@@ -1148,12 +1167,21 @@ export async function getInternalStoreOverview(
       currency: storeSubscriptionsTable.currency,
       billingInterval: storeSubscriptionsTable.billingInterval,
       billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+      discountType: storeSubscriptionsTable.discountType,
+      discountValue: storeSubscriptionsTable.discountValue,
+      discountValidUntil: storeSubscriptionsTable.discountValidUntil,
+      paymentGraceDays: storeSubscriptionsTable.paymentGraceDays,
       nextBillingAt: storeSubscriptionsTable.nextBillingAt,
       currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
       currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
       planId: billingPlansTable.id,
       planCode: billingPlansTable.code,
       planName: billingPlansTable.name,
+      planDefaultAmount: billingPlansTable.defaultAmount,
+      planCurrency: billingPlansTable.currency,
+      planBillingInterval: billingPlansTable.billingInterval,
+      planBillingIntervalCount: billingPlansTable.billingIntervalCount,
+      trialDays: billingPlansTable.trialDays,
     })
     .from(storesTable)
     .leftJoin(
@@ -1247,7 +1275,10 @@ export async function getInternalStoreOverview(
         revokedReason: userStorePermissionsTable.revokedReason,
       })
       .from(userStorePermissionsTable)
-      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
       .where(eq(userStorePermissionsTable.storeId, storeId))
       .orderBy(
         userStorePermissionsTable.revokedAt,
@@ -1390,6 +1421,19 @@ export async function getInternalStoreOverview(
       currency: store.currency,
       billingInterval: store.billingInterval,
       billingIntervalCount: store.billingIntervalCount,
+      planDefaultAmount: store.planDefaultAmount,
+      planCurrency: store.planCurrency,
+      planBillingInterval: store.planBillingInterval,
+      planBillingIntervalCount: store.planBillingIntervalCount,
+      trialDays: store.trialDays,
+      discountType: store.discountType,
+      discountValue: store.discountValue,
+      discountValidUntil: store.discountValidUntil,
+      paymentGraceDays: store.paymentGraceDays ?? 0,
+      expectedBlockAt: getExpectedSubscriptionBlockAt({
+        nextBillingAt: store.nextBillingAt,
+        paymentGraceDays: store.paymentGraceDays ?? 0,
+      }),
       nextBillingAt: store.nextBillingAt,
       currentPeriodStart: store.currentPeriodStart,
       currentPeriodEnd: store.currentPeriodEnd,
@@ -1451,7 +1495,9 @@ export async function listInternalStoreCityFilterOptions(): Promise<
   const rows = await db
     .selectDistinct({
       city: sql<string>`coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city})`,
-      stateCode: sql<string | null>`coalesce(${storeCompanyProfilesTable.stateCode}, ${storeAddressesTable.stateCode})`,
+      stateCode: sql<
+        string | null
+      >`coalesce(${storeCompanyProfilesTable.stateCode}, ${storeAddressesTable.stateCode})`,
     })
     .from(storesTable)
     .leftJoin(
@@ -1473,10 +1519,12 @@ export async function listInternalStoreCityFilterOptions(): Promise<
       sql`coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city})`
     )
 
-  return rows.filter(row => row.city?.trim()).map(row => ({
-    city: row.city,
-    stateCode: row.stateCode,
-  }))
+  return rows
+    .filter(row => row.city?.trim())
+    .map(row => ({
+      city: row.city,
+      stateCode: row.stateCode,
+    }))
 }
 
 export async function listBillingModulesForInternalCreation(): Promise<
@@ -1698,9 +1746,7 @@ export async function findInternalStoreProfileUpdateDuplicates(
 ): Promise<InternalStoreDuplicateMatch[]> {
   const duplicateInputs = {
     subdomain: values.subdomain,
-    companyTaxNumber: normalizeInternalCnpj(
-      values.companyTaxNumberReplacement
-    ),
+    companyTaxNumber: normalizeInternalCnpj(values.companyTaxNumberReplacement),
     responsibleTaxNumber: normalizeInternalCpf(
       values.responsibleTaxNumberReplacement
     ),
@@ -2779,10 +2825,7 @@ export async function updateInternalStoreProfile({
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        target: [
-          storeAddressesTable.storeId,
-          storeAddressesTable.addressType,
-        ],
+        target: [storeAddressesTable.storeId, storeAddressesTable.addressType],
         targetWhere: sql`${storeAddressesTable.isPrimary} = true`,
         set: {
           label: 'Endereco comercial',
@@ -3153,6 +3196,153 @@ export async function reactivateStoreWithAdmin({
     })
 
     return updatedStore
+  })
+}
+
+export async function updateStoreSubscriptionTerms({
+  values,
+  operator,
+}: {
+  values: StoreSubscriptionTermsValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const nextContractedAmount = normalizeCurrencyAmount(values.contractedAmount)
+  const nextDiscountType =
+    values.discountType === 'none' ? null : values.discountType
+  const nextDiscountValue =
+    values.discountType === 'none' || !values.discountValue
+      ? null
+      : normalizeCurrencyAmount(values.discountValue)
+  const canManageFinancialValues = canUseInternalPermission({
+    currentRole: operator.role,
+    permission: 'manage_billing_values',
+  })
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select({
+        id: storesTable.id,
+        status: storesTable.status,
+      })
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [subscription] = await tx
+      .select({
+        id: storeSubscriptionsTable.id,
+        storeId: storeSubscriptionsTable.storeId,
+        status: storeSubscriptionsTable.status,
+        planId: storeSubscriptionsTable.planId,
+        contractedAmount: storeSubscriptionsTable.contractedAmount,
+        currency: storeSubscriptionsTable.currency,
+        billingInterval: storeSubscriptionsTable.billingInterval,
+        billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+        discountType: storeSubscriptionsTable.discountType,
+        discountValue: storeSubscriptionsTable.discountValue,
+        discountValidUntil: storeSubscriptionsTable.discountValidUntil,
+        paymentGraceDays: storeSubscriptionsTable.paymentGraceDays,
+        nextBillingAt: storeSubscriptionsTable.nextBillingAt,
+      })
+      .from(storeSubscriptionsTable)
+      .where(
+        and(
+          eq(storeSubscriptionsTable.id, values.subscriptionId),
+          eq(storeSubscriptionsTable.storeId, values.storeId),
+          inArray(storeSubscriptionsTable.status, [
+            'trialing',
+            'active',
+            'past_due',
+            'paused',
+          ])
+        )
+      )
+      .limit(1)
+
+    if (!subscription) throw new Error('STORE_SUBSCRIPTION_NOT_FOUND')
+
+    if (
+      !canManageFinancialValues &&
+      (subscription.contractedAmount !== nextContractedAmount ||
+        subscription.paymentGraceDays !== values.paymentGraceDays)
+    ) {
+      throw new Error('STORE_SUBSCRIPTION_FINANCE_PERMISSION_REQUIRED')
+    }
+
+    const previousValues = {
+      contractedAmount: subscription.contractedAmount,
+      discountType: subscription.discountType,
+      discountValue: subscription.discountValue,
+      discountValidUntil:
+        subscription.discountValidUntil?.toISOString() ?? null,
+      paymentGraceDays: subscription.paymentGraceDays,
+      expectedBlockAt:
+        getExpectedSubscriptionBlockAt({
+          nextBillingAt: subscription.nextBillingAt,
+          paymentGraceDays: subscription.paymentGraceDays,
+        })?.toISOString() ?? null,
+    }
+    const newValues = {
+      contractedAmount: nextContractedAmount,
+      discountType: nextDiscountType,
+      discountValue: nextDiscountValue,
+      discountValidUntil: values.discountValidUntil?.toISOString() ?? null,
+      paymentGraceDays: values.paymentGraceDays,
+      expectedBlockAt:
+        getExpectedSubscriptionBlockAt({
+          nextBillingAt: subscription.nextBillingAt,
+          paymentGraceDays: values.paymentGraceDays,
+        })?.toISOString() ?? null,
+    }
+
+    const [updatedSubscription] = await tx
+      .update(storeSubscriptionsTable)
+      .set({
+        contractedAmount: nextContractedAmount,
+        discountType: nextDiscountType,
+        discountValue: nextDiscountValue,
+        discountValidUntil: values.discountValidUntil,
+        paymentGraceDays: values.paymentGraceDays,
+        updatedAt: now,
+      })
+      .where(eq(storeSubscriptionsTable.id, subscription.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: subscription.id,
+      eventType: 'subscription_changed',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues,
+      metadata: {
+        source: 'internal_subscription_terms',
+      },
+    })
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'update_store_subscription_terms',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `${values.reason} | valor=${nextContractedAmount}; desconto=${
+        nextDiscountType ?? 'none'
+      }; tolerancia=${values.paymentGraceDays}d; bloqueio_previsto=${
+        newValues.expectedBlockAt ?? 'sem data'
+      }`,
+    })
+
+    return updatedSubscription
   })
 }
 

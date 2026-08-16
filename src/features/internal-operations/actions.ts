@@ -13,8 +13,13 @@ import {
   updateInternalStoreProfile,
   updateStoreCommercialLifecycle,
   updateStoreImplementationChecklistItem,
+  updateStoreSubscriptionTerms,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
+import {
+  canUseInternalPermission,
+  getInternalOperator,
+} from '@/features/internal-operations/access'
 import { isStoreImplementationChecklistItemKey } from '@/features/internal-operations/implementation-checklist-policy'
 import {
   internalStoreCreationSchema,
@@ -35,6 +40,10 @@ import {
   type StoreAccessBlockActionValues,
   type StoreAccessUnblockActionValues,
 } from '@/features/internal-operations/store-access-block-policy'
+import {
+  storeSubscriptionTermsSchema,
+  type StoreSubscriptionTermsValues,
+} from '@/features/internal-operations/subscription-terms-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -74,6 +83,24 @@ const redirectWithError = (returnPath: string, message: string): never => {
 
 const redirectWithResult = (returnPath: string, result: string): never => {
   redirect(appendRouteParam(returnPath, 'result', result))
+}
+
+const requireSubscriptionTermsOperator = async () => {
+  const operator = await getInternalOperator()
+  const canManageBillingValues = canUseInternalPermission({
+    currentRole: operator?.role ?? null,
+    permission: 'manage_billing_values',
+  })
+  const canApplyBillingDiscounts = canUseInternalPermission({
+    currentRole: operator?.role ?? null,
+    permission: 'apply_billing_discounts',
+  })
+
+  if (!operator || (!canManageBillingValues && !canApplyBillingDiscounts)) {
+    redirect('/unauthorized')
+  }
+
+  return operator
 }
 
 type CreateInternalStoreActionResult =
@@ -438,9 +465,7 @@ export async function updateInternalStoreProfileAction(formData: FormData) {
   }
   const values = parsedPayload.data as InternalStoreProfileEditValues
 
-  const duplicates = await findInternalStoreProfileUpdateDuplicates(
-    values
-  )
+  const duplicates = await findInternalStoreProfileUpdateDuplicates(values)
   if (duplicates.length > 0) {
     const duplicateSummary = duplicates
       .map(
@@ -484,7 +509,10 @@ export async function updateInternalStoreProfileAction(formData: FormData) {
       error instanceof Error &&
       error.message === 'STORE_PROFILE_NO_CHANGES'
     ) {
-      redirectWithError(returnPath, 'Nenhuma alteracao cadastral foi detectada.')
+      redirectWithError(
+        returnPath,
+        'Nenhuma alteracao cadastral foi detectada.'
+      )
     }
 
     if (
@@ -898,4 +926,81 @@ export async function updateStoreCommercialLifecycleAction(formData: FormData) {
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
   redirectWithResult(returnPath, 'ciclo-comercial-atualizado')
+}
+
+export async function updateStoreSubscriptionTermsAction(formData: FormData) {
+  const operator = await requireSubscriptionTermsOperator()
+  const returnPath = getReturnPath(formData)
+  const values: StoreSubscriptionTermsValues = (() => {
+    try {
+      return storeSubscriptionTermsSchema.parse({
+        storeId: formData.get('storeId'),
+        subscriptionId: formData.get('subscriptionId'),
+        contractedAmount: formData.get('contractedAmount'),
+        discountType: formData.get('discountType'),
+        discountValue: formData.get('discountValue'),
+        discountValidUntil: formData.get('discountValidUntil'),
+        paymentGraceDays: formData.get('paymentGraceDays'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error && 'issues' in error
+          ? String(
+              (error as { issues?: { message?: string }[] }).issues?.[0]
+                ?.message
+            )
+          : 'Revise valor, desconto, validade, tolerancia e motivo.'
+
+      redirectWithError(returnPath, message)
+      throw new Error('INVALID_STORE_SUBSCRIPTION_TERMS_FORM')
+    }
+  })()
+
+  try {
+    await updateStoreSubscriptionTerms({
+      values,
+      operator,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao permite alteracao de plano.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_SUBSCRIPTION_NOT_FOUND'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Assinatura ativa nao encontrada para esta loja.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_SUBSCRIPTION_FINANCE_PERMISSION_REQUIRED'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Seu perfil pode editar descontos, mas valor contratado e tolerancia exigem permissao financeira.'
+      )
+    }
+
+    console.error(
+      '[internal-operations] Failed to update subscription terms',
+      error
+    )
+    redirectWithError(
+      returnPath,
+      'Nao foi possivel atualizar a condicao do plano agora.'
+    )
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'condicao-plano-atualizada')
 }

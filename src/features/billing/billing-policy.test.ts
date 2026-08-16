@@ -25,6 +25,7 @@ describe('billing policy', () => {
         contractedAmount: '199.9000',
         discountType: 'percentage',
         discountValue: '10',
+        discountValidUntil: null,
       })
     ).toEqual({
       subtotalAmount: '199.9000',
@@ -37,11 +38,28 @@ describe('billing policy', () => {
         contractedAmount: '99.9000',
         discountType: 'fixed_amount',
         discountValue: '120',
+        discountValidUntil: null,
       })
     ).toEqual({
       subtotalAmount: '99.9000',
       discountAmount: '99.9000',
       totalAmount: '0.0000',
+    })
+  })
+
+  test('ignora desconto vencido na data de cobranca', () => {
+    expect(
+      calculateBillingInvoiceAmounts({
+        contractedAmount: '200.0000',
+        discountType: 'percentage',
+        discountValue: '50',
+        discountValidUntil: new Date('2026-08-01T00:00:00.000Z'),
+        referenceDate: new Date('2026-08-10T00:00:00.000Z'),
+      })
+    ).toEqual({
+      subtotalAmount: '200.0000',
+      discountAmount: '0.0000',
+      totalAmount: '200.0000',
     })
   })
 
@@ -65,6 +83,7 @@ describe('billing policy', () => {
       billingIntervalCount: 1,
       discountType: 'fixed_amount' as const,
       discountValue: '50',
+      discountValidUntil: null,
       currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
       currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
     }
@@ -132,6 +151,7 @@ describe('billing policy', () => {
           billingIntervalCount: 1,
           discountType: null,
           discountValue: null,
+          discountValidUntil: null,
           currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
           currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
         },
