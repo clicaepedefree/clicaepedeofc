@@ -1,5 +1,7 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
 import {
+  blockStoreAccessAction,
+  unblockStoreAccessAction,
   updateInternalStoreProfileAction,
   updateStoreCommercialLifecycleAction,
 } from '@/features/internal-operations/actions'
@@ -269,6 +271,16 @@ export function InternalStoreOverviewPanel({
           Ciclo comercial atualizado com historico preservado.
         </div>
       )}
+      {result === 'acesso-loja-bloqueado' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Acesso da loja bloqueado com auditoria registrada.
+        </div>
+      )}
+      {result === 'acesso-loja-desbloqueado' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Acesso da loja desbloqueado sem alterar o historico.
+        </div>
+      )}
 
       {activeTab === 'dados' && (
         <DadosTab
@@ -331,6 +343,10 @@ function DadosTab({
   const canManageLifecycle = canRunInternalOperation({
     operator,
     operation: 'manageStoreLifecycle',
+  })
+  const canManageAccessBlock = canRunInternalOperation({
+    operator,
+    operation: 'blockStore',
   })
   const disabled = store.status === 'archived'
 
@@ -596,6 +612,12 @@ function DadosTab({
         store={store}
         basePath={basePath}
         canManageLifecycle={canManageLifecycle}
+      />
+
+      <StoreAccessBlockPanel
+        store={store}
+        basePath={basePath}
+        canManageAccessBlock={canManageAccessBlock}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -989,6 +1011,358 @@ function StoreLifecycleActionDialog({
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function StoreAccessBlockPanel({
+  store,
+  basePath,
+  canManageAccessBlock,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  canManageAccessBlock: boolean
+}) {
+  const activeBlock = store.accessBlock?.isActive ? store.accessBlock : null
+  const isArchived = store.status === 'archived'
+  const statusLabel = activeBlock ? 'Bloqueado' : 'Liberado'
+  const statusTone = activeBlock
+    ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100'
+    : 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100'
+
+  return (
+    <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+      <CardHeader className="gap-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>Acesso da loja</CardTitle>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Bloqueia ou libera o login dos usuarios da loja sem alterar status
+              comercial, assinatura, plano, faturas ou pedidos.
+            </p>
+          </div>
+          <Badge variant="outline" className={cn('border', statusTone)}>
+            {statusLabel}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <DetailField label="Situacao do acesso" value={statusLabel} />
+          <DetailField
+            label="Motivo atual"
+            value={activeBlock?.reason ?? 'Sem bloqueio ativo'}
+          />
+          <DetailField
+            label="Bloqueado em"
+            value={activeBlock ? formatDateTime(activeBlock.blockedAt) : null}
+          />
+          <DetailField
+            label="Desbloqueio programado"
+            value={
+              activeBlock
+                ? formatDateTime(activeBlock.scheduledUnblockAt)
+                : null
+            }
+          />
+        </div>
+
+        {store.accessBlock && !store.accessBlock.isActive && (
+          <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+            Ultimo bloqueio encerrado: {store.accessBlock.unblockReason ?? 'sem motivo informado'}.
+          </div>
+        )}
+
+        {!canManageAccessBlock && (
+          <EmptyState>
+            Seu perfil pode consultar o acesso da loja, mas nao pode bloquear
+            ou desbloquear login dos usuarios.
+          </EmptyState>
+        )}
+
+        {isArchived && canManageAccessBlock && (
+          <EmptyState>
+            Loja arquivada nao permite bloqueio ou desbloqueio de acesso.
+          </EmptyState>
+        )}
+
+        {canManageAccessBlock && !isArchived && (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <StoreAccessBlockDialog
+              store={store}
+              basePath={basePath}
+              disabled={Boolean(activeBlock)}
+              disabledReason={
+                activeBlock
+                  ? 'A loja ja possui bloqueio ativo. Desbloqueie antes de registrar outro.'
+                  : undefined
+              }
+            />
+            <StoreAccessUnblockDialog
+              store={store}
+              basePath={basePath}
+              disabled={!activeBlock}
+              disabledReason={
+                activeBlock
+                  ? undefined
+                  : 'A loja nao possui bloqueio ativo no momento.'
+              }
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StoreAccessBlockDialog({
+  store,
+  basePath,
+  disabled,
+  disabledReason,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  disabled: boolean
+  disabledReason?: string
+}) {
+  return (
+    <div className="rounded-lg border bg-background/70 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-amber-500/10 p-2 text-amber-600 dark:text-amber-300">
+          <ShieldOff className="size-4" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-foreground">Bloquear acesso</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Impede acesso as areas protegidas da loja ate liberacao manual ou
+            data programada.
+          </p>
+        </div>
+      </div>
+
+      {disabledReason && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+          {disabledReason}
+        </p>
+      )}
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button className="mt-4 w-full" variant="outline" disabled={disabled}>
+            <ShieldOff className="size-4" />
+            Bloquear acesso
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bloquear acesso da loja</DialogTitle>
+            <DialogDescription>
+              Use quando o suporte precisar suspender login da loja sem mexer no
+              contrato comercial.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form action={blockStoreAccessAction} className="space-y-5">
+            <input type="hidden" name="storeId" value={store.id} />
+            <input
+              type="hidden"
+              name="returnTo"
+              value={`${basePath}?tab=dados`}
+            />
+
+            <StoreAccessImpactGrid
+              changes={['Login dos usuarios da loja', 'Historico de acesso']}
+              unchanged={[
+                'Status comercial',
+                'Assinatura',
+                'Plano',
+                'Faturas',
+                'Pedidos',
+              ]}
+            />
+
+            <FormField label="Motivo do bloqueio" htmlFor="accessBlockReason">
+              <Textarea
+                id="accessBlockReason"
+                name="reason"
+                placeholder="Ex.: suspeita de uso indevido em atendimento de suporte."
+                required
+              />
+            </FormField>
+
+            <label className="flex gap-3 rounded-lg border bg-muted/20 p-4 text-sm">
+              <input
+                type="checkbox"
+                name="notifyStoreOwner"
+                className="mt-1 size-4"
+              />
+              <span>
+                <span className="font-medium text-foreground">
+                  Notificar responsaveis da loja
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Registra a intencao de enviar aviso sobre o bloqueio.
+                </span>
+              </span>
+            </label>
+
+            <FormField label="Desbloqueio automatico em" htmlFor="scheduledUnblockAt">
+              <Input
+                id="scheduledUnblockAt"
+                name="scheduledUnblockAt"
+                type="datetime-local"
+              />
+            </FormField>
+
+            <FormField label="Observacao interna" htmlFor="notificationNote">
+              <Textarea
+                id="notificationNote"
+                name="notificationNote"
+                placeholder="Ex.: avisar responsavel pelo WhatsApp antes do fim do expediente."
+              />
+            </FormField>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancelar
+                </Button>
+              </DialogClose>
+              <Button type="submit" variant="outline">
+                <ShieldOff className="size-4" />
+                Confirmar bloqueio
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function StoreAccessUnblockDialog({
+  store,
+  basePath,
+  disabled,
+  disabledReason,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  disabled: boolean
+  disabledReason?: string
+}) {
+  return (
+    <div className="rounded-lg border bg-background/70 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-300">
+          <KeyRound className="size-4" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-foreground">Desbloquear acesso</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Libera novamente o login dos usuarios mantendo o historico completo.
+          </p>
+        </div>
+      </div>
+
+      {disabledReason && (
+        <p className="mt-3 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+          {disabledReason}
+        </p>
+      )}
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button className="mt-4 w-full" disabled={disabled}>
+            <KeyRound className="size-4" />
+            Desbloquear acesso
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Desbloquear acesso da loja</DialogTitle>
+            <DialogDescription>
+              Confirme a justificativa para liberar o acesso protegido desta
+              loja.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form action={unblockStoreAccessAction} className="space-y-5">
+            <input type="hidden" name="storeId" value={store.id} />
+            <input
+              type="hidden"
+              name="returnTo"
+              value={`${basePath}?tab=dados`}
+            />
+
+            <StoreAccessImpactGrid
+              changes={['Login dos usuarios da loja', 'Historico de acesso']}
+              unchanged={[
+                'Status comercial',
+                'Assinatura',
+                'Plano',
+                'Faturas',
+                'Pedidos',
+              ]}
+            />
+
+            <FormField label="Motivo do desbloqueio" htmlFor="accessUnblockReason">
+              <Textarea
+                id="accessUnblockReason"
+                name="reason"
+                placeholder="Ex.: pendencia validada pelo suporte e acesso liberado."
+                required
+              />
+            </FormField>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancelar
+                </Button>
+              </DialogClose>
+              <Button type="submit">
+                <KeyRound className="size-4" />
+                Confirmar desbloqueio
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function StoreAccessImpactGrid({
+  changes,
+  unchanged,
+}: {
+  changes: string[]
+  unchanged: string[]
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="rounded-lg border bg-emerald-50/60 p-4 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/20">
+        <div className="flex items-center gap-2 font-medium text-emerald-900 dark:text-emerald-100">
+          <CheckCircle2 className="size-4" />
+          Esta acao altera
+        </div>
+        <ul className="mt-3 space-y-2 text-emerald-800 dark:text-emerald-200">
+          {changes.map(item => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+        <div className="font-medium text-foreground">Nao altera</div>
+        <ul className="mt-3 space-y-2 text-muted-foreground">
+          {unchanged.map(item => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

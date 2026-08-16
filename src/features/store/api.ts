@@ -18,6 +18,7 @@ import { currentUser } from '@clerk/nextjs/server'
 import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
+import { storeAccessBlocksTable } from '@/services/db/schema/store-access-blocks'
 import { InsertStoreFile } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
@@ -57,7 +58,16 @@ export const getAvailableStores = async (): Promise<any[]> => {
         eq(userStorePermissionsTable.storeId, storesTable.id),
         eq(userStorePermissionsTable.userId, user.id),
         sql`${userStorePermissionsTable.revokedAt} is null`,
-        eq(storesTable.status, 'active')
+        eq(storesTable.status, 'active'),
+        sql`not exists (
+          select 1 from ${storeAccessBlocksTable}
+          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
+            and ${storeAccessBlocksTable.unblockedAt} is null
+            and (
+              ${storeAccessBlocksTable.scheduledUnblockAt} is null
+              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+            )
+        )`
       )
     )
 }
@@ -252,7 +262,10 @@ export const validateUserPermissionsForStore = async (
 
   if (
     userPermissionsForStore?.permission.role !== role ||
-    shouldBlockStoreOperations(userPermissionsForStore.store.status)
+    shouldBlockStoreOperations({
+      status: userPermissionsForStore.store.status,
+      hasActiveAccessBlock: Boolean(userPermissionsForStore.activeAccessBlockId),
+    })
   )
     throw new PermissionsError({
       type: 'FORBIDDEN',

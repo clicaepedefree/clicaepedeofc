@@ -19,6 +19,12 @@ export function assertClerkLoginCanUseEmail({
   throw new Error(USER_EMAIL_ALREADY_LINKED_ERROR)
 }
 
-export function shouldBlockStoreOperations(status: string) {
-  return status !== 'active'
+export function shouldBlockStoreOperations({
+  status,
+  hasActiveAccessBlock = false,
+}: {
+  status: string
+  hasActiveAccessBlock?: boolean
+}) {
+  return status !== 'active' || hasActiveAccessBlock
 }
