@@ -1,5 +1,12 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
 import { buildBillingInvoiceDraft } from '@/features/billing/billing-policy'
+import {
+  buildStoreAccessInviteUrl,
+  createStoreAccessInviteToken,
+  getStoreAccessInviteExpiresAt,
+  getStoreAccessInviteSecret,
+  hashStoreAccessInviteToken,
+} from '@/features/store-access-invites/invite-policy'
 import { normalizeUserEmail } from '@/features/user/user-policy'
 import { db } from '@/services/db'
 import {
@@ -8,6 +15,7 @@ import {
   billingPlansTable,
   internalStoreProvisioningRequestsTable,
   internalOperationAuditLogsTable,
+  storeAccessInvitesTable,
   storeAddressesTable,
   storeBillingEventsTable,
   storeBillingInvoicesTable,
@@ -87,6 +95,17 @@ export type InternalStoreDuplicateMatch = {
     value: string
   }[]
 }
+
+export type InternalStoreAccessInviteResult = {
+  inviteId: number
+  inviteUrl: string
+  targetEmail: string
+  expiresAt: Date
+}
+
+type InternalStoreTransaction = Parameters<
+  Parameters<typeof db.transaction>[0]
+>[0]
 
 const storeStatusValues: InternalStoreStatus[] = [
   'active',
@@ -457,6 +476,107 @@ const addDays = (date: Date, days: number) => {
   return result
 }
 
+const getInternalInviteBaseUrl = () => {
+  const explicitUrl =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+
+  if (explicitUrl) return explicitUrl
+
+  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? 'localhost:3000'
+  const protocol =
+    domain.includes('localhost') || domain.includes('127.0.0.1')
+      ? 'http'
+      : 'https'
+
+  return `${protocol}://${domain}`
+}
+
+async function createStoreAccessInvite({
+  tx,
+  storeId,
+  targetUserId,
+  targetEmail,
+  operator,
+  now,
+  deliveryChannel = 'manual',
+}: {
+  tx: InternalStoreTransaction
+  storeId: number
+  targetUserId: string
+  targetEmail: string
+  operator: InternalOperator
+  now: Date
+  deliveryChannel?: 'manual' | 'email' | 'whatsapp'
+}): Promise<InternalStoreAccessInviteResult> {
+  const normalizedEmail = normalizeUserEmail(targetEmail)
+  const token = createStoreAccessInviteToken()
+  const tokenHash = hashStoreAccessInviteToken(
+    token,
+    getStoreAccessInviteSecret()
+  )
+  const expiresAt = getStoreAccessInviteExpiresAt(now)
+
+  await tx
+    .update(storeAccessInvitesTable)
+    .set({
+      status: 'revoked',
+      revokedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(storeAccessInvitesTable.storeId, storeId),
+        sql`lower(${storeAccessInvitesTable.targetEmail}) = ${normalizedEmail}`,
+        eq(storeAccessInvitesTable.status, 'pending'),
+        sql`${storeAccessInvitesTable.usedAt} is null`,
+        sql`${storeAccessInvitesTable.revokedAt} is null`
+      )
+    )
+
+  const [invite] = await tx
+    .insert(storeAccessInvitesTable)
+    .values({
+      storeId,
+      targetUserId,
+      targetEmail: normalizedEmail,
+      role: 'admin',
+      tokenHash,
+      status: 'pending',
+      deliveryChannel,
+      deliveryStatus: deliveryChannel === 'manual' ? 'ready' : 'pending',
+      expiresAt,
+      createdByClerkId: operator.clerkId,
+      createdByEmail: operator.email,
+      updatedAt: now,
+    })
+    .returning()
+
+  await tx.insert(internalOperationAuditLogsTable).values({
+    action: 'create_store_access_invite',
+    actorClerkId: operator.clerkId,
+    actorEmail: operator.email,
+    actorName: operator.name,
+    storeId,
+    targetUserId,
+    targetUserEmail: normalizedEmail,
+    previousStoreStatus: 'invite_pending',
+    newStoreStatus: 'invite_created',
+    reason: 'Convite seguro gerado para o responsavel definir a propria senha.',
+  })
+
+  return {
+    inviteId: invite.id,
+    inviteUrl: buildStoreAccessInviteUrl({
+      token,
+      baseUrl: getInternalInviteBaseUrl(),
+    }),
+    targetEmail: normalizedEmail,
+    expiresAt,
+  }
+}
+
 const lastDayOfMonth = (year: number, monthIndex: number) =>
   new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
 
@@ -643,11 +763,12 @@ export async function createInternalStore({
         subscription: existingSubscription,
         invoice: existingInvoice,
         responsibleUser,
+        accessInvite: null,
         idempotentReplay: true,
       }
     }
 
-    const [responsibleUser] = await tx
+    let [responsibleUser] = await tx
       .select()
       .from(usersTable)
       .where(
@@ -658,7 +779,21 @@ export async function createInternalStore({
       )
       .limit(1)
 
-    if (!responsibleUser) throw new Error('RESPONSIBLE_USER_NOT_FOUND')
+    if (!responsibleUser) {
+      const [createdResponsibleUser] = await tx
+        .insert(usersTable)
+        .values({
+          email: responsibleEmail,
+          name: values.responsibleName,
+          phone: values.responsiblePhone || null,
+          status: 'active',
+          lastLoginAt: null,
+          updatedAt: now,
+        })
+        .returning()
+
+      responsibleUser = createdResponsibleUser
+    }
 
     const [plan] = await tx
       .select()
@@ -871,6 +1006,18 @@ export async function createInternalStore({
       )
     }
 
+    const accessInvite = values.sendAccessImmediately
+      ? await createStoreAccessInvite({
+          tx,
+          storeId: store.id,
+          targetUserId: responsibleUser.id,
+          targetEmail: responsibleUser.email,
+          operator,
+          now,
+          deliveryChannel: 'manual',
+        })
+      : null
+
     await tx.insert(storeBillingEventsTable).values({
       storeId: store.id,
       subscriptionId: subscription.id,
@@ -888,6 +1035,8 @@ export async function createInternalStore({
         planModuleCount: planModules.length,
         additionalModuleIds,
         sendAccessImmediately: values.sendAccessImmediately,
+        accessInviteId: accessInvite?.inviteId ?? null,
+        accessInviteExpiresAt: accessInvite?.expiresAt ?? null,
       },
       metadata: { source: 'internal_store_creation' },
     })
@@ -944,8 +1093,67 @@ export async function createInternalStore({
       subscription,
       invoice: initialInvoice,
       responsibleUser,
+      accessInvite,
       idempotentReplay: false,
     }
+  })
+}
+
+export async function resendStoreAccessInvite({
+  storeId,
+  targetEmail,
+  operator,
+}: {
+  storeId: number
+  targetEmail: string
+  operator: InternalOperator
+}): Promise<InternalStoreAccessInviteResult> {
+  const normalizedEmail = normalizeUserEmail(targetEmail)
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    let [targetUser] = await tx
+      .select()
+      .from(usersTable)
+      .where(
+        and(
+          eq(usersTable.status, 'active'),
+          sql`lower(${usersTable.email}) = ${normalizedEmail}`
+        )
+      )
+      .limit(1)
+
+    if (!targetUser) {
+      const [createdUser] = await tx
+        .insert(usersTable)
+        .values({
+          email: normalizedEmail,
+          status: 'active',
+          updatedAt: now,
+        })
+        .returning()
+
+      targetUser = createdUser
+    }
+
+    return await createStoreAccessInvite({
+      tx,
+      storeId,
+      targetUserId: targetUser.id,
+      targetEmail: normalizedEmail,
+      operator,
+      now,
+      deliveryChannel: 'manual',
+    })
   })
 }
 

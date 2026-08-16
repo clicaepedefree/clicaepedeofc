@@ -5,6 +5,8 @@ import { usersTable } from './users'
 
 export const internalOperationActions = [
   'create_store',
+  'create_store_access_invite',
+  'accept_store_access_invite',
   'reactivate_store',
   'archive_store',
 ] as const

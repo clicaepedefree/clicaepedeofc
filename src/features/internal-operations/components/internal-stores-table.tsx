@@ -1,22 +1,53 @@
 'use client'
 
-import { archiveStoreAction, reactivateStoreAction } from '@/features/internal-operations/actions'
+import {
+  archiveStoreAction,
+  reactivateStoreAction,
+  resendStoreAccessInviteAction,
+} from '@/features/internal-operations/actions'
 import type { InternalStoreListItem } from '@/features/internal-operations/db'
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/shared/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/shared/alert-dialog'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/shared/dialog'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/shared/dialog'
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/shared/table'
 import { Textarea } from '@/shared/textarea'
-import { Archive, RotateCcw } from 'lucide-react'
+import { Archive, Copy, RotateCcw, Send, Loader2 } from 'lucide-react'
+import { useState, useTransition } from 'react'
 
 type InternalStoresTableProps = {
   stores: SerializableInternalStoreListItem[]
   canReactivate: boolean
   canArchive: boolean
+  canCreateStore: boolean
   returnTo: string
 }
 
@@ -42,10 +73,13 @@ const statusLabel: Record<InternalStoreListItem['status'], string> = {
 }
 
 const statusClassName: Record<InternalStoreListItem['status'], string> = {
-  active: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900',
+  active:
+    'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900',
   inactive: 'bg-muted text-muted-foreground border-border',
-  pending_recovery: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900',
-  archived: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-900',
+  pending_recovery:
+    'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900',
+  archived:
+    'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-900',
 }
 
 const formatDateTime = (date: Date | string | null) => {
@@ -69,8 +103,18 @@ export function InternalStoresTable({
   stores,
   canReactivate,
   canArchive,
+  canCreateStore,
   returnTo,
 }: InternalStoresTableProps) {
+  const [isInvitePending, startInviteTransition] = useTransition()
+  const [inviteResult, setInviteResult] = useState<{
+    storeId: number
+    inviteUrl: string
+    targetEmail: string
+    expiresAt: string
+  } | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+
   if (stores.length === 0) {
     return (
       <div className="rounded-lg border border-dashed bg-card p-10 text-center text-sm text-muted-foreground">
@@ -96,12 +140,18 @@ export function InternalStoresTable({
             const canStoreBeReactivated =
               store.status === 'pending_recovery' || store.status === 'inactive'
             const primaryAdminEmail = getPrimaryAdminEmail(store)
+            const canInviteResponsible =
+              canCreateStore &&
+              store.status !== 'archived' &&
+              primaryAdminEmail.length > 0
 
             return (
               <TableRow key={store.id} className="align-top">
                 <TableCell>
                   <div className="space-y-1">
-                    <div className="font-medium text-foreground">{store.name}</div>
+                    <div className="font-medium text-foreground">
+                      {store.name}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       #{store.id} · {store.subdomain}
                     </div>
@@ -123,11 +173,18 @@ export function InternalStoresTable({
                 <TableCell>
                   <div className="space-y-2">
                     {store.admins.length === 0 ? (
-                      <span className="text-sm text-muted-foreground">Sem admin vinculado</span>
+                      <span className="text-sm text-muted-foreground">
+                        Sem admin vinculado
+                      </span>
                     ) : (
                       store.admins.map(admin => (
-                        <div key={`${store.id}-${admin.userId}`} className="text-sm">
-                          <div className="font-medium text-foreground">{admin.email}</div>
+                        <div
+                          key={`${store.id}-${admin.userId}`}
+                          className="text-sm"
+                        >
+                          <div className="font-medium text-foreground">
+                            {admin.email}
+                          </div>
                           <div className="text-xs text-muted-foreground">
                             {admin.name ?? 'Sem nome'} · {admin.userStatus}
                             {admin.revokedAt && (
@@ -147,6 +204,40 @@ export function InternalStoresTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canInviteResponsible || isInvitePending}
+                      onClick={() => {
+                        setInviteError(null)
+                        setInviteResult(null)
+                        startInviteTransition(async () => {
+                          const result = await resendStoreAccessInviteAction({
+                            storeId: store.id,
+                            targetEmail: primaryAdminEmail,
+                          })
+
+                          if (!result.success) {
+                            setInviteError(result.error)
+                            return
+                          }
+
+                          setInviteResult({
+                            storeId: store.id,
+                            inviteUrl: result.inviteUrl,
+                            targetEmail: result.targetEmail,
+                            expiresAt: result.expiresAt,
+                          })
+                        })
+                      }}
+                    >
+                      {isInvitePending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Send className="size-4" />
+                      )}
+                      Reenviar convite
+                    </Button>
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button
@@ -162,15 +253,31 @@ export function InternalStoresTable({
                         <DialogHeader>
                           <DialogTitle>Reativar loja</DialogTitle>
                           <DialogDescription>
-                            Vincule um usuario ativo como administrador e volte a loja para producao.
+                            Vincule um usuario ativo como administrador e volte
+                            a loja para producao.
                           </DialogDescription>
                         </DialogHeader>
-                        <form action={reactivateStoreAction} className="space-y-4">
-                          <input type="hidden" name="storeId" value={store.id} />
-                          <input type="hidden" name="returnTo" value={returnTo} />
+                        <form
+                          action={reactivateStoreAction}
+                          className="space-y-4"
+                        >
+                          <input
+                            type="hidden"
+                            name="storeId"
+                            value={store.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="returnTo"
+                            value={returnTo}
+                          />
                           <div className="rounded-md border bg-muted/60 p-3 text-sm">
-                            <div className="font-medium text-foreground">{store.name}</div>
-                            <div className="text-muted-foreground">{store.subdomain}</div>
+                            <div className="font-medium text-foreground">
+                              {store.name}
+                            </div>
+                            <div className="text-muted-foreground">
+                              {store.subdomain}
+                            </div>
                           </div>
                           <Label htmlFor={`adminEmail-${store.id}`} size="sm">
                             E-mail do novo administrador
@@ -183,7 +290,10 @@ export function InternalStoresTable({
                             placeholder="admin@restaurante.com"
                             required
                           />
-                          <Label htmlFor={`reason-reactivate-${store.id}`} size="sm">
+                          <Label
+                            htmlFor={`reason-reactivate-${store.id}`}
+                            size="sm"
+                          >
                             Motivo da reativacao
                           </Label>
                           <Textarea
@@ -194,7 +304,9 @@ export function InternalStoresTable({
                           />
                           <DialogFooter>
                             <DialogClose asChild>
-                              <Button type="button" variant="outline">Cancelar</Button>
+                              <Button type="button" variant="outline">
+                                Cancelar
+                              </Button>
                             </DialogClose>
                             <Button type="submit">
                               <RotateCcw className="size-4" />
@@ -220,13 +332,22 @@ export function InternalStoresTable({
                         <AlertDialogHeader>
                           <AlertDialogTitle>Arquivar loja</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Essa acao revoga acessos ativos e tira a loja da operacao.
-                            Para confirmar, digite o subdominio da loja.
+                            Essa acao revoga acessos ativos e tira a loja da
+                            operacao. Para confirmar, digite o subdominio da
+                            loja.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <form action={archiveStoreAction} className="space-y-4">
-                          <input type="hidden" name="storeId" value={store.id} />
-                          <input type="hidden" name="returnTo" value={returnTo} />
+                          <input
+                            type="hidden"
+                            name="storeId"
+                            value={store.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="returnTo"
+                            value={returnTo}
+                          />
                           <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100">
                             <strong>{store.name}</strong>
                             <div>{store.subdomain}</div>
@@ -240,7 +361,10 @@ export function InternalStoresTable({
                             autoComplete="off"
                             required
                           />
-                          <Label htmlFor={`reason-archive-${store.id}`} size="sm">
+                          <Label
+                            htmlFor={`reason-archive-${store.id}`}
+                            size="sm"
+                          >
                             Motivo do arquivamento
                           </Label>
                           <Textarea
@@ -266,6 +390,66 @@ export function InternalStoresTable({
           })}
         </TableBody>
       </Table>
+
+      <Dialog
+        open={!!inviteResult || !!inviteError}
+        onOpenChange={open => {
+          if (!open) {
+            setInviteResult(null)
+            setInviteError(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {inviteResult ? 'Convite seguro gerado' : 'Convite nao gerado'}
+            </DialogTitle>
+            <DialogDescription>
+              {inviteResult
+                ? 'Envie este link para o responsavel. Convites anteriores pendentes para esta loja e e-mail foram invalidados.'
+                : 'Revise os dados da loja e tente novamente.'}
+            </DialogDescription>
+          </DialogHeader>
+          {inviteResult ? (
+            <div className="space-y-3">
+              <div className="rounded-md border bg-muted/50 p-3 text-sm">
+                <div className="font-medium text-foreground">
+                  {inviteResult.targetEmail}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Expira em {formatDateTime(inviteResult.expiresAt)}
+                </div>
+              </div>
+              <p className="break-all rounded-md border bg-background p-3 font-mono text-xs text-foreground">
+                {inviteResult.inviteUrl}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200">
+              {inviteError}
+            </div>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Fechar
+              </Button>
+            </DialogClose>
+            {inviteResult && (
+              <Button
+                type="button"
+                onClick={() =>
+                  navigator.clipboard?.writeText(inviteResult.inviteUrl)
+                }
+              >
+                <Copy className="size-4" />
+                Copiar link
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
