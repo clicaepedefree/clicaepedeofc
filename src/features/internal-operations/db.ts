@@ -16,9 +16,15 @@ import {
   usersTable,
   type SelectStore,
 } from '@/services/db/schema'
-import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
-import { normalizeCurrencyAmount } from './internal-store-creation-policy'
+import {
+  normalizeCurrencyAmount,
+  normalizeInternalCnpj,
+  normalizeInternalCpf,
+  normalizeInternalEmail,
+  normalizeInternalPhone,
+} from './internal-store-creation-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -63,6 +69,18 @@ export type InternalBillingModuleOption = {
   name: string
   description: string | null
   includedPlanIds: number[]
+}
+
+export type InternalStoreDuplicateMatch = {
+  storeId: number
+  storeName: string
+  subdomain: string
+  status: InternalStoreStatus
+  matchedFields: {
+    field: string
+    label: string
+    value: string
+  }[]
 }
 
 const storeStatusValues: InternalStoreStatus[] = [
@@ -256,6 +274,170 @@ export async function listBillingModulesForInternalCreation(): Promise<
   }
 
   return [...modulesById.values()]
+}
+
+const maskEmail = (email: string) => {
+  const [localPart = '', domain = ''] = email.split('@')
+  if (!localPart || !domain) return 'e-mail informado'
+
+  return `${localPart.slice(0, 2)}***@${domain}`
+}
+
+const maskLast4 = (value: string, fallback: string) => {
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return fallback
+
+  return `***${digits.slice(-4)}`
+}
+
+export async function findInternalStoreCreationDuplicates(
+  values: InternalStoreCreationValues
+): Promise<InternalStoreDuplicateMatch[]> {
+  const duplicateInputs = {
+    subdomain: values.subdomain,
+    companyTaxNumber: normalizeInternalCnpj(values.companyTaxNumber),
+    responsibleTaxNumber: normalizeInternalCpf(values.responsibleTaxNumber),
+    companyEmail: normalizeInternalEmail(values.companyEmail),
+    responsibleEmail: normalizeInternalEmail(values.responsibleEmail),
+    phone1: normalizeInternalPhone(values.phone1),
+    responsiblePhone: normalizeInternalPhone(values.responsiblePhone),
+  }
+  const conditions = [
+    duplicateInputs.subdomain
+      ? eq(storesTable.subdomain, duplicateInputs.subdomain)
+      : undefined,
+    duplicateInputs.companyTaxNumber
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
+      : undefined,
+    duplicateInputs.responsibleTaxNumber
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
+      : undefined,
+    duplicateInputs.companyEmail
+      ? sql`lower(coalesce(${storeCompanyProfilesTable.email}, '')) = ${duplicateInputs.companyEmail}`
+      : undefined,
+    duplicateInputs.responsibleEmail
+      ? sql`lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) = ${duplicateInputs.responsibleEmail}`
+      : undefined,
+    duplicateInputs.phone1
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') = ${duplicateInputs.phone1}`
+      : undefined,
+    duplicateInputs.responsiblePhone
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
+      : undefined,
+  ].filter(Boolean)
+
+  if (conditions.length === 0) return []
+
+  const rows = await db
+    .select({
+      storeId: storesTable.id,
+      storeName: storesTable.name,
+      subdomain: storesTable.subdomain,
+      status: storesTable.status,
+      companyTaxNumber: storeCompanyProfilesTable.companyTaxNumber,
+      responsibleTaxNumber: storeCompanyProfilesTable.responsibleTaxNumber,
+      companyEmail: storeCompanyProfilesTable.email,
+      responsibleEmail: storeCompanyProfilesTable.responsibleEmail,
+      phone1: storeCompanyProfilesTable.phone1,
+      responsiblePhone: storeCompanyProfilesTable.responsiblePhone,
+    })
+    .from(storesTable)
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .where(or(...conditions))
+    .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
+    .limit(5)
+
+  return rows.map(row => {
+    const matchedFields: InternalStoreDuplicateMatch['matchedFields'] = []
+
+    if (row.subdomain === duplicateInputs.subdomain) {
+      matchedFields.push({
+        field: 'subdomain',
+        label: 'Endereco publico',
+        value: row.subdomain,
+      })
+    }
+
+    if (
+      duplicateInputs.companyTaxNumber &&
+      normalizeInternalCnpj(row.companyTaxNumber) === duplicateInputs.companyTaxNumber
+    ) {
+      matchedFields.push({
+        field: 'companyTaxNumber',
+        label: 'CNPJ',
+        value: maskLast4(row.companyTaxNumber ?? '', 'CNPJ informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.responsibleTaxNumber &&
+      normalizeInternalCpf(row.responsibleTaxNumber) ===
+        duplicateInputs.responsibleTaxNumber
+    ) {
+      matchedFields.push({
+        field: 'responsibleTaxNumber',
+        label: 'CPF do responsavel',
+        value: maskLast4(row.responsibleTaxNumber ?? '', 'CPF informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.companyEmail &&
+      normalizeInternalEmail(row.companyEmail) === duplicateInputs.companyEmail
+    ) {
+      matchedFields.push({
+        field: 'companyEmail',
+        label: 'E-mail da loja',
+        value: maskEmail(row.companyEmail ?? ''),
+      })
+    }
+
+    if (
+      duplicateInputs.responsibleEmail &&
+      normalizeInternalEmail(row.responsibleEmail) ===
+        duplicateInputs.responsibleEmail
+    ) {
+      matchedFields.push({
+        field: 'responsibleEmail',
+        label: 'E-mail do responsavel',
+        value: maskEmail(row.responsibleEmail ?? ''),
+      })
+    }
+
+    if (
+      duplicateInputs.phone1 &&
+      normalizeInternalPhone(row.phone1) === duplicateInputs.phone1
+    ) {
+      matchedFields.push({
+        field: 'phone1',
+        label: 'Telefone da loja',
+        value: maskLast4(row.phone1 ?? '', 'telefone informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.responsiblePhone &&
+      normalizeInternalPhone(row.responsiblePhone) ===
+        duplicateInputs.responsiblePhone
+    ) {
+      matchedFields.push({
+        field: 'responsiblePhone',
+        label: 'Telefone do responsavel',
+        value: maskLast4(row.responsiblePhone ?? '', 'telefone informado'),
+      })
+    }
+
+    return {
+      storeId: row.storeId,
+      storeName: row.storeName,
+      subdomain: row.subdomain,
+      status: row.status,
+      matchedFields,
+    }
+  })
 }
 
 const addDays = (date: Date, days: number) => {
