@@ -5,6 +5,7 @@ import {
   createInternalStore,
   findInternalStoreCreationDuplicates,
   reactivateStoreWithAdmin,
+  resendStoreAccessInvite,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
 import {
@@ -41,7 +42,15 @@ const redirectWithError = (returnPath: string, message: string): never => {
 }
 
 type CreateInternalStoreActionResult =
-  | { success: true; storeId: number }
+  | {
+      success: true
+      storeId: number
+      accessInvite?: {
+        inviteUrl: string
+        targetEmail: string
+        expiresAt: string
+      }
+    }
   | {
       success: false
       code: 'DUPLICATE_REVIEW_REQUIRED'
@@ -55,12 +64,17 @@ type LookupInternalPostalCodeActionResult =
   | { success: true; address: InternalPostalCodeAddress }
   | { success: false; error: string }
 
+type ResendStoreAccessInviteActionResult =
+  | {
+      success: true
+      inviteUrl: string
+      targetEmail: string
+      expiresAt: string
+    }
+  | { success: false; error: string }
+
 const getInternalStoreCreationErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
-    if (error.message === 'RESPONSIBLE_USER_NOT_FOUND') {
-      return 'O responsavel precisa ter uma conta ativa no app antes do cadastro.'
-    }
-
     if (error.message === 'BILLING_PLAN_NOT_FOUND') {
       return 'Selecione um plano ativo para continuar.'
     }
@@ -252,7 +266,17 @@ export async function createInternalStoreAction(
     revalidatePath('/internal/stores')
     revalidatePath('/internal-operations')
 
-    return { success: true, storeId: result.store.id }
+    return {
+      success: true,
+      storeId: result.store.id,
+      accessInvite: result.accessInvite
+        ? {
+            inviteUrl: result.accessInvite.inviteUrl,
+            targetEmail: result.accessInvite.targetEmail,
+            expiresAt: result.accessInvite.expiresAt.toISOString(),
+          }
+        : undefined,
+    }
   } catch (error) {
     console.error(
       '[internal-operations] Failed to create internal store',
@@ -282,6 +306,58 @@ export async function lookupInternalPostalCodeAction(
   }
 
   return { success: true, address: result.address }
+}
+
+export async function resendStoreAccessInviteAction(
+  payload: unknown
+): Promise<ResendStoreAccessInviteActionResult> {
+  const operator = await requireInternalOperation('createStore')
+
+  if (
+    typeof payload !== 'object' ||
+    !payload ||
+    !('storeId' in payload) ||
+    !('targetEmail' in payload)
+  ) {
+    return { success: false, error: 'Dados invalidos para reenviar convite.' }
+  }
+
+  const storeId = Number((payload as { storeId: unknown }).storeId)
+  const targetEmail = (payload as { targetEmail: unknown }).targetEmail
+
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    return { success: false, error: 'Loja invalida para convite.' }
+  }
+
+  if (typeof targetEmail !== 'string' || !targetEmail.includes('@')) {
+    return { success: false, error: 'Informe um e-mail valido.' }
+  }
+
+  try {
+    const invite = await resendStoreAccessInvite({
+      storeId,
+      targetEmail,
+      operator,
+    })
+
+    revalidatePath('/internal/stores')
+    revalidatePath('/internal-operations')
+
+    return {
+      success: true,
+      inviteUrl: invite.inviteUrl,
+      targetEmail: invite.targetEmail,
+      expiresAt: invite.expiresAt.toISOString(),
+    }
+  } catch (error) {
+    console.error('[internal-operations] Failed to resend access invite', error)
+
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      return { success: false, error: 'Loja arquivada nao recebe convite.' }
+    }
+
+    return { success: false, error: 'Nao foi possivel gerar novo convite.' }
+  }
 }
 
 export async function reactivateStoreAction(formData: FormData) {

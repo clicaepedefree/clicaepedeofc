@@ -38,6 +38,7 @@ import {
   BadgeCheck,
   Building2,
   CheckCircle2,
+  Copy,
   CreditCard,
   LayoutGrid,
   ListChecks,
@@ -200,6 +201,11 @@ export function InternalStoreCreateWizard({
   const latestPostalCodeValueRef = useRef('')
   const postalCodeLookupRequestRef = useRef(0)
   const [subdomainTouched, setSubdomainTouched] = useState(false)
+  const [createdInvite, setCreatedInvite] = useState<{
+    inviteUrl: string
+    targetEmail: string
+    expiresAt: string
+  } | null>(null)
 
   const currentStepIndex = internalStoreCreationSteps.indexOf(currentStep)
   const selectedPlan = plans.find(plan => plan.id === values.planId) ?? null
@@ -553,6 +559,12 @@ export function InternalStoreCreateWizard({
         return
       }
 
+      if (result.accessInvite) {
+        setCreatedInvite(result.accessInvite)
+        setIsSubmitting(false)
+        return
+      }
+
       router.push(`/internal/stores?result=loja-cadastrada`)
       router.refresh()
     })
@@ -587,6 +599,46 @@ export function InternalStoreCreateWizard({
       {errors.root && (
         <div className="rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {errors.root}
+        </div>
+      )}
+
+      {createdInvite && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="font-semibold">
+                Loja cadastrada e convite seguro gerado.
+              </p>
+              <p className="mt-1 text-emerald-800 dark:text-emerald-200">
+                Envie este link para {createdInvite.targetEmail}. O responsavel
+                define a propria senha no Clerk e o acesso sera vinculado a loja
+                correta.
+              </p>
+              <p className="mt-2 break-all rounded-md border border-emerald-200 bg-background px-3 py-2 font-mono text-xs text-foreground dark:border-emerald-900">
+                {createdInvite.inviteUrl}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  navigator.clipboard?.writeText(createdInvite.inviteUrl)
+                }
+              >
+                <Copy className="size-4" />
+                Copiar
+              </Button>
+              <Button
+                type="button"
+                onClick={() =>
+                  router.push('/internal/stores?result=loja-cadastrada')
+                }
+              >
+                Ir para lojas
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

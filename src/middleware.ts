@@ -1,10 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { isAdminHostname, stripAdminSubdomain } from '@/shared/lib/domain-config'
+import {
+  isAdminHostname,
+  stripAdminSubdomain,
+} from '@/shared/lib/domain-config'
 
 const isPublicRoute = createRouteMatcher([
   '/login(.*)',
   '/admin-onboarding(.*)',
+  '/convite(.*)',
   '/cardapio(.*)',
   '/pedido(.*)',
   '/api/files(.*)',
@@ -23,6 +27,7 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/', // Root page
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
+  '/convite(.*)', // Secure store access invitations
   '/cardapio(.*)', // Public digital menu
   '/pedido(.*)', // Public order tracking protected by an opaque token
   '/internal(.*)', // Internal Clica e Pede operations
@@ -116,7 +121,11 @@ const appMiddleware = clerkMiddleware(async (auth, request) => {
       if (!userId) {
         // User is not authenticated on admin subdomain
         // Redirect to main domain login with return URL back to admin subdomain
-        const signInUrl = buildMainDomainSignInUrl(hostname, url.pathname, url.search)
+        const signInUrl = buildMainDomainSignInUrl(
+          hostname,
+          url.pathname,
+          url.search
+        )
 
         // Use HTML redirect to ensure cross-subdomain redirect works correctly
         // Next.js normalizes Location headers, so we use a client-side redirect
