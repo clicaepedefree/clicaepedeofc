@@ -7,6 +7,8 @@ export const internalOperationActions = [
   'create_store',
   'create_store_access_invite',
   'accept_store_access_invite',
+  'update_store_implementation_checklist',
+  'activate_store_after_implementation',
   'reactivate_store',
   'archive_store',
 ] as const

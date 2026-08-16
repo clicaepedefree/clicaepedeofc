@@ -6,6 +6,7 @@ import {
 import { pgTable, serial, text } from 'drizzle-orm/pg-core'
 
 export const storeStatuses = [
+  'implementing',
   'active',
   'inactive',
   'pending_recovery',

@@ -40,6 +40,7 @@ const provisioningValues: InternalStoreCreationValues = {
 
 describe('internal operation store policy', () => {
   test('accepts only known store lifecycle statuses for internal filters', () => {
+    expect(parseStoreStatus('implementing')).toBe('implementing')
     expect(parseStoreStatus('active')).toBe('active')
     expect(parseStoreStatus('inactive')).toBe('inactive')
     expect(parseStoreStatus('pending_recovery')).toBe('pending_recovery')

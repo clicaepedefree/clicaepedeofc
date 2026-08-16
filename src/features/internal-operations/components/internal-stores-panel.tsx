@@ -33,6 +33,7 @@ type InternalStoresPanelProps = {
 
 const statusTabs: { value?: InternalStoreStatus; label: string }[] = [
   { label: 'Todas' },
+  { value: 'implementing', label: 'Em implantacao' },
   { value: 'active', label: 'Ativas' },
   { value: 'pending_recovery', label: 'Pendentes' },
   { value: 'inactive', label: 'Inativas' },
@@ -44,6 +45,8 @@ const resultMessages: Record<string, string> = {
   'loja-arquivada': 'Loja arquivada e acessos ativos revogados com sucesso.',
   'loja-cadastrada':
     'Loja cadastrada com responsavel, plano e modulos com sucesso.',
+  'checklist-atualizado': 'Checklist de implantacao atualizado com sucesso.',
+  'loja-ativada': 'Loja ativada comercialmente com sucesso.',
 }
 
 const formatDateTime = (date: Date | string) =>
@@ -57,6 +60,8 @@ const formatDateTime = (date: Date | string) =>
 
 const auditActionLabels: Record<string, string> = {
   create_store: 'Cadastro',
+  update_store_implementation_checklist: 'Checklist',
+  activate_store_after_implementation: 'Ativacao',
   reactivate_store: 'Reativacao',
   archive_store: 'Arquivamento',
 }
@@ -90,6 +95,14 @@ const serializeStoresForClient = (
       ...admin,
       revokedAt: admin.revokedAt?.toISOString() ?? null,
     })),
+    implementationChecklist: {
+      progress: store.implementationChecklist.progress,
+      items: store.implementationChecklist.items.map(item => ({
+        ...item,
+        completedAt: item.completedAt?.toISOString() ?? null,
+        updatedAt: item.updatedAt.toISOString(),
+      })),
+    },
   }))
 
 const getErrorMessage = (error: unknown) => {
@@ -153,6 +166,14 @@ export async function InternalStoresPanel({
     currentRole: operator.role,
     permission: 'create_store',
   })
+  const canManageImplementationChecklist = canUseInternalPermission({
+    currentRole: operator.role,
+    permission: 'manage_implementation_checklist',
+  })
+  const canActivateImplementedStore = canUseInternalPermission({
+    currentRole: operator.role,
+    permission: 'activate_implemented_store',
+  })
 
   return (
     <div className="space-y-6">
@@ -206,7 +227,17 @@ export async function InternalStoresPanel({
         </div>
       )}
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-5">
+        <Card className="rounded-lg border-sky-200 bg-sky-50 py-4 shadow-xs hover:shadow-xs dark:border-sky-900/70 dark:bg-sky-950/25">
+          <CardHeader className="px-4">
+            <CardTitle className="text-sm text-sky-800 dark:text-sky-300">
+              Em implantacao
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 text-2xl font-semibold text-sky-950 dark:text-sky-100">
+            {counts.implementing}
+          </CardContent>
+        </Card>
         <Card className="rounded-lg border-border bg-card py-4 shadow-xs hover:shadow-xs">
           <CardHeader className="px-4">
             <CardTitle className="text-sm text-muted-foreground">
@@ -280,6 +311,8 @@ export async function InternalStoresPanel({
           canReactivate={canReactivate}
           canArchive={canArchive}
           canCreateStore={canCreateStore}
+          canManageImplementationChecklist={canManageImplementationChecklist}
+          canActivateImplementedStore={canActivateImplementedStore}
           returnTo={basePath}
         />
       </section>
