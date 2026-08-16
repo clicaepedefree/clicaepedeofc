@@ -203,6 +203,7 @@ export const internalStoreCreationSchema = z
     discountType: z.enum(['none', 'fixed_amount', 'percentage']),
     discountValue: z.string().trim().optional().or(z.literal('')),
     selectedModuleIds: z.array(z.number().int().positive()).default([]),
+    sendAccessImmediately: z.boolean().default(true),
     duplicateOverrideConfirmed: z.boolean().default(false),
     duplicateReviewToken: z.string().trim().optional().or(z.literal('')),
     provisioningIdempotencyKey: z
@@ -210,6 +211,8 @@ export const internalStoreCreationSchema = z
       .trim()
       .min(12, 'Recarregue a pagina antes de tentar novamente')
       .max(120, 'Recarregue a pagina antes de tentar novamente'),
+    reviewConfirmed: z.boolean().default(false),
+    reviewFingerprint: z.string().trim().optional().or(z.literal('')),
     reason: z
       .string()
       .trim()
@@ -272,7 +275,12 @@ export const internalStoreCreationStepFields: Record<
   ],
   billing: ['planId', 'contractedAmount', 'discountType', 'discountValue'],
   modules: ['selectedModuleIds'],
-  review: ['reason'],
+  review: [
+    'reason',
+    'sendAccessImmediately',
+    'reviewConfirmed',
+    'reviewFingerprint',
+  ],
 }
 
 export const internalStoreCreationInitialValues: InternalStoreCreationValues = {
@@ -297,9 +305,12 @@ export const internalStoreCreationInitialValues: InternalStoreCreationValues = {
   discountType: 'none',
   discountValue: '',
   selectedModuleIds: [],
+  sendAccessImmediately: true,
   duplicateOverrideConfirmed: false,
   duplicateReviewToken: '',
   provisioningIdempotencyKey: '',
+  reviewConfirmed: false,
+  reviewFingerprint: '',
   reason: '',
 }
 
@@ -313,6 +324,53 @@ export const normalizeCurrencyAmount = (amount: string) => {
 
   return `${Number(integerPart)}.${cents}00`
 }
+
+const normalizeReviewText = (value: string | null | undefined) =>
+  (value ?? '').trim().replace(/\s+/g, ' ')
+
+const normalizeReviewAmount = (amount: string | null | undefined) => {
+  const value = (amount ?? '').trim()
+  return moneyRegex.test(value) ? normalizeCurrencyAmount(value) : value
+}
+
+export const getInternalStoreCreationReviewFingerprint = (
+  values: InternalStoreCreationValues
+) =>
+  JSON.stringify({
+    responsibleName: normalizeReviewText(values.responsibleName),
+    responsibleEmail: normalizeInternalEmail(values.responsibleEmail),
+    responsiblePhone: normalizeInternalPhone(values.responsiblePhone),
+    responsibleTaxNumber: normalizeInternalCpf(values.responsibleTaxNumber),
+    storeName: normalizeReviewText(values.storeName),
+    subdomain: values.subdomain.trim().toLowerCase(),
+    companyTaxNumber: normalizeInternalCnpj(values.companyTaxNumber),
+    companyName: normalizeReviewText(values.companyName),
+    phone1: normalizeInternalPhone(values.phone1),
+    companyEmail: normalizeInternalEmail(values.companyEmail),
+    postalCode: normalizeInternalPostalCode(values.postalCode),
+    street: normalizeReviewText(values.street),
+    number: normalizeReviewText(values.number),
+    district: normalizeReviewText(values.district),
+    city: normalizeReviewText(values.city),
+    stateCode: values.stateCode.trim().toUpperCase(),
+    planId: values.planId,
+    contractedAmount: normalizeReviewAmount(values.contractedAmount),
+    discountType: values.discountType,
+    discountValue:
+      values.discountType === 'none'
+        ? ''
+        : normalizeReviewAmount(values.discountValue),
+    selectedModuleIds: [...values.selectedModuleIds].sort((a, b) => a - b),
+    sendAccessImmediately: values.sendAccessImmediately,
+    duplicateOverrideConfirmed: values.duplicateOverrideConfirmed,
+    reason: normalizeReviewText(values.reason),
+  })
+
+export const isInternalStoreCreationReviewConfirmed = (
+  values: InternalStoreCreationValues
+) =>
+  values.reviewConfirmed &&
+  values.reviewFingerprint === getInternalStoreCreationReviewFingerprint(values)
 
 export const getInternalStoreCreationFieldErrors = (
   values: InternalStoreCreationValues

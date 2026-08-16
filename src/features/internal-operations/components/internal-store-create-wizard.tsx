@@ -11,11 +11,13 @@ import type {
 } from '@/features/internal-operations/db'
 import {
   buildSubdomainFromStoreName,
+  getInternalStoreCreationReviewFingerprint,
   getInternalStoreCreationFieldErrors,
   getInternalStoreCreationStepErrors,
   internalStoreCreationInitialValues,
   internalStoreCreationSchema,
   internalStoreCreationSteps,
+  isInternalStoreCreationReviewConfirmed,
   isInternalStoreCreationStepValid,
   normalizeInternalPostalCode,
   type InternalStoreCreationField,
@@ -45,6 +47,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { useMemo, useRef, useState, useTransition } from 'react'
 
 type InternalStoreCreateWizardProps = {
@@ -85,11 +88,30 @@ const stepLabels: Record<
   },
 }
 
-const formatMoney = (value: string) =>
+const formatMoney = (value: string | null | undefined) =>
   new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
-  }).format(Number(value || 0))
+  }).format(Number(String(value || 0).replace(',', '.')))
+
+const formatDate = (date: Date) =>
+  new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+
+const addDays = (date: Date, days: number) => {
+  const nextDate = new Date(date)
+  nextDate.setDate(nextDate.getDate() + days)
+  return nextDate
+}
+
+const addMonths = (date: Date, months: number) => {
+  const nextDate = new Date(date)
+  nextDate.setMonth(nextDate.getMonth() + months)
+  return nextDate
+}
 
 const getIntervalLabel = (plan: InternalBillingPlanOption) => {
   const labels: Record<string, string> = {
@@ -131,6 +153,28 @@ const SummaryRow = ({
   </div>
 )
 
+const SummaryCard = ({
+  title,
+  editLabel,
+  onEdit,
+  children,
+}: {
+  title: string
+  editLabel: string
+  onEdit: () => void
+  children: ReactNode
+}) => (
+  <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
+    <CardHeader className="flex flex-row items-center justify-between gap-3 px-4">
+      <CardTitle className="text-base">{title}</CardTitle>
+      <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+        {editLabel}
+      </Button>
+    </CardHeader>
+    <CardContent className="px-4">{children}</CardContent>
+  </Card>
+)
+
 export function InternalStoreCreateWizard({
   plans,
   modules,
@@ -145,6 +189,7 @@ export function InternalStoreCreateWizard({
     provisioningIdempotencyKey: createProvisioningIdempotencyKey(),
   }))
   const [errors, setErrors] = useState<WizardErrors>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [duplicateMatches, setDuplicateMatches] = useState<
     InternalStoreDuplicateMatch[]
   >([])
@@ -158,6 +203,34 @@ export function InternalStoreCreateWizard({
 
   const currentStepIndex = internalStoreCreationSteps.indexOf(currentStep)
   const selectedPlan = plans.find(plan => plan.id === values.planId) ?? null
+  const reviewConfirmed = isInternalStoreCreationReviewConfirmed(values)
+  const isSubmitLocked = isPending || isSubmitting
+  const reviewPeriodPreview = useMemo(() => {
+    if (!selectedPlan) return null
+
+    const startsAt = new Date()
+    const trialEndsAt =
+      selectedPlan.trialDays > 0
+        ? addDays(startsAt, selectedPlan.trialDays)
+        : null
+    const periodStart = trialEndsAt ?? startsAt
+    const intervalToMonths: Record<string, number> = {
+      monthly: 1,
+      quarterly: 3,
+      semiannual: 6,
+      annual: 12,
+    }
+    const months =
+      (intervalToMonths[selectedPlan.billingInterval] ?? 1) *
+      selectedPlan.billingIntervalCount
+
+    return {
+      startsAt,
+      trialEndsAt,
+      nextBillingAt: trialEndsAt ?? startsAt,
+      periodEnd: addMonths(periodStart, months),
+    }
+  }, [selectedPlan])
   const planIncludedModuleIds = useMemo(
     () =>
       new Set(
@@ -180,6 +253,19 @@ export function InternalStoreCreateWizard({
     ),
   ]
 
+  const clearReviewConfirmation = <
+    TValues extends Pick<
+      InternalStoreCreationValues,
+      'reviewConfirmed' | 'reviewFingerprint'
+    >,
+  >(
+    current: TValues
+  ) => ({
+    ...current,
+    reviewConfirmed: false,
+    reviewFingerprint: '',
+  })
+
   const updateValue = <TField extends InternalStoreCreationField>(
     field: TField,
     value: InternalStoreCreationValues[TField]
@@ -188,16 +274,22 @@ export function InternalStoreCreateWizard({
       latestPostalCodeValueRef.current = String(value)
     }
 
-    setValues(current => ({
-      ...current,
-      [field]: value,
-      ...(field === 'duplicateOverrideConfirmed'
-        ? {}
-        : {
-            duplicateOverrideConfirmed: false,
-            duplicateReviewToken: '',
-          }),
-    }))
+    setValues(current => {
+      const nextValues = {
+        ...current,
+        [field]: value,
+        ...(field === 'duplicateOverrideConfirmed'
+          ? {}
+          : {
+              duplicateOverrideConfirmed: false,
+              duplicateReviewToken: '',
+            }),
+      }
+
+      return field === 'reviewConfirmed' || field === 'reviewFingerprint'
+        ? nextValues
+        : clearReviewConfirmation(nextValues)
+    })
     setErrors(current => ({ ...current, [field]: undefined, root: undefined }))
     if (field !== 'duplicateOverrideConfirmed') setDuplicateMatches([])
   }
@@ -240,14 +332,14 @@ export function InternalStoreCreateWizard({
           return current
         }
 
-        return {
+        return clearReviewConfirmation({
           ...current,
           postalCode: result.address.postalCode,
           street: result.address.street || current.street,
           district: result.address.district || current.district,
           city: result.address.city || current.city,
           stateCode: result.address.stateCode || current.stateCode,
-        }
+        })
       })
       latestPostalCodeValueRef.current = result.address.postalCode
       setLastPostalCodeLookup(normalizedPostalCode)
@@ -267,15 +359,17 @@ export function InternalStoreCreateWizard({
   }
 
   const updateStoreName = (storeName: string) => {
-    setValues(current => ({
-      ...current,
-      storeName,
-      subdomain: subdomainTouched
-        ? current.subdomain
-        : buildSubdomainFromStoreName(storeName),
-      duplicateOverrideConfirmed: false,
-      duplicateReviewToken: '',
-    }))
+    setValues(current =>
+      clearReviewConfirmation({
+        ...current,
+        storeName,
+        subdomain: subdomainTouched
+          ? current.subdomain
+          : buildSubdomainFromStoreName(storeName),
+        duplicateOverrideConfirmed: false,
+        duplicateReviewToken: '',
+      })
+    )
     setErrors(current => ({
       ...current,
       storeName: undefined,
@@ -287,18 +381,20 @@ export function InternalStoreCreateWizard({
 
   const selectPlan = (planId: number) => {
     const plan = plans.find(option => option.id === planId)
-    setValues(current => ({
-      ...current,
-      planId,
-      contractedAmount: plan
-        ? getDefaultPlanAmount(plan)
-        : current.contractedAmount,
-      selectedModuleIds: current.selectedModuleIds.filter(
-        moduleId => !planIncludedModuleIds.has(moduleId)
-      ),
-      duplicateOverrideConfirmed: false,
-      duplicateReviewToken: '',
-    }))
+    setValues(current =>
+      clearReviewConfirmation({
+        ...current,
+        planId,
+        contractedAmount: plan
+          ? getDefaultPlanAmount(plan)
+          : current.contractedAmount,
+        selectedModuleIds: current.selectedModuleIds.filter(
+          moduleId => !planIncludedModuleIds.has(moduleId)
+        ),
+        duplicateOverrideConfirmed: false,
+        duplicateReviewToken: '',
+      })
+    )
     setErrors(current => ({
       ...current,
       planId: undefined,
@@ -311,14 +407,16 @@ export function InternalStoreCreateWizard({
   const toggleModule = (moduleId: number) => {
     if (planIncludedModuleIds.has(moduleId)) return
 
-    setValues(current => ({
-      ...current,
-      selectedModuleIds: current.selectedModuleIds.includes(moduleId)
-        ? current.selectedModuleIds.filter(id => id !== moduleId)
-        : [...current.selectedModuleIds, moduleId],
-      duplicateOverrideConfirmed: false,
-      duplicateReviewToken: '',
-    }))
+    setValues(current =>
+      clearReviewConfirmation({
+        ...current,
+        selectedModuleIds: current.selectedModuleIds.includes(moduleId)
+          ? current.selectedModuleIds.filter(id => id !== moduleId)
+          : [...current.selectedModuleIds, moduleId],
+        duplicateOverrideConfirmed: false,
+        duplicateReviewToken: '',
+      })
+    )
     setErrors(current => ({ ...current, selectedModuleIds: undefined }))
     setDuplicateMatches([])
   }
@@ -360,7 +458,54 @@ export function InternalStoreCreateWizard({
     if (previousStep) setCurrentStep(previousStep)
   }
 
+  const toggleReviewConfirmation = (checked: boolean) => {
+    if (!checked) {
+      setValues(current => ({
+        ...current,
+        reviewConfirmed: false,
+        reviewFingerprint: '',
+      }))
+      setErrors(current => ({
+        ...current,
+        reviewConfirmed: undefined,
+        root: undefined,
+      }))
+      return
+    }
+
+    const fieldErrors = getInternalStoreCreationFieldErrors(values)
+    if (Object.keys(fieldErrors).length > 0) {
+      setErrors({
+        ...fieldErrors,
+        root: 'Revise os campos obrigatorios antes de confirmar a revisao.',
+      })
+      return
+    }
+
+    if (duplicateMatches.length > 0 && !values.duplicateOverrideConfirmed) {
+      setErrors({
+        reviewConfirmed:
+          'Confirme a excecao de duplicidade antes da revisao final.',
+        root: 'Confirme a excecao de duplicidade antes da revisao final.',
+      })
+      return
+    }
+
+    setValues(current => ({
+      ...current,
+      reviewConfirmed: true,
+      reviewFingerprint: getInternalStoreCreationReviewFingerprint(current),
+    }))
+    setErrors(current => ({
+      ...current,
+      reviewConfirmed: undefined,
+      root: undefined,
+    }))
+  }
+
   const submit = () => {
+    if (isSubmitLocked) return
+
     const parsedValues = internalStoreCreationSchema.safeParse(values)
 
     if (!parsedValues.success) {
@@ -378,7 +523,17 @@ export function InternalStoreCreateWizard({
       return
     }
 
+    if (!isInternalStoreCreationReviewConfirmed(parsedValues.data)) {
+      setErrors({
+        reviewConfirmed:
+          'Confirme novamente a revisao final antes de cadastrar a loja.',
+        root: 'Confirme novamente a revisao final antes de cadastrar a loja.',
+      })
+      return
+    }
+
     setErrors({})
+    setIsSubmitting(true)
     startTransition(async () => {
       const result = await createInternalStoreAction(parsedValues.data)
 
@@ -394,6 +549,7 @@ export function InternalStoreCreateWizard({
         }
 
         setErrors({ root: result.error })
+        setIsSubmitting(false)
         return
       }
 
@@ -924,75 +1080,167 @@ export function InternalStoreCreateWizard({
                   </div>
                 )}
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
-                    <CardHeader className="px-4">
-                      <CardTitle className="text-base">Responsavel</CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4">
-                      <SummaryRow label="Nome" value={values.responsibleName} />
+                  <SummaryCard
+                    title="Responsavel"
+                    editLabel="Editar responsavel"
+                    onEdit={() => setCurrentStep('responsible')}
+                  >
+                    <SummaryRow label="Nome" value={values.responsibleName} />
+                    <SummaryRow
+                      label="E-mail"
+                      value={values.responsibleEmail}
+                    />
+                    <SummaryRow
+                      label="Telefone"
+                      value={values.responsiblePhone}
+                    />
+                    <SummaryRow
+                      label="CPF"
+                      value={values.responsibleTaxNumber}
+                    />
+                  </SummaryCard>
+                  <SummaryCard
+                    title="Loja e documentos"
+                    editLabel="Editar loja"
+                    onEdit={() => setCurrentStep('establishment')}
+                  >
+                    <SummaryRow label="Nome" value={values.storeName} />
+                    <SummaryRow
+                      label="URL"
+                      value={`${values.subdomain}.clicapedidos.com.br`}
+                    />
+                    <SummaryRow label="CNPJ" value={values.companyTaxNumber} />
+                    <SummaryRow
+                      label="Razao social"
+                      value={values.companyName}
+                    />
+                    <SummaryRow label="Telefone" value={values.phone1} />
+                    <SummaryRow label="E-mail" value={values.companyEmail} />
+                  </SummaryCard>
+                  <SummaryCard
+                    title="Endereco operacional"
+                    editLabel="Editar endereco"
+                    onEdit={() => setCurrentStep('establishment')}
+                  >
+                    <SummaryRow label="CEP" value={values.postalCode} />
+                    <SummaryRow
+                      label="Endereco"
+                      value={`${values.street || '-'}, ${values.number || '-'}`}
+                    />
+                    <SummaryRow label="Bairro" value={values.district} />
+                    <SummaryRow
+                      label="Cidade/UF"
+                      value={`${values.city || '-'} / ${values.stateCode || '-'}`}
+                    />
+                  </SummaryCard>
+                  <SummaryCard
+                    title="Plano, valor e datas"
+                    editLabel="Editar cobranca"
+                    onEdit={() => setCurrentStep('billing')}
+                  >
+                    <SummaryRow label="Plano" value={selectedPlan?.name} />
+                    <SummaryRow
+                      label="Valor contratado"
+                      value={formatMoney(values.contractedAmount)}
+                    />
+                    <SummaryRow
+                      label="Desconto"
+                      value={
+                        values.discountType === 'none'
+                          ? 'Sem desconto'
+                          : `${values.discountType === 'percentage' ? `${values.discountValue}%` : formatMoney(values.discountValue)}`
+                      }
+                    />
+                    <SummaryRow
+                      label="Inicio"
+                      value={
+                        reviewPeriodPreview
+                          ? formatDate(reviewPeriodPreview.startsAt)
+                          : null
+                      }
+                    />
+                    <SummaryRow
+                      label="Trial"
+                      value={
+                        selectedPlan?.trialDays
+                          ? `${selectedPlan.trialDays} dias`
+                          : 'Sem trial'
+                      }
+                    />
+                    <SummaryRow
+                      label="Proxima cobranca"
+                      value={
+                        reviewPeriodPreview
+                          ? formatDate(reviewPeriodPreview.nextBillingAt)
+                          : null
+                      }
+                    />
+                    <SummaryRow
+                      label="Fim do periodo"
+                      value={
+                        reviewPeriodPreview
+                          ? formatDate(reviewPeriodPreview.periodEnd)
+                          : null
+                      }
+                    />
+                  </SummaryCard>
+                  <SummaryCard
+                    title="Modulos"
+                    editLabel="Editar modulos"
+                    onEdit={() => setCurrentStep('modules')}
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      {allSelectedModules.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">
+                          Nenhum modulo selecionado.
+                        </span>
+                      ) : (
+                        allSelectedModules.map(module => (
+                          <Badge key={module.id} variant="outline">
+                            {module.name}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                  </SummaryCard>
+                  <SummaryCard
+                    title="Acesso do responsavel"
+                    editLabel="Editar opcao"
+                    onEdit={() => setCurrentStep('review')}
+                  >
+                    <div className="space-y-3">
+                      <label className="flex items-start gap-3 rounded-lg border bg-background p-3 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={values.sendAccessImmediately}
+                          onChange={event =>
+                            updateValue(
+                              'sendAccessImmediately',
+                              event.target.checked
+                            )
+                          }
+                          className="mt-1 size-4 accent-primary"
+                        />
+                        <span>
+                          <span className="block font-medium text-foreground">
+                            Enviar acesso imediatamente
+                          </span>
+                          <span className="mt-1 block text-muted-foreground">
+                            Deixe desligado quando o time quiser revisar o
+                            cadastro antes de orientar o cliente a acessar.
+                          </span>
+                        </span>
+                      </label>
                       <SummaryRow
-                        label="E-mail"
-                        value={values.responsibleEmail}
-                      />
-                      <SummaryRow
-                        label="Telefone"
-                        value={values.responsiblePhone}
-                      />
-                    </CardContent>
-                  </Card>
-                  <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
-                    <CardHeader className="px-4">
-                      <CardTitle className="text-base">Loja</CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4">
-                      <SummaryRow label="Nome" value={values.storeName} />
-                      <SummaryRow label="URL" value={values.subdomain} />
-                      <SummaryRow
-                        label="Cidade/UF"
-                        value={`${values.city || '-'} / ${values.stateCode || '-'}`}
-                      />
-                    </CardContent>
-                  </Card>
-                  <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
-                    <CardHeader className="px-4">
-                      <CardTitle className="text-base">Plano</CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4">
-                      <SummaryRow label="Plano" value={selectedPlan?.name} />
-                      <SummaryRow
-                        label="Valor"
-                        value={values.contractedAmount}
-                      />
-                      <SummaryRow
-                        label="Desconto"
+                        label="Modo escolhido"
                         value={
-                          values.discountType === 'none'
-                            ? 'Sem desconto'
-                            : values.discountValue
+                          values.sendAccessImmediately
+                            ? 'Criar e liberar acesso agora'
+                            : 'Criar sem envio imediato'
                         }
                       />
-                    </CardContent>
-                  </Card>
-                  <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
-                    <CardHeader className="px-4">
-                      <CardTitle className="text-base">Modulos</CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-4">
-                      <div className="flex flex-wrap gap-2">
-                        {allSelectedModules.length === 0 ? (
-                          <span className="text-sm text-muted-foreground">
-                            Nenhum modulo selecionado.
-                          </span>
-                        ) : (
-                          allSelectedModules.map(module => (
-                            <Badge key={module.id} variant="outline">
-                              {module.name}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </SummaryCard>
                 </div>
                 <Label size="sm">
                   Motivo do cadastro
@@ -1007,6 +1255,46 @@ export function InternalStoreCreateWizard({
                   />
                   <FieldError error={errors.reason} />
                 </Label>
+                <div
+                  className={cn(
+                    'rounded-lg border p-4',
+                    reviewConfirmed
+                      ? 'border-emerald-500/30 bg-emerald-500/10'
+                      : 'bg-background'
+                  )}
+                >
+                  <label className="flex items-start gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={reviewConfirmed}
+                      onChange={event =>
+                        toggleReviewConfirmation(event.target.checked)
+                      }
+                      className="mt-1 size-4 accent-primary"
+                    />
+                    <span>
+                      <span className="block font-semibold text-foreground">
+                        Confirmo que revisei os dados acima
+                      </span>
+                      <span className="mt-1 block text-muted-foreground">
+                        A criacao usara exatamente estes dados. Se qualquer
+                        campo for alterado depois desta confirmacao, sera
+                        necessario confirmar novamente.
+                      </span>
+                    </span>
+                  </label>
+                  <FieldError error={errors.reviewConfirmed} />
+                  {reviewConfirmed ? (
+                    <p className="mt-3 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                      Revisao confirmada para o pacote atual de dados.
+                    </p>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      A criacao permanece bloqueada ate a revisao final ser
+                      confirmada.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1014,7 +1302,7 @@ export function InternalStoreCreateWizard({
               <Button
                 variant="outline"
                 onClick={goPrevious}
-                disabled={currentStepIndex === 0 || isPending}
+                disabled={currentStepIndex === 0 || isSubmitLocked}
               >
                 <ArrowLeft className="size-4" />
                 Voltar
@@ -1022,14 +1310,14 @@ export function InternalStoreCreateWizard({
               {currentStep === 'review' ? (
                 <Button
                   onClick={submit}
-                  isLoading={isPending}
-                  disabled={isPending}
+                  isLoading={isSubmitLocked}
+                  disabled={isSubmitLocked || !reviewConfirmed}
                 >
                   <CheckCircle2 className="size-4" />
                   Criar loja
                 </Button>
               ) : (
-                <Button onClick={goNext} disabled={isPending}>
+                <Button onClick={goNext} disabled={isSubmitLocked}>
                   Continuar
                   <ArrowRight className="size-4" />
                 </Button>

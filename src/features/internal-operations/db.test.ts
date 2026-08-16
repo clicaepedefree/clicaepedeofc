@@ -29,9 +29,12 @@ const provisioningValues: InternalStoreCreationValues = {
   discountType: 'none',
   discountValue: '',
   selectedModuleIds: [1, 2],
+  sendAccessImmediately: true,
   duplicateOverrideConfirmed: false,
   duplicateReviewToken: '',
   provisioningIdempotencyKey: 'kan-40-idempotency-key',
+  reviewConfirmed: true,
+  reviewFingerprint: '',
   reason: 'Novo cliente aprovado pelo comercial.',
 }
 
@@ -66,6 +69,8 @@ describe('internal operation store policy', () => {
       ...provisioningValues,
       duplicateOverrideConfirmed: true,
       duplicateReviewToken: 'server-signed-token',
+      reviewConfirmed: false,
+      reviewFingerprint: 'outdated-review',
     })
     const changedPayloadHash = getInternalStoreProvisioningPayloadHash({
       ...provisioningValues,
