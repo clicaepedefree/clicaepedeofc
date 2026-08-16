@@ -1,14 +1,29 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
+import { updateInternalStoreProfileAction } from '@/features/internal-operations/actions'
 import {
   getVisibleInternalStoreDetailTabs,
   resolveInternalStoreDetailTab,
   type InternalStoreDetailTab,
 } from '@/features/internal-operations/detail-tabs-policy'
 import type { InternalStoreOverview } from '@/features/internal-operations/db'
+import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/card'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/shared/dialog'
+import { Input } from '@/shared/input'
+import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
+import { Textarea } from '@/shared/textarea'
 import {
   Activity,
   ArrowLeft,
@@ -18,7 +33,9 @@ import {
   History,
   KeyRound,
   Layers3,
+  Pencil,
   ReceiptText,
+  ShieldAlert,
   Store,
   Users,
 } from 'lucide-react'
@@ -29,6 +46,8 @@ type InternalStoreOverviewPanelProps = {
   operator: InternalOperator
   store: InternalStoreOverview
   requestedTab?: string
+  result?: string
+  error?: string
   basePath: string
 }
 
@@ -106,6 +125,8 @@ export function InternalStoreOverviewPanel({
   operator,
   store,
   requestedTab,
+  result,
+  error,
   basePath,
 }: InternalStoreOverviewPanelProps) {
   const visibleTabs = getVisibleInternalStoreDetailTabs(operator.role)
@@ -218,7 +239,25 @@ export function InternalStoreOverviewPanel({
         })}
       </nav>
 
-      {activeTab === 'dados' && <DadosTab store={store} address={address} />}
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100">
+          {error}
+        </div>
+      )}
+      {result === 'dados-atualizados' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Dados cadastrais atualizados e registrados no historico.
+        </div>
+      )}
+
+      {activeTab === 'dados' && (
+        <DadosTab
+          store={store}
+          address={address}
+          operator={operator}
+          basePath={basePath}
+        />
+      )}
       {activeTab === 'faturas' && <FaturasTab store={store} />}
       {activeTab === 'plano' && <PlanoTab store={store} />}
       {activeTab === 'modulos' && <ModulosTab store={store} />}
@@ -257,38 +296,350 @@ function SummaryCard({
 function DadosTab({
   store,
   address,
+  operator,
+  basePath,
 }: {
   store: InternalStoreOverview
   address: string
+  operator: InternalOperator
+  basePath: string
+}) {
+  const canEdit = canRunInternalOperation({
+    operator,
+    operation: 'manageStoreProfile',
+  })
+  const disabled = store.status === 'archived'
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Cadastro da loja
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Dados administrativos, comerciais e de contato usados pela operacao
+            interna.
+          </p>
+        </div>
+        {canEdit && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" disabled={disabled}>
+                <Pencil className="size-4" />
+                Editar dados
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+              <DialogHeader>
+                <DialogTitle>Editar dados cadastrais</DialogTitle>
+                <DialogDescription>
+                  Revise os dados antes de salvar. Alteracoes sensiveis exigem
+                  confirmacao e ficam registradas no historico da loja.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                action={updateInternalStoreProfileAction}
+                className="space-y-5"
+              >
+                <input type="hidden" name="storeId" value={store.id} />
+                <input
+                  type="hidden"
+                  name="returnTo"
+                  value={`${basePath}?tab=dados`}
+                />
+
+                <FormSection title="Loja e dados comerciais">
+                  <FormField label="Nome da loja" htmlFor="storeName">
+                    <Input
+                      id="storeName"
+                      name="storeName"
+                      defaultValue={store.name}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Endereco publico" htmlFor="subdomain">
+                    <Input
+                      id="subdomain"
+                      name="subdomain"
+                      defaultValue={store.subdomain}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Origem" htmlFor="acquisitionSource">
+                    <Input
+                      id="acquisitionSource"
+                      name="acquisitionSource"
+                      defaultValue={store.commercial.acquisitionSource ?? ''}
+                      placeholder="Ex.: indicacao, outbound, evento"
+                    />
+                  </FormField>
+                  <FormField label="Vendedor" htmlFor="salesOwner">
+                    <Input
+                      id="salesOwner"
+                      name="salesOwner"
+                      defaultValue={store.commercial.salesOwner ?? ''}
+                    />
+                  </FormField>
+                </FormSection>
+
+                <FormSection title="Empresa">
+                  <FormField label="Empresa" htmlFor="companyName">
+                    <Input
+                      id="companyName"
+                      name="companyName"
+                      defaultValue={store.company.companyName ?? ''}
+                    />
+                  </FormField>
+                  <FormField label="Novo CNPJ" htmlFor="companyTaxNumberReplacement">
+                    <Input
+                      id="companyTaxNumberReplacement"
+                      name="companyTaxNumberReplacement"
+                      placeholder={`Atual: ${store.company.companyTaxNumber}`}
+                    />
+                  </FormField>
+                  <FormField label="E-mail da loja" htmlFor="companyEmail">
+                    <Input
+                      id="companyEmail"
+                      name="companyEmail"
+                      type="email"
+                      defaultValue={store.company.email ?? ''}
+                    />
+                  </FormField>
+                  <FormField label="Telefone 1" htmlFor="phone1">
+                    <Input
+                      id="phone1"
+                      name="phone1"
+                      defaultValue={store.company.phone1 ?? ''}
+                    />
+                  </FormField>
+                  <FormField label="Telefone 2" htmlFor="phone2">
+                    <Input
+                      id="phone2"
+                      name="phone2"
+                      defaultValue={store.company.phone2 ?? ''}
+                    />
+                  </FormField>
+                </FormSection>
+
+                <FormSection title="Responsavel">
+                  <FormField label="Nome" htmlFor="responsibleName">
+                    <Input
+                      id="responsibleName"
+                      name="responsibleName"
+                      defaultValue={store.company.responsibleName ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Novo CPF" htmlFor="responsibleTaxNumberReplacement">
+                    <Input
+                      id="responsibleTaxNumberReplacement"
+                      name="responsibleTaxNumberReplacement"
+                      placeholder={`Atual: ${store.company.responsibleTaxNumber}`}
+                    />
+                  </FormField>
+                  <FormField label="E-mail" htmlFor="responsibleEmail">
+                    <Input
+                      id="responsibleEmail"
+                      name="responsibleEmail"
+                      type="email"
+                      defaultValue={store.company.responsibleEmail ?? ''}
+                    />
+                  </FormField>
+                  <FormField label="Telefone" htmlFor="responsiblePhone">
+                    <Input
+                      id="responsiblePhone"
+                      name="responsiblePhone"
+                      defaultValue={store.company.responsiblePhone ?? ''}
+                    />
+                  </FormField>
+                </FormSection>
+
+                <FormSection title="Endereco">
+                  <FormField label="CEP" htmlFor="postalCode">
+                    <Input
+                      id="postalCode"
+                      name="postalCode"
+                      defaultValue={store.address.postalCode ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Endereco" htmlFor="street">
+                    <Input
+                      id="street"
+                      name="street"
+                      defaultValue={store.address.street ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Numero" htmlFor="number">
+                    <Input
+                      id="number"
+                      name="number"
+                      defaultValue={store.address.number ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Bairro" htmlFor="district">
+                    <Input
+                      id="district"
+                      name="district"
+                      defaultValue={store.address.district ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="Cidade" htmlFor="city">
+                    <Input
+                      id="city"
+                      name="city"
+                      defaultValue={store.address.city ?? ''}
+                      required
+                    />
+                  </FormField>
+                  <FormField label="UF" htmlFor="stateCode">
+                    <Input
+                      id="stateCode"
+                      name="stateCode"
+                      defaultValue={store.address.stateCode ?? ''}
+                      maxLength={2}
+                      required
+                    />
+                  </FormField>
+                </FormSection>
+
+                <div className="grid gap-4">
+                  <FormField label="Observacoes internas" htmlFor="internalNotes">
+                    <Textarea
+                      id="internalNotes"
+                      name="internalNotes"
+                      defaultValue={store.commercial.internalNotes ?? ''}
+                      placeholder="Contexto comercial, alinhamentos com o cliente ou combinados internos."
+                    />
+                  </FormField>
+                  <FormField label="Motivo da alteracao" htmlFor="reason">
+                    <Textarea
+                      id="reason"
+                      name="reason"
+                      placeholder="Ex.: correcao solicitada pelo responsavel da loja."
+                      required
+                    />
+                  </FormField>
+                </div>
+
+                <label className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+                  <input
+                    type="checkbox"
+                    name="sensitiveConfirmation"
+                    className="mt-1 size-4"
+                  />
+                  <span>
+                    <span className="flex items-center gap-2 font-medium">
+                      <ShieldAlert className="size-4" />
+                      Confirmo mudancas sensiveis
+                    </span>
+                    <span className="mt-1 block text-xs">
+                      Obrigatorio quando alterar nome da loja, endereco
+                      publico, CNPJ, CPF ou e-mail do responsavel.
+                    </span>
+                  </span>
+                </label>
+
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button type="button" variant="outline">
+                      Cancelar
+                    </Button>
+                  </DialogClose>
+                  <Button type="submit">
+                    <Pencil className="size-4" />
+                    Salvar alteracoes
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {disabled && canEdit && (
+        <EmptyState>
+          Loja arquivada nao permite alteracao cadastral. Consulte o historico
+          antes de qualquer nova acao operacional.
+        </EmptyState>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+          <CardHeader>
+            <CardTitle>Dados da empresa</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <DetailField label="Razao/Nome fantasia" value={store.company.companyName} />
+            <DetailField label="CNPJ" value={store.company.companyTaxNumber} />
+            <DetailField label="E-mail" value={store.company.email} />
+            <DetailField label="Telefone principal" value={store.company.phone1} />
+            <DetailField label="Telefone secundario" value={store.company.phone2} />
+            <DetailField label="Endereco" value={address || null} />
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+          <CardHeader>
+            <CardTitle>Responsavel</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <DetailField label="Nome" value={store.company.responsibleName} />
+            <DetailField label="CPF" value={store.company.responsibleTaxNumber} />
+            <DetailField label="E-mail" value={store.company.responsibleEmail} />
+            <DetailField label="Telefone" value={store.company.responsiblePhone} />
+            <DetailField label="Status da loja" value={statusLabels[store.status]} />
+            <DetailField label="Motivo/status" value={store.statusReason} />
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Dados comerciais</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <DetailField label="Origem" value={store.commercial.acquisitionSource} />
+            <DetailField label="Vendedor" value={store.commercial.salesOwner} />
+            <DetailField label="Observacoes internas" value={store.commercial.internalNotes} />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function FormSection({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
 }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
-        <CardHeader>
-          <CardTitle>Dados da empresa</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          <DetailField label="Razao/Nome fantasia" value={store.company.companyName} />
-          <DetailField label="CNPJ" value={store.company.companyTaxNumber} />
-          <DetailField label="E-mail" value={store.company.email} />
-          <DetailField label="Telefone principal" value={store.company.phone1} />
-          <DetailField label="Telefone secundario" value={store.company.phone2} />
-          <DetailField label="Endereco" value={address || null} />
-        </CardContent>
-      </Card>
-      <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
-        <CardHeader>
-          <CardTitle>Responsavel</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          <DetailField label="Nome" value={store.company.responsibleName} />
-          <DetailField label="CPF" value={store.company.responsibleTaxNumber} />
-          <DetailField label="E-mail" value={store.company.responsibleEmail} />
-          <DetailField label="Telefone" value={store.company.responsiblePhone} />
-          <DetailField label="Status da loja" value={statusLabels[store.status]} />
-          <DetailField label="Motivo/status" value={store.statusReason} />
-        </CardContent>
-      </Card>
+    <section className="rounded-lg border bg-muted/20 p-4">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">{children}</div>
+    </section>
+  )
+}
+
+function FormField({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string
+  htmlFor: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={htmlFor} size="sm">
+        {label}
+      </Label>
+      {children}
     </div>
   )
 }

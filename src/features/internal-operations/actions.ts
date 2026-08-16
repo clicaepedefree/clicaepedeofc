@@ -5,8 +5,10 @@ import {
   activateStoreAfterImplementation,
   createInternalStore,
   findInternalStoreCreationDuplicates,
+  findInternalStoreProfileUpdateDuplicates,
   reactivateStoreWithAdmin,
   resendStoreAccessInvite,
+  updateInternalStoreProfile,
   updateStoreImplementationChecklistItem,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
@@ -16,6 +18,10 @@ import {
   isInternalStoreCreationReviewConfirmed,
 } from '@/features/internal-operations/internal-store-creation-policy'
 import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
+import {
+  internalStoreProfileEditSchema,
+  type InternalStoreProfileEditValues,
+} from '@/features/internal-operations/store-profile-edit-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -36,12 +42,25 @@ const getRequiredString = (formData: FormData, field: string) => {
 const getReturnPath = (formData: FormData) => {
   const returnTo = getRequiredString(formData, 'returnTo')
   if (returnTo === '/internal-operations') return returnTo
+  if (
+    returnTo === '/internal/stores' ||
+    /^\/internal\/stores(?:\/\d+)?(?:\?[A-Za-z0-9=&_%.-]+)?$/.test(returnTo)
+  ) {
+    return returnTo
+  }
 
   return '/internal/stores'
 }
 
+const appendRouteParam = (returnPath: string, key: string, value: string) =>
+  `${returnPath}${returnPath.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`
+
 const redirectWithError = (returnPath: string, message: string): never => {
-  redirect(`${returnPath}?error=${encodeURIComponent(message)}`)
+  redirect(appendRouteParam(returnPath, 'error', message))
+}
+
+const redirectWithResult = (returnPath: string, result: string): never => {
+  redirect(appendRouteParam(returnPath, 'result', result))
 }
 
 type CreateInternalStoreActionResult =
@@ -363,6 +382,122 @@ export async function resendStoreAccessInviteAction(
   }
 }
 
+export async function updateInternalStoreProfileAction(formData: FormData) {
+  const operator = await requireInternalOperation('manageStoreProfile')
+  const returnPath = getReturnPath(formData)
+  const parsedPayload = internalStoreProfileEditSchema.safeParse({
+    storeId: Number(getRequiredString(formData, 'storeId')),
+    storeName: getRequiredString(formData, 'storeName'),
+    subdomain: getRequiredString(formData, 'subdomain'),
+    companyName: getRequiredString(formData, 'companyName'),
+    companyEmail: getRequiredString(formData, 'companyEmail'),
+    phone1: getRequiredString(formData, 'phone1'),
+    phone2: getRequiredString(formData, 'phone2'),
+    companyTaxNumberReplacement: getRequiredString(
+      formData,
+      'companyTaxNumberReplacement'
+    ),
+    responsibleName: getRequiredString(formData, 'responsibleName'),
+    responsibleEmail: getRequiredString(formData, 'responsibleEmail'),
+    responsiblePhone: getRequiredString(formData, 'responsiblePhone'),
+    responsibleTaxNumberReplacement: getRequiredString(
+      formData,
+      'responsibleTaxNumberReplacement'
+    ),
+    postalCode: getRequiredString(formData, 'postalCode'),
+    street: getRequiredString(formData, 'street'),
+    number: getRequiredString(formData, 'number'),
+    district: getRequiredString(formData, 'district'),
+    city: getRequiredString(formData, 'city'),
+    stateCode: getRequiredString(formData, 'stateCode'),
+    acquisitionSource: getRequiredString(formData, 'acquisitionSource'),
+    salesOwner: getRequiredString(formData, 'salesOwner'),
+    internalNotes: getRequiredString(formData, 'internalNotes'),
+    reason: getRequiredString(formData, 'reason'),
+    sensitiveConfirmation: formData.get('sensitiveConfirmation') === 'on',
+  })
+
+  if (!parsedPayload.success) {
+    redirectWithError(
+      returnPath,
+      parsedPayload.error.issues[0]?.message ?? 'Dados invalidos.'
+    )
+  }
+  const values = parsedPayload.data as InternalStoreProfileEditValues
+
+  const duplicates = await findInternalStoreProfileUpdateDuplicates(
+    values
+  )
+  if (duplicates.length > 0) {
+    const duplicateSummary = duplicates
+      .map(
+        duplicate =>
+          `${duplicate.storeName}: ${duplicate.matchedFields
+            .map(field => field.label)
+            .join(', ')}`
+      )
+      .join(' | ')
+
+    redirectWithError(
+      returnPath,
+      `Existe duplicidade cadastral em outra loja. ${duplicateSummary}`
+    )
+  }
+
+  try {
+    await updateInternalStoreProfile({
+      values,
+      operator,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao permite alteracao cadastral.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'SENSITIVE_CONFIRMATION_REQUIRED'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Confirme explicitamente as mudancas sensiveis antes de salvar.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_PROFILE_NO_CHANGES'
+    ) {
+      redirectWithError(returnPath, 'Nenhuma alteracao cadastral foi detectada.')
+    }
+
+    if (
+      error instanceof Error &&
+      (error.message.includes('stores_subdomain_unique') ||
+        error.message.includes('duplicate key'))
+    ) {
+      redirectWithError(
+        returnPath,
+        'Esse endereco publico ja esta em uso. Tente outro subdominio.'
+      )
+    }
+
+    console.error('[internal-operations] Failed to update store profile', error)
+    redirectWithError(
+      returnPath,
+      'Nao foi possivel atualizar os dados da loja agora.'
+    )
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath(returnPath.split('?')[0] ?? '/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'dados-atualizados')
+}
+
 export async function reactivateStoreAction(formData: FormData) {
   const operator = await requireInternalOperation('reactivateStore')
   const storeId = Number(getRequiredString(formData, 'storeId'))
@@ -415,7 +550,7 @@ export async function reactivateStoreAction(formData: FormData) {
 
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
-  redirect(`${returnPath}?result=loja-reativada`)
+  redirectWithResult(returnPath, 'loja-reativada')
 }
 
 export async function updateStoreImplementationChecklistItemAction(
@@ -462,7 +597,7 @@ export async function updateStoreImplementationChecklistItemAction(
 
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
-  redirect(`${returnPath}?result=checklist-atualizado`)
+  redirectWithResult(returnPath, 'checklist-atualizado')
 }
 
 export async function activateStoreAfterImplementationAction(
@@ -516,7 +651,7 @@ export async function activateStoreAfterImplementationAction(
 
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
-  redirect(`${returnPath}?result=loja-ativada`)
+  redirectWithResult(returnPath, 'loja-ativada')
 }
 
 export async function archiveStoreAction(formData: FormData) {
@@ -564,5 +699,5 @@ export async function archiveStoreAction(formData: FormData) {
 
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
-  redirect(`${returnPath}?result=loja-arquivada`)
+  redirectWithResult(returnPath, 'loja-arquivada')
 }

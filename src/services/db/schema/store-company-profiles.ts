@@ -21,6 +21,9 @@ export const storeCompanyProfilesTable = pgTable('store_company_profiles', {
   district: text('district'),
   city: text('city'),
   stateCode: text('state_code'),
+  acquisitionSource: text('acquisition_source'),
+  salesOwner: text('sales_owner'),
+  internalNotes: text('internal_notes'),
   createdAt,
   updatedAt,
 })
