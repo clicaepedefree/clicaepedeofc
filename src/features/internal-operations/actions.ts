@@ -7,7 +7,10 @@ import {
   reactivateStoreWithAdmin,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
-import { internalStoreCreationSchema } from '@/features/internal-operations/internal-store-creation-policy'
+import {
+  internalStoreCreationSchema,
+  isInternalStoreCreationReviewConfirmed,
+} from '@/features/internal-operations/internal-store-creation-policy'
 import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
 import {
   lookupBrazilianPostalCode,
@@ -194,6 +197,13 @@ export async function createInternalStoreAction(
     return {
       success: false,
       error: parsedPayload.error.issues[0]?.message ?? 'Dados invalidos',
+    }
+  }
+
+  if (!isInternalStoreCreationReviewConfirmed(parsedPayload.data)) {
+    return {
+      success: false,
+      error: 'Confirme novamente a revisao final antes de cadastrar a loja.',
     }
   }
 

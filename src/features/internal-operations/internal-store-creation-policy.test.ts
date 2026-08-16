@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   buildSubdomainFromStoreName,
+  getInternalStoreCreationReviewFingerprint,
   getInternalStoreCreationFieldErrors,
   getInternalStoreCreationStepErrors,
   internalStoreCreationSchema,
+  isInternalStoreCreationReviewConfirmed,
   isInternalStoreCreationStepValid,
   normalizeCurrencyAmount,
   type InternalStoreCreationValues,
@@ -31,9 +33,12 @@ const validValues: InternalStoreCreationValues = {
   discountType: 'none',
   discountValue: '',
   selectedModuleIds: [1, 2],
+  sendAccessImmediately: true,
   duplicateOverrideConfirmed: false,
   duplicateReviewToken: '',
   provisioningIdempotencyKey: 'kan-40-idempotency-key',
+  reviewConfirmed: false,
+  reviewFingerprint: '',
   reason: 'Novo cliente aprovado pelo comercial.',
 }
 
@@ -163,5 +168,29 @@ describe('internal store creation policy', () => {
     )
     expect(normalizeCurrencyAmount('199,90')).toBe('199.9000')
     expect(normalizeCurrencyAmount('50')).toBe('50.0000')
+  })
+
+  test('confirms the exact reviewed payload before creation', () => {
+    const reviewFingerprint =
+      getInternalStoreCreationReviewFingerprint(validValues)
+    const confirmedValues = {
+      ...validValues,
+      reviewConfirmed: true,
+      reviewFingerprint,
+    }
+
+    expect(isInternalStoreCreationReviewConfirmed(confirmedValues)).toBe(true)
+    expect(
+      isInternalStoreCreationReviewConfirmed({
+        ...confirmedValues,
+        contractedAmount: '299,90',
+      })
+    ).toBe(false)
+    expect(
+      isInternalStoreCreationReviewConfirmed({
+        ...confirmedValues,
+        sendAccessImmediately: false,
+      })
+    ).toBe(false)
   })
 })

@@ -531,6 +531,8 @@ export const getInternalStoreProvisioningPayloadHash = (
         ...values,
         duplicateOverrideConfirmed: undefined,
         duplicateReviewToken: undefined,
+        reviewConfirmed: undefined,
+        reviewFingerprint: undefined,
       })
     )
     .digest('hex')
@@ -757,6 +759,9 @@ export async function createInternalStore({
         metadata: {
           source: 'internal_store_creation',
           createdBy: operator.email,
+          accessDelivery: values.sendAccessImmediately
+            ? 'send_immediately'
+            : 'manual_later',
         },
         updatedAt: now,
       })
@@ -882,6 +887,7 @@ export async function createInternalStore({
         invoiceId: initialInvoice?.id ?? null,
         planModuleCount: planModules.length,
         additionalModuleIds,
+        sendAccessImmediately: values.sendAccessImmediately,
       },
       metadata: { source: 'internal_store_creation' },
     })
