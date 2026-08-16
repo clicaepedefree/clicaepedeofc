@@ -9,6 +9,10 @@ import {
 } from '@/features/internal-operations/db'
 import { internalStoreCreationSchema } from '@/features/internal-operations/internal-store-creation-policy'
 import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
+import {
+  lookupBrazilianPostalCode,
+  type InternalPostalCodeAddress,
+} from '@/features/internal-operations/postal-code-lookup'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -42,6 +46,10 @@ type CreateInternalStoreActionResult =
       duplicates: InternalStoreDuplicateMatch[]
       duplicateReviewToken: string
     }
+  | { success: false; error: string }
+
+type LookupInternalPostalCodeActionResult =
+  | { success: true; address: InternalPostalCodeAddress }
   | { success: false; error: string }
 
 const getInternalStoreCreationErrorMessage = (error: unknown) => {
@@ -81,8 +89,7 @@ const getDuplicateReviewSecret = () =>
       })()
     : 'internal-store-duplicate-review-dev-secret')
 
-const toBase64Url = (value: string) =>
-  Buffer.from(value).toString('base64url')
+const toBase64Url = (value: string) => Buffer.from(value).toString('base64url')
 
 const fromBase64Url = (value: string) =>
   Buffer.from(value, 'base64url').toString('utf8')
@@ -229,13 +236,34 @@ export async function createInternalStoreAction(
 
     return { success: true, storeId: result.store.id }
   } catch (error) {
-    console.error('[internal-operations] Failed to create internal store', error)
+    console.error(
+      '[internal-operations] Failed to create internal store',
+      error
+    )
 
     return {
       success: false,
       error: getInternalStoreCreationErrorMessage(error),
     }
   }
+}
+
+export async function lookupInternalPostalCodeAction(
+  postalCode: unknown
+): Promise<LookupInternalPostalCodeActionResult> {
+  await requireInternalOperation('createStore')
+
+  if (typeof postalCode !== 'string') {
+    return { success: false, error: 'Informe um CEP com 8 digitos.' }
+  }
+
+  const result = await lookupBrazilianPostalCode(postalCode)
+
+  if (!result.success) {
+    return { success: false, error: result.error }
+  }
+
+  return { success: true, address: result.address }
 }
 
 export async function reactivateStoreAction(formData: FormData) {
@@ -254,7 +282,10 @@ export async function reactivateStoreAction(formData: FormData) {
   }
 
   if (reason.length < MIN_REASON_LENGTH) {
-    redirectWithError(returnPath, 'Informe um motivo com pelo menos 8 caracteres.')
+    redirectWithError(
+      returnPath,
+      'Informe um motivo com pelo menos 8 caracteres.'
+    )
   }
 
   try {
@@ -266,14 +297,20 @@ export async function reactivateStoreAction(formData: FormData) {
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'TARGET_USER_NOT_FOUND') {
-      redirectWithError(returnPath, 'Esse e-mail ainda nao tem uma conta ativa no app.')
+      redirectWithError(
+        returnPath,
+        'Esse e-mail ainda nao tem uma conta ativa no app.'
+      )
     }
 
     if (
       error instanceof Error &&
       error.message === 'STORE_STATUS_NOT_REACTIVATABLE'
     ) {
-      redirectWithError(returnPath, 'Essa loja nao esta em um status reativavel.')
+      redirectWithError(
+        returnPath,
+        'Essa loja nao esta em um status reativavel.'
+      )
     }
 
     redirectWithError(returnPath, 'Nao foi possivel reativar a loja agora.')
@@ -296,7 +333,10 @@ export async function archiveStoreAction(formData: FormData) {
   }
 
   if (reason.length < MIN_REASON_LENGTH) {
-    redirectWithError(returnPath, 'Informe um motivo com pelo menos 8 caracteres.')
+    redirectWithError(
+      returnPath,
+      'Informe um motivo com pelo menos 8 caracteres.'
+    )
   }
 
   try {
@@ -315,7 +355,10 @@ export async function archiveStoreAction(formData: FormData) {
       error instanceof Error &&
       error.message === 'STORE_CONFIRMATION_MISMATCH'
     ) {
-      redirectWithError(returnPath, 'Confirmacao incorreta. Digite o subdominio da loja.')
+      redirectWithError(
+        returnPath,
+        'Confirmacao incorreta. Digite o subdominio da loja.'
+      )
     }
 
     redirectWithError(returnPath, 'Nao foi possivel arquivar a loja agora.')
