@@ -1,6 +1,9 @@
 import { requireInternalOperator } from '@/features/internal-operations/access'
 import { InternalStoreOverviewPanel } from '@/features/internal-operations/components/internal-store-overview-panel'
-import { getInternalStoreOverview } from '@/features/internal-operations/db'
+import {
+  getInternalStoreOverview,
+  listActiveBillingPlansForInternalCreation,
+} from '@/features/internal-operations/db'
 import { notFound } from 'next/navigation'
 
 type InternalStoreDetailPageProps = {
@@ -27,7 +30,10 @@ export default async function InternalStoreDetailPage({
     notFound()
   }
 
-  const store = await getInternalStoreOverview(parsedStoreId)
+  const [store, billingPlans] = await Promise.all([
+    getInternalStoreOverview(parsedStoreId),
+    listActiveBillingPlansForInternalCreation(),
+  ])
 
   if (!store) {
     notFound()
@@ -37,6 +43,7 @@ export default async function InternalStoreDetailPage({
     <InternalStoreOverviewPanel
       operator={operator}
       store={store}
+      billingPlans={billingPlans}
       requestedTab={tab}
       result={result}
       error={error}
