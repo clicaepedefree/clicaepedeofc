@@ -41,6 +41,16 @@ export const normalizeInternalCnpj = (value: string | null | undefined) =>
 export const normalizeInternalEmail = (value: string | null | undefined) =>
   (value ?? '').trim().toLowerCase()
 
+export const normalizeInternalPostalCode = (value: string | null | undefined) =>
+  normalizeInternalDigits(value)
+
+const normalizedRequiredText = (message: string) =>
+  z
+    .string()
+    .trim()
+    .transform(value => value.replace(/\s+/g, ' '))
+    .refine(value => value.length >= 2, message)
+
 export const isValidInternalCpf = (value: string | null | undefined) => {
   const cpf = normalizeInternalCpf(value)
   if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
@@ -75,7 +85,10 @@ export const isValidInternalCnpj = (value: string | null | undefined) => {
     const sum = cnpj
       .slice(0, length)
       .split('')
-      .reduce((total, digit, index) => total + Number(digit) * weights[index], 0)
+      .reduce(
+        (total, digit, index) => total + Number(digit) * weights[index],
+        0
+      )
     const remainder = sum % 11
     return remainder < 2 ? 0 : 11 - remainder
   }
@@ -159,16 +172,25 @@ export const internalStoreCreationSchema = z
       .email('Informe um e-mail valido da loja')
       .optional()
       .or(z.literal('')),
-    postalCode: z.string().trim().min(8, 'Informe o CEP'),
-    street: z.string().trim().min(2, 'Informe o endereco'),
-    number: z.string().trim().min(1, 'Informe o numero'),
-    district: z.string().trim().min(2, 'Informe o bairro'),
-    city: z.string().trim().min(2, 'Informe a cidade'),
+    postalCode: z
+      .string()
+      .trim()
+      .transform(normalizeInternalPostalCode)
+      .refine(value => value.length === 8, 'Informe um CEP valido'),
+    street: normalizedRequiredText('Informe o endereco'),
+    number: z
+      .string()
+      .trim()
+      .transform(value => value.replace(/\s+/g, ' '))
+      .refine(value => value.length >= 1, 'Informe o numero'),
+    district: normalizedRequiredText('Informe o bairro'),
+    city: normalizedRequiredText('Informe a cidade'),
     stateCode: z
       .string()
       .trim()
       .toUpperCase()
-      .length(2, 'Informe a UF com 2 letras'),
+      .length(2, 'Informe a UF com 2 letras')
+      .regex(/^[A-Z]{2}$/, 'Informe uma UF valida'),
     planId: z.number().int('Selecione um plano').positive('Selecione um plano'),
     contractedAmount: z
       .string()
@@ -293,7 +315,8 @@ export const getInternalStoreCreationFieldErrors = (
 
   if (result.success) return {}
 
-  const errors: Partial<Record<InternalStoreCreationField | 'root', string>> = {}
+  const errors: Partial<Record<InternalStoreCreationField | 'root', string>> =
+    {}
 
   for (const issue of result.error.issues) {
     const field = issue.path[0] as InternalStoreCreationField | undefined
@@ -328,4 +351,5 @@ export const isInternalStoreCreationStepValid = ({
 }: {
   step: InternalStoreCreationStep
   values: InternalStoreCreationValues
-}) => Object.keys(getInternalStoreCreationStepErrors({ step, values })).length === 0
+}) =>
+  Object.keys(getInternalStoreCreationStepErrors({ step, values })).length === 0

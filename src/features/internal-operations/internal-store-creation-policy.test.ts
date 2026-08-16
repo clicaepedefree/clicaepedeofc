@@ -47,6 +47,7 @@ describe('internal store creation policy', () => {
       expect(result.data.responsibleTaxNumber).toBe('52998224725')
       expect(result.data.companyTaxNumber).toBe('04252011000110')
       expect(result.data.phone1).toBe('1133333333')
+      expect(result.data.postalCode).toBe('01001000')
       expect(result.data.stateCode).toBe('SP')
     }
   })
@@ -58,11 +59,17 @@ describe('internal store creation policy', () => {
       reason: '',
     }
 
-    expect(isInternalStoreCreationStepValid({ step: 'responsible', values })).toBe(false)
-    expect(getInternalStoreCreationStepErrors({ step: 'responsible', values })).toEqual({
+    expect(
+      isInternalStoreCreationStepValid({ step: 'responsible', values })
+    ).toBe(false)
+    expect(
+      getInternalStoreCreationStepErrors({ step: 'responsible', values })
+    ).toEqual({
       responsibleName: 'Informe o nome do responsavel',
     })
-    expect(getInternalStoreCreationStepErrors({ step: 'review', values })).toEqual({
+    expect(
+      getInternalStoreCreationStepErrors({ step: 'review', values })
+    ).toEqual({
       reason: 'Informe um motivo com pelo menos 8 caracteres',
     })
   })
@@ -76,8 +83,12 @@ describe('internal store creation policy', () => {
       contractedAmount: 'abc',
     })
 
-    expect(errors.responsibleEmail).toBe('Informe um e-mail valido do responsavel')
-    expect(errors.subdomain).toBe('Esse endereco e reservado. Tente outro nome.')
+    expect(errors.responsibleEmail).toBe(
+      'Informe um e-mail valido do responsavel'
+    )
+    expect(errors.subdomain).toBe(
+      'Esse endereco e reservado. Tente outro nome.'
+    )
     expect(errors.planId).toBe('Selecione um plano')
     expect(errors.contractedAmount).toBe('Informe um valor valido')
   })
@@ -96,9 +107,7 @@ describe('internal store creation policy', () => {
     expect(zeroValueErrors.contractedAmount).toBe(
       'Informe um valor maior que zero'
     )
-    expect(percentageErrors.discountValue).toBe(
-      'Informe um percentual ate 100'
-    )
+    expect(percentageErrors.discountValue).toBe('Informe um percentual ate 100')
   })
 
   test('rejects invalid CPF, CNPJ and phone instead of truncating input', () => {
@@ -114,6 +123,37 @@ describe('internal store creation policy', () => {
     expect(errors.companyTaxNumber).toBe('Informe um CNPJ valido')
     expect(errors.phone1).toBe('Informe um telefone valido')
     expect(errors.responsiblePhone).toBe('Informe um telefone valido')
+  })
+
+  test('normalizes CEP and address fields before persistence', () => {
+    const result = internalStoreCreationSchema.safeParse({
+      ...validValues,
+      postalCode: ' 01001-000 ',
+      street: '  Praca   da   Se ',
+      number: ' 100   A ',
+      district: '  Se ',
+      city: ' sao   paulo ',
+      stateCode: 'sp',
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.postalCode).toBe('01001000')
+      expect(result.data.street).toBe('Praca da Se')
+      expect(result.data.number).toBe('100 A')
+      expect(result.data.district).toBe('Se')
+      expect(result.data.city).toBe('sao paulo')
+      expect(result.data.stateCode).toBe('SP')
+    }
+  })
+
+  test('rejects invalid CEP before persistence', () => {
+    const errors = getInternalStoreCreationFieldErrors({
+      ...validValues,
+      postalCode: '010010000',
+    })
+
+    expect(errors.postalCode).toBe('Informe um CEP valido')
   })
 
   test('normalizes store URL and money values for persistence', () => {

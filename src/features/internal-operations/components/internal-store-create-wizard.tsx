@@ -1,6 +1,9 @@
 'use client'
 
-import { createInternalStoreAction } from '@/features/internal-operations/actions'
+import {
+  createInternalStoreAction,
+  lookupInternalPostalCodeAction,
+} from '@/features/internal-operations/actions'
 import type {
   InternalBillingModuleOption,
   InternalBillingPlanOption,
@@ -14,6 +17,7 @@ import {
   internalStoreCreationSchema,
   internalStoreCreationSteps,
   isInternalStoreCreationStepValid,
+  normalizeInternalPostalCode,
   type InternalStoreCreationField,
   type InternalStoreCreationStep,
   type InternalStoreCreationValues,
@@ -35,20 +39,20 @@ import {
   CreditCard,
   LayoutGrid,
   ListChecks,
+  Loader2,
+  MapPinned,
   UserRound,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 
 type InternalStoreCreateWizardProps = {
   plans: InternalBillingPlanOption[]
   modules: InternalBillingModuleOption[]
 }
 
-type WizardErrors = Partial<
-  Record<InternalStoreCreationField | 'root', string>
->
+type WizardErrors = Partial<Record<InternalStoreCreationField | 'root', string>>
 
 const stepLabels: Record<
   InternalStoreCreationStep,
@@ -125,6 +129,7 @@ export function InternalStoreCreateWizard({
 }: InternalStoreCreateWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [isPostalCodePending, startPostalCodeTransition] = useTransition()
   const [currentStep, setCurrentStep] =
     useState<InternalStoreCreationStep>('responsible')
   const [values, setValues] = useState<InternalStoreCreationValues>(
@@ -134,6 +139,12 @@ export function InternalStoreCreateWizard({
   const [duplicateMatches, setDuplicateMatches] = useState<
     InternalStoreDuplicateMatch[]
   >([])
+  const [postalCodeMessage, setPostalCodeMessage] = useState<string | null>(
+    null
+  )
+  const [lastPostalCodeLookup, setLastPostalCodeLookup] = useState('')
+  const latestPostalCodeValueRef = useRef('')
+  const postalCodeLookupRequestRef = useRef(0)
   const [subdomainTouched, setSubdomainTouched] = useState(false)
 
   const currentStepIndex = internalStoreCreationSteps.indexOf(currentStep)
@@ -164,6 +175,10 @@ export function InternalStoreCreateWizard({
     field: TField,
     value: InternalStoreCreationValues[TField]
   ) => {
+    if (field === 'postalCode') {
+      latestPostalCodeValueRef.current = String(value)
+    }
+
     setValues(current => ({
       ...current,
       [field]: value,
@@ -176,6 +191,70 @@ export function InternalStoreCreateWizard({
     }))
     setErrors(current => ({ ...current, [field]: undefined, root: undefined }))
     if (field !== 'duplicateOverrideConfirmed') setDuplicateMatches([])
+  }
+
+  const lookupPostalCode = (postalCode: string, force = false) => {
+    const normalizedPostalCode = normalizeInternalPostalCode(postalCode)
+
+    if (normalizedPostalCode.length !== 8) {
+      if (force) setPostalCodeMessage('Informe um CEP com 8 digitos.')
+      return
+    }
+
+    if (!force && normalizedPostalCode === lastPostalCodeLookup) return
+
+    const requestId = postalCodeLookupRequestRef.current + 1
+    postalCodeLookupRequestRef.current = requestId
+    setPostalCodeMessage(null)
+
+    startPostalCodeTransition(async () => {
+      const result = await lookupInternalPostalCodeAction(normalizedPostalCode)
+
+      if (
+        postalCodeLookupRequestRef.current !== requestId ||
+        normalizeInternalPostalCode(latestPostalCodeValueRef.current) !==
+          normalizedPostalCode
+      ) {
+        return
+      }
+
+      if (!result.success) {
+        setPostalCodeMessage(result.error)
+        return
+      }
+
+      setValues(current => {
+        if (
+          normalizeInternalPostalCode(current.postalCode) !==
+          normalizedPostalCode
+        ) {
+          return current
+        }
+
+        return {
+          ...current,
+          postalCode: result.address.postalCode,
+          street: result.address.street || current.street,
+          district: result.address.district || current.district,
+          city: result.address.city || current.city,
+          stateCode: result.address.stateCode || current.stateCode,
+        }
+      })
+      latestPostalCodeValueRef.current = result.address.postalCode
+      setLastPostalCodeLookup(normalizedPostalCode)
+      setErrors(current => ({
+        ...current,
+        postalCode: undefined,
+        street: undefined,
+        district: undefined,
+        city: undefined,
+        stateCode: undefined,
+        root: undefined,
+      }))
+      setPostalCodeMessage(
+        'Endereco preenchido pelo CEP. Ajuste manualmente se precisar.'
+      )
+    })
   }
 
   const updateStoreName = (storeName: string) => {
@@ -202,7 +281,9 @@ export function InternalStoreCreateWizard({
     setValues(current => ({
       ...current,
       planId,
-      contractedAmount: plan ? getDefaultPlanAmount(plan) : current.contractedAmount,
+      contractedAmount: plan
+        ? getDefaultPlanAmount(plan)
+        : current.contractedAmount,
       selectedModuleIds: current.selectedModuleIds.filter(
         moduleId => !planIncludedModuleIds.has(moduleId)
       ),
@@ -329,8 +410,8 @@ export function InternalStoreCreateWizard({
             Cadastrar loja
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Crie a loja, vincule o responsavel, defina contrato e libere
-            modulos sem acessar o banco.
+            Crie a loja, vincule o responsavel, defina contrato e libere modulos
+            sem acessar o banco.
           </p>
         </div>
         <Badge variant="outline" className="w-fit bg-card">
@@ -365,7 +446,8 @@ export function InternalStoreCreateWizard({
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-md border bg-muted text-muted-foreground',
                     isActive && 'border-primary/30 bg-primary/10 text-primary',
-                    isDone && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
+                    isDone &&
+                      'border-emerald-500/30 bg-emerald-500/10 text-emerald-600'
                   )}
                 >
                   {isDone ? (
@@ -506,7 +588,9 @@ export function InternalStoreCreateWizard({
                   Telefone da loja
                   <Input
                     value={values.phone1}
-                    onChange={event => updateValue('phone1', event.target.value)}
+                    onChange={event =>
+                      updateValue('phone1', event.target.value)
+                    }
                     error={errors.phone1}
                     placeholder="(11) 3333-3333"
                   />
@@ -525,20 +609,55 @@ export function InternalStoreCreateWizard({
                 </Label>
                 <Label size="sm">
                   CEP
-                  <Input
-                    value={values.postalCode}
-                    onChange={event =>
-                      updateValue('postalCode', event.target.value)
-                    }
-                    error={errors.postalCode}
-                    placeholder="00000-000"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={values.postalCode}
+                      onChange={event => {
+                        const nextPostalCode = event.target.value
+                        updateValue('postalCode', nextPostalCode)
+                        setPostalCodeMessage(null)
+
+                        if (
+                          normalizeInternalPostalCode(nextPostalCode).length ===
+                          8
+                        ) {
+                          lookupPostalCode(nextPostalCode)
+                        }
+                      }}
+                      onBlur={() => lookupPostalCode(values.postalCode)}
+                      error={errors.postalCode}
+                      placeholder="00000-000"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      containerClassName="min-w-0 flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => lookupPostalCode(values.postalCode, true)}
+                      disabled={isPostalCodePending}
+                    >
+                      {isPostalCodePending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <MapPinned className="size-4" />
+                      )}
+                      Buscar
+                    </Button>
+                  </div>
+                  {postalCodeMessage && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {postalCodeMessage}
+                    </p>
+                  )}
                 </Label>
                 <Label size="sm">
                   Endereco
                   <Input
                     value={values.street}
-                    onChange={event => updateValue('street', event.target.value)}
+                    onChange={event =>
+                      updateValue('street', event.target.value)
+                    }
                     error={errors.street}
                     placeholder="Rua, avenida..."
                   />
@@ -547,7 +666,9 @@ export function InternalStoreCreateWizard({
                   Numero
                   <Input
                     value={values.number}
-                    onChange={event => updateValue('number', event.target.value)}
+                    onChange={event =>
+                      updateValue('number', event.target.value)
+                    }
                     error={errors.number}
                     placeholder="100"
                   />
@@ -695,7 +816,8 @@ export function InternalStoreCreateWizard({
                         key={module.id}
                         className={cn(
                           'flex cursor-pointer gap-3 rounded-lg border bg-background p-4 transition-colors hover:bg-accent/50',
-                          checked && 'border-primary bg-primary/5 dark:bg-primary/10',
+                          checked &&
+                            'border-primary bg-primary/5 dark:bg-primary/10',
                           includedByPlan && 'cursor-default'
                         )}
                       >
@@ -710,7 +832,9 @@ export function InternalStoreCreateWizard({
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{module.name}</span>
                             {includedByPlan && (
-                              <Badge variant="secondary">Incluso no plano</Badge>
+                              <Badge variant="secondary">
+                                Incluso no plano
+                              </Badge>
                             )}
                           </span>
                           <span className="mt-1 block text-sm text-muted-foreground">
@@ -865,7 +989,9 @@ export function InternalStoreCreateWizard({
                   Motivo do cadastro
                   <Textarea
                     value={values.reason}
-                    onChange={event => updateValue('reason', event.target.value)}
+                    onChange={event =>
+                      updateValue('reason', event.target.value)
+                    }
                     error={errors.reason}
                     placeholder="Ex.: novo cliente aprovado pelo comercial."
                     className="min-h-24"
@@ -885,7 +1011,11 @@ export function InternalStoreCreateWizard({
                 Voltar
               </Button>
               {currentStep === 'review' ? (
-                <Button onClick={submit} isLoading={isPending} disabled={isPending}>
+                <Button
+                  onClick={submit}
+                  isLoading={isPending}
+                  disabled={isPending}
+                >
                   <CheckCircle2 className="size-4" />
                   Criar loja
                 </Button>
