@@ -19,6 +19,7 @@ import type {
 import {
   getModuleTreatmentLabel,
   getPlanChangeTimingLabel,
+  getProrationPolicyLabel,
 } from '@/features/internal-operations/subscription-plan-change-policy'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
 import {
@@ -141,6 +142,45 @@ const formatCurrency = (value: string | number | null, currency = 'BRL') => {
     style: 'currency',
     currency,
   }).format(Number(value))
+}
+
+const getProrationAdjustmentLabel = (type: string) => {
+  if (type === 'debit') return 'Cobranca adicional'
+  if (type === 'credit') return 'Credito'
+
+  return 'Sem ajuste'
+}
+
+const getProrationStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    open: 'Aberto',
+    invoiced: 'Faturado',
+    applied: 'Aplicado',
+    recorded: 'Registrado',
+    waived: 'Isento',
+    cancelled: 'Cancelado',
+  }
+
+  return labels[status] ?? status
+}
+
+const getProrationNumber = (
+  snapshot: Record<string, unknown> | null | undefined,
+  key: string
+) => {
+  const value = snapshot?.[key]
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') return Number(value)
+
+  return 0
+}
+
+const getProrationString = (
+  snapshot: Record<string, unknown> | null | undefined,
+  key: string
+) => {
+  const value = snapshot?.[key]
+  return typeof value === 'string' ? value : ''
 }
 
 const DetailField = ({
@@ -1672,6 +1712,26 @@ function PlanoTab({
                     )}
                     .
                   </div>
+                  {store.pendingPlanChange.proration && (
+                    <div className="mt-1 text-xs">
+                      Pro-rata:{' '}
+                      {getProrationAdjustmentLabel(
+                        getProrationString(
+                          store.pendingPlanChange.proration,
+                          'adjustmentType'
+                        )
+                      )}{' '}
+                      de{' '}
+                      {formatCurrency(
+                        getProrationString(
+                          store.pendingPlanChange.proration,
+                          'amount'
+                        ) || '0',
+                        store.pendingPlanChange.currency
+                      )}
+                      .
+                    </div>
+                  )}
                 </div>
                 <Badge variant="outline">
                   {getModuleTreatmentLabel(
@@ -1681,6 +1741,102 @@ function PlanoTab({
                       | 'manual_review'
                   )}
                 </Badge>
+              </div>
+            </div>
+          )}
+          {store.billingAdjustments.length > 0 && (
+            <div className="rounded-lg border bg-background/70 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Ajustes de pro-rata
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Memoria financeira gerada em mudancas de plano.
+                  </p>
+                </div>
+                <Badge variant="outline">
+                  {store.billingAdjustments.length} registro(s)
+                </Badge>
+              </div>
+              <div className="mt-4 space-y-3">
+                {store.billingAdjustments.map(adjustment => {
+                  const remainingDays = getProrationNumber(
+                    adjustment.calculationSnapshot,
+                    'remainingDays'
+                  )
+                  const formula = getProrationString(
+                    adjustment.calculationSnapshot,
+                    'formula'
+                  )
+
+                  return (
+                    <div
+                      key={adjustment.id}
+                      className="rounded-md border bg-muted/20 p-3 text-sm"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="font-medium text-foreground">
+                            {getProrationAdjustmentLabel(
+                              adjustment.adjustmentType
+                            )}{' '}
+                            -{' '}
+                            {formatCurrency(
+                              adjustment.amount,
+                              adjustment.currency
+                            )}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            Competencia de{' '}
+                            {formatDate(adjustment.competenceStart)} ate{' '}
+                            {formatDate(adjustment.competenceEnd)}.
+                          </div>
+                        </div>
+                        <Badge variant="outline">
+                          {getProrationStatusLabel(adjustment.status)}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-3">
+                        <span>
+                          Dias restantes:{' '}
+                          <strong className="text-foreground">
+                            {remainingDays}
+                          </strong>
+                        </span>
+                        <span>
+                          Plano anterior:{' '}
+                          <strong className="text-foreground">
+                            {formatCurrency(
+                              getProrationString(
+                                adjustment.calculationSnapshot,
+                                'currentContractedAmount'
+                              ) || '0',
+                              adjustment.currency
+                            )}
+                          </strong>
+                        </span>
+                        <span>
+                          Novo plano:{' '}
+                          <strong className="text-foreground">
+                            {formatCurrency(
+                              getProrationString(
+                                adjustment.calculationSnapshot,
+                                'nextContractedAmount'
+                              ) || '0',
+                              adjustment.currency
+                            )}
+                          </strong>
+                        </span>
+                      </div>
+                      {formula && (
+                        <div className="mt-2 rounded-md border bg-background/70 p-2 text-xs text-muted-foreground">
+                          {formula}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -1883,18 +2039,22 @@ function ChangeSubscriptionPlanDialog({
             </div>
             <div className="rounded-lg border bg-muted/20 p-4">
               <div className="text-sm font-semibold text-foreground">
-                Impacto da mudanca
+                Previa financeira
               </div>
-              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                <li>Aplicar agora cria uma nova assinatura com o novo plano.</li>
-                <li>
-                  Aplicar na renovacao registra a troca sem alterar a assinatura
-                  atual.
-                </li>
-                <li>
-                  Historico financeiro guarda plano e valor anterior e novo.
-                </li>
-              </ul>
+              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Aplicar agora calcula pro-rata entre hoje e o fim do ciclo
+                  atual. Aplicar na renovacao registra ajuste zero.
+                </p>
+                <div className="rounded-md border bg-background/70 p-3 text-xs">
+                  Formula: (novo valor - valor atual) proporcional aos dias
+                  restantes do ciclo.
+                </div>
+                <p>
+                  A memoria real fica salva no historico financeiro ao
+                  confirmar a mudanca.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1995,6 +2155,26 @@ function ChangeSubscriptionPlanDialog({
                 </option>
                 <option value="manual_review">
                   {getModuleTreatmentLabel('manual_review')}
+                </option>
+              </select>
+            </FormField>
+            <FormField label="Ajuste proporcional" htmlFor="prorationPolicy">
+              <select
+                id="prorationPolicy"
+                name="prorationPolicy"
+                className={selectClassName}
+                defaultValue="create_adjustment"
+                disabled={!!store.pendingPlanChange}
+                required
+              >
+                <option value="create_adjustment">
+                  {getProrationPolicyLabel('create_adjustment')}
+                </option>
+                <option value="record_only">
+                  {getProrationPolicyLabel('record_only')}
+                </option>
+                <option value="waive">
+                  {getProrationPolicyLabel('waive')}
                 </option>
               </select>
             </FormField>

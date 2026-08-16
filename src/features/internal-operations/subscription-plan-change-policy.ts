@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import Decimal from 'decimal.js'
 
 const moneyRegex = /^\d+(?:[,.]\d{1,4})?$/
 
@@ -19,6 +20,12 @@ export const subscriptionPlanChangeValueModes = [
   'custom',
 ] as const
 
+export const subscriptionPlanChangeProrationPolicies = [
+  'create_adjustment',
+  'record_only',
+  'waive',
+] as const
+
 export const storeSubscriptionPlanChangeSchema = z
   .object({
     storeId: z.coerce.number().int().positive(),
@@ -33,6 +40,9 @@ export const storeSubscriptionPlanChangeSchema = z
       .or(z.literal(''))
       .default(''),
     moduleTreatment: z.enum(subscriptionPlanChangeModuleTreatments),
+    prorationPolicy: z
+      .enum(subscriptionPlanChangeProrationPolicies)
+      .default('create_adjustment'),
     confirmation: z.string().trim().optional().or(z.literal('')).default(''),
     reason: z
       .string()
@@ -68,8 +78,160 @@ export type StoreSubscriptionPlanChangeValues = z.infer<
   typeof storeSubscriptionPlanChangeSchema
 >
 
+export type SubscriptionPlanChangeProrationPolicy =
+  (typeof subscriptionPlanChangeProrationPolicies)[number]
+
+export type PlanChangeProrationPreview = {
+  policy: SubscriptionPlanChangeProrationPolicy
+  adjustmentType: 'debit' | 'credit' | 'none'
+  status: 'open' | 'waived' | 'not_applicable'
+  amount: string
+  signedAmount: string
+  currency: string
+  previousRemainingAmount: string
+  nextRemainingAmount: string
+  currentContractedAmount: string
+  nextContractedAmount: string
+  periodStart: string
+  periodEnd: string
+  effectiveAt: string
+  totalMilliseconds: number
+  remainingMilliseconds: number
+  remainingDays: number
+  elapsedDays: number
+  formula: string
+  explanation: string
+}
+
 export function parseCurrencyAmount(value: string) {
   return Number(value.replace(/\./g, '').replace(',', '.'))
+}
+
+const money = (value: Decimal.Value) => new Decimal(value).toDecimalPlaces(4)
+
+const toMoneyString = (value: Decimal.Value) => money(value).toFixed(4)
+
+const clampDate = ({ date, start, end }: { date: Date; start: Date; end: Date }) => {
+  if (date.getTime() < start.getTime()) return start
+  if (date.getTime() > end.getTime()) return end
+
+  return date
+}
+
+export function calculatePlanChangeProration({
+  timing,
+  policy,
+  currentContractedAmount,
+  nextContractedAmount,
+  currency,
+  periodStart,
+  periodEnd,
+  effectiveAt,
+}: {
+  timing: (typeof subscriptionPlanChangeTimings)[number]
+  policy: SubscriptionPlanChangeProrationPolicy
+  currentContractedAmount: string
+  nextContractedAmount: string
+  currency: string
+  periodStart: Date
+  periodEnd: Date
+  effectiveAt: Date
+}): PlanChangeProrationPreview {
+  const periodStartMs = periodStart.getTime()
+  const periodEndMs = periodEnd.getTime()
+  const totalMilliseconds = Math.max(periodEndMs - periodStartMs, 0)
+  const safeEffectiveAt = clampDate({
+    date: effectiveAt,
+    start: periodStart,
+    end: periodEnd,
+  })
+  const remainingMilliseconds =
+    timing === 'next_renewal'
+      ? 0
+      : Math.max(periodEndMs - safeEffectiveAt.getTime(), 0)
+
+  if (totalMilliseconds <= 0 || remainingMilliseconds <= 0) {
+    return {
+      policy,
+      adjustmentType: 'none',
+      status: 'not_applicable',
+      amount: '0.0000',
+      signedAmount: '0.0000',
+      currency,
+      previousRemainingAmount: '0.0000',
+      nextRemainingAmount: '0.0000',
+      currentContractedAmount: toMoneyString(currentContractedAmount),
+      nextContractedAmount: toMoneyString(nextContractedAmount),
+      periodStart: periodStart.toISOString(),
+      periodEnd: periodEnd.toISOString(),
+      effectiveAt: safeEffectiveAt.toISOString(),
+      totalMilliseconds,
+      remainingMilliseconds,
+      remainingDays: 0,
+      elapsedDays: Math.max(
+        Math.ceil((safeEffectiveAt.getTime() - periodStartMs) / 86_400_000),
+        0
+      ),
+      formula: 'Sem periodo restante para calcular ajuste proporcional.',
+      explanation:
+        timing === 'next_renewal'
+          ? 'Mudanca programada para renovacao nao altera o ciclo atual.'
+          : 'Nao ha saldo de periodo restante para ajustar.',
+    }
+  }
+
+  const remainingRatio = new Decimal(remainingMilliseconds).div(
+    totalMilliseconds
+  )
+  const previousRemainingAmount = money(currentContractedAmount).mul(
+    remainingRatio
+  )
+  const nextRemainingAmount = money(nextContractedAmount).mul(remainingRatio)
+  const signedAmount = money(nextRemainingAmount.minus(previousRemainingAmount))
+  const adjustmentType = signedAmount.gt(0)
+    ? 'debit'
+    : signedAmount.lt(0)
+      ? 'credit'
+      : 'none'
+  const status =
+    adjustmentType === 'none'
+      ? 'not_applicable'
+      : policy === 'waive'
+        ? 'waived'
+        : 'open'
+  const remainingDays = Math.ceil(remainingMilliseconds / 86_400_000)
+  const elapsedDays = Math.max(
+    Math.ceil((safeEffectiveAt.getTime() - periodStartMs) / 86_400_000),
+    0
+  )
+
+  return {
+    policy,
+    adjustmentType,
+    status,
+    amount: toMoneyString(signedAmount.abs()),
+    signedAmount: signedAmount.toFixed(4),
+    currency,
+    previousRemainingAmount: previousRemainingAmount.toFixed(4),
+    nextRemainingAmount: nextRemainingAmount.toFixed(4),
+    currentContractedAmount: toMoneyString(currentContractedAmount),
+    nextContractedAmount: toMoneyString(nextContractedAmount),
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+    effectiveAt: safeEffectiveAt.toISOString(),
+    totalMilliseconds,
+    remainingMilliseconds,
+    remainingDays,
+    elapsedDays,
+    formula:
+      '((novo valor contratado - valor contratado atual) / duracao do ciclo) x periodo restante',
+    explanation:
+      adjustmentType === 'debit'
+        ? 'Novo plano tem valor proporcional maior no periodo restante.'
+        : adjustmentType === 'credit'
+          ? 'Novo plano tem valor proporcional menor no periodo restante.'
+          : 'Valores equivalem no periodo restante.',
+  }
 }
 
 export function resolvePlanChangeEffectiveAt({
@@ -132,4 +294,16 @@ export function getModuleTreatmentLabel(
   >
 
   return labels[treatment]
+}
+
+export function getProrationPolicyLabel(
+  policy: SubscriptionPlanChangeProrationPolicy
+) {
+  const labels = {
+    create_adjustment: 'Gerar ajuste financeiro',
+    record_only: 'Apenas registrar memoria de calculo',
+    waive: 'Isentar ajuste deste ciclo',
+  } satisfies Record<SubscriptionPlanChangeProrationPolicy, string>
+
+  return labels[policy]
 }

@@ -22,6 +22,7 @@ import {
   storeAccessInvitesTable,
   storeAccessBlocksTable,
   storeAddressesTable,
+  storeBillingAdjustmentsTable,
   storeBillingEventsTable,
   storeBillingInvoicesTable,
   storeCompanyProfilesTable,
@@ -89,8 +90,10 @@ import {
   type StoreSubscriptionTermsValues,
 } from './subscription-terms-policy'
 import {
+  calculatePlanChangeProration,
   getModuleTreatmentLabel,
   getPlanChangeTimingLabel,
+  getProrationPolicyLabel,
   resolvePlanChangeContractedAmount,
   resolvePlanChangeEffectiveAt,
   type StoreSubscriptionPlanChangeValues,
@@ -186,6 +189,7 @@ export type InternalStorePendingPlanChange = {
   currency: string
   effectiveAt: Date
   reason: string
+  proration: Record<string, unknown> | null
   actorEmail: string
   createdAt: Date
 }
@@ -369,6 +373,20 @@ export type InternalStoreOverview = Pick<
     currency: string
     dueAt: Date
     paidAt: Date | null
+    createdAt: Date
+  }[]
+  billingAdjustments: {
+    id: number
+    planChangeId: number
+    adjustmentType: string
+    status: string
+    amount: string
+    currency: string
+    competenceStart: Date
+    competenceEnd: Date
+    calculationSnapshot: Record<string, unknown>
+    reason: string
+    actorEmail: string
     createdAt: Date
   }[]
   modules: {
@@ -1251,6 +1269,7 @@ export async function getInternalStoreOverview(
     billingEvents,
     accessBlockRows,
     pendingPlanChangeRows,
+    billingAdjustmentRows,
   ] = await Promise.all([
     db
       .select({
@@ -1377,6 +1396,7 @@ export async function getInternalStoreOverview(
         currency: storeSubscriptionPlanChangesTable.currency,
         effectiveAt: storeSubscriptionPlanChangesTable.effectiveAt,
         reason: storeSubscriptionPlanChangesTable.reason,
+        metadata: storeSubscriptionPlanChangesTable.metadata,
         actorEmail: storeSubscriptionPlanChangesTable.actorEmail,
         createdAt: storeSubscriptionPlanChangesTable.createdAt,
       })
@@ -1393,6 +1413,25 @@ export async function getInternalStoreOverview(
       )
       .orderBy(desc(storeSubscriptionPlanChangesTable.createdAt))
       .limit(1),
+    db
+      .select({
+        id: storeBillingAdjustmentsTable.id,
+        planChangeId: storeBillingAdjustmentsTable.planChangeId,
+        adjustmentType: storeBillingAdjustmentsTable.adjustmentType,
+        status: storeBillingAdjustmentsTable.status,
+        amount: storeBillingAdjustmentsTable.amount,
+        currency: storeBillingAdjustmentsTable.currency,
+        competenceStart: storeBillingAdjustmentsTable.competenceStart,
+        competenceEnd: storeBillingAdjustmentsTable.competenceEnd,
+        calculationSnapshot: storeBillingAdjustmentsTable.calculationSnapshot,
+        reason: storeBillingAdjustmentsTable.reason,
+        actorEmail: storeBillingAdjustmentsTable.actorEmail,
+        createdAt: storeBillingAdjustmentsTable.createdAt,
+      })
+      .from(storeBillingAdjustmentsTable)
+      .where(eq(storeBillingAdjustmentsTable.storeId, storeId))
+      .orderBy(desc(storeBillingAdjustmentsTable.createdAt))
+      .limit(6),
   ])
 
   const invoiceSummary = invoiceRows.reduce(
@@ -1433,6 +1472,8 @@ export async function getInternalStoreOverview(
   const metrics = metricsRows[0]
   const accessBlock = accessBlockRows[0] ?? null
   const pendingPlanChange = pendingPlanChangeRows[0] ?? null
+  const pendingPlanChangeMetadata =
+    (pendingPlanChange?.metadata as Record<string, unknown> | undefined) ?? {}
 
   return {
     id: store.id,
@@ -1502,7 +1543,14 @@ export async function getInternalStoreOverview(
       currentPeriodStart: store.currentPeriodStart,
       currentPeriodEnd: store.currentPeriodEnd,
     },
-    pendingPlanChange,
+    pendingPlanChange: pendingPlanChange
+      ? {
+          ...pendingPlanChange,
+          proration:
+            (pendingPlanChangeMetadata.proration as Record<string, unknown>) ??
+            null,
+        }
+      : null,
     accessBlock: accessBlock
       ? {
           ...accessBlock,
@@ -1511,6 +1559,11 @@ export async function getInternalStoreOverview(
       : null,
     invoiceSummary,
     invoices: invoiceRows,
+    billingAdjustments: billingAdjustmentRows.map(adjustment => ({
+      ...adjustment,
+      calculationSnapshot:
+        (adjustment.calculationSnapshot as Record<string, unknown>) ?? {},
+    })),
     modules: moduleRows,
     users: userRows,
     metrics: {
@@ -2146,6 +2199,14 @@ export const buildInternalStoreInitialInvoiceNumber = ({
   storeId: number
   subscriptionId: number
 }) => `CP-${storeId}-${subscriptionId}-001`
+
+export const buildInternalStoreProrationInvoiceNumber = ({
+  storeId,
+  planChangeId,
+}: {
+  storeId: number
+  planChangeId: number
+}) => `CP-${storeId}-PROR-${planChangeId}`
 
 export const shouldCreateInternalStoreInitialInvoice = (
   subscriptionStatus: ReturnType<typeof getSubscriptionPeriod>['status']
@@ -3520,6 +3581,16 @@ export async function changeStoreSubscriptionPlan({
       nextBillingAt: subscription.nextBillingAt,
     })
     const keepCustomAmount = values.valueMode !== 'use_plan_default'
+    const proration = calculatePlanChangeProration({
+      timing: values.timing,
+      policy: values.prorationPolicy,
+      currentContractedAmount: subscription.contractedAmount,
+      nextContractedAmount,
+      currency: targetPlan.currency,
+      periodStart: subscription.currentPeriodStart,
+      periodEnd: subscription.currentPeriodEnd,
+      effectiveAt,
+    })
 
     const planModules = await tx
       .select({
@@ -3603,6 +3674,8 @@ export async function changeStoreSubscriptionPlan({
       effectiveAt: effectiveAt.toISOString(),
       keepCustomAmount,
       moduleTreatment: values.moduleTreatment,
+      prorationPolicy: values.prorationPolicy,
+      proration,
       moduleIds: [...targetPlanModuleIds],
       removedModuleIds,
     }
@@ -3635,6 +3708,10 @@ export async function changeStoreSubscriptionPlan({
             moduleTreatmentLabel: getModuleTreatmentLabel(
               values.moduleTreatment
             ),
+            prorationPolicyLabel: getProrationPolicyLabel(
+              values.prorationPolicy
+            ),
+            proration,
           },
           updatedAt: now,
         })
@@ -3653,6 +3730,7 @@ export async function changeStoreSubscriptionPlan({
           source: 'internal_plan_change',
           stage: 'scheduled',
           planChangeId: scheduledPlanChange.id,
+          proration,
         },
       })
 
@@ -3702,12 +3780,20 @@ export async function changeStoreSubscriptionPlan({
         )
       )
 
-    const period = getSubscriptionPeriod({
-      startsAt: now,
-      billingInterval: targetPlan.billingInterval,
-      billingIntervalCount: targetPlan.billingIntervalCount,
-      trialDays: 0,
-    })
+    const period =
+      subscription.currentPeriodEnd.getTime() > now.getTime()
+        ? {
+            status: 'active' as const,
+            periodStart: now,
+            periodEnd: subscription.currentPeriodEnd,
+            nextBillingAt: subscription.currentPeriodEnd,
+          }
+        : getSubscriptionPeriod({
+            startsAt: now,
+            billingInterval: targetPlan.billingInterval,
+            billingIntervalCount: targetPlan.billingIntervalCount,
+            trialDays: 0,
+          })
 
     const [newSubscription] = await tx
       .insert(storeSubscriptionsTable)
@@ -3841,10 +3927,116 @@ export async function changeStoreSubscriptionPlan({
           moduleTreatmentLabel: getModuleTreatmentLabel(
             values.moduleTreatment
           ),
+          prorationPolicyLabel: getProrationPolicyLabel(
+            values.prorationPolicy
+          ),
+          proration,
         },
         updatedAt: now,
       })
       .returning()
+
+    const shouldCreateProrationInvoice =
+      proration.adjustmentType === 'debit' &&
+      values.prorationPolicy === 'create_adjustment' &&
+      Number(proration.amount) > 0
+    const adjustmentStatus =
+      proration.adjustmentType === 'none'
+        ? 'applied'
+        : values.prorationPolicy === 'waive'
+          ? 'waived'
+          : proration.adjustmentType === 'credit'
+            ? 'recorded'
+          : values.prorationPolicy === 'record_only'
+            ? 'recorded'
+            : shouldCreateProrationInvoice
+              ? 'invoiced'
+              : 'open'
+    const [billingAdjustment] = await tx
+      .insert(storeBillingAdjustmentsTable)
+      .values({
+        storeId: values.storeId,
+        planChangeId: appliedPlanChange.id,
+        sourceSubscriptionId: subscription.id,
+        targetSubscriptionId: newSubscription.id,
+        adjustmentType: proration.adjustmentType,
+        status: adjustmentStatus,
+        amount: proration.amount,
+        currency: proration.currency,
+        competenceStart: new Date(proration.effectiveAt),
+        competenceEnd: new Date(proration.periodEnd),
+        calculationSnapshot: proration,
+        reason: values.reason,
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        metadata: {
+          source: 'internal_plan_change',
+          policy: values.prorationPolicy,
+          policyLabel: getProrationPolicyLabel(values.prorationPolicy),
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    const [prorationInvoice] = shouldCreateProrationInvoice
+      ? await tx
+          .insert(storeBillingInvoicesTable)
+          .values({
+            storeId: values.storeId,
+            subscriptionId: newSubscription.id,
+            planId: targetPlan.id,
+            invoiceNumber: buildInternalStoreProrationInvoiceNumber({
+              storeId: values.storeId,
+              planChangeId: appliedPlanChange.id,
+            }),
+            status: 'pending',
+            currency: targetPlan.currency,
+            subtotalAmount: proration.amount,
+            discountAmount: '0',
+            totalAmount: proration.amount,
+            amountPaid: '0',
+            amountRefunded: '0',
+            planSnapshot: {
+              id: targetPlan.id,
+              code: targetPlan.code,
+              name: targetPlan.name,
+              defaultAmount: targetPlan.defaultAmount,
+              currency: targetPlan.currency,
+              billingInterval: targetPlan.billingInterval,
+              billingIntervalCount: targetPlan.billingIntervalCount,
+            },
+            contractSnapshot: {
+              kind: 'plan_change_proration',
+              planChangeId: appliedPlanChange.id,
+              billingAdjustmentId: billingAdjustment.id,
+              previousSubscriptionId: subscription.id,
+              newSubscriptionId: newSubscription.id,
+              contractedAmount: nextContractedAmount,
+              currency: targetPlan.currency,
+            },
+            periodStart: new Date(proration.effectiveAt),
+            periodEnd: new Date(proration.periodEnd),
+            dueAt: now,
+            metadata: {
+              kind: 'plan_change_proration',
+              planChangeId: appliedPlanChange.id,
+              billingAdjustmentId: billingAdjustment.id,
+              calculation: proration,
+            },
+            updatedAt: now,
+          })
+          .returning()
+      : [null]
+
+    if (prorationInvoice) {
+      await tx
+        .update(storeBillingAdjustmentsTable)
+        .set({
+          invoiceId: prorationInvoice.id,
+          updatedAt: now,
+        })
+        .where(eq(storeBillingAdjustmentsTable.id, billingAdjustment.id))
+    }
 
     await tx.insert(storeBillingEventsTable).values({
       storeId: values.storeId,
@@ -3864,6 +4056,49 @@ export async function changeStoreSubscriptionPlan({
       },
       metadata: { source: 'internal_plan_change' },
     })
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: newSubscription.id,
+      invoiceId: prorationInvoice?.id ?? null,
+      eventType: 'billing_adjustment_created',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: null,
+      newValues: {
+        billingAdjustmentId: billingAdjustment.id,
+        planChangeId: appliedPlanChange.id,
+        ...proration,
+      },
+      metadata: {
+        source: 'internal_plan_change',
+        policy: values.prorationPolicy,
+      },
+    })
+
+    if (prorationInvoice) {
+      await tx.insert(storeBillingEventsTable).values({
+        storeId: values.storeId,
+        subscriptionId: newSubscription.id,
+        invoiceId: prorationInvoice.id,
+        eventType: 'invoice_created',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: values.reason,
+        previousValues: null,
+        newValues: {
+          invoiceNumber: prorationInvoice.invoiceNumber,
+          totalAmount: prorationInvoice.totalAmount,
+          billingAdjustmentId: billingAdjustment.id,
+          planChangeId: appliedPlanChange.id,
+        },
+        metadata: {
+          source: 'internal_plan_change',
+          kind: 'plan_change_proration',
+        },
+      })
+    }
 
     await tx.insert(storeBillingEventsTable).values({
       storeId: values.storeId,

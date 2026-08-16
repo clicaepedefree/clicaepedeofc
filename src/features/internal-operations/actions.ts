@@ -1024,6 +1024,7 @@ export async function changeStoreSubscriptionPlanAction(formData: FormData) {
         valueMode: formData.get('valueMode'),
         customContractedAmount: formData.get('customContractedAmount'),
         moduleTreatment: formData.get('moduleTreatment'),
+        prorationPolicy: formData.get('prorationPolicy'),
         confirmation: formData.get('confirmation'),
         reason: formData.get('reason'),
       })
