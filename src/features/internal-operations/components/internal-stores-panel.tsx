@@ -7,7 +7,7 @@ import {
   type SerializableInternalStoreListItem,
 } from '@/features/internal-operations/components/internal-stores-table'
 import {
-  getInternalStoreStatusCounts,
+  getInternalStoreDashboardIndicators,
   getRecentInternalAuditLogs,
   listInternalStores,
   parseStoreStatus,
@@ -17,7 +17,7 @@ import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/card'
 import { Input } from '@/shared/input'
-import { Plus, Search } from 'lucide-react'
+import { CircleDollarSign, KeyRound, Plus, Search, Store } from 'lucide-react'
 import Link from 'next/link'
 
 type InternalStoresPanelProps = {
@@ -57,6 +57,15 @@ const formatDateTime = (date: Date | string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(date))
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(value)
+
+const formatInteger = (value: number) =>
+  new Intl.NumberFormat('pt-BR').format(value)
 
 const auditActionLabels: Record<string, string> = {
   create_store: 'Cadastro',
@@ -119,13 +128,13 @@ export async function InternalStoresPanel({
   const search = searchParams.q?.trim() ?? ''
 
   let stores: Awaited<ReturnType<typeof listInternalStores>>
-  let counts: Awaited<ReturnType<typeof getInternalStoreStatusCounts>>
+  let indicators: Awaited<ReturnType<typeof getInternalStoreDashboardIndicators>>
   let auditLogs: Awaited<ReturnType<typeof getRecentInternalAuditLogs>>
 
   try {
-    ;[stores, counts, auditLogs] = await Promise.all([
+    ;[stores, indicators, auditLogs] = await Promise.all([
       listInternalStores({ status, search }),
-      getInternalStoreStatusCounts(),
+      getInternalStoreDashboardIndicators({ status, search }),
       getRecentInternalAuditLogs(12),
     ])
   } catch (error) {
@@ -227,57 +236,156 @@ export async function InternalStoresPanel({
         </div>
       )}
 
-      <section className="grid gap-3 md:grid-cols-5">
-        <Card className="rounded-lg border-sky-200 bg-sky-50 py-4 shadow-xs hover:shadow-xs dark:border-sky-900/70 dark:bg-sky-950/25">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm text-sky-800 dark:text-sky-300">
-              Em implantacao
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 text-2xl font-semibold text-sky-950 dark:text-sky-100">
-            {counts.implementing}
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg border-border bg-card py-4 shadow-xs hover:shadow-xs">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm text-muted-foreground">
-              Ativas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 text-2xl font-semibold">
-            {counts.active}
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg border-amber-200 bg-amber-50 py-4 shadow-xs hover:shadow-xs dark:border-amber-900/70 dark:bg-amber-950/25">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
-              Pendentes
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 text-2xl font-semibold text-amber-950 dark:text-amber-100">
-            {counts.pending_recovery}
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg border-border bg-card py-4 shadow-xs hover:shadow-xs">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm text-muted-foreground">
-              Inativas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 text-2xl font-semibold">
-            {counts.inactive}
-          </CardContent>
-        </Card>
-        <Card className="rounded-lg border-rose-200 bg-rose-50 py-4 shadow-xs hover:shadow-xs dark:border-rose-900/70 dark:bg-rose-950/25">
-          <CardHeader className="px-4">
-            <CardTitle className="text-sm text-rose-800 dark:text-rose-300">
-              Arquivadas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 text-2xl font-semibold text-rose-950 dark:text-rose-100">
-            {counts.archived}
-          </CardContent>
-        </Card>
+      <section className="space-y-3 rounded-lg border bg-card p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">
+              Indicadores administrativos
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Mesmos filtros aplicados na listagem. Valores financeiros usam
+              assinaturas e faturas da base interna. Periodo: posicao atual por
+              vencimento.
+            </p>
+          </div>
+          <Badge variant="outline">
+            Atualizado {formatDateTime(indicators.updatedAt)}
+          </Badge>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          <Card className="rounded-lg border-sky-200 bg-sky-50 py-4 shadow-xs hover:shadow-xs dark:border-sky-900/70 dark:bg-sky-950/25">
+            <CardHeader className="flex flex-row items-center gap-2 px-4">
+              <Store className="size-4 text-sky-700 dark:text-sky-300" />
+              <CardTitle className="text-sm text-sky-800 dark:text-sky-300">
+                Base filtrada
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 px-4">
+              <div className="text-3xl font-semibold text-sky-950 dark:text-sky-100">
+                {formatInteger(indicators.totalStores)}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-sky-900 dark:text-sky-100 md:grid-cols-3">
+                <span>
+                  Implantacao:{' '}
+                  <strong>
+                    {indicators.commercialStatusCounts.implementing}
+                  </strong>
+                </span>
+                <span>
+                  Ativas:{' '}
+                  <strong>{indicators.commercialStatusCounts.active}</strong>
+                </span>
+                <span>
+                  Pendentes:{' '}
+                  <strong>
+                    {indicators.commercialStatusCounts.pending_recovery}
+                  </strong>
+                </span>
+                <span>
+                  Inativas:{' '}
+                  <strong>{indicators.commercialStatusCounts.inactive}</strong>
+                </span>
+                <span>
+                  Arquivadas:{' '}
+                  <strong>{indicators.commercialStatusCounts.archived}</strong>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-lg border-emerald-200 bg-emerald-50 py-4 shadow-xs hover:shadow-xs dark:border-emerald-900/70 dark:bg-emerald-950/25">
+            <CardHeader className="flex flex-row items-center gap-2 px-4">
+              <CircleDollarSign className="size-4 text-emerald-700 dark:text-emerald-300" />
+              <CardTitle className="text-sm text-emerald-800 dark:text-emerald-300">
+                Financeiro
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 px-4">
+              <div>
+                <div className="text-2xl font-semibold text-emerald-950 dark:text-emerald-100">
+                  {formatCurrency(
+                    indicators.financial.monthlyContractedRevenue
+                  )}
+                </div>
+                <p className="text-xs text-emerald-900 dark:text-emerald-100">
+                  Receita mensal contratada
+                </p>
+              </div>
+              <div className="grid gap-2 text-xs text-emerald-900 dark:text-emerald-100 sm:grid-cols-2">
+                <span>
+                  Em aberto:{' '}
+                  <strong>
+                    {formatCurrency(indicators.financial.openReceivables)}
+                  </strong>{' '}
+                  ({indicators.financial.openInvoices})
+                </span>
+                <span>
+                  Vencido:{' '}
+                  <strong>
+                    {formatCurrency(indicators.financial.overdueReceivables)}
+                  </strong>{' '}
+                  ({indicators.financial.overdueInvoices})
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-emerald-900 dark:text-emerald-100 sm:grid-cols-3">
+                <span>
+                  Trial:{' '}
+                  <strong>{indicators.subscriptionStatusCounts.trialing}</strong>
+                </span>
+                <span>
+                  Ativas:{' '}
+                  <strong>{indicators.subscriptionStatusCounts.active}</strong>
+                </span>
+                <span>
+                  Atraso:{' '}
+                  <strong>{indicators.subscriptionStatusCounts.past_due}</strong>
+                </span>
+                <span>
+                  Pausadas:{' '}
+                  <strong>{indicators.subscriptionStatusCounts.paused}</strong>
+                </span>
+                <span>
+                  Canceladas:{' '}
+                  <strong>{indicators.subscriptionStatusCounts.canceled}</strong>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-lg border-violet-200 bg-violet-50 py-4 shadow-xs hover:shadow-xs dark:border-violet-900/70 dark:bg-violet-950/25">
+            <CardHeader className="flex flex-row items-center gap-2 px-4">
+              <KeyRound className="size-4 text-violet-700 dark:text-violet-300" />
+              <CardTitle className="text-sm text-violet-800 dark:text-violet-300">
+                Acesso
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 px-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-2xl font-semibold text-violet-950 dark:text-violet-100">
+                    {indicators.access.storesWithActiveAdmin}
+                  </div>
+                  <p className="text-xs text-violet-900 dark:text-violet-100">
+                    Com admin ativo
+                  </p>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-violet-950 dark:text-violet-100">
+                    {indicators.access.storesWithoutActiveAdmin}
+                  </div>
+                  <p className="text-xs text-violet-900 dark:text-violet-100">
+                    Sem admin ativo
+                  </p>
+                </div>
+              </div>
+              <div className="text-xs text-violet-900 dark:text-violet-100">
+                {indicators.access.activeAdminLinks} permissoes ativas /{' '}
+                {indicators.access.revokedAdminLinks} revogadas
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </section>
 
       <section className="space-y-4">

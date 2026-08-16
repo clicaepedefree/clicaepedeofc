@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   buildInternalStoreInitialInvoiceNumber,
+  getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
+  getMonthlyContractedRevenue,
   parseStoreStatus,
+  parseInternalDashboardAmount,
   shouldCreateInternalStoreInitialInvoice,
 } from './db'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
@@ -61,6 +64,51 @@ describe('internal operation store policy', () => {
   test('creates initial invoice only for active non-trial subscriptions', () => {
     expect(shouldCreateInternalStoreInitialInvoice('active')).toBe(true)
     expect(shouldCreateInternalStoreInitialInvoice('trialing')).toBe(false)
+  })
+
+  test('normalizes contracted revenue to monthly values', () => {
+    expect(
+      getMonthlyContractedRevenue({
+        contractedAmount: '199.90',
+        billingInterval: 'monthly',
+        billingIntervalCount: 1,
+      })
+    ).toBe(199.9)
+    expect(
+      getMonthlyContractedRevenue({
+        contractedAmount: '599.70',
+        billingInterval: 'quarterly',
+        billingIntervalCount: 1,
+      })
+    ).toBe(199.9)
+    expect(
+      getMonthlyContractedRevenue({
+        contractedAmount: '2398.80',
+        billingInterval: 'annual',
+        billingIntervalCount: 1,
+      })
+    ).toBe(199.9)
+  })
+
+  test('calculates open invoice receivables from invoice balance', () => {
+    expect(
+      getInvoiceReceivableAmount({
+        totalAmount: '200.00',
+        amountPaid: '50.00',
+      })
+    ).toBe(150)
+    expect(
+      getInvoiceReceivableAmount({
+        totalAmount: '100.00',
+        amountPaid: '150.00',
+      })
+    ).toBe(0)
+  })
+
+  test('ignores invalid dashboard amounts instead of leaking NaN', () => {
+    expect(parseInternalDashboardAmount('abc')).toBe(0)
+    expect(parseInternalDashboardAmount(null)).toBe(0)
+    expect(parseInternalDashboardAmount('10.50')).toBe(10.5)
   })
 
   test('hashes provisioning payload for idempotent retries without duplicate review token noise', () => {
