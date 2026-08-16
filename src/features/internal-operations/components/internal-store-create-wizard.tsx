@@ -4,6 +4,7 @@ import { createInternalStoreAction } from '@/features/internal-operations/action
 import type {
   InternalBillingModuleOption,
   InternalBillingPlanOption,
+  InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
 import {
   buildSubdomainFromStoreName,
@@ -27,6 +28,7 @@ import { Textarea } from '@/shared/textarea'
 import {
   ArrowLeft,
   ArrowRight,
+  AlertTriangle,
   BadgeCheck,
   Building2,
   CheckCircle2,
@@ -129,6 +131,9 @@ export function InternalStoreCreateWizard({
     internalStoreCreationInitialValues
   )
   const [errors, setErrors] = useState<WizardErrors>({})
+  const [duplicateMatches, setDuplicateMatches] = useState<
+    InternalStoreDuplicateMatch[]
+  >([])
   const [subdomainTouched, setSubdomainTouched] = useState(false)
 
   const currentStepIndex = internalStoreCreationSteps.indexOf(currentStep)
@@ -159,8 +164,18 @@ export function InternalStoreCreateWizard({
     field: TField,
     value: InternalStoreCreationValues[TField]
   ) => {
-    setValues(current => ({ ...current, [field]: value }))
+    setValues(current => ({
+      ...current,
+      [field]: value,
+      ...(field === 'duplicateOverrideConfirmed'
+        ? {}
+        : {
+            duplicateOverrideConfirmed: false,
+            duplicateReviewToken: '',
+          }),
+    }))
     setErrors(current => ({ ...current, [field]: undefined, root: undefined }))
+    if (field !== 'duplicateOverrideConfirmed') setDuplicateMatches([])
   }
 
   const updateStoreName = (storeName: string) => {
@@ -170,6 +185,8 @@ export function InternalStoreCreateWizard({
       subdomain: subdomainTouched
         ? current.subdomain
         : buildSubdomainFromStoreName(storeName),
+      duplicateOverrideConfirmed: false,
+      duplicateReviewToken: '',
     }))
     setErrors(current => ({
       ...current,
@@ -177,6 +194,7 @@ export function InternalStoreCreateWizard({
       subdomain: undefined,
       root: undefined,
     }))
+    setDuplicateMatches([])
   }
 
   const selectPlan = (planId: number) => {
@@ -188,6 +206,8 @@ export function InternalStoreCreateWizard({
       selectedModuleIds: current.selectedModuleIds.filter(
         moduleId => !planIncludedModuleIds.has(moduleId)
       ),
+      duplicateOverrideConfirmed: false,
+      duplicateReviewToken: '',
     }))
     setErrors(current => ({
       ...current,
@@ -195,6 +215,7 @@ export function InternalStoreCreateWizard({
       contractedAmount: undefined,
       root: undefined,
     }))
+    setDuplicateMatches([])
   }
 
   const toggleModule = (moduleId: number) => {
@@ -205,8 +226,11 @@ export function InternalStoreCreateWizard({
       selectedModuleIds: current.selectedModuleIds.includes(moduleId)
         ? current.selectedModuleIds.filter(id => id !== moduleId)
         : [...current.selectedModuleIds, moduleId],
+      duplicateOverrideConfirmed: false,
+      duplicateReviewToken: '',
     }))
     setErrors(current => ({ ...current, selectedModuleIds: undefined }))
+    setDuplicateMatches([])
   }
 
   const goToStep = (step: InternalStoreCreationStep) => {
@@ -257,11 +281,28 @@ export function InternalStoreCreateWizard({
       return
     }
 
+    if (duplicateMatches.length > 0 && !values.duplicateOverrideConfirmed) {
+      setErrors({
+        root: 'Confirme a excecao de duplicidade antes de criar a loja.',
+      })
+      return
+    }
+
     setErrors({})
     startTransition(async () => {
       const result = await createInternalStoreAction(parsedValues.data)
 
       if (!result.success) {
+        if ('code' in result && result.code === 'DUPLICATE_REVIEW_REQUIRED') {
+          setDuplicateMatches(result.duplicates)
+          setValues(current => ({
+            ...current,
+            duplicateOverrideConfirmed: false,
+            duplicateReviewToken: result.duplicateReviewToken,
+          }))
+          setCurrentStep('review')
+        }
+
         setErrors({ root: result.error })
         return
       }
@@ -685,6 +726,70 @@ export function InternalStoreCreateWizard({
 
             {currentStep === 'review' && (
               <div className="space-y-5">
+                {duplicateMatches.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 size-5 shrink-0" />
+                      <div className="space-y-3">
+                        <div>
+                          <p className="font-semibold">
+                            Possivel duplicidade encontrada
+                          </p>
+                          <p className="mt-1 text-sm">
+                            Confira os registros abaixo. Os dados sensiveis
+                            aparecem mascarados para proteger clientes e
+                            responsaveis.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {duplicateMatches.map(match => (
+                            <div
+                              key={match.storeId}
+                              className="rounded-md border border-amber-200 bg-background/70 p-3 text-sm dark:border-amber-900/70"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium">
+                                  Loja #{match.storeId} - {match.storeName}
+                                </span>
+                                <Badge variant="outline">{match.status}</Badge>
+                              </div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Endereco publico: {match.subdomain}
+                              </p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {match.matchedFields.map(field => (
+                                  <Badge
+                                    key={`${match.storeId}-${field.field}`}
+                                    variant="secondary"
+                                  >
+                                    {field.label}: {field.value}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <label className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={values.duplicateOverrideConfirmed}
+                            onChange={event =>
+                              updateValue(
+                                'duplicateOverrideConfirmed',
+                                event.target.checked
+                              )
+                            }
+                            className="mt-1 size-4 accent-primary"
+                          />
+                          <span>
+                            Confirmo que revisei a possivel duplicidade e tenho
+                            autorizacao para criar esta loja mesmo assim.
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
                     <CardHeader className="px-4">

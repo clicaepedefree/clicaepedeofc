@@ -3,10 +3,13 @@
 import {
   archiveStore,
   createInternalStore,
+  findInternalStoreCreationDuplicates,
   reactivateStoreWithAdmin,
+  type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
 import { internalStoreCreationSchema } from '@/features/internal-operations/internal-store-creation-policy'
 import { requireInternalOperation } from '@/features/internal-operations/operation-permissions'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
@@ -32,6 +35,13 @@ const redirectWithError = (returnPath: string, message: string): never => {
 
 type CreateInternalStoreActionResult =
   | { success: true; storeId: number }
+  | {
+      success: false
+      code: 'DUPLICATE_REVIEW_REQUIRED'
+      error: string
+      duplicates: InternalStoreDuplicateMatch[]
+      duplicateReviewToken: string
+    }
   | { success: false; error: string }
 
 const getInternalStoreCreationErrorMessage = (error: unknown) => {
@@ -59,6 +69,106 @@ const getInternalStoreCreationErrorMessage = (error: unknown) => {
   return 'Nao foi possivel cadastrar a loja agora.'
 }
 
+const duplicateReviewTokenTtlMs = 10 * 60 * 1000
+
+const getDuplicateReviewSecret = () =>
+  process.env.CLERK_SECRET_KEY ??
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  process.env.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY ??
+  (process.env.NODE_ENV === 'production'
+    ? (() => {
+        throw new Error('DUPLICATE_REVIEW_SECRET_NOT_CONFIGURED')
+      })()
+    : 'internal-store-duplicate-review-dev-secret')
+
+const toBase64Url = (value: string) =>
+  Buffer.from(value).toString('base64url')
+
+const fromBase64Url = (value: string) =>
+  Buffer.from(value, 'base64url').toString('utf8')
+
+const getDuplicateFingerprint = ({
+  values,
+  duplicates,
+}: {
+  values: unknown
+  duplicates: InternalStoreDuplicateMatch[]
+}) =>
+  JSON.stringify({
+    values,
+    duplicates: duplicates.map(duplicate => ({
+      storeId: duplicate.storeId,
+      fields: duplicate.matchedFields
+        .map(field => field.field)
+        .sort((left, right) => left.localeCompare(right)),
+    })),
+  })
+
+const signDuplicateReviewToken = ({
+  operatorClerkId,
+  fingerprint,
+}: {
+  operatorClerkId: string
+  fingerprint: string
+}) => {
+  const payload = JSON.stringify({
+    operatorClerkId,
+    fingerprint,
+    expiresAt: Date.now() + duplicateReviewTokenTtlMs,
+  })
+  const encodedPayload = toBase64Url(payload)
+  const signature = createHmac('sha256', getDuplicateReviewSecret())
+    .update(encodedPayload)
+    .digest('base64url')
+
+  return `${encodedPayload}.${signature}`
+}
+
+const verifyDuplicateReviewToken = ({
+  token,
+  operatorClerkId,
+  fingerprint,
+}: {
+  token: string | undefined
+  operatorClerkId: string
+  fingerprint: string
+}) => {
+  if (!token) return false
+
+  const [encodedPayload, signature] = token.split('.')
+  if (!encodedPayload || !signature) return false
+
+  const expectedSignature = createHmac('sha256', getDuplicateReviewSecret())
+    .update(encodedPayload)
+    .digest('base64url')
+  const signatureBuffer = Buffer.from(signature)
+  const expectedSignatureBuffer = Buffer.from(expectedSignature)
+
+  if (
+    signatureBuffer.length !== expectedSignatureBuffer.length ||
+    !timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
+  ) {
+    return false
+  }
+
+  try {
+    const payload = JSON.parse(fromBase64Url(encodedPayload)) as {
+      operatorClerkId?: string
+      fingerprint?: string
+      expiresAt?: number
+    }
+
+    return (
+      payload.operatorClerkId === operatorClerkId &&
+      payload.fingerprint === fingerprint &&
+      typeof payload.expiresAt === 'number' &&
+      payload.expiresAt > Date.now()
+    )
+  } catch {
+    return false
+  }
+}
+
 export async function createInternalStoreAction(
   payload: unknown
 ): Promise<CreateInternalStoreActionResult> {
@@ -73,6 +183,42 @@ export async function createInternalStoreAction(
   }
 
   try {
+    const duplicates = await findInternalStoreCreationDuplicates(
+      parsedPayload.data
+    )
+
+    if (duplicates.length > 0) {
+      const fingerprint = getDuplicateFingerprint({
+        values: {
+          ...parsedPayload.data,
+          duplicateOverrideConfirmed: undefined,
+          duplicateReviewToken: undefined,
+        },
+        duplicates,
+      })
+      const hasValidDuplicateReview =
+        parsedPayload.data.duplicateOverrideConfirmed &&
+        verifyDuplicateReviewToken({
+          token: parsedPayload.data.duplicateReviewToken,
+          operatorClerkId: operator.clerkId,
+          fingerprint,
+        })
+
+      if (!hasValidDuplicateReview) {
+        return {
+          success: false,
+          code: 'DUPLICATE_REVIEW_REQUIRED',
+          error:
+            'Encontramos possivel duplicidade. Revise os registros antes de confirmar a excecao.',
+          duplicates,
+          duplicateReviewToken: signDuplicateReviewToken({
+            operatorClerkId: operator.clerkId,
+            fingerprint,
+          }),
+        }
+      }
+    }
+
     const result = await createInternalStore({
       values: parsedPayload.data,
       operator,

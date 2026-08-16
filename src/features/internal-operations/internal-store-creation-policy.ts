@@ -16,10 +16,105 @@ export type InternalStoreCreationStep =
   (typeof internalStoreCreationSteps)[number]
 
 const subdomainRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-const optionalText = z.string().trim().optional().or(z.literal(''))
+const optionalText = z
+  .string()
+  .trim()
+  .transform(value => value.replace(/\s+/g, ' '))
+  .optional()
+  .or(z.literal(''))
 const moneyRegex = /^\d+(?:[,.]\d{1,2})?$/
 const parseDecimalNumber = (value: string) =>
   Number(value.trim().replace(',', '.'))
+
+export const normalizeInternalDigits = (value: string | null | undefined) =>
+  (value ?? '').replace(/\D/g, '')
+
+export const normalizeInternalPhone = (value: string | null | undefined) =>
+  normalizeInternalDigits(value)
+
+export const normalizeInternalCpf = (value: string | null | undefined) =>
+  normalizeInternalDigits(value)
+
+export const normalizeInternalCnpj = (value: string | null | undefined) =>
+  normalizeInternalDigits(value)
+
+export const normalizeInternalEmail = (value: string | null | undefined) =>
+  (value ?? '').trim().toLowerCase()
+
+export const isValidInternalCpf = (value: string | null | undefined) => {
+  const cpf = normalizeInternalCpf(value)
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
+
+  const calculateDigit = (length: number) => {
+    const sum = cpf
+      .slice(0, length)
+      .split('')
+      .reduce(
+        (total, digit, index) => total + Number(digit) * (length + 1 - index),
+        0
+      )
+    const remainder = (sum * 10) % 11
+    return remainder === 10 ? 0 : remainder
+  }
+
+  return (
+    calculateDigit(9) === Number(cpf[9]) &&
+    calculateDigit(10) === Number(cpf[10])
+  )
+}
+
+export const isValidInternalCnpj = (value: string | null | undefined) => {
+  const cnpj = normalizeInternalCnpj(value)
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false
+
+  const calculateDigit = (length: number) => {
+    const weights =
+      length === 12
+        ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    const sum = cnpj
+      .slice(0, length)
+      .split('')
+      .reduce((total, digit, index) => total + Number(digit) * weights[index], 0)
+    const remainder = sum % 11
+    return remainder < 2 ? 0 : 11 - remainder
+  }
+
+  return (
+    calculateDigit(12) === Number(cnpj[12]) &&
+    calculateDigit(13) === Number(cnpj[13])
+  )
+}
+
+const normalizedOptionalCpf = z
+  .string()
+  .trim()
+  .transform(normalizeInternalCpf)
+  .refine(value => !value || isValidInternalCpf(value), 'Informe um CPF valido')
+  .optional()
+  .or(z.literal(''))
+
+const normalizedOptionalCnpj = z
+  .string()
+  .trim()
+  .transform(normalizeInternalCnpj)
+  .refine(
+    value => !value || isValidInternalCnpj(value),
+    'Informe um CNPJ valido'
+  )
+  .optional()
+  .or(z.literal(''))
+
+const normalizedOptionalPhone = z
+  .string()
+  .trim()
+  .transform(normalizeInternalPhone)
+  .refine(
+    value => !value || (value.length >= 10 && value.length <= 11),
+    'Informe um telefone valido'
+  )
+  .optional()
+  .or(z.literal(''))
 
 export const internalStoreCreationSchema = z
   .object({
@@ -33,8 +128,8 @@ export const internalStoreCreationSchema = z
       .trim()
       .toLowerCase()
       .email('Informe um e-mail valido do responsavel'),
-    responsiblePhone: optionalText,
-    responsibleTaxNumber: optionalText,
+    responsiblePhone: normalizedOptionalPhone,
+    responsibleTaxNumber: normalizedOptionalCpf,
     storeName: z
       .string()
       .trim()
@@ -54,9 +149,9 @@ export const internalStoreCreationSchema = z
         subdomain => !reservedStoreSubdomains.has(subdomain),
         'Esse endereco e reservado. Tente outro nome.'
       ),
-    companyTaxNumber: optionalText,
+    companyTaxNumber: normalizedOptionalCnpj,
     companyName: optionalText,
-    phone1: optionalText,
+    phone1: normalizedOptionalPhone,
     companyEmail: z
       .string()
       .trim()
@@ -86,6 +181,8 @@ export const internalStoreCreationSchema = z
     discountType: z.enum(['none', 'fixed_amount', 'percentage']),
     discountValue: z.string().trim().optional().or(z.literal('')),
     selectedModuleIds: z.array(z.number().int().positive()).default([]),
+    duplicateOverrideConfirmed: z.boolean().default(false),
+    duplicateReviewToken: z.string().trim().optional().or(z.literal('')),
     reason: z
       .string()
       .trim()
@@ -173,6 +270,8 @@ export const internalStoreCreationInitialValues: InternalStoreCreationValues = {
   discountType: 'none',
   discountValue: '',
   selectedModuleIds: [],
+  duplicateOverrideConfirmed: false,
+  duplicateReviewToken: '',
   reason: '',
 }
 

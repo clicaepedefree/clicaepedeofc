@@ -13,10 +13,10 @@ const validValues: InternalStoreCreationValues = {
   responsibleName: 'QA Admin',
   responsibleEmail: 'qa.admin@example.com',
   responsiblePhone: '(11) 99999-9999',
-  responsibleTaxNumber: '',
+  responsibleTaxNumber: '529.982.247-25',
   storeName: 'QA Loja Centro',
   subdomain: 'qa-loja-centro',
-  companyTaxNumber: '',
+  companyTaxNumber: '04.252.011/0001-10',
   companyName: 'QA Loja Centro',
   phone1: '(11) 3333-3333',
   companyEmail: 'loja@example.com',
@@ -31,6 +31,8 @@ const validValues: InternalStoreCreationValues = {
   discountType: 'none',
   discountValue: '',
   selectedModuleIds: [1, 2],
+  duplicateOverrideConfirmed: false,
+  duplicateReviewToken: '',
   reason: 'Novo cliente aprovado pelo comercial.',
 }
 
@@ -41,6 +43,10 @@ describe('internal store creation policy', () => {
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.responsibleEmail).toBe('qa.admin@example.com')
+      expect(result.data.responsiblePhone).toBe('11999999999')
+      expect(result.data.responsibleTaxNumber).toBe('52998224725')
+      expect(result.data.companyTaxNumber).toBe('04252011000110')
+      expect(result.data.phone1).toBe('1133333333')
       expect(result.data.stateCode).toBe('SP')
     }
   })
@@ -93,6 +99,21 @@ describe('internal store creation policy', () => {
     expect(percentageErrors.discountValue).toBe(
       'Informe um percentual ate 100'
     )
+  })
+
+  test('rejects invalid CPF, CNPJ and phone instead of truncating input', () => {
+    const errors = getInternalStoreCreationFieldErrors({
+      ...validValues,
+      responsibleTaxNumber: '111.111.111-11',
+      companyTaxNumber: '00.000.000/0000-00',
+      phone1: '119999999999',
+      responsiblePhone: '123',
+    })
+
+    expect(errors.responsibleTaxNumber).toBe('Informe um CPF valido')
+    expect(errors.companyTaxNumber).toBe('Informe um CNPJ valido')
+    expect(errors.phone1).toBe('Informe um telefone valido')
+    expect(errors.responsiblePhone).toBe('Informe um telefone valido')
   })
 
   test('normalizes store URL and money values for persistence', () => {
