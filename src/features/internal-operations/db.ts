@@ -66,6 +66,13 @@ import {
   storeImplementationChecklistDefinitions,
   type StoreImplementationChecklistProgress,
 } from './implementation-checklist-policy'
+import {
+  getStoreLifecycleAuditAction,
+  validateStoreLifecycleTransition,
+  type StoreLifecycleAccessEffect,
+  type StoreLifecycleSubscriptionEffect,
+  type StoreLifecycleTargetStatus,
+} from './store-lifecycle-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -238,6 +245,8 @@ export type InternalStoreOverview = Pick<
   | 'status'
   | 'statusReason'
   | 'statusUpdatedAt'
+  | 'cancelledAt'
+  | 'cancellationReason'
   | 'createdAt'
   | 'updatedAt'
 > & {
@@ -871,6 +880,8 @@ export async function listInternalStores({
       status: storesTable.status,
       statusReason: storesTable.statusReason,
       statusUpdatedAt: storesTable.statusUpdatedAt,
+      cancelledAt: storesTable.cancelledAt,
+      cancellationReason: storesTable.cancellationReason,
       createdAt: storesTable.createdAt,
       updatedAt: storesTable.updatedAt,
       responsibleName: storeCompanyProfilesTable.responsibleName,
@@ -1083,6 +1094,8 @@ export async function getInternalStoreOverview(
       status: storesTable.status,
       statusReason: storesTable.statusReason,
       statusUpdatedAt: storesTable.statusUpdatedAt,
+      cancelledAt: storesTable.cancelledAt,
+      cancellationReason: storesTable.cancellationReason,
       createdAt: storesTable.createdAt,
       updatedAt: storesTable.updatedAt,
       companyName: storeCompanyProfilesTable.companyName,
@@ -1294,6 +1307,8 @@ export async function getInternalStoreOverview(
     status: store.status,
     statusReason: store.statusReason,
     statusUpdatedAt: store.statusUpdatedAt,
+    cancelledAt: store.cancelledAt,
+    cancellationReason: store.cancellationReason,
     createdAt: store.createdAt,
     updatedAt: store.updatedAt,
     company: {
@@ -3090,6 +3105,206 @@ export async function reactivateStoreWithAdmin({
       previousStoreStatus: store.status,
       newStoreStatus: updatedStore.status,
       reason,
+    })
+
+    return updatedStore
+  })
+}
+
+export async function updateStoreCommercialLifecycle({
+  storeId,
+  targetStatus,
+  reason,
+  subscriptionEffect,
+  accessEffect,
+  confirmation,
+  operator,
+}: {
+  storeId: number
+  targetStatus: StoreLifecycleTargetStatus
+  reason: string
+  subscriptionEffect: StoreLifecycleSubscriptionEffect
+  accessEffect: StoreLifecycleAccessEffect
+  confirmation: string
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+
+    const [subscription] = await tx
+      .select({
+        id: storeSubscriptionsTable.id,
+        status: storeSubscriptionsTable.status,
+        planId: storeSubscriptionsTable.planId,
+        contractedAmount: storeSubscriptionsTable.contractedAmount,
+        currency: storeSubscriptionsTable.currency,
+        currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
+        currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
+        nextBillingAt: storeSubscriptionsTable.nextBillingAt,
+      })
+      .from(storeSubscriptionsTable)
+      .where(
+        and(
+          eq(storeSubscriptionsTable.storeId, storeId),
+          inArray(storeSubscriptionsTable.status, [
+            'trialing',
+            'active',
+            'past_due',
+            'paused',
+          ])
+        )
+      )
+      .orderBy(desc(storeSubscriptionsTable.updatedAt))
+      .limit(1)
+
+    const transitionError = validateStoreLifecycleTransition({
+      currentStatus: store.status,
+      targetStatus,
+      subscription: subscription ?? null,
+      confirmation,
+      expectedConfirmation: store.subdomain,
+    })
+
+    if (transitionError) throw new Error(transitionError)
+
+    if (
+      targetStatus === 'active' &&
+      !['keep_subscription', 'resume_subscription'].includes(subscriptionEffect)
+    ) {
+      throw new Error('STORE_LIFECYCLE_SUBSCRIPTION_EFFECT_INVALID')
+    }
+
+    if (
+      targetStatus === 'inactive' &&
+      !['keep_subscription', 'pause_subscription'].includes(subscriptionEffect)
+    ) {
+      throw new Error('STORE_LIFECYCLE_SUBSCRIPTION_EFFECT_INVALID')
+    }
+
+    if (targetStatus === 'active' && accessEffect !== 'keep_access') {
+      throw new Error('STORE_LIFECYCLE_ACCESS_EFFECT_INVALID')
+    }
+
+    if (targetStatus === 'active' && store.status === 'implementing') {
+      await ensureStoreImplementationChecklistForStoreTransaction({
+        tx,
+        storeId,
+        now,
+      })
+
+      const checklistItems = await tx
+        .select({
+          status: storeImplementationChecklistItemsTable.status,
+          requiredForActivation:
+            storeImplementationChecklistItemsTable.requiredForActivation,
+        })
+        .from(storeImplementationChecklistItemsTable)
+        .where(eq(storeImplementationChecklistItemsTable.storeId, storeId))
+
+      const progress = getStoreImplementationChecklistProgress(checklistItems)
+      if (!progress.canActivate) {
+        throw new Error('STORE_IMPLEMENTATION_CHECKLIST_INCOMPLETE')
+      }
+    }
+
+    if (accessEffect === 'revoke_access') {
+      await tx
+        .update(userStorePermissionsTable)
+        .set({
+          revokedAt: now,
+          revokedReason:
+            targetStatus === 'archived'
+              ? 'store_commercial_cancelled'
+              : 'store_commercial_inactivated',
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(userStorePermissionsTable.storeId, storeId),
+            sql`${userStorePermissionsTable.revokedAt} is null`
+          )
+        )
+    }
+
+    if (subscription && subscriptionEffect !== 'keep_subscription') {
+      const nextSubscriptionStatus =
+        subscriptionEffect === 'cancel_subscription'
+          ? 'canceled'
+          : subscriptionEffect === 'pause_subscription'
+            ? 'paused'
+            : 'active'
+
+      if (subscription.status !== nextSubscriptionStatus) {
+        await tx
+          .update(storeSubscriptionsTable)
+          .set({
+            status: nextSubscriptionStatus,
+            canceledAt:
+              subscriptionEffect === 'cancel_subscription' ? now : null,
+            cancellationReason:
+              subscriptionEffect === 'cancel_subscription' ? reason : null,
+            updatedAt: now,
+          })
+          .where(eq(storeSubscriptionsTable.id, subscription.id))
+
+        await tx.insert(storeBillingEventsTable).values({
+          storeId,
+          subscriptionId: subscription.id,
+          eventType:
+            subscriptionEffect === 'cancel_subscription'
+              ? 'subscription_cancelled'
+              : 'subscription_changed',
+          actorClerkId: operator.clerkId,
+          actorEmail: operator.email,
+          reason,
+          previousValues: {
+            status: subscription.status,
+          },
+          newValues: {
+            status: nextSubscriptionStatus,
+            effect: subscriptionEffect,
+          },
+          metadata: {
+            source: 'internal_store_commercial_lifecycle',
+            targetStoreStatus: targetStatus,
+          },
+        })
+      }
+    }
+
+    const [updatedStore] = await tx
+      .update(storesTable)
+      .set({
+        status: targetStatus,
+        statusReason: reason,
+        statusUpdatedAt: now,
+        cancelledAt: targetStatus === 'archived' ? now : null,
+        cancellationReason: targetStatus === 'archived' ? reason : null,
+        updatedAt: now,
+      })
+      .where(eq(storesTable.id, storeId))
+      .returning()
+
+    if (!updatedStore) throw new Error('STORE_NOT_FOUND')
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: getStoreLifecycleAuditAction(store.status, targetStatus),
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: updatedStore.status,
+      reason: `${reason} | assinatura=${subscriptionEffect}; acesso=${accessEffect}`,
     })
 
     return updatedStore

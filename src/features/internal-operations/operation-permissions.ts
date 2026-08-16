@@ -10,6 +10,7 @@ export const internalOperationPermissionRequirements = {
   manageStoreProfile: 'manage_store_profile',
   manageImplementationChecklist: 'manage_implementation_checklist',
   activateImplementedStore: 'activate_implemented_store',
+  manageStoreLifecycle: 'manage_store_lifecycle',
   reactivateStore: 'reactivate_store',
   archiveStore: 'archive_store',
   manageBillingValues: 'manage_billing_values',

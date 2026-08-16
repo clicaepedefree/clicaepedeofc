@@ -10,6 +10,10 @@ export const internalOperationActions = [
   'update_store_profile',
   'update_store_implementation_checklist',
   'activate_store_after_implementation',
+  'activate_store_commercial',
+  'reactivate_store_commercial',
+  'inactivate_store_commercial',
+  'cancel_store_commercial',
   'reactivate_store',
   'archive_store',
 ] as const
