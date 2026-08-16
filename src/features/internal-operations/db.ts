@@ -31,7 +31,19 @@ import {
   type StoreImplementationChecklistItemKey,
 } from '@/services/db/schema'
 import { createHash } from 'node:crypto'
-import { and, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import {
+  and,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
 import {
@@ -60,6 +72,26 @@ export type InternalStoreListItem = Pick<
   | 'createdAt'
   | 'updatedAt'
 > & {
+  company: {
+    responsibleName: string | null
+    responsibleEmail: string | null
+    responsiblePhone: string | null
+    companyEmail: string | null
+    companyPhone: string | null
+    companyTaxNumber: string | null
+    responsibleTaxNumber: string | null
+    city: string | null
+    stateCode: string | null
+  }
+  billing: {
+    planId: number | null
+    planName: string | null
+    planCode: string | null
+    contractedAmount: string | null
+    currency: string | null
+    subscriptionStatus: string | null
+    nextBillingAt: Date | null
+  }
   implementationChecklist: {
     progress: StoreImplementationChecklistProgress
     items: {
@@ -79,7 +111,9 @@ export type InternalStoreListItem = Pick<
     userId: string
     email: string
     name: string | null
+    phone: string | null
     userStatus: string
+    isPrimaryResponsible: boolean
     revokedAt: Date | null
     revokedReason: string | null
   }[]
@@ -154,6 +188,40 @@ export type InternalStoreDashboardIndicators = {
   }
 }
 
+export type InternalStoreAccessFilter =
+  | 'with_active_admin'
+  | 'without_active_admin'
+  | 'with_revoked_admin'
+
+export type InternalStoreListFilters = {
+  status?: InternalStoreStatus
+  search?: string
+  planId?: number
+  access?: InternalStoreAccessFilter
+  city?: string
+  createdFrom?: Date
+  createdTo?: Date
+  page?: number
+  perPage?: number
+}
+
+export type InternalStoreListResult = {
+  items: InternalStoreListItem[]
+  pagination: {
+    page: number
+    perPage: number
+    totalItems: number
+    totalPages: number
+    hasPreviousPage: boolean
+    hasNextPage: boolean
+  }
+}
+
+export type InternalStoreCityFilterOption = {
+  city: string
+  stateCode: string | null
+}
+
 type InternalStoreTransaction = Parameters<
   Parameters<typeof db.transaction>[0]
 >[0]
@@ -165,6 +233,15 @@ const storeStatusValues: InternalStoreStatus[] = [
   'pending_recovery',
   'archived',
 ]
+
+const accessFilterValues: InternalStoreAccessFilter[] = [
+  'with_active_admin',
+  'without_active_admin',
+  'with_revoked_admin',
+]
+
+export const internalStoreListDefaultPerPage = 25
+export const internalStoreListMaxPerPage = 50
 
 const subscriptionStatusValues = [
   'trialing',
@@ -255,31 +332,129 @@ export function parseStoreStatus(
   return value as InternalStoreStatus
 }
 
+export function parseInternalStoreAccessFilter(
+  value: unknown
+): InternalStoreAccessFilter | undefined {
+  if (typeof value !== 'string') return undefined
+  if (!accessFilterValues.includes(value as InternalStoreAccessFilter))
+    return undefined
+
+  return value as InternalStoreAccessFilter
+}
+
+export function parseInternalStorePositiveInteger(value: unknown) {
+  const parsed = typeof value === 'string' ? Number(value) : value
+  if (typeof parsed !== 'number' || !Number.isInteger(parsed) || parsed <= 0) {
+    return undefined
+  }
+
+  return parsed
+}
+
+export function parseInternalStoreDateFilter(
+  value: unknown,
+  boundary: 'start' | 'end'
+) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return undefined
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`)
+  if (Number.isNaN(date.getTime())) return undefined
+
+  if (boundary === 'end') {
+    date.setUTCHours(23, 59, 59, 999)
+  }
+
+  return date
+}
+
 function buildInternalStoreWhere({
   status,
   search,
-}: {
-  status?: InternalStoreStatus
-  search?: string
-}): SQL | undefined {
+  planId,
+  access,
+  city,
+  createdFrom,
+  createdTo,
+}: InternalStoreListFilters): SQL | undefined {
   const trimmedSearch = search?.trim()
   const searchPattern = trimmedSearch
     ? `%${trimmedSearch.toLowerCase()}%`
     : null
+  const searchDigits = trimmedSearch?.replace(/\D/g, '') ?? ''
+  const searchDigitsPattern = searchDigits ? `%${searchDigits}%` : null
+  const trimmedCity = city?.trim()
 
   return and(
     status ? eq(storesTable.status, status) : undefined,
+    planId ? eq(storeSubscriptionsTable.planId, planId) : undefined,
+    trimmedCity
+      ? sql`lower(coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city}, '')) = ${trimmedCity.toLowerCase()}`
+      : undefined,
+    createdFrom ? gte(storesTable.createdAt, createdFrom) : undefined,
+    createdTo ? lte(storesTable.createdAt, createdTo) : undefined,
+    access === 'with_active_admin'
+      ? sql`exists (
+          select 1
+          from ${userStorePermissionsTable}
+          where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.revokedAt} is null
+        )`
+      : undefined,
+    access === 'without_active_admin'
+      ? sql`not exists (
+          select 1
+          from ${userStorePermissionsTable}
+          where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.revokedAt} is null
+        )`
+      : undefined,
+    access === 'with_revoked_admin'
+      ? sql`exists (
+          select 1
+          from ${userStorePermissionsTable}
+          where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.revokedAt} is not null
+        )`
+      : undefined,
     searchPattern
       ? sql`(
           lower(${storesTable.name}) like ${searchPattern}
           or lower(${storesTable.subdomain}) like ${searchPattern}
+          or lower(coalesce(${storeCompanyProfilesTable.companyName}, '')) like ${searchPattern}
+          or lower(coalesce(${storeCompanyProfilesTable.email}, '')) like ${searchPattern}
+          or lower(coalesce(${storeCompanyProfilesTable.responsibleName}, '')) like ${searchPattern}
+          or lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) like ${searchPattern}
           or ${storesTable.id}::text = ${trimmedSearch}
           or exists (
             select 1
             from ${userStorePermissionsTable}
             join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
             where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-              and lower(${usersTable.email}) like ${searchPattern}
+              and (
+                lower(${usersTable.email}) like ${searchPattern}
+                or lower(coalesce(${usersTable.name}, '')) like ${searchPattern}
+              )
+          )
+        )`
+      : undefined,
+    searchDigitsPattern
+      ? sql`(
+          regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') like ${searchDigitsPattern}
+          or regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') like ${searchDigitsPattern}
+          or regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') like ${searchDigitsPattern}
+          or regexp_replace(coalesce(${storeCompanyProfilesTable.phone2}, ''), '\D', '', 'g') like ${searchDigitsPattern}
+          or regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') like ${searchDigitsPattern}
+          or exists (
+            select 1
+            from ${userStorePermissionsTable}
+            join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
+            where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+              and regexp_replace(coalesce(${usersTable.phone}, ''), '\D', '', 'g') like ${searchDigitsPattern}
           )
         )`
       : undefined
@@ -384,10 +559,12 @@ export async function getInternalStoreStatusCounts() {
 export async function getInternalStoreDashboardIndicators({
   status,
   search,
-}: {
-  status?: InternalStoreStatus
-  search?: string
-}): Promise<InternalStoreDashboardIndicators> {
+  planId,
+  access,
+  city,
+  createdFrom,
+  createdTo,
+}: InternalStoreListFilters): Promise<InternalStoreDashboardIndicators> {
   const indicators = emptyInternalDashboardIndicators({ status, search })
 
   const filteredStores = await db
@@ -396,7 +573,36 @@ export async function getInternalStoreDashboardIndicators({
       status: storesTable.status,
     })
     .from(storesTable)
-    .where(buildInternalStoreWhere({ status, search }))
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .leftJoin(
+      storeAddressesTable,
+      and(
+        eq(storeAddressesTable.storeId, storesTable.id),
+        eq(storeAddressesTable.addressType, 'business'),
+        eq(storeAddressesTable.isPrimary, true)
+      )
+    )
+    .leftJoin(
+      storeSubscriptionsTable,
+      and(
+        eq(storeSubscriptionsTable.storeId, storesTable.id),
+        sql`${storeSubscriptionsTable.status} in ('trialing', 'active', 'past_due', 'paused')`
+      )
+    )
+    .where(
+      buildInternalStoreWhere({
+        status,
+        search,
+        planId,
+        access,
+        city,
+        createdFrom,
+        createdTo,
+      })
+    )
 
   if (filteredStores.length === 0) return indicators
 
@@ -486,10 +692,58 @@ export async function getInternalStoreDashboardIndicators({
 export async function listInternalStores({
   status,
   search,
-}: {
-  status?: InternalStoreStatus
-  search?: string
-}): Promise<InternalStoreListItem[]> {
+  planId,
+  access,
+  city,
+  createdFrom,
+  createdTo,
+  page = 1,
+  perPage = internalStoreListDefaultPerPage,
+}: InternalStoreListFilters): Promise<InternalStoreListResult> {
+  const safePage = Math.max(1, page)
+  const safePerPage = Math.min(
+    internalStoreListMaxPerPage,
+    Math.max(1, perPage)
+  )
+  const where = buildInternalStoreWhere({
+    status,
+    search,
+    planId,
+    access,
+    city,
+    createdFrom,
+    createdTo,
+  })
+
+  const [{ totalItems }] = await db
+    .select({
+      totalItems: countDistinct(storesTable.id),
+    })
+    .from(storesTable)
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .leftJoin(
+      storeAddressesTable,
+      and(
+        eq(storeAddressesTable.storeId, storesTable.id),
+        eq(storeAddressesTable.addressType, 'business'),
+        eq(storeAddressesTable.isPrimary, true)
+      )
+    )
+    .leftJoin(
+      storeSubscriptionsTable,
+      and(
+        eq(storeSubscriptionsTable.storeId, storesTable.id),
+        sql`${storeSubscriptionsTable.status} in ('trialing', 'active', 'past_due', 'paused')`
+      )
+    )
+    .where(where)
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePerPage))
+  const currentPage = Math.min(safePage, totalPages)
+
   const stores = await db
     .select({
       id: storesTable.id,
@@ -500,13 +754,64 @@ export async function listInternalStores({
       statusUpdatedAt: storesTable.statusUpdatedAt,
       createdAt: storesTable.createdAt,
       updatedAt: storesTable.updatedAt,
+      responsibleName: storeCompanyProfilesTable.responsibleName,
+      responsibleEmail: storeCompanyProfilesTable.responsibleEmail,
+      responsiblePhone: storeCompanyProfilesTable.responsiblePhone,
+      companyEmail: storeCompanyProfilesTable.email,
+      companyPhone: storeCompanyProfilesTable.phone1,
+      companyTaxNumber: storeCompanyProfilesTable.companyTaxNumber,
+      responsibleTaxNumber: storeCompanyProfilesTable.responsibleTaxNumber,
+      companyCity: storeCompanyProfilesTable.city,
+      companyStateCode: storeCompanyProfilesTable.stateCode,
+      addressCity: storeAddressesTable.city,
+      addressStateCode: storeAddressesTable.stateCode,
+      planId: billingPlansTable.id,
+      planName: billingPlansTable.name,
+      planCode: billingPlansTable.code,
+      contractedAmount: storeSubscriptionsTable.contractedAmount,
+      currency: storeSubscriptionsTable.currency,
+      subscriptionStatus: storeSubscriptionsTable.status,
+      nextBillingAt: storeSubscriptionsTable.nextBillingAt,
     })
     .from(storesTable)
-    .where(buildInternalStoreWhere({ status, search }))
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .leftJoin(
+      storeAddressesTable,
+      and(
+        eq(storeAddressesTable.storeId, storesTable.id),
+        eq(storeAddressesTable.addressType, 'business'),
+        eq(storeAddressesTable.isPrimary, true)
+      )
+    )
+    .leftJoin(
+      storeSubscriptionsTable,
+      and(
+        eq(storeSubscriptionsTable.storeId, storesTable.id),
+        sql`${storeSubscriptionsTable.status} in ('trialing', 'active', 'past_due', 'paused')`
+      )
+    )
+    .leftJoin(billingPlansTable, eq(billingPlansTable.id, storeSubscriptionsTable.planId))
+    .where(where)
     .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
-    .limit(100)
+    .limit(safePerPage)
+    .offset((currentPage - 1) * safePerPage)
 
-  if (stores.length === 0) return []
+  if (stores.length === 0) {
+    return {
+      items: [],
+      pagination: {
+        page: currentPage,
+        perPage: safePerPage,
+        totalItems,
+        totalPages,
+        hasPreviousPage: currentPage > 1,
+        hasNextPage: currentPage < totalPages,
+      },
+    }
+  }
 
   const storeIds = stores.map(store => store.id)
   await ensureStoreImplementationChecklistForStores(storeIds)
@@ -560,8 +865,10 @@ export async function listInternalStores({
       storeId: userStorePermissionsTable.storeId,
       userId: usersTable.id,
       email: usersTable.email,
+      phone: usersTable.phone,
       name: usersTable.name,
       userStatus: usersTable.status,
+      isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
       revokedAt: userStorePermissionsTable.revokedAt,
       revokedReason: userStorePermissionsTable.revokedReason,
     })
@@ -581,24 +888,69 @@ export async function listInternalStores({
     admins.push({
       userId: admin.userId,
       email: admin.email,
+      phone: admin.phone,
       name: admin.name,
       userStatus: admin.userStatus,
+      isPrimaryResponsible: admin.isPrimaryResponsible,
       revokedAt: admin.revokedAt,
       revokedReason: admin.revokedReason,
     })
     adminsByStoreId.set(admin.storeId, admins)
   }
 
-  return stores.map(store => ({
-    ...store,
-    implementationChecklist: {
-      items: checklistByStoreId.get(store.id) ?? [],
-      progress: getStoreImplementationChecklistProgress(
-        checklistByStoreId.get(store.id) ?? []
-      ),
+  return {
+    items: stores.map(store => ({
+      id: store.id,
+      name: store.name,
+      subdomain: store.subdomain,
+      status: store.status,
+      statusReason: store.statusReason,
+      statusUpdatedAt: store.statusUpdatedAt,
+      createdAt: store.createdAt,
+      updatedAt: store.updatedAt,
+      company: {
+        responsibleName: store.responsibleName,
+        responsibleEmail: store.responsibleEmail,
+        responsiblePhone: store.responsiblePhone,
+        companyEmail: store.companyEmail,
+        companyPhone: store.companyPhone,
+        companyTaxNumber: maskInternalStoreSensitiveDigits(
+          store.companyTaxNumber ?? '',
+          'CNPJ nao informado'
+        ),
+        responsibleTaxNumber: maskInternalStoreSensitiveDigits(
+          store.responsibleTaxNumber ?? '',
+          'CPF nao informado'
+        ),
+        city: store.companyCity ?? store.addressCity,
+        stateCode: store.companyStateCode ?? store.addressStateCode,
+      },
+      billing: {
+        planId: store.planId,
+        planName: store.planName,
+        planCode: store.planCode,
+        contractedAmount: store.contractedAmount,
+        currency: store.currency,
+        subscriptionStatus: store.subscriptionStatus,
+        nextBillingAt: store.nextBillingAt,
+      },
+      implementationChecklist: {
+        items: checklistByStoreId.get(store.id) ?? [],
+        progress: getStoreImplementationChecklistProgress(
+          checklistByStoreId.get(store.id) ?? []
+        ),
+      },
+      admins: adminsByStoreId.get(store.id) ?? [],
+    })),
+    pagination: {
+      page: currentPage,
+      perPage: safePerPage,
+      totalItems,
+      totalPages,
+      hasPreviousPage: currentPage > 1,
+      hasNextPage: currentPage < totalPages,
     },
-    admins: adminsByStoreId.get(store.id) ?? [],
-  }))
+  }
 }
 
 export async function getRecentInternalAuditLogs(limit = 25) {
@@ -627,6 +979,40 @@ export async function listActiveBillingPlansForInternalCreation(): Promise<
     .from(billingPlansTable)
     .where(eq(billingPlansTable.status, 'active'))
     .orderBy(billingPlansTable.name)
+}
+
+export async function listInternalStoreCityFilterOptions(): Promise<
+  InternalStoreCityFilterOption[]
+> {
+  const rows = await db
+    .selectDistinct({
+      city: sql<string>`coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city})`,
+      stateCode: sql<string | null>`coalesce(${storeCompanyProfilesTable.stateCode}, ${storeAddressesTable.stateCode})`,
+    })
+    .from(storesTable)
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .leftJoin(
+      storeAddressesTable,
+      and(
+        eq(storeAddressesTable.storeId, storesTable.id),
+        eq(storeAddressesTable.addressType, 'business'),
+        eq(storeAddressesTable.isPrimary, true)
+      )
+    )
+    .where(
+      sql`coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city}) is not null`
+    )
+    .orderBy(
+      sql`coalesce(${storeCompanyProfilesTable.city}, ${storeAddressesTable.city})`
+    )
+
+  return rows.filter(row => row.city?.trim()).map(row => ({
+    city: row.city,
+    stateCode: row.stateCode,
+  }))
 }
 
 export async function listBillingModulesForInternalCreation(): Promise<
@@ -680,12 +1066,17 @@ const maskEmail = (email: string) => {
   return `${localPart.slice(0, 2)}***@${domain}`
 }
 
-const maskLast4 = (value: string, fallback: string) => {
+export const maskInternalStoreSensitiveDigits = (
+  value: string,
+  fallback: string
+) => {
   const digits = value.replace(/\D/g, '')
   if (!digits) return fallback
 
   return `***${digits.slice(-4)}`
 }
+
+const maskLast4 = maskInternalStoreSensitiveDigits
 
 export async function findInternalStoreCreationDuplicates(
   values: InternalStoreCreationValues

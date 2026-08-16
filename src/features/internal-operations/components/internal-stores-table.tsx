@@ -71,11 +71,15 @@ export type SerializableInternalStoreListItem = Omit<
   | 'createdAt'
   | 'updatedAt'
   | 'admins'
+  | 'billing'
   | 'implementationChecklist'
 > & {
   statusUpdatedAt: string
   createdAt: string
   updatedAt: string
+  billing: Omit<InternalStoreListItem['billing'], 'nextBillingAt'> & {
+    nextBillingAt: string | null
+  }
   implementationChecklist: {
     progress: InternalStoreListItem['implementationChecklist']['progress']
     items: Array<
@@ -127,9 +131,42 @@ const formatDateTime = (date: Date | string | null) => {
   }).format(new Date(date))
 }
 
+const formatDate = (date: Date | string | null) => {
+  if (!date) return '-'
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(date))
+}
+
+const formatCurrency = (value: string | null, currency: string | null) => {
+  if (!value) return '-'
+
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: currency ?? 'BRL',
+  }).format(Number(value))
+}
+
 const getPrimaryAdminEmail = (store: SerializableInternalStoreListItem) => {
-  const activeAdmin = store.admins.find(admin => !admin.revokedAt)
+  const activeAdmin =
+    store.admins.find(admin => !admin.revokedAt && admin.isPrimaryResponsible) ??
+    store.admins.find(admin => !admin.revokedAt)
   return activeAdmin?.email ?? store.admins[0]?.email ?? ''
+}
+
+const getResponsible = (store: SerializableInternalStoreListItem) => {
+  const primaryAdmin =
+    store.admins.find(admin => !admin.revokedAt && admin.isPrimaryResponsible) ??
+    store.admins.find(admin => !admin.revokedAt)
+
+  return {
+    name: store.company.responsibleName ?? primaryAdmin?.name ?? 'Sem nome',
+    email: store.company.responsibleEmail ?? primaryAdmin?.email ?? '',
+    phone: store.company.responsiblePhone ?? primaryAdmin?.phone ?? '',
+  }
 }
 
 export function InternalStoresTable({
@@ -160,102 +197,151 @@ export function InternalStoresTable({
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/60 hover:bg-muted/60">
-            <TableHead>Loja</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Administradores</TableHead>
-            <TableHead>Atualizada</TableHead>
-            <TableHead className="w-[220px] text-right">Acoes</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {stores.map(store => {
-            const canStoreBeReactivated =
-              store.status === 'pending_recovery' || store.status === 'inactive'
-            const primaryAdminEmail = getPrimaryAdminEmail(store)
-            const canInviteResponsible =
-              canCreateStore &&
-              store.status !== 'archived' &&
-              primaryAdminEmail.length > 0
-            const checklistProgress = store.implementationChecklist.progress
-            const canActivateFromChecklist =
-              canActivateImplementedStore &&
-              store.status === 'implementing' &&
-              checklistProgress.canActivate
+      <div className="overflow-x-auto">
+        <Table className="min-w-[1180px]">
+          <TableHeader>
+            <TableRow className="bg-muted/60 hover:bg-muted/60">
+              <TableHead>Loja</TableHead>
+              <TableHead>Responsavel</TableHead>
+              <TableHead>Cadastro</TableHead>
+              <TableHead>Plano</TableHead>
+              <TableHead>Valor</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Vencimento</TableHead>
+              <TableHead className="w-[220px] text-right">Acoes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {stores.map(store => {
+              const canStoreBeReactivated =
+                store.status === 'pending_recovery' ||
+                store.status === 'inactive'
+              const primaryAdminEmail = getPrimaryAdminEmail(store)
+              const responsible = getResponsible(store)
+              const canInviteResponsible =
+                canCreateStore &&
+                store.status !== 'archived' &&
+                primaryAdminEmail.length > 0
+              const checklistProgress = store.implementationChecklist.progress
+              const canActivateFromChecklist =
+                canActivateImplementedStore &&
+                store.status === 'implementing' &&
+                checklistProgress.canActivate
 
-            return (
-              <TableRow key={store.id} className="align-top">
-                <TableCell>
-                  <div className="space-y-1">
+              return (
+                <TableRow key={store.id} className="align-top">
+                  <TableCell>
+                    <div className="min-w-[220px] space-y-1">
+                      <div className="font-medium text-foreground">
+                        {store.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        #{store.id} - {store.subdomain}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {store.company.city
+                          ? `${store.company.city}${store.company.stateCode ? `/${store.company.stateCode}` : ''}`
+                          : 'Cidade nao informada'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {store.company.companyTaxNumber}
+                        {store.company.companyPhone
+                          ? ` - ${store.company.companyPhone}`
+                          : ''}
+                      </div>
+                      {store.statusReason && (
+                        <div className="max-w-[260px] text-xs text-muted-foreground">
+                          Motivo: {store.statusReason}
+                        </div>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="min-w-[220px] space-y-1 text-sm">
+                      <div className="font-medium text-foreground">
+                        {responsible.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {responsible.email || 'E-mail nao informado'}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {responsible.phone || 'Telefone nao informado'} -{' '}
+                        {store.company.responsibleTaxNumber}
+                      </div>
+                      <div className="space-y-1 pt-1">
+                        {store.admins.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            Sem admin vinculado
+                          </span>
+                        ) : (
+                          store.admins.slice(0, 2).map(admin => (
+                            <div
+                              key={`${store.id}-${admin.userId}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              {admin.email} - {admin.userStatus}
+                              {admin.revokedAt && (
+                                <> - revogado em {formatDate(admin.revokedAt)}</>
+                              )}
+                            </div>
+                          ))
+                        )}
+                        {store.admins.length > 2 && (
+                          <div className="text-xs text-muted-foreground">
+                            +{store.admins.length - 2} admins
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-[130px] text-sm text-muted-foreground">
+                    <div>{formatDate(store.createdAt)}</div>
+                    <div className="text-xs">
+                      Atualizada {formatDate(store.updatedAt)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-[150px] text-sm">
                     <div className="font-medium text-foreground">
-                      {store.name}
+                      {store.billing.planName ?? 'Sem plano'}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      #{store.id} · {store.subdomain}
+                      {store.billing.planCode ?? 'Plano nao definido'}
                     </div>
-                    {store.statusReason && (
-                      <div className="max-w-[420px] text-xs text-muted-foreground">
-                        Motivo: {store.statusReason}
-                      </div>
+                  </TableCell>
+                  <TableCell className="min-w-[110px] text-sm font-medium text-foreground">
+                    {formatCurrency(
+                      store.billing.contractedAmount,
+                      store.billing.currency
                     )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="min-w-[170px] space-y-2">
-                    <Badge
-                      variant="outline"
-                      className={cn('border', statusClassName[store.status])}
-                    >
-                      {statusLabel[store.status]}
-                    </Badge>
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Implantacao</span>
-                        <span>
-                          {checklistProgress.completed}/
-                          {checklistProgress.total}
-                        </span>
-                      </div>
-                      <Progress value={checklistProgress.percent} />
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-2">
-                    {store.admins.length === 0 ? (
-                      <span className="text-sm text-muted-foreground">
-                        Sem admin vinculado
-                      </span>
-                    ) : (
-                      store.admins.map(admin => (
-                        <div
-                          key={`${store.id}-${admin.userId}`}
-                          className="text-sm"
-                        >
-                          <div className="font-medium text-foreground">
-                            {admin.email}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {admin.name ?? 'Sem nome'} · {admin.userStatus}
-                            {admin.revokedAt && (
-                              <>
-                                {' '}
-                                · revogado em {formatDateTime(admin.revokedAt)}
-                              </>
-                            )}
-                          </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="min-w-[170px] space-y-2">
+                      <Badge
+                        variant="outline"
+                        className={cn('border', statusClassName[store.status])}
+                      >
+                        {statusLabel[store.status]}
+                      </Badge>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Implantacao</span>
+                          <span>
+                            {checklistProgress.completed}/
+                            {checklistProgress.total}
+                          </span>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatDateTime(store.statusUpdatedAt)}
-                </TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
+                        <Progress value={checklistProgress.percent} />
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="min-w-[130px] text-sm text-muted-foreground">
+                    <div>{formatDate(store.billing.nextBillingAt)}</div>
+                    <div className="text-xs">
+                      {store.billing.subscriptionStatus ?? 'sem assinatura'}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button size="sm" variant="outline">
@@ -607,7 +693,8 @@ export function InternalStoresTable({
             )
           })}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
 
       <Dialog
         open={!!inviteResult || !!inviteError}

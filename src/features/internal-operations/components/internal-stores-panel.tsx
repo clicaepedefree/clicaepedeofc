@@ -9,8 +9,14 @@ import {
 import {
   getInternalStoreDashboardIndicators,
   getRecentInternalAuditLogs,
+  listActiveBillingPlansForInternalCreation,
   listInternalStores,
+  listInternalStoreCityFilterOptions,
+  parseInternalStoreAccessFilter,
+  parseInternalStoreDateFilter,
+  parseInternalStorePositiveInteger,
   parseStoreStatus,
+  type InternalStoreAccessFilter,
   type InternalStoreStatus,
 } from '@/features/internal-operations/db'
 import { Badge } from '@/shared/badge'
@@ -25,6 +31,12 @@ type InternalStoresPanelProps = {
   searchParams: {
     status?: string
     q?: string
+    planId?: string
+    access?: string
+    city?: string
+    createdFrom?: string
+    createdTo?: string
+    page?: string
     result?: string
     error?: string
   }
@@ -75,31 +87,59 @@ const auditActionLabels: Record<string, string> = {
   archive_store: 'Arquivamento',
 }
 
-const buildStatusHref = ({
-  basePath,
-  status,
-  search,
-}: {
-  basePath: string
+type InternalStorePanelFilters = {
   status?: InternalStoreStatus
   search?: string
+  planId?: number
+  access?: InternalStoreAccessFilter
+  city?: string
+  createdFromRaw?: string
+  createdToRaw?: string
+  page?: number
+}
+
+const buildStoresHref = ({
+  basePath,
+  filters,
+  overrides = {},
+}: {
+  basePath: string
+  filters: InternalStorePanelFilters
+  overrides?: Partial<InternalStorePanelFilters>
 }) => {
+  const nextFilters = { ...filters, ...overrides }
   const params = new URLSearchParams()
-  if (status) params.set('status', status)
-  if (search) params.set('q', search)
+  if (nextFilters.status) params.set('status', nextFilters.status)
+  if (nextFilters.search) params.set('q', nextFilters.search)
+  if (nextFilters.planId) params.set('planId', String(nextFilters.planId))
+  if (nextFilters.access) params.set('access', nextFilters.access)
+  if (nextFilters.city) params.set('city', nextFilters.city)
+  if (nextFilters.createdFromRaw) {
+    params.set('createdFrom', nextFilters.createdFromRaw)
+  }
+  if (nextFilters.createdToRaw) {
+    params.set('createdTo', nextFilters.createdToRaw)
+  }
+  if (nextFilters.page && nextFilters.page > 1) {
+    params.set('page', String(nextFilters.page))
+  }
 
   const query = params.toString()
   return query ? `${basePath}?${query}` : basePath
 }
 
 const serializeStoresForClient = (
-  stores: Awaited<ReturnType<typeof listInternalStores>>
+  stores: Awaited<ReturnType<typeof listInternalStores>>['items']
 ): SerializableInternalStoreListItem[] =>
   stores.map(store => ({
     ...store,
     statusUpdatedAt: store.statusUpdatedAt.toISOString(),
     createdAt: store.createdAt.toISOString(),
     updatedAt: store.updatedAt.toISOString(),
+    billing: {
+      ...store.billing,
+      nextBillingAt: store.billing.nextBillingAt?.toISOString() ?? null,
+    },
     admins: store.admins.map(admin => ({
       ...admin,
       revokedAt: admin.revokedAt?.toISOString() ?? null,
@@ -126,17 +166,60 @@ export async function InternalStoresPanel({
 }: InternalStoresPanelProps) {
   const status = parseStoreStatus(searchParams.status)
   const search = searchParams.q?.trim() ?? ''
+  const planId = parseInternalStorePositiveInteger(searchParams.planId)
+  const access = parseInternalStoreAccessFilter(searchParams.access)
+  const city = searchParams.city?.trim() ?? ''
+  const createdFrom = parseInternalStoreDateFilter(
+    searchParams.createdFrom,
+    'start'
+  )
+  const createdTo = parseInternalStoreDateFilter(searchParams.createdTo, 'end')
+  const page = parseInternalStorePositiveInteger(searchParams.page) ?? 1
+  const filters: InternalStorePanelFilters = {
+    status,
+    search,
+    planId,
+    access,
+    city,
+    createdFromRaw: createdFrom ? searchParams.createdFrom : undefined,
+    createdToRaw: createdTo ? searchParams.createdTo : undefined,
+    page,
+  }
 
   let stores: Awaited<ReturnType<typeof listInternalStores>>
   let indicators: Awaited<ReturnType<typeof getInternalStoreDashboardIndicators>>
   let auditLogs: Awaited<ReturnType<typeof getRecentInternalAuditLogs>>
+  let billingPlans: Awaited<
+    ReturnType<typeof listActiveBillingPlansForInternalCreation>
+  >
+  let cityOptions: Awaited<ReturnType<typeof listInternalStoreCityFilterOptions>>
 
   try {
-    ;[stores, indicators, auditLogs] = await Promise.all([
-      listInternalStores({ status, search }),
-      getInternalStoreDashboardIndicators({ status, search }),
-      getRecentInternalAuditLogs(12),
-    ])
+    ;[stores, indicators, auditLogs, billingPlans, cityOptions] =
+      await Promise.all([
+        listInternalStores({
+          status,
+          search,
+          planId,
+          access,
+          city,
+          createdFrom,
+          createdTo,
+          page,
+        }),
+        getInternalStoreDashboardIndicators({
+          status,
+          search,
+          planId,
+          access,
+          city,
+          createdFrom,
+          createdTo,
+        }),
+        getRecentInternalAuditLogs(12),
+        listActiveBillingPlansForInternalCreation(),
+        listInternalStoreCityFilterOptions(),
+      ])
   } catch (error) {
     console.error('[internal-operations] Failed to load stores panel', error)
 
@@ -183,6 +266,21 @@ export async function InternalStoresPanel({
     currentRole: operator.role,
     permission: 'activate_implemented_store',
   })
+  const selectClassName =
+    'h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30'
+  const hasAdvancedFilters = Boolean(
+    search || planId || access || city || createdFrom || createdTo
+  )
+  const previousPageHref = buildStoresHref({
+    basePath,
+    filters,
+    overrides: { page: stores.pagination.page - 1 },
+  })
+  const nextPageHref = buildStoresHref({
+    basePath,
+    filters,
+    overrides: { page: stores.pagination.page + 1 },
+  })
 
   return (
     <div className="space-y-6">
@@ -208,19 +306,6 @@ export async function InternalStoresPanel({
               </Link>
             </Button>
           )}
-          <form className="flex w-full gap-2 md:w-[380px]" action={basePath}>
-            {status && <input type="hidden" name="status" value={status} />}
-            <Input
-              name="q"
-              defaultValue={search}
-              placeholder="Buscar loja, subdominio ou admin"
-              containerClassName="flex-1"
-            />
-            <Button type="submit" isClickable>
-              <Search className="size-4" />
-              Buscar
-            </Button>
-          </form>
         </div>
       </section>
 
@@ -389,6 +474,109 @@ export async function InternalStoresPanel({
       </section>
 
       <section className="space-y-4">
+        <form
+          className="rounded-lg border bg-card p-4"
+          action={basePath}
+        >
+          <div className="grid gap-3 lg:grid-cols-[minmax(240px,1.4fr)_repeat(5,minmax(150px,1fr))]">
+            <Input
+              name="q"
+              defaultValue={search}
+              placeholder="Buscar nome, e-mail, telefone ou documento"
+              containerClassName="w-full"
+            />
+            <select
+              name="status"
+              defaultValue={status ?? ''}
+              className={selectClassName}
+              aria-label="Status da loja"
+            >
+              <option value="">Todos os status</option>
+              {statusTabs
+                .filter(tab => tab.value)
+                .map(tab => (
+                  <option key={tab.value} value={tab.value}>
+                    {tab.label}
+                  </option>
+                ))}
+            </select>
+            <select
+              name="planId"
+              defaultValue={planId ? String(planId) : ''}
+              className={selectClassName}
+              aria-label="Plano"
+            >
+              <option value="">Todos os planos</option>
+              {billingPlans.map(plan => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}
+                </option>
+              ))}
+            </select>
+            <select
+              name="access"
+              defaultValue={access ?? ''}
+              className={selectClassName}
+              aria-label="Acesso administrativo"
+            >
+              <option value="">Todos os acessos</option>
+              <option value="with_active_admin">Com admin ativo</option>
+              <option value="without_active_admin">Sem admin ativo</option>
+              <option value="with_revoked_admin">Com admin revogado</option>
+            </select>
+            <select
+              name="city"
+              defaultValue={city}
+              className={selectClassName}
+              aria-label="Cidade"
+            >
+              <option value="">Todas as cidades</option>
+              {cityOptions.map(option => (
+                <option
+                  key={`${option.city}-${option.stateCode ?? ''}`}
+                  value={option.city}
+                >
+                  {option.city}
+                  {option.stateCode ? `/${option.stateCode}` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="date"
+                name="createdFrom"
+                defaultValue={searchParams.createdFrom ?? ''}
+                aria-label="Cadastro inicial"
+              />
+              <Input
+                type="date"
+                name="createdTo"
+                defaultValue={searchParams.createdTo ?? ''}
+                aria-label="Cadastro final"
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline">
+                {formatInteger(stores.pagination.totalItems)} lojas
+              </Badge>
+              {hasAdvancedFilters && <Badge variant="outline">Filtrado</Badge>}
+            </div>
+            <div className="flex gap-2">
+              {hasAdvancedFilters && (
+                <Button asChild variant="outline" isClickable>
+                  <Link href={basePath}>Limpar filtros</Link>
+                </Button>
+              )}
+              <Button type="submit" isClickable>
+                <Search className="size-4" />
+                Filtrar
+              </Button>
+            </div>
+          </div>
+        </form>
+
         <div className="flex flex-wrap gap-2">
           {statusTabs.map(tab => {
             const isActive = tab.value === status || (!tab.value && !status)
@@ -401,10 +589,10 @@ export async function InternalStoresPanel({
                 isClickable
               >
                 <Link
-                  href={buildStatusHref({
+                  href={buildStoresHref({
                     basePath,
-                    status: tab.value,
-                    search,
+                    filters,
+                    overrides: { status: tab.value, page: 1 },
                   })}
                 >
                   {tab.label}
@@ -415,7 +603,7 @@ export async function InternalStoresPanel({
         </div>
 
         <InternalStoresTable
-          stores={serializeStoresForClient(stores)}
+          stores={serializeStoresForClient(stores.items)}
           canReactivate={canReactivate}
           canArchive={canArchive}
           canCreateStore={canCreateStore}
@@ -423,6 +611,41 @@ export async function InternalStoresPanel({
           canActivateImplementedStore={canActivateImplementedStore}
           returnTo={basePath}
         />
+
+        <div className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            Pagina {stores.pagination.page} de {stores.pagination.totalPages} -{' '}
+            {formatInteger(stores.pagination.totalItems)} lojas encontradas
+          </div>
+          <div className="flex gap-2">
+            <Button
+              asChild={stores.pagination.hasPreviousPage}
+              variant="outline"
+              size="sm"
+              disabled={!stores.pagination.hasPreviousPage}
+              isClickable={stores.pagination.hasPreviousPage}
+            >
+              {stores.pagination.hasPreviousPage ? (
+                <Link href={previousPageHref}>Anterior</Link>
+              ) : (
+                'Anterior'
+              )}
+            </Button>
+            <Button
+              asChild={stores.pagination.hasNextPage}
+              variant="outline"
+              size="sm"
+              disabled={!stores.pagination.hasNextPage}
+              isClickable={stores.pagination.hasNextPage}
+            >
+              {stores.pagination.hasNextPage ? (
+                <Link href={nextPageHref}>Proxima</Link>
+              ) : (
+                'Proxima'
+              )}
+            </Button>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-lg border bg-card">

@@ -5,6 +5,12 @@ type InternalStoresPageProps = {
   searchParams: Promise<{
     status?: string
     q?: string
+    planId?: string
+    access?: string
+    city?: string
+    createdFrom?: string
+    createdTo?: string
+    page?: string
     result?: string
     error?: string
   }>
