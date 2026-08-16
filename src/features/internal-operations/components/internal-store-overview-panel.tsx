@@ -1,5 +1,8 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
-import { updateInternalStoreProfileAction } from '@/features/internal-operations/actions'
+import {
+  updateInternalStoreProfileAction,
+  updateStoreCommercialLifecycleAction,
+} from '@/features/internal-operations/actions'
 import {
   getVisibleInternalStoreDetailTabs,
   resolveInternalStoreDetailTab,
@@ -7,6 +10,14 @@ import {
 } from '@/features/internal-operations/detail-tabs-policy'
 import type { InternalStoreOverview } from '@/features/internal-operations/db'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
+import {
+  getDefaultStoreLifecycleSubscriptionEffect,
+  isFinanciallyValidForStoreActivation,
+  isStoreLifecycleTransitionAllowed,
+  type StoreLifecycleAccessEffect,
+  type StoreLifecycleSubscriptionEffect,
+  type StoreLifecycleTargetStatus,
+} from '@/features/internal-operations/store-lifecycle-policy'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/card'
@@ -28,16 +39,20 @@ import {
   Activity,
   ArrowLeft,
   CalendarClock,
+  CheckCircle2,
   CircleDollarSign,
   Clock,
   History,
   KeyRound,
   Layers3,
   Pencil,
+  Power,
   ReceiptText,
   ShieldAlert,
+  ShieldOff,
   Store,
   Users,
+  XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import type React from 'react'
@@ -249,6 +264,11 @@ export function InternalStoreOverviewPanel({
           Dados cadastrais atualizados e registrados no historico.
         </div>
       )}
+      {result === 'ciclo-comercial-atualizado' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Ciclo comercial atualizado com historico preservado.
+        </div>
+      )}
 
       {activeTab === 'dados' && (
         <DadosTab
@@ -307,6 +327,10 @@ function DadosTab({
   const canEdit = canRunInternalOperation({
     operator,
     operation: 'manageStoreProfile',
+  })
+  const canManageLifecycle = canRunInternalOperation({
+    operator,
+    operation: 'manageStoreLifecycle',
   })
   const disabled = store.status === 'archived'
 
@@ -568,6 +592,12 @@ function DadosTab({
         </EmptyState>
       )}
 
+      <StoreLifecyclePanel
+        store={store}
+        basePath={basePath}
+        canManageLifecycle={canManageLifecycle}
+      />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
           <CardHeader>
@@ -593,6 +623,8 @@ function DadosTab({
             <DetailField label="Telefone" value={store.company.responsiblePhone} />
             <DetailField label="Status da loja" value={statusLabels[store.status]} />
             <DetailField label="Motivo/status" value={store.statusReason} />
+            <DetailField label="Cancelada em" value={formatDateTime(store.cancelledAt)} />
+            <DetailField label="Motivo do cancelamento" value={store.cancellationReason} />
           </CardContent>
         </Card>
         <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs lg:col-span-2">
@@ -606,6 +638,357 @@ function DadosTab({
           </CardContent>
         </Card>
       </div>
+    </div>
+  )
+}
+
+type StoreLifecycleActionConfig = {
+  targetStatus: StoreLifecycleTargetStatus
+  title: string
+  description: string
+  buttonLabel: string
+  icon: typeof Store
+  variant: 'default' | 'outline' | 'destructive'
+  defaultSubscriptionEffect: StoreLifecycleSubscriptionEffect
+  defaultAccessEffect: StoreLifecycleAccessEffect
+  reasonPlaceholder: string
+  confirmationLabel?: string
+  blockedReason?: string
+  changes: string[]
+  unchanged: string[]
+}
+
+const selectClassName =
+  'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+
+function StoreLifecyclePanel({
+  store,
+  basePath,
+  canManageLifecycle,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  canManageLifecycle: boolean
+}) {
+  const subscriptionSnapshot = {
+    id: store.billing.subscriptionId,
+    status: store.billing.subscriptionStatus,
+    planId: store.billing.planId,
+    contractedAmount: store.billing.contractedAmount,
+    currency: store.billing.currency,
+    currentPeriodStart: store.billing.currentPeriodStart,
+    currentPeriodEnd: store.billing.currentPeriodEnd,
+    nextBillingAt: store.billing.nextBillingAt,
+  }
+  const hasValidFinancialConfig =
+    isFinanciallyValidForStoreActivation(subscriptionSnapshot)
+  const activeAdmins = store.users.filter(user => !user.revokedAt).length
+  const activeLabel =
+    store.status === 'implementing' ? 'Ativar comercialmente' : 'Reativar'
+
+  const actionConfigs: StoreLifecycleActionConfig[] = [
+    {
+      targetStatus: 'active',
+      title: activeLabel,
+      description:
+        store.status === 'implementing'
+          ? 'A loja sai de implantacao e passa a operar como ativa.'
+          : 'A loja volta a operar como ativa preservando historico.',
+      buttonLabel: activeLabel,
+      icon: Power,
+      variant: 'default',
+      defaultSubscriptionEffect: getDefaultStoreLifecycleSubscriptionEffect({
+        targetStatus: 'active',
+        subscriptionStatus: store.billing.subscriptionStatus,
+      }),
+      defaultAccessEffect: 'keep_access',
+      reasonPlaceholder: 'Ex.: cliente regularizou assinatura e liberamos a operacao.',
+      blockedReason: !hasValidFinancialConfig
+        ? 'Configure plano, valor e periodo financeiro antes de ativar.'
+        : undefined,
+      changes: ['Status comercial da loja', 'Historico operacional'],
+      unchanged: [
+        'Pedidos, faturas e eventos anteriores',
+        'Acessos de usuarios ja existentes',
+      ],
+    },
+    {
+      targetStatus: 'inactive',
+      title: 'Inativar comercialmente',
+      description:
+        'Pausa a operacao comercial interna sem apagar dados da loja.',
+      buttonLabel: 'Inativar',
+      icon: ShieldOff,
+      variant: 'outline',
+      defaultSubscriptionEffect: 'pause_subscription',
+      defaultAccessEffect: 'keep_access',
+      reasonPlaceholder: 'Ex.: cliente pausou operacao por negociacao comercial.',
+      changes: ['Status comercial da loja', 'Opcionalmente assinatura e acesso'],
+      unchanged: ['Pedidos, faturas, produtos e historico cadastral'],
+    },
+    {
+      targetStatus: 'archived',
+      title: 'Cancelar comercialmente',
+      description:
+        'Encerra comercialmente a loja, registra data e motivo, mas preserva todo o historico.',
+      buttonLabel: 'Cancelar loja',
+      icon: XCircle,
+      variant: 'destructive',
+      defaultSubscriptionEffect: 'cancel_subscription',
+      defaultAccessEffect: 'revoke_access',
+      confirmationLabel: `Digite ${store.subdomain} para confirmar`,
+      reasonPlaceholder: 'Ex.: cliente solicitou cancelamento definitivo em atendimento.',
+      changes: [
+        'Status comercial para Arquivada',
+        'Data e motivo de cancelamento',
+        'Opcionalmente assinatura e acesso',
+      ],
+      unchanged: ['Pedidos, faturas, produtos, auditoria e dados historicos'],
+    },
+  ]
+
+  return (
+    <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+      <CardHeader className="gap-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>Ciclo comercial</CardTitle>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Controle ativacao, inativacao e cancelamento sem misturar status
+              da loja, assinatura e acesso dos usuarios.
+            </p>
+          </div>
+          <Badge variant="outline">{statusLabels[store.status]}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <DetailField label="Status atual" value={statusLabels[store.status]} />
+          <DetailField
+            label="Assinatura"
+            value={store.billing.subscriptionStatus ?? 'Sem assinatura aberta'}
+          />
+          <DetailField label="Acessos ativos" value={String(activeAdmins)} />
+          <DetailField
+            label="Ultima alteracao"
+            value={formatDateTime(store.statusUpdatedAt)}
+          />
+        </div>
+
+        {store.cancelledAt && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100">
+            <div className="font-medium">
+              Cancelada em {formatDateTime(store.cancelledAt)}
+            </div>
+            <p className="mt-1 text-rose-800 dark:text-rose-200">
+              {store.cancellationReason ?? 'Sem motivo registrado.'}
+            </p>
+          </div>
+        )}
+
+        {!canManageLifecycle && (
+          <EmptyState>
+            Seu perfil pode consultar o ciclo comercial, mas nao pode executar
+            transicoes de status.
+          </EmptyState>
+        )}
+
+        {canManageLifecycle && (
+          <div className="grid gap-3 lg:grid-cols-3">
+            {actionConfigs.map(action => {
+              const transitionAllowed = isStoreLifecycleTransitionAllowed({
+                currentStatus: store.status,
+                targetStatus: action.targetStatus,
+              })
+              const isBlocked =
+                !transitionAllowed ||
+                (action.targetStatus === 'active' && !hasValidFinancialConfig)
+
+              return (
+                <StoreLifecycleActionDialog
+                  key={action.targetStatus}
+                  store={store}
+                  basePath={basePath}
+                  action={action}
+                  disabled={isBlocked}
+                  disabledReason={
+                    !transitionAllowed
+                      ? 'Acao indisponivel para o status atual.'
+                      : action.blockedReason
+                  }
+                />
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function StoreLifecycleActionDialog({
+  store,
+  basePath,
+  action,
+  disabled,
+  disabledReason,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  action: StoreLifecycleActionConfig
+  disabled: boolean
+  disabledReason?: string
+}) {
+  const Icon = action.icon
+
+  return (
+    <div className="rounded-lg border bg-background/70 p-4">
+      <div className="flex items-start gap-3">
+        <div className="rounded-md bg-primary/10 p-2 text-primary">
+          <Icon className="size-4" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-foreground">{action.title}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {action.description}
+          </p>
+        </div>
+      </div>
+
+      {disabledReason && (
+        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+          {disabledReason}
+        </p>
+      )}
+
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button
+            className="mt-4 w-full"
+            variant={action.variant}
+            disabled={disabled}
+          >
+            <Icon className="size-4" />
+            {action.buttonLabel}
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{action.title}</DialogTitle>
+            <DialogDescription>{action.description}</DialogDescription>
+          </DialogHeader>
+
+          <form
+            action={updateStoreCommercialLifecycleAction}
+            className="space-y-5"
+          >
+            <input type="hidden" name="storeId" value={store.id} />
+            <input type="hidden" name="targetStatus" value={action.targetStatus} />
+            <input
+              type="hidden"
+              name="returnTo"
+              value={`${basePath}?tab=dados`}
+            />
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border bg-emerald-50/60 p-4 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/20">
+                <div className="flex items-center gap-2 font-medium text-emerald-900 dark:text-emerald-100">
+                  <CheckCircle2 className="size-4" />
+                  Esta acao altera
+                </div>
+                <ul className="mt-3 space-y-2 text-emerald-800 dark:text-emerald-200">
+                  {action.changes.map(item => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+                <div className="font-medium text-foreground">
+                  Nao sera apagado
+                </div>
+                <ul className="mt-3 space-y-2 text-muted-foreground">
+                  {action.unchanged.map(item => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <FormField label="Efeito sobre assinatura" htmlFor={`subscriptionEffect-${action.targetStatus}`}>
+              <select
+                id={`subscriptionEffect-${action.targetStatus}`}
+                name="subscriptionEffect"
+                className={selectClassName}
+                defaultValue={action.defaultSubscriptionEffect}
+              >
+                <option value="keep_subscription">Manter assinatura como esta</option>
+                {action.targetStatus !== 'active' && (
+                  <option value="pause_subscription">Pausar assinatura</option>
+                )}
+                {action.targetStatus === 'active' && (
+                  <option value="resume_subscription">Retomar assinatura pausada</option>
+                )}
+                {action.targetStatus === 'archived' && (
+                  <option value="cancel_subscription">Cancelar assinatura</option>
+                )}
+              </select>
+            </FormField>
+
+            <FormField label="Efeito sobre acesso" htmlFor={`accessEffect-${action.targetStatus}`}>
+              <select
+                id={`accessEffect-${action.targetStatus}`}
+                name="accessEffect"
+                className={selectClassName}
+                defaultValue={action.defaultAccessEffect}
+                disabled={action.targetStatus === 'active'}
+              >
+                <option value="keep_access">Manter acessos como estao</option>
+                {action.targetStatus !== 'active' && (
+                  <option value="revoke_access">Revogar acessos ativos</option>
+                )}
+              </select>
+              {action.targetStatus === 'active' && (
+                <input type="hidden" name="accessEffect" value="keep_access" />
+              )}
+            </FormField>
+
+            <FormField label="Motivo" htmlFor={`reason-${action.targetStatus}`}>
+              <Textarea
+                id={`reason-${action.targetStatus}`}
+                name="reason"
+                placeholder={action.reasonPlaceholder}
+                required
+              />
+            </FormField>
+
+            {action.confirmationLabel && (
+              <FormField
+                label={action.confirmationLabel}
+                htmlFor={`confirmation-${action.targetStatus}`}
+              >
+                <Input
+                  id={`confirmation-${action.targetStatus}`}
+                  name="confirmation"
+                  placeholder={store.subdomain}
+                  required
+                />
+              </FormField>
+            )}
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Voltar
+                </Button>
+              </DialogClose>
+              <Button type="submit" variant={action.variant}>
+                <Icon className="size-4" />
+                Confirmar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

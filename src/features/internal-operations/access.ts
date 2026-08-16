@@ -27,6 +27,7 @@ export const internalPermissions = [
   'manage_store_profile',
   'manage_implementation_checklist',
   'activate_implemented_store',
+  'manage_store_lifecycle',
   'reactivate_store',
   'archive_store',
   'manage_billing_values',
@@ -56,6 +57,7 @@ const rolePermissionMap: Record<
     'create_store',
     'manage_store_profile',
     'manage_implementation_checklist',
+    'manage_store_lifecycle',
     'apply_billing_discounts',
   ]),
   implementation: new Set([
@@ -63,6 +65,7 @@ const rolePermissionMap: Record<
     'manage_store_profile',
     'manage_implementation_checklist',
     'activate_implemented_store',
+    'manage_store_lifecycle',
     'reactivate_store',
   ]),
   viewer: new Set(['view_internal_operations']),

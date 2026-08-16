@@ -9,6 +9,7 @@ import {
   reactivateStoreWithAdmin,
   resendStoreAccessInvite,
   updateInternalStoreProfile,
+  updateStoreCommercialLifecycle,
   updateStoreImplementationChecklistItem,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
@@ -22,6 +23,10 @@ import {
   internalStoreProfileEditSchema,
   type InternalStoreProfileEditValues,
 } from '@/features/internal-operations/store-profile-edit-policy'
+import {
+  storeLifecycleTransitionSchema,
+  type StoreLifecycleTransitionValues,
+} from '@/features/internal-operations/store-lifecycle-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -700,4 +705,91 @@ export async function archiveStoreAction(formData: FormData) {
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
   redirectWithResult(returnPath, 'loja-arquivada')
+}
+
+export async function updateStoreCommercialLifecycleAction(formData: FormData) {
+  const operator = await requireInternalOperation('manageStoreLifecycle')
+  const returnPath = getReturnPath(formData)
+  const values: StoreLifecycleTransitionValues = (() => {
+    try {
+      return storeLifecycleTransitionSchema.parse({
+        storeId: formData.get('storeId'),
+        targetStatus: formData.get('targetStatus'),
+        reason: formData.get('reason'),
+        subscriptionEffect: formData.get('subscriptionEffect'),
+        accessEffect: formData.get('accessEffect'),
+        confirmation: formData.get('confirmation'),
+      })
+    } catch {
+      redirectWithError(
+        returnPath,
+        'Revise status, motivo e efeitos antes de confirmar.'
+      )
+      throw new Error('INVALID_STORE_LIFECYCLE_FORM')
+    }
+  })()
+
+  try {
+    await updateStoreCommercialLifecycle({
+      ...values,
+      operator,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_LIFECYCLE_TRANSITION_INVALID'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Transicao comercial invalida para o status atual da loja.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_LIFECYCLE_CONFIRMATION_MISMATCH'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Confirmacao incorreta. Digite o subdominio da loja.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_LIFECYCLE_FINANCIAL_CONFIG_INVALID'
+    ) {
+      redirectWithError(
+        returnPath,
+        'A loja precisa ter assinatura, plano, valor e periodo financeiro validos para ativacao.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_IMPLEMENTATION_CHECKLIST_INCOMPLETE'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Conclua os itens obrigatorios de implantacao antes de ativar.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      (error.message === 'STORE_LIFECYCLE_SUBSCRIPTION_EFFECT_INVALID' ||
+        error.message === 'STORE_LIFECYCLE_ACCESS_EFFECT_INVALID')
+    ) {
+      redirectWithError(returnPath, 'Efeito escolhido nao combina com a acao.')
+    }
+
+    redirectWithError(
+      returnPath,
+      'Nao foi possivel atualizar o ciclo comercial agora.'
+    )
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'ciclo-comercial-atualizado')
 }

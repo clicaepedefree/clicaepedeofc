@@ -22,6 +22,8 @@ export const storesTable = pgTable('stores', {
   statusUpdatedAt: baseTimestampColumnGenerator('status_updated_at')
     .notNull()
     .defaultNow(),
+  cancelledAt: baseTimestampColumnGenerator('cancelled_at'),
+  cancellationReason: text('cancellation_reason'),
   createdAt,
   updatedAt,
 })
