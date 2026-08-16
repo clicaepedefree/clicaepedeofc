@@ -51,7 +51,11 @@ const rolePermissionMap: Record<
     'apply_billing_discounts',
     'cancel_billing',
   ]),
-  support: new Set(['view_internal_operations', 'reactivate_store']),
+  support: new Set([
+    'view_internal_operations',
+    'reactivate_store',
+    'block_store',
+  ]),
   sales: new Set([
     'view_internal_operations',
     'create_store',

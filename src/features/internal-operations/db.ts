@@ -17,6 +17,7 @@ import {
   internalOperationAuditLogsTable,
   ordersTable,
   storeAccessInvitesTable,
+  storeAccessBlocksTable,
   storeAddressesTable,
   storeBillingEventsTable,
   storeBillingInvoicesTable,
@@ -73,6 +74,12 @@ import {
   type StoreLifecycleSubscriptionEffect,
   type StoreLifecycleTargetStatus,
 } from './store-lifecycle-policy'
+import {
+  isStoreAccessBlockActive,
+  validateStoreAccessBlockSchedule,
+  type StoreAccessBlockActionValues,
+  type StoreAccessUnblockActionValues,
+} from './store-access-block-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -288,6 +295,19 @@ export type InternalStoreOverview = Pick<
     currentPeriodStart: Date | null
     currentPeriodEnd: Date | null
   }
+  accessBlock: {
+    id: number
+    reason: string
+    notifyStoreOwner: boolean
+    notificationNote: string | null
+    scheduledUnblockAt: Date | null
+    blockedAt: Date
+    blockedByEmail: string
+    blockedByName: string | null
+    unblockedAt: Date | null
+    unblockReason: string | null
+    isActive: boolean
+  } | null
   invoiceSummary: {
     totalInvoices: number
     openInvoices: number
@@ -1173,6 +1193,7 @@ export async function getInternalStoreOverview(
     metricsRows,
     auditLogs,
     billingEvents,
+    accessBlockRows,
   ] = await Promise.all([
     db
       .select({
@@ -1261,6 +1282,23 @@ export async function getInternalStoreOverview(
       .where(eq(storeBillingEventsTable.storeId, storeId))
       .orderBy(desc(storeBillingEventsTable.createdAt))
       .limit(12),
+    db
+      .select({
+        id: storeAccessBlocksTable.id,
+        reason: storeAccessBlocksTable.reason,
+        notifyStoreOwner: storeAccessBlocksTable.notifyStoreOwner,
+        notificationNote: storeAccessBlocksTable.notificationNote,
+        scheduledUnblockAt: storeAccessBlocksTable.scheduledUnblockAt,
+        blockedAt: storeAccessBlocksTable.blockedAt,
+        blockedByEmail: storeAccessBlocksTable.blockedByEmail,
+        blockedByName: storeAccessBlocksTable.blockedByName,
+        unblockedAt: storeAccessBlocksTable.unblockedAt,
+        unblockReason: storeAccessBlocksTable.unblockReason,
+      })
+      .from(storeAccessBlocksTable)
+      .where(eq(storeAccessBlocksTable.storeId, storeId))
+      .orderBy(desc(storeAccessBlocksTable.blockedAt))
+      .limit(1),
   ])
 
   const invoiceSummary = invoiceRows.reduce(
@@ -1299,6 +1337,7 @@ export async function getInternalStoreOverview(
       .filter((date): date is Date => date instanceof Date)
       .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
   const metrics = metricsRows[0]
+  const accessBlock = accessBlockRows[0] ?? null
 
   return {
     id: store.id,
@@ -1355,6 +1394,12 @@ export async function getInternalStoreOverview(
       currentPeriodStart: store.currentPeriodStart,
       currentPeriodEnd: store.currentPeriodEnd,
     },
+    accessBlock: accessBlock
+      ? {
+          ...accessBlock,
+          isActive: isStoreAccessBlockActive(accessBlock),
+        }
+      : null,
     invoiceSummary,
     invoices: invoiceRows,
     modules: moduleRows,
@@ -3108,6 +3153,149 @@ export async function reactivateStoreWithAdmin({
     })
 
     return updatedStore
+  })
+}
+
+export async function blockStoreAccess({
+  values,
+  operator,
+}: {
+  values: StoreAccessBlockActionValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const scheduleError = validateStoreAccessBlockSchedule({
+    scheduledUnblockAt: values.scheduledUnblockAt,
+    now,
+  })
+
+  if (scheduleError) throw new Error(scheduleError)
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [activeBlock] = await tx
+      .select({ id: storeAccessBlocksTable.id })
+      .from(storeAccessBlocksTable)
+      .where(
+        and(
+          eq(storeAccessBlocksTable.storeId, values.storeId),
+          sql`${storeAccessBlocksTable.unblockedAt} is null`,
+          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+        )
+      )
+      .limit(1)
+
+    if (activeBlock) throw new Error('STORE_ACCESS_BLOCK_ALREADY_ACTIVE')
+
+    const [block] = await tx
+      .insert(storeAccessBlocksTable)
+      .values({
+        storeId: values.storeId,
+        reason: values.reason,
+        notifyStoreOwner: values.notifyStoreOwner,
+        notificationNote: values.notificationNote.trim() || null,
+        scheduledUnblockAt: values.scheduledUnblockAt,
+        blockedAt: now,
+        blockedByClerkId: operator.clerkId,
+        blockedByEmail: operator.email,
+        blockedByName: operator.name,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'block_store_access',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `${values.reason} | notificar=${
+        values.notifyStoreOwner ? 'sim' : 'nao'
+      }${
+        values.scheduledUnblockAt
+          ? `; desbloqueio_programado=${values.scheduledUnblockAt.toISOString()}`
+          : ''
+      }${
+        values.notificationNote.trim()
+          ? `; observacao=${values.notificationNote.trim()}`
+          : ''
+      }`,
+    })
+
+    return block
+  })
+}
+
+export async function unblockStoreAccess({
+  values,
+  operator,
+}: {
+  values: StoreAccessUnblockActionValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+
+    const [activeBlock] = await tx
+      .select()
+      .from(storeAccessBlocksTable)
+      .where(
+        and(
+          eq(storeAccessBlocksTable.storeId, values.storeId),
+          sql`${storeAccessBlocksTable.unblockedAt} is null`,
+          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+        )
+      )
+      .orderBy(desc(storeAccessBlocksTable.blockedAt))
+      .limit(1)
+
+    if (!activeBlock) throw new Error('STORE_ACCESS_BLOCK_NOT_ACTIVE')
+
+    const [block] = await tx
+      .update(storeAccessBlocksTable)
+      .set({
+        unblockedAt: now,
+        unblockedByClerkId: operator.clerkId,
+        unblockedByEmail: operator.email,
+        unblockedByName: operator.name,
+        unblockReason: values.reason,
+        updatedAt: now,
+      })
+      .where(eq(storeAccessBlocksTable.id, activeBlock.id))
+      .returning()
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'unblock_store_access',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: values.reason,
+    })
+
+    return block
   })
 }
 

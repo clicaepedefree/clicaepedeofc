@@ -95,7 +95,11 @@ describe('internal operation access policy', () => {
   test('limits support to support operations without billing changes', () => {
     expectPermissions({
       role: 'support',
-      allowed: ['view_internal_operations', 'reactivate_store'],
+      allowed: [
+        'view_internal_operations',
+        'reactivate_store',
+        'block_store',
+      ],
     })
   })
 
@@ -195,6 +199,12 @@ describe('internal operation access policy', () => {
         operation: 'manageBillingValues',
       })
     ).toBe(false)
+    expect(
+      canRunInternalOperation({
+        operator: { role: 'support' },
+        operation: 'blockStore',
+      })
+    ).toBe(true)
     expect(
       canRunInternalOperation({
         operator: { role: 'viewer' },

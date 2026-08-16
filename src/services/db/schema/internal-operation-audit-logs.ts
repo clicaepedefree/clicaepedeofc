@@ -14,6 +14,8 @@ export const internalOperationActions = [
   'reactivate_store_commercial',
   'inactivate_store_commercial',
   'cancel_store_commercial',
+  'block_store_access',
+  'unblock_store_access',
   'reactivate_store',
   'archive_store',
 ] as const

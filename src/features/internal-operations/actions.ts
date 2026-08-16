@@ -3,11 +3,13 @@
 import {
   archiveStore,
   activateStoreAfterImplementation,
+  blockStoreAccess,
   createInternalStore,
   findInternalStoreCreationDuplicates,
   findInternalStoreProfileUpdateDuplicates,
   reactivateStoreWithAdmin,
   resendStoreAccessInvite,
+  unblockStoreAccess,
   updateInternalStoreProfile,
   updateStoreCommercialLifecycle,
   updateStoreImplementationChecklistItem,
@@ -27,6 +29,12 @@ import {
   storeLifecycleTransitionSchema,
   type StoreLifecycleTransitionValues,
 } from '@/features/internal-operations/store-lifecycle-policy'
+import {
+  storeAccessBlockActionSchema,
+  storeAccessUnblockActionSchema,
+  type StoreAccessBlockActionValues,
+  type StoreAccessUnblockActionValues,
+} from '@/features/internal-operations/store-access-block-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -705,6 +713,104 @@ export async function archiveStoreAction(formData: FormData) {
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
   redirectWithResult(returnPath, 'loja-arquivada')
+}
+
+export async function blockStoreAccessAction(formData: FormData) {
+  const operator = await requireInternalOperation('blockStore')
+  const returnPath = getReturnPath(formData)
+  const values: StoreAccessBlockActionValues = (() => {
+    try {
+      return storeAccessBlockActionSchema.parse({
+        storeId: formData.get('storeId'),
+        reason: formData.get('reason'),
+        notifyStoreOwner: formData.get('notifyStoreOwner') === 'on',
+        notificationNote: formData.get('notificationNote'),
+        scheduledUnblockAt: formData.get('scheduledUnblockAt'),
+      })
+    } catch {
+      redirectWithError(
+        returnPath,
+        'Informe loja, motivo e data programada valida quando houver.'
+      )
+      throw new Error('INVALID_STORE_ACCESS_BLOCK_FORM')
+    }
+  })()
+
+  try {
+    await blockStoreAccess({
+      values,
+      operator,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao permite bloqueio de acesso.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_ACCESS_BLOCK_ALREADY_ACTIVE'
+    ) {
+      redirectWithError(returnPath, 'Essa loja ja possui bloqueio ativo.')
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_ACCESS_BLOCK_SCHEDULE_IN_PAST'
+    ) {
+      redirectWithError(
+        returnPath,
+        'A data programada de desbloqueio precisa ser futura.'
+      )
+    }
+
+    redirectWithError(returnPath, 'Nao foi possivel bloquear a loja agora.')
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'acesso-loja-bloqueado')
+}
+
+export async function unblockStoreAccessAction(formData: FormData) {
+  const operator = await requireInternalOperation('blockStore')
+  const returnPath = getReturnPath(formData)
+  const values: StoreAccessUnblockActionValues = (() => {
+    try {
+      return storeAccessUnblockActionSchema.parse({
+        storeId: formData.get('storeId'),
+        reason: formData.get('reason'),
+      })
+    } catch {
+      redirectWithError(
+        returnPath,
+        'Informe uma justificativa com pelo menos 8 caracteres.'
+      )
+      throw new Error('INVALID_STORE_ACCESS_UNBLOCK_FORM')
+    }
+  })()
+
+  try {
+    await unblockStoreAccess({
+      values,
+      operator,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_ACCESS_BLOCK_NOT_ACTIVE'
+    ) {
+      redirectWithError(returnPath, 'Essa loja nao possui bloqueio ativo.')
+    }
+
+    redirectWithError(returnPath, 'Nao foi possivel desbloquear a loja agora.')
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'acesso-loja-desbloqueado')
 }
 
 export async function updateStoreCommercialLifecycleAction(formData: FormData) {

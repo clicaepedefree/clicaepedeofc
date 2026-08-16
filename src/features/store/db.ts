@@ -5,6 +5,7 @@ import {
   storeFilesTable,
 } from '@/services/db/schema/store-files'
 import { InsertStore, storesTable } from '@/services/db/schema/stores'
+import { storeAccessBlocksTable } from '@/services/db/schema/store-access-blocks'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
 import { usersTable } from '@/services/db/schema/users'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
@@ -37,6 +38,15 @@ export const isUserAdminOfAnyStore = async (userId: string) => {
         eq(userStorePermissionsTable.role, 'admin'),
         sql`${userStorePermissionsTable.revokedAt} is null`,
         eq(storesTable.status, 'active'),
+        sql`not exists (
+          select 1 from ${storeAccessBlocksTable}
+          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
+            and ${storeAccessBlocksTable.unblockedAt} is null
+            and (
+              ${storeAccessBlocksTable.scheduledUnblockAt} is null
+              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+            )
+        )`,
         eq(usersTable.status, 'active')
       )
     )
@@ -53,6 +63,7 @@ export const getUserStorePermissions = async (
     .select({
       permission: userStorePermissionsTable,
       store: storesTable,
+      activeAccessBlockId: storeAccessBlocksTable.id,
     })
     .from(userStorePermissionsTable)
     .innerJoin(
@@ -60,6 +71,14 @@ export const getUserStorePermissions = async (
       eq(storesTable.id, userStorePermissionsTable.storeId)
     )
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .leftJoin(
+      storeAccessBlocksTable,
+      and(
+        eq(storeAccessBlocksTable.storeId, storesTable.id),
+        sql`${storeAccessBlocksTable.unblockedAt} is null`,
+        sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > now())`
+      )
+    )
     .where(
       and(
         eq(userStorePermissionsTable.userId, userId),
