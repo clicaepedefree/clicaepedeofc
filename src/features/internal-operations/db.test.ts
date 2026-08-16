@@ -4,8 +4,12 @@ import {
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
   getMonthlyContractedRevenue,
+  maskInternalStoreSensitiveDigits,
+  parseInternalStoreAccessFilter,
+  parseInternalStoreDateFilter,
   parseStoreStatus,
   parseInternalDashboardAmount,
+  parseInternalStorePositiveInteger,
   shouldCreateInternalStoreInitialInvoice,
 } from './db'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
@@ -50,6 +54,54 @@ describe('internal operation store policy', () => {
     expect(parseStoreStatus('archived')).toBe('archived')
     expect(parseStoreStatus('deleted')).toBe(undefined)
     expect(parseStoreStatus(undefined)).toBe(undefined)
+  })
+
+  test('accepts only known access filters for internal store listing', () => {
+    expect(parseInternalStoreAccessFilter('with_active_admin')).toBe(
+      'with_active_admin'
+    )
+    expect(parseInternalStoreAccessFilter('without_active_admin')).toBe(
+      'without_active_admin'
+    )
+    expect(parseInternalStoreAccessFilter('with_revoked_admin')).toBe(
+      'with_revoked_admin'
+    )
+    expect(parseInternalStoreAccessFilter('all')).toBe(undefined)
+    expect(parseInternalStoreAccessFilter(undefined)).toBe(undefined)
+  })
+
+  test('normalizes positive pagination and filter ids', () => {
+    expect(parseInternalStorePositiveInteger('1')).toBe(1)
+    expect(parseInternalStorePositiveInteger(25)).toBe(25)
+    expect(parseInternalStorePositiveInteger('0')).toBe(undefined)
+    expect(parseInternalStorePositiveInteger('-1')).toBe(undefined)
+    expect(parseInternalStorePositiveInteger('1.5')).toBe(undefined)
+    expect(parseInternalStorePositiveInteger('abc')).toBe(undefined)
+  })
+
+  test('parses internal store date filters at day boundaries', () => {
+    expect(
+      parseInternalStoreDateFilter('2026-07-09', 'start')?.toISOString()
+    ).toBe('2026-07-09T00:00:00.000Z')
+    expect(
+      parseInternalStoreDateFilter('2026-07-09', 'end')?.toISOString()
+    ).toBe('2026-07-09T23:59:59.999Z')
+    expect(parseInternalStoreDateFilter('09/07/2026', 'start')).toBe(
+      undefined
+    )
+    expect(parseInternalStoreDateFilter(undefined, 'start')).toBe(undefined)
+  })
+
+  test('masks sensitive document and phone digits for internal listings', () => {
+    expect(
+      maskInternalStoreSensitiveDigits('04.252.011/0001-10', 'nao informado')
+    ).toBe('***0110')
+    expect(
+      maskInternalStoreSensitiveDigits('(11) 99999-1234', 'nao informado')
+    ).toBe('***1234')
+    expect(maskInternalStoreSensitiveDigits('', 'nao informado')).toBe(
+      'nao informado'
+    )
   })
 
   test('builds deterministic initial invoice numbers from provisioned ids', () => {
