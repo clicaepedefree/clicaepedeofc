@@ -3,6 +3,7 @@ import {
   type InternalOperator,
 } from '@/features/internal-operations/access'
 import { buildBillingInvoiceDraft } from '@/features/billing/billing-policy'
+import { isActiveStoreModuleEntitlement } from '@/features/billing/module-entitlements-policy'
 import {
   buildStoreAccessInviteUrl,
   createStoreAccessInviteToken,
@@ -98,6 +99,12 @@ import {
   resolvePlanChangeEffectiveAt,
   type StoreSubscriptionPlanChangeValues,
 } from './subscription-plan-change-policy'
+import {
+  getModuleEntitlementOriginLabel,
+  getModuleEntitlementStatusLabel,
+  normalizeModuleAdditionalAmount,
+  type StoreModuleManagementValues,
+} from './store-module-management-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -390,16 +397,27 @@ export type InternalStoreOverview = Pick<
     createdAt: Date
   }[]
   modules: {
-    id: number
+    moduleId: number
     code: string
     name: string
-    origin: string
+    description: string | null
+    catalogStatus: string
+    entitlementId: number | null
+    origin: string | null
     status: string
+    statusLabel: string
+    originLabel: string
     isAdditional: boolean
     additionalAmount: string
     currency: string
-    startsAt: Date
+    startsAt: Date | null
     endsAt: Date | null
+    revokedAt: Date | null
+    reason: string | null
+    canActivate: boolean
+    canDeactivate: boolean
+    deactivateBlockedReason: string | null
+    historyCount: number
   }[]
   users: {
     userId: string
@@ -1262,7 +1280,8 @@ export async function getInternalStoreOverview(
 
   const [
     invoiceRows,
-    moduleRows,
+    moduleCatalogRows,
+    moduleEntitlementRows,
     userRows,
     metricsRows,
     auditLogs,
@@ -1289,9 +1308,22 @@ export async function getInternalStoreOverview(
       .limit(8),
     db
       .select({
-        id: storeModuleEntitlementsTable.id,
+        id: billingModulesTable.id,
         code: billingModulesTable.code,
         name: billingModulesTable.name,
+        description: billingModulesTable.description,
+        status: billingModulesTable.status,
+      })
+      .from(billingModulesTable)
+      .where(eq(billingModulesTable.status, 'active'))
+      .orderBy(billingModulesTable.name),
+    db
+      .select({
+        id: storeModuleEntitlementsTable.id,
+        moduleId: storeModuleEntitlementsTable.moduleId,
+        code: billingModulesTable.code,
+        name: billingModulesTable.name,
+        description: billingModulesTable.description,
         origin: storeModuleEntitlementsTable.origin,
         status: storeModuleEntitlementsTable.status,
         isAdditional: storeModuleEntitlementsTable.isAdditional,
@@ -1299,6 +1331,9 @@ export async function getInternalStoreOverview(
         currency: storeModuleEntitlementsTable.currency,
         startsAt: storeModuleEntitlementsTable.startsAt,
         endsAt: storeModuleEntitlementsTable.endsAt,
+        revokedAt: storeModuleEntitlementsTable.revokedAt,
+        reason: storeModuleEntitlementsTable.reason,
+        createdAt: storeModuleEntitlementsTable.createdAt,
       })
       .from(storeModuleEntitlementsTable)
       .innerJoin(
@@ -1306,7 +1341,7 @@ export async function getInternalStoreOverview(
         eq(billingModulesTable.id, storeModuleEntitlementsTable.moduleId)
       )
       .where(eq(storeModuleEntitlementsTable.storeId, storeId))
-      .orderBy(billingModulesTable.name),
+      .orderBy(billingModulesTable.name, desc(storeModuleEntitlementsTable.createdAt)),
     db
       .select({
         userId: usersTable.id,
@@ -1474,6 +1509,76 @@ export async function getInternalStoreOverview(
   const pendingPlanChange = pendingPlanChangeRows[0] ?? null
   const pendingPlanChangeMetadata =
     (pendingPlanChange?.metadata as Record<string, unknown> | undefined) ?? {}
+  const moduleEntitlementsByModuleId = new Map<
+    number,
+    typeof moduleEntitlementRows
+  >()
+
+  for (const entitlement of moduleEntitlementRows) {
+    const current = moduleEntitlementsByModuleId.get(entitlement.moduleId) ?? []
+    current.push(entitlement)
+    moduleEntitlementsByModuleId.set(entitlement.moduleId, current)
+  }
+
+  const now = new Date()
+  const moduleOverviewRows = moduleCatalogRows.map(module => {
+    const entitlements = moduleEntitlementsByModuleId.get(module.id) ?? []
+    const reservedEntitlement = entitlements.find(
+      entitlement =>
+        entitlement.status === 'active' &&
+        !entitlement.revokedAt &&
+        (!entitlement.endsAt || entitlement.endsAt.getTime() > now.getTime())
+    )
+    const activeEntitlement = entitlements.find(entitlement =>
+      isActiveStoreModuleEntitlement(entitlement, now)
+    )
+    const latestEntitlement =
+      activeEntitlement ?? reservedEntitlement ?? entitlements[0] ?? null
+    const status = activeEntitlement
+      ? activeEntitlement.status
+      : latestEntitlement?.status === 'active' &&
+          latestEntitlement.endsAt &&
+          latestEntitlement.endsAt.getTime() <= now.getTime()
+        ? 'expired'
+        : latestEntitlement?.status === 'active'
+          ? 'inactive'
+          : latestEntitlement?.status ?? 'not_enabled'
+    const origin = latestEntitlement?.origin ?? null
+    const canDeactivate =
+      Boolean(reservedEntitlement) && reservedEntitlement?.origin !== 'plan'
+    const deactivateBlockedReason =
+      reservedEntitlement?.origin === 'plan'
+        ? 'Modulo incluido no plano atual. Use mudanca de plano para remover.'
+        : reservedEntitlement
+          ? null
+          : 'Modulo nao esta liberado para esta loja.'
+
+    return {
+      moduleId: module.id,
+      code: module.code,
+      name: module.name,
+      description: module.description,
+      catalogStatus: module.status,
+      entitlementId: reservedEntitlement?.id ?? latestEntitlement?.id ?? null,
+      origin,
+      status,
+      statusLabel: getModuleEntitlementStatusLabel(status),
+      originLabel: origin
+        ? getModuleEntitlementOriginLabel(origin)
+        : 'Nao liberado',
+      isAdditional: latestEntitlement?.isAdditional ?? false,
+      additionalAmount: latestEntitlement?.additionalAmount ?? '0',
+      currency: latestEntitlement?.currency ?? store.currency ?? 'BRL',
+      startsAt: latestEntitlement?.startsAt ?? null,
+      endsAt: latestEntitlement?.endsAt ?? null,
+      revokedAt: latestEntitlement?.revokedAt ?? null,
+      reason: latestEntitlement?.reason ?? null,
+      canActivate: !reservedEntitlement,
+      canDeactivate,
+      deactivateBlockedReason,
+      historyCount: entitlements.length,
+    }
+  })
 
   return {
     id: store.id,
@@ -1564,7 +1669,7 @@ export async function getInternalStoreOverview(
       calculationSnapshot:
         (adjustment.calculationSnapshot as Record<string, unknown>) ?? {},
     })),
-    modules: moduleRows,
+    modules: moduleOverviewRows,
     users: userRows,
     metrics: {
       totalOrders: metrics?.totalOrders ?? 0,
@@ -3469,6 +3574,177 @@ export async function updateStoreSubscriptionTerms({
     })
 
     return updatedSubscription
+  })
+}
+
+export async function manageStoreModuleEntitlement({
+  values,
+  operator,
+}: {
+  values: StoreModuleManagementValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select({
+        id: storesTable.id,
+        status: storesTable.status,
+      })
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [module] = await tx
+      .select({
+        id: billingModulesTable.id,
+        code: billingModulesTable.code,
+        name: billingModulesTable.name,
+        status: billingModulesTable.status,
+      })
+      .from(billingModulesTable)
+      .where(eq(billingModulesTable.id, values.moduleId))
+      .limit(1)
+
+    if (!module || module.status !== 'active') {
+      throw new Error('BILLING_MODULE_NOT_FOUND')
+    }
+
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(${values.storeId}, ${values.moduleId})`
+    )
+
+    if (values.action === 'activate') {
+      if (
+        values.origin === 'addon' &&
+        !canUseInternalPermission({
+          currentRole: operator.role,
+          permission: 'manage_billing_values',
+        })
+      ) {
+        throw new Error('STORE_MODULE_FINANCE_PERMISSION_REQUIRED')
+      }
+
+      const activeEntitlements = await tx
+        .select({ id: storeModuleEntitlementsTable.id })
+        .from(storeModuleEntitlementsTable)
+        .where(
+          and(
+            eq(storeModuleEntitlementsTable.storeId, values.storeId),
+            eq(storeModuleEntitlementsTable.moduleId, values.moduleId),
+            eq(storeModuleEntitlementsTable.status, 'active'),
+            sql`${storeModuleEntitlementsTable.revokedAt} is null`,
+            sql`(${storeModuleEntitlementsTable.endsAt} is null or ${storeModuleEntitlementsTable.endsAt} > ${now})`
+          )
+        )
+        .limit(1)
+
+      if (activeEntitlements.length > 0) {
+        throw new Error('STORE_MODULE_ALREADY_ACTIVE')
+      }
+
+      const endsAt = values.endsAt ? new Date(values.endsAt) : null
+
+      if (endsAt && (!Number.isFinite(endsAt.getTime()) || endsAt <= now)) {
+        throw new Error('INVALID_MODULE_END_DATE')
+      }
+
+      const [entitlement] = await tx
+        .insert(storeModuleEntitlementsTable)
+        .values({
+          storeId: values.storeId,
+          moduleId: values.moduleId,
+          origin: values.origin,
+          status: 'active',
+          isAdditional: values.origin === 'addon',
+          additionalAmount: normalizeModuleAdditionalAmount({
+            origin: values.origin,
+            amount: values.additionalAmount,
+          }),
+          currency: 'BRL',
+          startsAt: now,
+          endsAt,
+          reason: values.reason,
+          actorClerkId: operator.clerkId,
+          metadata: {
+            source: 'kan53_internal_module_management',
+            action: values.action,
+            actorEmail: operator.email,
+          },
+          updatedAt: now,
+        })
+        .returning()
+
+      await tx.insert(internalOperationAuditLogsTable).values({
+        action: 'manage_store_module_entitlement',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        actorName: operator.name,
+        storeId: values.storeId,
+        previousStoreStatus: `module:${module.code}:not_enabled`,
+        newStoreStatus: `module:${module.code}:active:${values.origin}`,
+        reason: values.reason,
+      })
+
+      return { action: 'activated' as const, entitlement }
+    }
+
+    const [entitlement] = await tx
+      .select()
+      .from(storeModuleEntitlementsTable)
+      .where(
+        and(
+          eq(storeModuleEntitlementsTable.id, values.entitlementId ?? 0),
+          eq(storeModuleEntitlementsTable.storeId, values.storeId),
+          eq(storeModuleEntitlementsTable.moduleId, values.moduleId)
+        )
+      )
+      .limit(1)
+
+    if (!entitlement || entitlement.status !== 'active') {
+      throw new Error('STORE_MODULE_ENTITLEMENT_NOT_ACTIVE')
+    }
+
+    if (entitlement.origin === 'plan') {
+      throw new Error('STORE_MODULE_INCLUDED_IN_PLAN')
+    }
+
+    const [updatedEntitlement] = await tx
+      .update(storeModuleEntitlementsTable)
+      .set({
+        status: 'revoked',
+        revokedAt: now,
+        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        reason: values.reason,
+        actorClerkId: operator.clerkId,
+        metadata: sql`${storeModuleEntitlementsTable.metadata} || ${JSON.stringify(
+          {
+            source: 'kan53_internal_module_management',
+            action: values.action,
+            actorEmail: operator.email,
+          }
+        )}::jsonb`,
+        updatedAt: now,
+      })
+      .where(eq(storeModuleEntitlementsTable.id, entitlement.id))
+      .returning()
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'manage_store_module_entitlement',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      previousStoreStatus: `module:${module.code}:active:${entitlement.origin}`,
+      newStoreStatus: `module:${module.code}:revoked:${entitlement.origin}`,
+      reason: values.reason,
+    })
+
+    return { action: 'deactivated' as const, entitlement: updatedEntitlement }
   })
 }
 

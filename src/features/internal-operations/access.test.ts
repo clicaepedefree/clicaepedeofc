@@ -88,6 +88,7 @@ describe('internal operation access policy', () => {
         'manage_billing_invoices',
         'apply_billing_discounts',
         'cancel_billing',
+        'manage_store_modules',
       ],
     })
   })
@@ -113,6 +114,7 @@ describe('internal operation access policy', () => {
         'manage_implementation_checklist',
         'manage_store_lifecycle',
         'apply_billing_discounts',
+        'manage_store_modules',
       ],
     })
   })
@@ -127,6 +129,7 @@ describe('internal operation access policy', () => {
         'activate_implemented_store',
         'manage_store_lifecycle',
         'reactivate_store',
+        'manage_store_modules',
       ],
     })
   })
@@ -152,6 +155,7 @@ describe('internal operation access policy', () => {
       manageBillingInvoices: 'manage_billing_invoices',
       applyBillingDiscounts: 'apply_billing_discounts',
       cancelBilling: 'cancel_billing',
+      manageStoreModules: 'manage_store_modules',
       blockStore: 'block_store',
     })
   })
@@ -207,8 +211,14 @@ describe('internal operation access policy', () => {
     ).toBe(true)
     expect(
       canRunInternalOperation({
+        operator: { role: 'implementation' },
+        operation: 'manageStoreModules',
+      })
+    ).toBe(true)
+    expect(
+      canRunInternalOperation({
         operator: { role: 'viewer' },
-        operation: 'blockStore',
+        operation: 'manageStoreModules',
       })
     ).toBe(false)
     expect(
