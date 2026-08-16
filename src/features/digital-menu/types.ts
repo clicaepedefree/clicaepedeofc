@@ -48,7 +48,12 @@ export type DigitalMenuStore = {
   id: number
   name: string
   subdomain: string
-  status: 'active' | 'inactive' | 'pending_recovery' | 'archived'
+  status:
+    | 'implementing'
+    | 'active'
+    | 'inactive'
+    | 'pending_recovery'
+    | 'archived'
   statusReason: string | null
 }
 

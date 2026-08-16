@@ -20,12 +20,15 @@ import {
   storeBillingEventsTable,
   storeBillingInvoicesTable,
   storeCompanyProfilesTable,
+  storeImplementationChecklistItemsTable,
+  storeImplementationChecklistEventsTable,
   storeModuleEntitlementsTable,
   storeSubscriptionsTable,
   storesTable,
   userStorePermissionsTable,
   usersTable,
   type SelectStore,
+  type StoreImplementationChecklistItemKey,
 } from '@/services/db/schema'
 import { createHash } from 'node:crypto'
 import { and, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
@@ -37,6 +40,11 @@ import {
   normalizeInternalEmail,
   normalizeInternalPhone,
 } from './internal-store-creation-policy'
+import {
+  getStoreImplementationChecklistProgress,
+  storeImplementationChecklistDefinitions,
+  type StoreImplementationChecklistProgress,
+} from './implementation-checklist-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -51,6 +59,21 @@ export type InternalStoreListItem = Pick<
   | 'createdAt'
   | 'updatedAt'
 > & {
+  implementationChecklist: {
+    progress: StoreImplementationChecklistProgress
+    items: {
+      id: number
+      itemKey: StoreImplementationChecklistItemKey
+      title: string
+      status: 'pending' | 'completed'
+      requiredForActivation: boolean
+      completedAt: Date | null
+      completedByEmail: string | null
+      completedByName: string | null
+      observation: string | null
+      updatedAt: Date
+    }[]
+  }
   admins: {
     userId: string
     email: string
@@ -108,11 +131,66 @@ type InternalStoreTransaction = Parameters<
 >[0]
 
 const storeStatusValues: InternalStoreStatus[] = [
+  'implementing',
   'active',
   'inactive',
   'pending_recovery',
   'archived',
 ]
+
+const buildStoreImplementationChecklistRows = ({
+  storeId,
+  now,
+}: {
+  storeId: number
+  now: Date
+}) =>
+  storeImplementationChecklistDefinitions.map(definition => ({
+    storeId,
+    itemKey: definition.key,
+    title: definition.title,
+    requiredForActivation: definition.requiredForActivation,
+    updatedAt: now,
+  }))
+
+async function ensureStoreImplementationChecklistForStores(storeIds: number[]) {
+  if (storeIds.length === 0) return
+
+  const now = new Date()
+  await db
+    .insert(storeImplementationChecklistItemsTable)
+    .values(
+      storeIds.flatMap(storeId =>
+        buildStoreImplementationChecklistRows({ storeId, now })
+      )
+    )
+    .onConflictDoNothing({
+      target: [
+        storeImplementationChecklistItemsTable.storeId,
+        storeImplementationChecklistItemsTable.itemKey,
+      ],
+    })
+}
+
+async function ensureStoreImplementationChecklistForStoreTransaction({
+  tx,
+  storeId,
+  now,
+}: {
+  tx: InternalStoreTransaction
+  storeId: number
+  now: Date
+}) {
+  await tx
+    .insert(storeImplementationChecklistItemsTable)
+    .values(buildStoreImplementationChecklistRows({ storeId, now }))
+    .onConflictDoNothing({
+      target: [
+        storeImplementationChecklistItemsTable.storeId,
+        storeImplementationChecklistItemsTable.itemKey,
+      ],
+    })
+}
 
 export function parseStoreStatus(
   value: unknown
@@ -193,6 +271,52 @@ export async function listInternalStores({
   if (stores.length === 0) return []
 
   const storeIds = stores.map(store => store.id)
+  await ensureStoreImplementationChecklistForStores(storeIds)
+
+  const checklistRows = await db
+    .select({
+      id: storeImplementationChecklistItemsTable.id,
+      storeId: storeImplementationChecklistItemsTable.storeId,
+      itemKey: storeImplementationChecklistItemsTable.itemKey,
+      title: storeImplementationChecklistItemsTable.title,
+      status: storeImplementationChecklistItemsTable.status,
+      requiredForActivation:
+        storeImplementationChecklistItemsTable.requiredForActivation,
+      completedAt: storeImplementationChecklistItemsTable.completedAt,
+      completedByEmail: storeImplementationChecklistItemsTable.completedByEmail,
+      completedByName: storeImplementationChecklistItemsTable.completedByName,
+      observation: storeImplementationChecklistItemsTable.observation,
+      updatedAt: storeImplementationChecklistItemsTable.updatedAt,
+    })
+    .from(storeImplementationChecklistItemsTable)
+    .where(inArray(storeImplementationChecklistItemsTable.storeId, storeIds))
+    .orderBy(
+      storeImplementationChecklistItemsTable.storeId,
+      storeImplementationChecklistItemsTable.itemKey
+    )
+
+  const checklistByStoreId = new Map<
+    number,
+    InternalStoreListItem['implementationChecklist']['items']
+  >()
+
+  for (const item of checklistRows) {
+    const items = checklistByStoreId.get(item.storeId) ?? []
+    items.push({
+      id: item.id,
+      itemKey: item.itemKey,
+      title: item.title,
+      status: item.status,
+      requiredForActivation: item.requiredForActivation,
+      completedAt: item.completedAt,
+      completedByEmail: item.completedByEmail,
+      completedByName: item.completedByName,
+      observation: item.observation,
+      updatedAt: item.updatedAt,
+    })
+    checklistByStoreId.set(item.storeId, items)
+  }
+
   const adminRows = await db
     .select({
       storeId: userStorePermissionsTable.storeId,
@@ -229,6 +353,12 @@ export async function listInternalStores({
 
   return stores.map(store => ({
     ...store,
+    implementationChecklist: {
+      items: checklistByStoreId.get(store.id) ?? [],
+      progress: getStoreImplementationChecklistProgress(
+        checklistByStoreId.get(store.id) ?? []
+      ),
+    },
     admins: adminsByStoreId.get(store.id) ?? [],
   }))
 }
@@ -813,12 +943,18 @@ export async function createInternalStore({
       .values({
         name: values.storeName,
         subdomain: values.subdomain,
-        status: 'active',
+        status: 'implementing',
         statusReason: values.reason,
         statusUpdatedAt: now,
         updatedAt: now,
       })
       .returning()
+
+    await ensureStoreImplementationChecklistForStoreTransaction({
+      tx,
+      storeId: store.id,
+      now,
+    })
 
     await tx.insert(userStorePermissionsTable).values({
       userId: responsibleUser.id,
@@ -1154,6 +1290,171 @@ export async function resendStoreAccessInvite({
       now,
       deliveryChannel: 'manual',
     })
+  })
+}
+
+export async function updateStoreImplementationChecklistItem({
+  storeId,
+  itemKey,
+  completed,
+  observation,
+  operator,
+}: {
+  storeId: number
+  itemKey: StoreImplementationChecklistItemKey
+  completed: boolean
+  observation: string
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const trimmedObservation = observation.trim()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    await ensureStoreImplementationChecklistForStoreTransaction({
+      tx,
+      storeId,
+      now,
+    })
+
+    const [currentItem] = await tx
+      .select()
+      .from(storeImplementationChecklistItemsTable)
+      .where(
+        and(
+          eq(storeImplementationChecklistItemsTable.storeId, storeId),
+          eq(storeImplementationChecklistItemsTable.itemKey, itemKey)
+        )
+      )
+      .limit(1)
+
+    if (!currentItem) throw new Error('CHECKLIST_ITEM_NOT_FOUND')
+
+    const newStatus = completed ? 'completed' : 'pending'
+
+    const [updatedItem] = await tx
+      .update(storeImplementationChecklistItemsTable)
+      .set({
+        status: newStatus,
+        completedAt: completed ? now : null,
+        completedByClerkId: completed ? operator.clerkId : null,
+        completedByEmail: completed ? operator.email : null,
+        completedByName: completed ? operator.name : null,
+        observation: trimmedObservation || null,
+        updatedAt: now,
+      })
+      .where(eq(storeImplementationChecklistItemsTable.id, currentItem.id))
+      .returning()
+
+    await tx.insert(storeImplementationChecklistEventsTable).values({
+      storeId,
+      checklistItemId: currentItem.id,
+      itemKey,
+      previousStatus: currentItem.status,
+      newStatus,
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      observation: trimmedObservation || null,
+    })
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'update_store_implementation_checklist',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `${updatedItem.title}: ${completed ? 'concluido' : 'reaberto'}${
+        trimmedObservation ? ` - ${trimmedObservation}` : ''
+      }`,
+    })
+
+    return updatedItem
+  })
+}
+
+export async function activateStoreAfterImplementation({
+  storeId,
+  reason,
+  operator,
+}: {
+  storeId: number
+  reason: string
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select()
+      .from(storesTable)
+      .where(eq(storesTable.id, storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status !== 'implementing') {
+      throw new Error('STORE_STATUS_NOT_IMPLEMENTING')
+    }
+
+    await ensureStoreImplementationChecklistForStoreTransaction({
+      tx,
+      storeId,
+      now,
+    })
+
+    const checklistItems = await tx
+      .select({
+        status: storeImplementationChecklistItemsTable.status,
+        requiredForActivation:
+          storeImplementationChecklistItemsTable.requiredForActivation,
+      })
+      .from(storeImplementationChecklistItemsTable)
+      .where(eq(storeImplementationChecklistItemsTable.storeId, storeId))
+
+    const progress = getStoreImplementationChecklistProgress(checklistItems)
+    if (!progress.canActivate) {
+      throw new Error('STORE_IMPLEMENTATION_CHECKLIST_INCOMPLETE')
+    }
+
+    const [updatedStore] = await tx
+      .update(storesTable)
+      .set({
+        status: 'active',
+        statusReason: reason,
+        statusUpdatedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(eq(storesTable.id, storeId), eq(storesTable.status, 'implementing'))
+      )
+      .returning()
+
+    if (!updatedStore) throw new Error('STORE_STATUS_NOT_IMPLEMENTING')
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'activate_store_after_implementation',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: updatedStore.status,
+      reason,
+    })
+
+    return updatedStore
   })
 }
 

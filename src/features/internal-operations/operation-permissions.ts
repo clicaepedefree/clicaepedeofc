@@ -7,6 +7,8 @@ import {
 
 export const internalOperationPermissionRequirements = {
   createStore: 'create_store',
+  manageImplementationChecklist: 'manage_implementation_checklist',
+  activateImplementedStore: 'activate_implemented_store',
   reactivateStore: 'reactivate_store',
   archiveStore: 'archive_store',
   manageBillingValues: 'manage_billing_values',
@@ -32,7 +34,9 @@ export function canRunInternalOperation({
   })
 }
 
-export async function requireInternalOperation(operation: InternalOperationKey) {
+export async function requireInternalOperation(
+  operation: InternalOperationKey
+) {
   return await requireInternalPermission(
     internalOperationPermissionRequirements[operation]
   )

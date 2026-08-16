@@ -1,9 +1,11 @@
 'use client'
 
 import {
+  activateStoreAfterImplementationAction,
   archiveStoreAction,
   reactivateStoreAction,
   resendStoreAccessInviteAction,
+  updateStoreImplementationChecklistItemAction,
 } from '@/features/internal-operations/actions'
 import type { InternalStoreListItem } from '@/features/internal-operations/db'
 import {
@@ -31,6 +33,7 @@ import {
 import { Input } from '@/shared/input'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
+import { Progress } from '@/shared/progress'
 import {
   Table,
   TableBody,
@@ -40,7 +43,16 @@ import {
   TableRow,
 } from '@/shared/table'
 import { Textarea } from '@/shared/textarea'
-import { Archive, Copy, RotateCcw, Send, Loader2 } from 'lucide-react'
+import {
+  Archive,
+  CheckCircle2,
+  ClipboardCheck,
+  Copy,
+  Loader2,
+  Rocket,
+  RotateCcw,
+  Send,
+} from 'lucide-react'
 import { useState, useTransition } from 'react'
 
 type InternalStoresTableProps = {
@@ -48,16 +60,34 @@ type InternalStoresTableProps = {
   canReactivate: boolean
   canArchive: boolean
   canCreateStore: boolean
+  canManageImplementationChecklist: boolean
+  canActivateImplementedStore: boolean
   returnTo: string
 }
 
 export type SerializableInternalStoreListItem = Omit<
   InternalStoreListItem,
-  'statusUpdatedAt' | 'createdAt' | 'updatedAt' | 'admins'
+  | 'statusUpdatedAt'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'admins'
+  | 'implementationChecklist'
 > & {
   statusUpdatedAt: string
   createdAt: string
   updatedAt: string
+  implementationChecklist: {
+    progress: InternalStoreListItem['implementationChecklist']['progress']
+    items: Array<
+      Omit<
+        InternalStoreListItem['implementationChecklist']['items'][number],
+        'completedAt' | 'updatedAt'
+      > & {
+        completedAt: string | null
+        updatedAt: string
+      }
+    >
+  }
   admins: Array<
     Omit<InternalStoreListItem['admins'][number], 'revokedAt'> & {
       revokedAt: string | null
@@ -66,6 +96,7 @@ export type SerializableInternalStoreListItem = Omit<
 }
 
 const statusLabel: Record<InternalStoreListItem['status'], string> = {
+  implementing: 'Em implantacao',
   active: 'Ativa',
   inactive: 'Inativa',
   pending_recovery: 'Pendente',
@@ -73,6 +104,8 @@ const statusLabel: Record<InternalStoreListItem['status'], string> = {
 }
 
 const statusClassName: Record<InternalStoreListItem['status'], string> = {
+  implementing:
+    'bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-900',
   active:
     'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900',
   inactive: 'bg-muted text-muted-foreground border-border',
@@ -104,6 +137,8 @@ export function InternalStoresTable({
   canReactivate,
   canArchive,
   canCreateStore,
+  canManageImplementationChecklist,
+  canActivateImplementedStore,
   returnTo,
 }: InternalStoresTableProps) {
   const [isInvitePending, startInviteTransition] = useTransition()
@@ -144,6 +179,11 @@ export function InternalStoresTable({
               canCreateStore &&
               store.status !== 'archived' &&
               primaryAdminEmail.length > 0
+            const checklistProgress = store.implementationChecklist.progress
+            const canActivateFromChecklist =
+              canActivateImplementedStore &&
+              store.status === 'implementing' &&
+              checklistProgress.canActivate
 
             return (
               <TableRow key={store.id} className="align-top">
@@ -163,12 +203,24 @@ export function InternalStoresTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={cn('border', statusClassName[store.status])}
-                  >
-                    {statusLabel[store.status]}
-                  </Badge>
+                  <div className="min-w-[170px] space-y-2">
+                    <Badge
+                      variant="outline"
+                      className={cn('border', statusClassName[store.status])}
+                    >
+                      {statusLabel[store.status]}
+                    </Badge>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Implantacao</span>
+                        <span>
+                          {checklistProgress.completed}/
+                          {checklistProgress.total}
+                        </span>
+                      </div>
+                      <Progress value={checklistProgress.percent} />
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="space-y-2">
@@ -204,6 +256,172 @@ export function InternalStoresTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <ClipboardCheck className="size-4" />
+                          Implantacao
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-3xl">
+                        <DialogHeader>
+                          <DialogTitle>Checklist de implantacao</DialogTitle>
+                          <DialogDescription>
+                            Controle a passagem da loja de implantacao para
+                            ativa sem alterar cobranca ou acessos.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                          <div className="rounded-lg border bg-muted/40 p-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                              <div>
+                                <div className="font-medium text-foreground">
+                                  {store.name}
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                  {store.subdomain} -{' '}
+                                  {statusLabel[store.status]}
+                                </div>
+                              </div>
+                              <div className="min-w-[180px] space-y-1">
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>Progresso</span>
+                                  <span>{checklistProgress.percent}%</span>
+                                </div>
+                                <Progress value={checklistProgress.percent} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            {store.implementationChecklist.items.map(item => (
+                              <form
+                                key={item.itemKey}
+                                action={
+                                  updateStoreImplementationChecklistItemAction
+                                }
+                                className="rounded-lg border bg-card p-4"
+                              >
+                                <input
+                                  type="hidden"
+                                  name="storeId"
+                                  value={store.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="itemKey"
+                                  value={item.itemKey}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="returnTo"
+                                  value={returnTo}
+                                />
+                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                  <label className="flex gap-3 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      name="completed"
+                                      defaultChecked={
+                                        item.status === 'completed'
+                                      }
+                                      disabled={
+                                        !canManageImplementationChecklist ||
+                                        store.status === 'archived'
+                                      }
+                                      className="mt-1 size-4 rounded border-border accent-primary"
+                                    />
+                                    <span>
+                                      <span className="block font-medium text-foreground">
+                                        {item.title}
+                                      </span>
+                                      <span className="mt-1 block text-xs text-muted-foreground">
+                                        {item.status === 'completed'
+                                          ? `Concluido por ${item.completedByEmail ?? 'operador'} em ${formatDateTime(item.completedAt)}`
+                                          : 'Pendente de validacao'}
+                                      </span>
+                                    </span>
+                                  </label>
+                                  {item.status === 'completed' && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200"
+                                    >
+                                      <CheckCircle2 className="size-3" />
+                                      Auditado
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="mt-3 flex flex-col gap-2 md:flex-row">
+                                  <Input
+                                    name="observation"
+                                    defaultValue={item.observation ?? ''}
+                                    placeholder="Observacao do responsavel"
+                                    disabled={
+                                      !canManageImplementationChecklist ||
+                                      store.status === 'archived'
+                                    }
+                                    containerClassName="flex-1"
+                                  />
+                                  <Button
+                                    type="submit"
+                                    variant="outline"
+                                    disabled={
+                                      !canManageImplementationChecklist ||
+                                      store.status === 'archived'
+                                    }
+                                  >
+                                    Salvar item
+                                  </Button>
+                                </div>
+                              </form>
+                            ))}
+                          </div>
+
+                          <form
+                            action={activateStoreAfterImplementationAction}
+                            className="rounded-lg border border-sky-200 bg-sky-50 p-4 dark:border-sky-900/70 dark:bg-sky-950/25"
+                          >
+                            <input
+                              type="hidden"
+                              name="storeId"
+                              value={store.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="returnTo"
+                              value={returnTo}
+                            />
+                            <div className="space-y-3">
+                              <div>
+                                <div className="font-medium text-sky-950 dark:text-sky-100">
+                                  Ativacao comercial
+                                </div>
+                                <p className="mt-1 text-sm text-sky-800 dark:text-sky-200">
+                                  Disponivel apenas quando todos os itens
+                                  obrigatorios estiverem concluidos.
+                                </p>
+                              </div>
+                              <Textarea
+                                name="reason"
+                                placeholder="Ex.: implantacao validada com pedido teste e treinamento concluido."
+                                disabled={!canActivateFromChecklist}
+                                required
+                              />
+                              <Button
+                                type="submit"
+                                disabled={!canActivateFromChecklist}
+                              >
+                                <Rocket className="size-4" />
+                                Ativar loja
+                              </Button>
+                            </div>
+                          </form>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                     <Button
                       size="sm"
                       variant="outline"

@@ -2,12 +2,15 @@
 
 import {
   archiveStore,
+  activateStoreAfterImplementation,
   createInternalStore,
   findInternalStoreCreationDuplicates,
   reactivateStoreWithAdmin,
   resendStoreAccessInvite,
+  updateStoreImplementationChecklistItem,
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
+import { isStoreImplementationChecklistItemKey } from '@/features/internal-operations/implementation-checklist-policy'
 import {
   internalStoreCreationSchema,
   isInternalStoreCreationReviewConfirmed,
@@ -413,6 +416,107 @@ export async function reactivateStoreAction(formData: FormData) {
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
   redirect(`${returnPath}?result=loja-reativada`)
+}
+
+export async function updateStoreImplementationChecklistItemAction(
+  formData: FormData
+) {
+  const operator = await requireInternalOperation(
+    'manageImplementationChecklist'
+  )
+  const storeId = Number(getRequiredString(formData, 'storeId'))
+  const itemKey = getRequiredString(formData, 'itemKey')
+  const observation = getRequiredString(formData, 'observation')
+  const completed = formData.get('completed') === 'on'
+  const returnPath = getReturnPath(formData)
+  const checklistItemKey = isStoreImplementationChecklistItemKey(itemKey)
+    ? itemKey
+    : null
+
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    redirectWithError(returnPath, 'Loja invalida para checklist.')
+  }
+
+  if (!checklistItemKey) {
+    redirectWithError(returnPath, 'Item de checklist invalido.')
+  }
+
+  try {
+    await updateStoreImplementationChecklistItem({
+      storeId,
+      itemKey: checklistItemKey!,
+      completed,
+      observation,
+      operator,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao pode ter checklist alterado.'
+      )
+    }
+
+    redirectWithError(returnPath, 'Nao foi possivel atualizar o checklist.')
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirect(`${returnPath}?result=checklist-atualizado`)
+}
+
+export async function activateStoreAfterImplementationAction(
+  formData: FormData
+) {
+  const operator = await requireInternalOperation('activateImplementedStore')
+  const storeId = Number(getRequiredString(formData, 'storeId'))
+  const reason = getRequiredString(formData, 'reason')
+  const returnPath = getReturnPath(formData)
+
+  if (!Number.isInteger(storeId) || storeId <= 0) {
+    redirectWithError(returnPath, 'Loja invalida para ativacao.')
+  }
+
+  if (reason.length < MIN_REASON_LENGTH) {
+    redirectWithError(
+      returnPath,
+      'Informe um motivo com pelo menos 8 caracteres.'
+    )
+  }
+
+  try {
+    await activateStoreAfterImplementation({
+      storeId,
+      reason,
+      operator,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_STATUS_NOT_IMPLEMENTING'
+    ) {
+      redirectWithError(
+        returnPath,
+        'A loja precisa estar em implantacao para ser ativada por este fluxo.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_IMPLEMENTATION_CHECKLIST_INCOMPLETE'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Conclua todos os itens obrigatorios antes de ativar a loja.'
+      )
+    }
+
+    redirectWithError(returnPath, 'Nao foi possivel ativar a loja agora.')
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirect(`${returnPath}?result=loja-ativada`)
 }
 
 export async function archiveStoreAction(formData: FormData) {

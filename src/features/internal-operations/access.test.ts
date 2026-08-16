@@ -49,13 +49,27 @@ describe('internal operation access policy', () => {
   })
 
   test('keeps legacy role hierarchy checks only for page gates', () => {
-    expect(canUseInternalRole({ currentRole: 'viewer', minimumRole: 'viewer' })).toBe(true)
-    expect(canUseInternalRole({ currentRole: 'viewer', minimumRole: 'support' })).toBe(false)
-    expect(canUseInternalRole({ currentRole: 'support', minimumRole: 'viewer' })).toBe(true)
-    expect(canUseInternalRole({ currentRole: 'support', minimumRole: 'superadmin' })).toBe(false)
-    expect(canUseInternalRole({ currentRole: 'superadmin', minimumRole: 'support' })).toBe(true)
-    expect(canUseInternalRole({ currentRole: 'finance', minimumRole: 'support' })).toBe(false)
-    expect(canUseInternalRole({ currentRole: null, minimumRole: 'viewer' })).toBe(false)
+    expect(
+      canUseInternalRole({ currentRole: 'viewer', minimumRole: 'viewer' })
+    ).toBe(true)
+    expect(
+      canUseInternalRole({ currentRole: 'viewer', minimumRole: 'support' })
+    ).toBe(false)
+    expect(
+      canUseInternalRole({ currentRole: 'support', minimumRole: 'viewer' })
+    ).toBe(true)
+    expect(
+      canUseInternalRole({ currentRole: 'support', minimumRole: 'superadmin' })
+    ).toBe(false)
+    expect(
+      canUseInternalRole({ currentRole: 'superadmin', minimumRole: 'support' })
+    ).toBe(true)
+    expect(
+      canUseInternalRole({ currentRole: 'finance', minimumRole: 'support' })
+    ).toBe(false)
+    expect(
+      canUseInternalRole({ currentRole: null, minimumRole: 'viewer' })
+    ).toBe(false)
   })
 
   test('grants every sensitive operation to superadmin', () => {
@@ -91,15 +105,21 @@ describe('internal operation access policy', () => {
       allowed: [
         'view_internal_operations',
         'create_store',
+        'manage_implementation_checklist',
         'apply_billing_discounts',
       ],
     })
   })
 
-  test('allows implementation to reactivate stores without billing access', () => {
+  test('allows implementation to activate stores without billing access', () => {
     expectPermissions({
       role: 'implementation',
-      allowed: ['view_internal_operations', 'reactivate_store'],
+      allowed: [
+        'view_internal_operations',
+        'manage_implementation_checklist',
+        'activate_implemented_store',
+        'reactivate_store',
+      ],
     })
   })
 
@@ -114,6 +134,8 @@ describe('internal operation access policy', () => {
   test('maps backend internal operations to explicit permissions', () => {
     expect(internalOperationPermissionRequirements).toEqual({
       createStore: 'create_store',
+      manageImplementationChecklist: 'manage_implementation_checklist',
+      activateImplementedStore: 'activate_implemented_store',
       reactivateStore: 'reactivate_store',
       archiveStore: 'archive_store',
       manageBillingValues: 'manage_billing_values',
@@ -140,9 +162,15 @@ describe('internal operation access policy', () => {
     expect(
       canRunInternalOperation({
         operator: { role: 'implementation' },
-        operation: 'reactivateStore',
+        operation: 'activateImplementedStore',
       })
     ).toBe(true)
+    expect(
+      canRunInternalOperation({
+        operator: { role: 'sales' },
+        operation: 'activateImplementedStore',
+      })
+    ).toBe(false)
     expect(
       canRunInternalOperation({
         operator: { role: 'support' },

@@ -24,6 +24,8 @@ export const internalRoleLabels: Record<InternalRole, string> = {
 export const internalPermissions = [
   'view_internal_operations',
   'create_store',
+  'manage_implementation_checklist',
+  'activate_implemented_store',
   'reactivate_store',
   'archive_store',
   'manage_billing_values',
@@ -35,7 +37,10 @@ export const internalPermissions = [
 
 export type InternalPermission = (typeof internalPermissions)[number]
 
-const rolePermissionMap: Record<InternalRole, ReadonlySet<InternalPermission>> = {
+const rolePermissionMap: Record<
+  InternalRole,
+  ReadonlySet<InternalPermission>
+> = {
   superadmin: new Set(internalPermissions),
   finance: new Set([
     'view_internal_operations',
@@ -44,17 +49,17 @@ const rolePermissionMap: Record<InternalRole, ReadonlySet<InternalPermission>> =
     'apply_billing_discounts',
     'cancel_billing',
   ]),
-  support: new Set([
-    'view_internal_operations',
-    'reactivate_store',
-  ]),
+  support: new Set(['view_internal_operations', 'reactivate_store']),
   sales: new Set([
     'view_internal_operations',
     'create_store',
+    'manage_implementation_checklist',
     'apply_billing_discounts',
   ]),
   implementation: new Set([
     'view_internal_operations',
+    'manage_implementation_checklist',
+    'activate_implemented_store',
     'reactivate_store',
   ]),
   viewer: new Set(['view_internal_operations']),
@@ -134,7 +139,10 @@ export async function getInternalOperatorSafe(): Promise<InternalOperator | null
   try {
     return await getInternalOperator()
   } catch (error) {
-    console.error('[internal-operations] Failed to resolve internal operator', error)
+    console.error(
+      '[internal-operations] Failed to resolve internal operator',
+      error
+    )
     return null
   }
 }
