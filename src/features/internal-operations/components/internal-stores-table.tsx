@@ -48,11 +48,13 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Copy,
+  Eye,
   Loader2,
   Rocket,
   RotateCcw,
   Send,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 type InternalStoresTableProps = {
@@ -341,7 +343,13 @@ export function InternalStoresTable({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button asChild size="sm" variant="outline" isClickable>
+                        <Link href={`/internal/stores/${store.id}`}>
+                          <Eye className="size-4" />
+                          Abrir
+                        </Link>
+                      </Button>
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button size="sm" variant="outline">
