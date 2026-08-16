@@ -105,6 +105,7 @@ describe('internal operation access policy', () => {
       allowed: [
         'view_internal_operations',
         'create_store',
+        'manage_store_profile',
         'manage_implementation_checklist',
         'apply_billing_discounts',
       ],
@@ -116,6 +117,7 @@ describe('internal operation access policy', () => {
       role: 'implementation',
       allowed: [
         'view_internal_operations',
+        'manage_store_profile',
         'manage_implementation_checklist',
         'activate_implemented_store',
         'reactivate_store',
@@ -138,6 +140,7 @@ describe('internal operation access policy', () => {
       activateImplementedStore: 'activate_implemented_store',
       reactivateStore: 'reactivate_store',
       archiveStore: 'archive_store',
+      manageStoreProfile: 'manage_store_profile',
       manageBillingValues: 'manage_billing_values',
       manageBillingInvoices: 'manage_billing_invoices',
       applyBillingDiscounts: 'apply_billing_discounts',

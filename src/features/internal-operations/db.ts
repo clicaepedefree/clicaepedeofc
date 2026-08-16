@@ -55,6 +55,13 @@ import {
   normalizeInternalPhone,
 } from './internal-store-creation-policy'
 import {
+  buildInternalStoreProfileChangeSummary,
+  hasSensitiveInternalStoreProfileChange,
+  normalizeInternalProfileNullableEmail,
+  normalizeInternalProfileNullableText,
+  type InternalStoreProfileEditValues,
+} from './store-profile-edit-policy'
+import {
   getStoreImplementationChecklistProgress,
   storeImplementationChecklistDefinitions,
   type StoreImplementationChecklistProgress,
@@ -244,6 +251,11 @@ export type InternalStoreOverview = Pick<
     responsibleTaxNumber: string | null
     responsiblePhone: string | null
     responsibleEmail: string | null
+  }
+  commercial: {
+    acquisitionSource: string | null
+    salesOwner: string | null
+    internalNotes: string | null
   }
   address: {
     postalCode: string | null
@@ -1082,6 +1094,9 @@ export async function getInternalStoreOverview(
       responsibleTaxNumber: storeCompanyProfilesTable.responsibleTaxNumber,
       responsiblePhone: storeCompanyProfilesTable.responsiblePhone,
       responsibleEmail: storeCompanyProfilesTable.responsibleEmail,
+      acquisitionSource: storeCompanyProfilesTable.acquisitionSource,
+      salesOwner: storeCompanyProfilesTable.salesOwner,
+      internalNotes: storeCompanyProfilesTable.internalNotes,
       companyPostalCode: storeCompanyProfilesTable.postalCode,
       companyStreet: storeCompanyProfilesTable.street,
       companyNumber: storeCompanyProfilesTable.number,
@@ -1297,6 +1312,11 @@ export async function getInternalStoreOverview(
       ),
       responsiblePhone: store.responsiblePhone,
       responsibleEmail: store.responsibleEmail,
+    },
+    commercial: {
+      acquisitionSource: store.acquisitionSource,
+      salesOwner: store.salesOwner,
+      internalNotes: store.internalNotes,
     },
     address: {
       postalCode: store.companyPostalCode ?? store.addressPostalCode,
@@ -1519,6 +1539,161 @@ export async function findInternalStoreCreationDuplicates(
       eq(storeCompanyProfilesTable.storeId, storesTable.id)
     )
     .where(or(...conditions))
+    .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
+    .limit(5)
+
+  return rows.map(row => {
+    const matchedFields: InternalStoreDuplicateMatch['matchedFields'] = []
+
+    if (row.subdomain === duplicateInputs.subdomain) {
+      matchedFields.push({
+        field: 'subdomain',
+        label: 'Endereco publico',
+        value: row.subdomain,
+      })
+    }
+
+    if (
+      duplicateInputs.companyTaxNumber &&
+      normalizeInternalCnpj(row.companyTaxNumber) ===
+        duplicateInputs.companyTaxNumber
+    ) {
+      matchedFields.push({
+        field: 'companyTaxNumber',
+        label: 'CNPJ',
+        value: maskLast4(row.companyTaxNumber ?? '', 'CNPJ informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.responsibleTaxNumber &&
+      normalizeInternalCpf(row.responsibleTaxNumber) ===
+        duplicateInputs.responsibleTaxNumber
+    ) {
+      matchedFields.push({
+        field: 'responsibleTaxNumber',
+        label: 'CPF do responsavel',
+        value: maskLast4(row.responsibleTaxNumber ?? '', 'CPF informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.companyEmail &&
+      normalizeInternalEmail(row.companyEmail) === duplicateInputs.companyEmail
+    ) {
+      matchedFields.push({
+        field: 'companyEmail',
+        label: 'E-mail da loja',
+        value: maskEmail(row.companyEmail ?? ''),
+      })
+    }
+
+    if (
+      duplicateInputs.responsibleEmail &&
+      normalizeInternalEmail(row.responsibleEmail) ===
+        duplicateInputs.responsibleEmail
+    ) {
+      matchedFields.push({
+        field: 'responsibleEmail',
+        label: 'E-mail do responsavel',
+        value: maskEmail(row.responsibleEmail ?? ''),
+      })
+    }
+
+    if (
+      duplicateInputs.phone1 &&
+      normalizeInternalPhone(row.phone1) === duplicateInputs.phone1
+    ) {
+      matchedFields.push({
+        field: 'phone1',
+        label: 'Telefone da loja',
+        value: maskLast4(row.phone1 ?? '', 'telefone informado'),
+      })
+    }
+
+    if (
+      duplicateInputs.responsiblePhone &&
+      normalizeInternalPhone(row.responsiblePhone) ===
+        duplicateInputs.responsiblePhone
+    ) {
+      matchedFields.push({
+        field: 'responsiblePhone',
+        label: 'Telefone do responsavel',
+        value: maskLast4(row.responsiblePhone ?? '', 'telefone informado'),
+      })
+    }
+
+    return {
+      storeId: row.storeId,
+      storeName: row.storeName,
+      subdomain: row.subdomain,
+      status: row.status,
+      matchedFields,
+    }
+  })
+}
+
+export async function findInternalStoreProfileUpdateDuplicates(
+  values: InternalStoreProfileEditValues
+): Promise<InternalStoreDuplicateMatch[]> {
+  const duplicateInputs = {
+    subdomain: values.subdomain,
+    companyTaxNumber: normalizeInternalCnpj(
+      values.companyTaxNumberReplacement
+    ),
+    responsibleTaxNumber: normalizeInternalCpf(
+      values.responsibleTaxNumberReplacement
+    ),
+    companyEmail: normalizeInternalEmail(values.companyEmail),
+    responsibleEmail: normalizeInternalEmail(values.responsibleEmail),
+    phone1: normalizeInternalPhone(values.phone1),
+    responsiblePhone: normalizeInternalPhone(values.responsiblePhone),
+  }
+  const conditions = [
+    duplicateInputs.subdomain
+      ? eq(storesTable.subdomain, duplicateInputs.subdomain)
+      : undefined,
+    duplicateInputs.companyTaxNumber
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
+      : undefined,
+    duplicateInputs.responsibleTaxNumber
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
+      : undefined,
+    duplicateInputs.companyEmail
+      ? sql`lower(coalesce(${storeCompanyProfilesTable.email}, '')) = ${duplicateInputs.companyEmail}`
+      : undefined,
+    duplicateInputs.responsibleEmail
+      ? sql`lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) = ${duplicateInputs.responsibleEmail}`
+      : undefined,
+    duplicateInputs.phone1
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') = ${duplicateInputs.phone1}`
+      : undefined,
+    duplicateInputs.responsiblePhone
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
+      : undefined,
+  ].filter(Boolean)
+
+  if (conditions.length === 0) return []
+
+  const rows = await db
+    .select({
+      storeId: storesTable.id,
+      storeName: storesTable.name,
+      subdomain: storesTable.subdomain,
+      status: storesTable.status,
+      companyTaxNumber: storeCompanyProfilesTable.companyTaxNumber,
+      responsibleTaxNumber: storeCompanyProfilesTable.responsibleTaxNumber,
+      companyEmail: storeCompanyProfilesTable.email,
+      responsibleEmail: storeCompanyProfilesTable.responsibleEmail,
+      phone1: storeCompanyProfilesTable.phone1,
+      responsiblePhone: storeCompanyProfilesTable.responsiblePhone,
+    })
+    .from(storesTable)
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .where(and(ne(storesTable.id, values.storeId), or(...conditions)))
     .orderBy(desc(storesTable.statusUpdatedAt), desc(storesTable.id))
     .limit(5)
 
@@ -2237,6 +2412,367 @@ export async function createInternalStore({
       responsibleUser,
       accessInvite,
       idempotentReplay: false,
+    }
+  })
+}
+
+const formatNullableAuditValue = (value: string | null | undefined) =>
+  normalizeInternalProfileNullableText(value) ?? 'nao informado'
+
+type StoreProfileAuditSnapshot = {
+  storeName: string
+  subdomain: string
+  companyName: string | null
+  companyTaxNumber: string | null
+  companyEmail: string | null
+  phone1: string | null
+  phone2: string | null
+  responsibleName: string | null
+  responsibleTaxNumber: string | null
+  responsibleEmail: string | null
+  responsiblePhone: string | null
+  postalCode: string | null
+  street: string | null
+  number: string | null
+  district: string | null
+  city: string | null
+  stateCode: string | null
+  acquisitionSource: string | null
+  salesOwner: string | null
+  internalNotes: string | null
+}
+
+const buildStoreProfileAuditRecords = ({
+  before,
+  after,
+}: {
+  before: StoreProfileAuditSnapshot
+  after: StoreProfileAuditSnapshot
+}) => {
+  const records: {
+    label: string
+    before: string | null
+    after: string | null
+  }[] = [
+    { label: 'Loja', before: before.storeName, after: after.storeName },
+    {
+      label: 'Endereco publico',
+      before: before.subdomain,
+      after: after.subdomain,
+    },
+    { label: 'Empresa', before: before.companyName, after: after.companyName },
+    {
+      label: 'CNPJ',
+      before: maskLast4(before.companyTaxNumber ?? '', 'nao informado'),
+      after: maskLast4(after.companyTaxNumber ?? '', 'nao informado'),
+    },
+    {
+      label: 'E-mail da loja',
+      before: before.companyEmail ? maskEmail(before.companyEmail) : null,
+      after: after.companyEmail ? maskEmail(after.companyEmail) : null,
+    },
+    { label: 'Telefone 1', before: before.phone1, after: after.phone1 },
+    { label: 'Telefone 2', before: before.phone2, after: after.phone2 },
+    {
+      label: 'Responsavel',
+      before: before.responsibleName,
+      after: after.responsibleName,
+    },
+    {
+      label: 'CPF do responsavel',
+      before: maskLast4(before.responsibleTaxNumber ?? '', 'nao informado'),
+      after: maskLast4(after.responsibleTaxNumber ?? '', 'nao informado'),
+    },
+    {
+      label: 'E-mail do responsavel',
+      before: before.responsibleEmail
+        ? maskEmail(before.responsibleEmail)
+        : null,
+      after: after.responsibleEmail ? maskEmail(after.responsibleEmail) : null,
+    },
+    {
+      label: 'Telefone do responsavel',
+      before: before.responsiblePhone,
+      after: after.responsiblePhone,
+    },
+    { label: 'CEP', before: before.postalCode, after: after.postalCode },
+    { label: 'Endereco', before: before.street, after: after.street },
+    { label: 'Numero', before: before.number, after: after.number },
+    { label: 'Bairro', before: before.district, after: after.district },
+    { label: 'Cidade', before: before.city, after: after.city },
+    { label: 'UF', before: before.stateCode, after: after.stateCode },
+    {
+      label: 'Origem',
+      before: before.acquisitionSource,
+      after: after.acquisitionSource,
+    },
+    {
+      label: 'Vendedor',
+      before: before.salesOwner,
+      after: after.salesOwner,
+    },
+    {
+      label: 'Observacoes internas',
+      before: before.internalNotes,
+      after: after.internalNotes,
+    },
+  ]
+
+  return records.filter(
+    record =>
+      formatNullableAuditValue(record.before) !==
+      formatNullableAuditValue(record.after)
+  )
+}
+
+export async function updateInternalStoreProfile({
+  values,
+  operator,
+}: {
+  values: InternalStoreProfileEditValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select({
+        id: storesTable.id,
+        name: storesTable.name,
+        subdomain: storesTable.subdomain,
+        status: storesTable.status,
+      })
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [profile] = await tx
+      .select()
+      .from(storeCompanyProfilesTable)
+      .where(eq(storeCompanyProfilesTable.storeId, values.storeId))
+      .limit(1)
+
+    const [businessAddress] = await tx
+      .select()
+      .from(storeAddressesTable)
+      .where(
+        and(
+          eq(storeAddressesTable.storeId, values.storeId),
+          eq(storeAddressesTable.addressType, 'business'),
+          eq(storeAddressesTable.isPrimary, true)
+        )
+      )
+      .limit(1)
+
+    const before: StoreProfileAuditSnapshot = {
+      storeName: store.name,
+      subdomain: store.subdomain,
+      companyName: profile?.companyName ?? null,
+      companyTaxNumber: profile?.companyTaxNumber ?? null,
+      companyEmail: profile?.email ?? null,
+      phone1: profile?.phone1 ?? null,
+      phone2: profile?.phone2 ?? null,
+      responsibleName: profile?.responsibleName ?? null,
+      responsibleTaxNumber: profile?.responsibleTaxNumber ?? null,
+      responsibleEmail: profile?.responsibleEmail ?? null,
+      responsiblePhone: profile?.responsiblePhone ?? null,
+      postalCode: profile?.postalCode ?? businessAddress?.postalCode ?? null,
+      street: profile?.street ?? businessAddress?.street ?? null,
+      number: profile?.number ?? businessAddress?.number ?? null,
+      district: profile?.district ?? businessAddress?.district ?? null,
+      city: profile?.city ?? businessAddress?.city ?? null,
+      stateCode: profile?.stateCode ?? businessAddress?.stateCode ?? null,
+      acquisitionSource: profile?.acquisitionSource ?? null,
+      salesOwner: profile?.salesOwner ?? null,
+      internalNotes: profile?.internalNotes ?? null,
+    }
+
+    const after: StoreProfileAuditSnapshot = {
+      storeName: values.storeName,
+      subdomain: values.subdomain,
+      companyName: normalizeInternalProfileNullableText(values.companyName),
+      companyTaxNumber:
+        values.companyTaxNumberReplacement ||
+        normalizeInternalCnpj(before.companyTaxNumber) ||
+        null,
+      companyEmail: normalizeInternalProfileNullableEmail(values.companyEmail),
+      phone1: values.phone1 || null,
+      phone2: values.phone2 || null,
+      responsibleName: normalizeInternalProfileNullableText(
+        values.responsibleName
+      ),
+      responsibleTaxNumber:
+        values.responsibleTaxNumberReplacement ||
+        normalizeInternalCpf(before.responsibleTaxNumber) ||
+        null,
+      responsibleEmail: normalizeInternalProfileNullableEmail(
+        values.responsibleEmail
+      ),
+      responsiblePhone: values.responsiblePhone || null,
+      postalCode: values.postalCode,
+      street: values.street,
+      number: values.number,
+      district: values.district,
+      city: values.city,
+      stateCode: values.stateCode,
+      acquisitionSource: normalizeInternalProfileNullableText(
+        values.acquisitionSource
+      ),
+      salesOwner: normalizeInternalProfileNullableText(values.salesOwner),
+      internalNotes: normalizeInternalProfileNullableText(values.internalNotes),
+    }
+
+    const changedRecords = buildStoreProfileAuditRecords({ before, after })
+    if (changedRecords.length === 0) {
+      throw new Error('STORE_PROFILE_NO_CHANGES')
+    }
+
+    const sensitiveChanged = hasSensitiveInternalStoreProfileChange({
+      current: {
+        storeName: before.storeName,
+        subdomain: before.subdomain,
+        companyTaxNumber: before.companyTaxNumber,
+        responsibleTaxNumber: before.responsibleTaxNumber,
+        responsibleEmail: before.responsibleEmail,
+      },
+      values,
+    })
+
+    if (sensitiveChanged && !values.sensitiveConfirmation) {
+      throw new Error('SENSITIVE_CONFIRMATION_REQUIRED')
+    }
+
+    await tx
+      .update(storesTable)
+      .set({
+        name: after.storeName,
+        subdomain: after.subdomain,
+        updatedAt: now,
+      })
+      .where(eq(storesTable.id, values.storeId))
+
+    await tx
+      .insert(storeCompanyProfilesTable)
+      .values({
+        storeId: values.storeId,
+        companyTaxNumber: after.companyTaxNumber,
+        companyName: after.companyName,
+        phone1: after.phone1,
+        phone2: after.phone2,
+        email: after.companyEmail,
+        responsibleName: after.responsibleName,
+        responsibleTaxNumber: after.responsibleTaxNumber,
+        responsiblePhone: after.responsiblePhone,
+        responsibleEmail: after.responsibleEmail,
+        postalCode: after.postalCode,
+        street: after.street,
+        number: after.number,
+        district: after.district,
+        city: after.city,
+        stateCode: after.stateCode,
+        acquisitionSource: after.acquisitionSource,
+        salesOwner: after.salesOwner,
+        internalNotes: after.internalNotes,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: storeCompanyProfilesTable.storeId,
+        set: {
+          companyTaxNumber: after.companyTaxNumber,
+          companyName: after.companyName,
+          phone1: after.phone1,
+          phone2: after.phone2,
+          email: after.companyEmail,
+          responsibleName: after.responsibleName,
+          responsibleTaxNumber: after.responsibleTaxNumber,
+          responsiblePhone: after.responsiblePhone,
+          responsibleEmail: after.responsibleEmail,
+          postalCode: after.postalCode,
+          street: after.street,
+          number: after.number,
+          district: after.district,
+          city: after.city,
+          stateCode: after.stateCode,
+          acquisitionSource: after.acquisitionSource,
+          salesOwner: after.salesOwner,
+          internalNotes: after.internalNotes,
+          updatedAt: now,
+        },
+      })
+
+    await tx
+      .insert(storeAddressesTable)
+      .values({
+        storeId: values.storeId,
+        addressType: 'business',
+        label: 'Endereco comercial',
+        postalCode: after.postalCode,
+        street: after.street,
+        number: after.number,
+        district: after.district,
+        city: after.city,
+        stateCode: after.stateCode,
+        isPrimary: true,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          storeAddressesTable.storeId,
+          storeAddressesTable.addressType,
+        ],
+        targetWhere: sql`${storeAddressesTable.isPrimary} = true`,
+        set: {
+          label: 'Endereco comercial',
+          postalCode: after.postalCode,
+          street: after.street,
+          number: after.number,
+          district: after.district,
+          city: after.city,
+          stateCode: after.stateCode,
+          isPrimary: true,
+          updatedAt: now,
+        },
+      })
+
+    const changedLabels = buildInternalStoreProfileChangeSummary({
+      before: Object.fromEntries(
+        changedRecords.map(record => [
+          record.label,
+          formatNullableAuditValue(record.before),
+        ])
+      ),
+      after: Object.fromEntries(
+        changedRecords.map(record => [
+          record.label,
+          formatNullableAuditValue(record.after),
+        ])
+      ),
+    })
+    const diff = changedRecords
+      .map(
+        record =>
+          `${record.label}: ${formatNullableAuditValue(record.before)} -> ${formatNullableAuditValue(record.after)}`
+      )
+      .join('; ')
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'update_store_profile',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      targetUserEmail: after.responsibleEmail,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `Campos alterados: ${changedLabels}. Motivo: ${values.reason}. Antes/depois: ${diff}`,
+    })
+
+    return {
+      storeId: values.storeId,
+      changedFields: changedRecords.map(record => record.label),
     }
   })
 }

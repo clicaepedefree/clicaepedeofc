@@ -9,6 +9,8 @@ type InternalStoreDetailPageProps = {
   }>
   searchParams: Promise<{
     tab?: string
+    result?: string
+    error?: string
   }>
 }
 
@@ -18,7 +20,7 @@ export default async function InternalStoreDetailPage({
 }: InternalStoreDetailPageProps) {
   const operator = await requireInternalOperator('viewer')
   const { storeId } = await params
-  const { tab } = await searchParams
+  const { tab, result, error } = await searchParams
   const parsedStoreId = Number(storeId)
 
   if (!Number.isInteger(parsedStoreId) || parsedStoreId <= 0) {
@@ -36,6 +38,8 @@ export default async function InternalStoreDetailPage({
       operator={operator}
       store={store}
       requestedTab={tab}
+      result={result}
+      error={error}
       basePath={`/internal/stores/${store.id}`}
     />
   )

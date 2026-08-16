@@ -7,6 +7,7 @@ import {
 
 export const internalOperationPermissionRequirements = {
   createStore: 'create_store',
+  manageStoreProfile: 'manage_store_profile',
   manageImplementationChecklist: 'manage_implementation_checklist',
   activateImplementedStore: 'activate_implemented_store',
   reactivateStore: 'reactivate_store',
