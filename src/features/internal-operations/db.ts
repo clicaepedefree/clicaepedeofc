@@ -15,6 +15,7 @@ import {
   billingPlansTable,
   internalStoreProvisioningRequestsTable,
   internalOperationAuditLogsTable,
+  ordersTable,
   storeAccessInvitesTable,
   storeAddressesTable,
   storeBillingEventsTable,
@@ -220,6 +221,112 @@ export type InternalStoreListResult = {
 export type InternalStoreCityFilterOption = {
   city: string
   stateCode: string | null
+}
+
+export type InternalStoreOverview = Pick<
+  SelectStore,
+  | 'id'
+  | 'name'
+  | 'subdomain'
+  | 'status'
+  | 'statusReason'
+  | 'statusUpdatedAt'
+  | 'createdAt'
+  | 'updatedAt'
+> & {
+  company: {
+    companyName: string | null
+    companyTaxNumber: string | null
+    email: string | null
+    phone1: string | null
+    phone2: string | null
+    responsibleName: string | null
+    responsibleTaxNumber: string | null
+    responsiblePhone: string | null
+    responsibleEmail: string | null
+  }
+  address: {
+    postalCode: string | null
+    street: string | null
+    number: string | null
+    district: string | null
+    city: string | null
+    stateCode: string | null
+  }
+  billing: {
+    subscriptionId: number | null
+    subscriptionStatus: string | null
+    planId: number | null
+    planCode: string | null
+    planName: string | null
+    contractedAmount: string | null
+    currency: string | null
+    billingInterval: string | null
+    billingIntervalCount: number | null
+    nextBillingAt: Date | null
+    currentPeriodStart: Date | null
+    currentPeriodEnd: Date | null
+  }
+  invoiceSummary: {
+    totalInvoices: number
+    openInvoices: number
+    overdueInvoices: number
+    openAmount: number
+    overdueAmount: number
+  }
+  invoices: {
+    id: number
+    invoiceNumber: string
+    status: string
+    totalAmount: string
+    amountPaid: string
+    currency: string
+    dueAt: Date
+    paidAt: Date | null
+    createdAt: Date
+  }[]
+  modules: {
+    id: number
+    code: string
+    name: string
+    origin: string
+    status: string
+    isAdditional: boolean
+    additionalAmount: string
+    currency: string
+    startsAt: Date
+    endsAt: Date | null
+  }[]
+  users: {
+    userId: string
+    email: string
+    name: string | null
+    phone: string | null
+    status: string
+    role: string
+    isPrimaryResponsible: boolean
+    lastLoginAt: Date | null
+    permissionCreatedAt: Date
+    permissionUpdatedAt: Date
+    revokedAt: Date | null
+    revokedReason: string | null
+  }[]
+  metrics: {
+    totalOrders: number
+    digitalMenuOrders: number
+    posOrders: number
+    grossRevenue: number
+    lastOrderAt: Date | null
+    lastAccessAt: Date | null
+  }
+  auditLogs: InternalAuditLog[]
+  billingEvents: {
+    id: number
+    eventType: string
+    actorEmail: string | null
+    reason: string | null
+    createdAt: Date
+  }[]
 }
 
 type InternalStoreTransaction = Parameters<
@@ -950,6 +1057,283 @@ export async function listInternalStores({
       hasPreviousPage: currentPage > 1,
       hasNextPage: currentPage < totalPages,
     },
+  }
+}
+
+export async function getInternalStoreOverview(
+  storeId: number
+): Promise<InternalStoreOverview | null> {
+  const [store] = await db
+    .select({
+      id: storesTable.id,
+      name: storesTable.name,
+      subdomain: storesTable.subdomain,
+      status: storesTable.status,
+      statusReason: storesTable.statusReason,
+      statusUpdatedAt: storesTable.statusUpdatedAt,
+      createdAt: storesTable.createdAt,
+      updatedAt: storesTable.updatedAt,
+      companyName: storeCompanyProfilesTable.companyName,
+      companyTaxNumber: storeCompanyProfilesTable.companyTaxNumber,
+      companyEmail: storeCompanyProfilesTable.email,
+      companyPhone1: storeCompanyProfilesTable.phone1,
+      companyPhone2: storeCompanyProfilesTable.phone2,
+      responsibleName: storeCompanyProfilesTable.responsibleName,
+      responsibleTaxNumber: storeCompanyProfilesTable.responsibleTaxNumber,
+      responsiblePhone: storeCompanyProfilesTable.responsiblePhone,
+      responsibleEmail: storeCompanyProfilesTable.responsibleEmail,
+      companyPostalCode: storeCompanyProfilesTable.postalCode,
+      companyStreet: storeCompanyProfilesTable.street,
+      companyNumber: storeCompanyProfilesTable.number,
+      companyDistrict: storeCompanyProfilesTable.district,
+      companyCity: storeCompanyProfilesTable.city,
+      companyStateCode: storeCompanyProfilesTable.stateCode,
+      addressPostalCode: storeAddressesTable.postalCode,
+      addressStreet: storeAddressesTable.street,
+      addressNumber: storeAddressesTable.number,
+      addressDistrict: storeAddressesTable.district,
+      addressCity: storeAddressesTable.city,
+      addressStateCode: storeAddressesTable.stateCode,
+      subscriptionId: storeSubscriptionsTable.id,
+      subscriptionStatus: storeSubscriptionsTable.status,
+      contractedAmount: storeSubscriptionsTable.contractedAmount,
+      currency: storeSubscriptionsTable.currency,
+      billingInterval: storeSubscriptionsTable.billingInterval,
+      billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+      nextBillingAt: storeSubscriptionsTable.nextBillingAt,
+      currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
+      currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
+      planId: billingPlansTable.id,
+      planCode: billingPlansTable.code,
+      planName: billingPlansTable.name,
+    })
+    .from(storesTable)
+    .leftJoin(
+      storeCompanyProfilesTable,
+      eq(storeCompanyProfilesTable.storeId, storesTable.id)
+    )
+    .leftJoin(
+      storeAddressesTable,
+      and(
+        eq(storeAddressesTable.storeId, storesTable.id),
+        eq(storeAddressesTable.addressType, 'business'),
+        eq(storeAddressesTable.isPrimary, true)
+      )
+    )
+    .leftJoin(
+      storeSubscriptionsTable,
+      and(
+        eq(storeSubscriptionsTable.storeId, storesTable.id),
+        sql`${storeSubscriptionsTable.status} in ('trialing', 'active', 'past_due', 'paused')`
+      )
+    )
+    .leftJoin(
+      billingPlansTable,
+      eq(billingPlansTable.id, storeSubscriptionsTable.planId)
+    )
+    .where(eq(storesTable.id, storeId))
+    .limit(1)
+
+  if (!store) return null
+
+  await ensureStoreImplementationChecklistForStores([store.id])
+
+  const [
+    invoiceRows,
+    moduleRows,
+    userRows,
+    metricsRows,
+    auditLogs,
+    billingEvents,
+  ] = await Promise.all([
+    db
+      .select({
+        id: storeBillingInvoicesTable.id,
+        invoiceNumber: storeBillingInvoicesTable.invoiceNumber,
+        status: storeBillingInvoicesTable.status,
+        totalAmount: storeBillingInvoicesTable.totalAmount,
+        amountPaid: storeBillingInvoicesTable.amountPaid,
+        currency: storeBillingInvoicesTable.currency,
+        dueAt: storeBillingInvoicesTable.dueAt,
+        paidAt: storeBillingInvoicesTable.paidAt,
+        createdAt: storeBillingInvoicesTable.createdAt,
+      })
+      .from(storeBillingInvoicesTable)
+      .where(eq(storeBillingInvoicesTable.storeId, storeId))
+      .orderBy(desc(storeBillingInvoicesTable.dueAt))
+      .limit(8),
+    db
+      .select({
+        id: storeModuleEntitlementsTable.id,
+        code: billingModulesTable.code,
+        name: billingModulesTable.name,
+        origin: storeModuleEntitlementsTable.origin,
+        status: storeModuleEntitlementsTable.status,
+        isAdditional: storeModuleEntitlementsTable.isAdditional,
+        additionalAmount: storeModuleEntitlementsTable.additionalAmount,
+        currency: storeModuleEntitlementsTable.currency,
+        startsAt: storeModuleEntitlementsTable.startsAt,
+        endsAt: storeModuleEntitlementsTable.endsAt,
+      })
+      .from(storeModuleEntitlementsTable)
+      .innerJoin(
+        billingModulesTable,
+        eq(billingModulesTable.id, storeModuleEntitlementsTable.moduleId)
+      )
+      .where(eq(storeModuleEntitlementsTable.storeId, storeId))
+      .orderBy(billingModulesTable.name),
+    db
+      .select({
+        userId: usersTable.id,
+        email: usersTable.email,
+        name: usersTable.name,
+        phone: usersTable.phone,
+        status: usersTable.status,
+        role: userStorePermissionsTable.role,
+        isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
+        lastLoginAt: usersTable.lastLoginAt,
+        permissionCreatedAt: userStorePermissionsTable.createdAt,
+        permissionUpdatedAt: userStorePermissionsTable.updatedAt,
+        revokedAt: userStorePermissionsTable.revokedAt,
+        revokedReason: userStorePermissionsTable.revokedReason,
+      })
+      .from(userStorePermissionsTable)
+      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .where(eq(userStorePermissionsTable.storeId, storeId))
+      .orderBy(
+        userStorePermissionsTable.revokedAt,
+        desc(userStorePermissionsTable.isPrimaryResponsible),
+        usersTable.email
+      ),
+    db
+      .select({
+        totalOrders: count(ordersTable.id),
+        digitalMenuOrders: sql<number>`count(*) filter (where ${ordersTable.salesChannel} = 'DIGITAL_MENU')::integer`,
+        posOrders: sql<number>`count(*) filter (where ${ordersTable.salesChannel} = 'POS')::integer`,
+        grossRevenue: sql<string>`coalesce(sum(${ordersTable.totalPrice}), 0)::text`,
+        lastOrderAt: sql<Date | null>`max(${ordersTable.createdAt})`,
+      })
+      .from(ordersTable)
+      .where(eq(ordersTable.storeId, storeId)),
+    db
+      .select()
+      .from(internalOperationAuditLogsTable)
+      .where(eq(internalOperationAuditLogsTable.storeId, storeId))
+      .orderBy(desc(internalOperationAuditLogsTable.createdAt))
+      .limit(12),
+    db
+      .select({
+        id: storeBillingEventsTable.id,
+        eventType: storeBillingEventsTable.eventType,
+        actorEmail: storeBillingEventsTable.actorEmail,
+        reason: storeBillingEventsTable.reason,
+        createdAt: storeBillingEventsTable.createdAt,
+      })
+      .from(storeBillingEventsTable)
+      .where(eq(storeBillingEventsTable.storeId, storeId))
+      .orderBy(desc(storeBillingEventsTable.createdAt))
+      .limit(12),
+  ])
+
+  const invoiceSummary = invoiceRows.reduce(
+    (summary, invoice) => {
+      const receivableAmount = getInvoiceReceivableAmount(invoice)
+
+      summary.totalInvoices += 1
+
+      if (invoice.status === 'pending' || invoice.status === 'overdue') {
+        summary.openInvoices += 1
+        summary.openAmount += receivableAmount
+      }
+
+      if (
+        invoice.status === 'overdue' ||
+        (invoice.status === 'pending' && invoice.dueAt.getTime() < Date.now())
+      ) {
+        summary.overdueInvoices += 1
+        summary.overdueAmount += receivableAmount
+      }
+
+      return summary
+    },
+    {
+      totalInvoices: 0,
+      openInvoices: 0,
+      overdueInvoices: 0,
+      openAmount: 0,
+      overdueAmount: 0,
+    }
+  )
+
+  const lastAccessAt =
+    userRows
+      .map(user => user.lastLoginAt)
+      .filter((date): date is Date => date instanceof Date)
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
+  const metrics = metricsRows[0]
+
+  return {
+    id: store.id,
+    name: store.name,
+    subdomain: store.subdomain,
+    status: store.status,
+    statusReason: store.statusReason,
+    statusUpdatedAt: store.statusUpdatedAt,
+    createdAt: store.createdAt,
+    updatedAt: store.updatedAt,
+    company: {
+      companyName: store.companyName,
+      companyTaxNumber: maskInternalStoreSensitiveDigits(
+        store.companyTaxNumber ?? '',
+        'CNPJ nao informado'
+      ),
+      email: store.companyEmail,
+      phone1: store.companyPhone1,
+      phone2: store.companyPhone2,
+      responsibleName: store.responsibleName,
+      responsibleTaxNumber: maskInternalStoreSensitiveDigits(
+        store.responsibleTaxNumber ?? '',
+        'CPF nao informado'
+      ),
+      responsiblePhone: store.responsiblePhone,
+      responsibleEmail: store.responsibleEmail,
+    },
+    address: {
+      postalCode: store.companyPostalCode ?? store.addressPostalCode,
+      street: store.companyStreet ?? store.addressStreet,
+      number: store.companyNumber ?? store.addressNumber,
+      district: store.companyDistrict ?? store.addressDistrict,
+      city: store.companyCity ?? store.addressCity,
+      stateCode: store.companyStateCode ?? store.addressStateCode,
+    },
+    billing: {
+      subscriptionId: store.subscriptionId,
+      subscriptionStatus: store.subscriptionStatus,
+      planId: store.planId,
+      planCode: store.planCode,
+      planName: store.planName,
+      contractedAmount: store.contractedAmount,
+      currency: store.currency,
+      billingInterval: store.billingInterval,
+      billingIntervalCount: store.billingIntervalCount,
+      nextBillingAt: store.nextBillingAt,
+      currentPeriodStart: store.currentPeriodStart,
+      currentPeriodEnd: store.currentPeriodEnd,
+    },
+    invoiceSummary,
+    invoices: invoiceRows,
+    modules: moduleRows,
+    users: userRows,
+    metrics: {
+      totalOrders: metrics?.totalOrders ?? 0,
+      digitalMenuOrders: metrics?.digitalMenuOrders ?? 0,
+      posOrders: metrics?.posOrders ?? 0,
+      grossRevenue: parseInternalDashboardAmount(metrics?.grossRevenue ?? null),
+      lastOrderAt: metrics?.lastOrderAt ?? null,
+      lastAccessAt,
+    },
+    auditLogs,
+    billingEvents,
   }
 }
 
