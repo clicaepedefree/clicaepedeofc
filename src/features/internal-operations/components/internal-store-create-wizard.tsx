@@ -105,6 +105,14 @@ const getIntervalLabel = (plan: InternalBillingPlanOption) => {
 const getDefaultPlanAmount = (plan: InternalBillingPlanOption) =>
   Number(plan.defaultAmount).toFixed(2).replace('.', ',')
 
+const createProvisioningIdempotencyKey = () => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+
+  return `internal-store-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 const FieldError = ({ error }: { error?: string }) =>
   error ? <p className="mt-1 text-xs text-destructive">{error}</p> : null
 
@@ -132,9 +140,10 @@ export function InternalStoreCreateWizard({
   const [isPostalCodePending, startPostalCodeTransition] = useTransition()
   const [currentStep, setCurrentStep] =
     useState<InternalStoreCreationStep>('responsible')
-  const [values, setValues] = useState<InternalStoreCreationValues>(
-    internalStoreCreationInitialValues
-  )
+  const [values, setValues] = useState<InternalStoreCreationValues>(() => ({
+    ...internalStoreCreationInitialValues,
+    provisioningIdempotencyKey: createProvisioningIdempotencyKey(),
+  }))
   const [errors, setErrors] = useState<WizardErrors>({})
   const [duplicateMatches, setDuplicateMatches] = useState<
     InternalStoreDuplicateMatch[]

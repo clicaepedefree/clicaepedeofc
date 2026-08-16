@@ -1,13 +1,16 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
+import { buildBillingInvoiceDraft } from '@/features/billing/billing-policy'
 import { normalizeUserEmail } from '@/features/user/user-policy'
 import { db } from '@/services/db'
 import {
   billingModulesTable,
   billingPlanModulesTable,
   billingPlansTable,
+  internalStoreProvisioningRequestsTable,
   internalOperationAuditLogsTable,
   storeAddressesTable,
   storeBillingEventsTable,
+  storeBillingInvoicesTable,
   storeCompanyProfilesTable,
   storeModuleEntitlementsTable,
   storeSubscriptionsTable,
@@ -16,6 +19,7 @@ import {
   usersTable,
   type SelectStore,
 } from '@/services/db/schema'
+import { createHash } from 'node:crypto'
 import { and, count, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
 import {
@@ -49,7 +53,8 @@ export type InternalStoreListItem = Pick<
   }[]
 }
 
-export type InternalAuditLog = typeof internalOperationAuditLogsTable.$inferSelect
+export type InternalAuditLog =
+  typeof internalOperationAuditLogsTable.$inferSelect
 
 export type InternalBillingPlanOption = {
   id: number
@@ -90,9 +95,12 @@ const storeStatusValues: InternalStoreStatus[] = [
   'archived',
 ]
 
-export function parseStoreStatus(value: unknown): InternalStoreStatus | undefined {
+export function parseStoreStatus(
+  value: unknown
+): InternalStoreStatus | undefined {
   if (typeof value !== 'string') return undefined
-  if (!storeStatusValues.includes(value as InternalStoreStatus)) return undefined
+  if (!storeStatusValues.includes(value as InternalStoreStatus))
+    return undefined
 
   return value as InternalStoreStatus
 }
@@ -125,7 +133,9 @@ export async function listInternalStores({
   search?: string
 }): Promise<InternalStoreListItem[]> {
   const trimmedSearch = search?.trim()
-  const searchPattern = trimmedSearch ? `%${trimmedSearch.toLowerCase()}%` : null
+  const searchPattern = trimmedSearch
+    ? `%${trimmedSearch.toLowerCase()}%`
+    : null
 
   const stores = await db
     .select({
@@ -363,7 +373,8 @@ export async function findInternalStoreCreationDuplicates(
 
     if (
       duplicateInputs.companyTaxNumber &&
-      normalizeInternalCnpj(row.companyTaxNumber) === duplicateInputs.companyTaxNumber
+      normalizeInternalCnpj(row.companyTaxNumber) ===
+        duplicateInputs.companyTaxNumber
     ) {
       matchedFields.push({
         field: 'companyTaxNumber',
@@ -511,6 +522,31 @@ const getSubscriptionPeriod = ({
   }
 }
 
+export const getInternalStoreProvisioningPayloadHash = (
+  values: InternalStoreCreationValues
+) =>
+  createHash('sha256')
+    .update(
+      JSON.stringify({
+        ...values,
+        duplicateOverrideConfirmed: undefined,
+        duplicateReviewToken: undefined,
+      })
+    )
+    .digest('hex')
+
+export const buildInternalStoreInitialInvoiceNumber = ({
+  storeId,
+  subscriptionId,
+}: {
+  storeId: number
+  subscriptionId: number
+}) => `CP-${storeId}-${subscriptionId}-001`
+
+export const shouldCreateInternalStoreInitialInvoice = (
+  subscriptionStatus: ReturnType<typeof getSubscriptionPeriod>['status']
+) => subscriptionStatus === 'active'
+
 export async function createInternalStore({
   values,
   operator,
@@ -519,9 +555,96 @@ export async function createInternalStore({
   operator: InternalOperator
 }) {
   const responsibleEmail = normalizeUserEmail(values.responsibleEmail)
+  const payloadHash = getInternalStoreProvisioningPayloadHash(values)
   const now = new Date()
 
   return await db.transaction(async tx => {
+    const [provisioningRequest] = await tx
+      .insert(internalStoreProvisioningRequestsTable)
+      .values({
+        idempotencyKey: values.provisioningIdempotencyKey,
+        status: 'processing',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        payloadHash,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: internalStoreProvisioningRequestsTable.idempotencyKey,
+      })
+      .returning()
+
+    if (!provisioningRequest) {
+      const [existingRequest] = await tx
+        .select({
+          payloadHash: internalStoreProvisioningRequestsTable.payloadHash,
+          status: internalStoreProvisioningRequestsTable.status,
+          storeId: internalStoreProvisioningRequestsTable.storeId,
+          subscriptionId: internalStoreProvisioningRequestsTable.subscriptionId,
+          invoiceId: internalStoreProvisioningRequestsTable.invoiceId,
+        })
+        .from(internalStoreProvisioningRequestsTable)
+        .where(
+          eq(
+            internalStoreProvisioningRequestsTable.idempotencyKey,
+            values.provisioningIdempotencyKey
+          )
+        )
+        .limit(1)
+
+      if (!existingRequest) throw new Error('PROVISIONING_REQUEST_NOT_FOUND')
+      if (existingRequest.payloadHash !== payloadHash) {
+        throw new Error('IDEMPOTENCY_KEY_REUSED')
+      }
+      if (
+        existingRequest.status !== 'succeeded' ||
+        !existingRequest.storeId ||
+        !existingRequest.subscriptionId
+      ) {
+        throw new Error('PROVISIONING_REQUEST_IN_PROGRESS')
+      }
+
+      const [existingStore] = await tx
+        .select()
+        .from(storesTable)
+        .where(eq(storesTable.id, existingRequest.storeId))
+        .limit(1)
+      const [existingSubscription] = await tx
+        .select()
+        .from(storeSubscriptionsTable)
+        .where(eq(storeSubscriptionsTable.id, existingRequest.subscriptionId))
+        .limit(1)
+      const [responsibleUser] = await tx
+        .select()
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.status, 'active'),
+            sql`lower(${usersTable.email}) = ${responsibleEmail}`
+          )
+        )
+        .limit(1)
+      const [existingInvoice] = existingRequest.invoiceId
+        ? await tx
+            .select()
+            .from(storeBillingInvoicesTable)
+            .where(eq(storeBillingInvoicesTable.id, existingRequest.invoiceId))
+            .limit(1)
+        : [null]
+
+      if (!existingStore || !existingSubscription || !responsibleUser) {
+        throw new Error('PROVISIONING_REQUEST_INCOMPLETE')
+      }
+
+      return {
+        store: existingStore,
+        subscription: existingSubscription,
+        invoice: existingInvoice,
+        responsibleUser,
+        idempotentReplay: true,
+      }
+    }
+
     const [responsibleUser] = await tx
       .select()
       .from(usersTable)
@@ -639,6 +762,25 @@ export async function createInternalStore({
       })
       .returning()
 
+    const [initialInvoice] = shouldCreateInternalStoreInitialInvoice(
+      period.status
+    )
+      ? await tx
+          .insert(storeBillingInvoicesTable)
+          .values(
+            buildBillingInvoiceDraft({
+              invoiceNumber: buildInternalStoreInitialInvoiceNumber({
+                storeId: store.id,
+                subscriptionId: subscription.id,
+              }),
+              dueAt: now,
+              plan,
+              subscription,
+            })
+          )
+          .returning()
+      : [null]
+
     const planModules = await tx
       .select({
         id: billingPlanModulesTable.id,
@@ -737,11 +879,33 @@ export async function createInternalStore({
         responsibleUserId: responsibleUser.id,
         planId: plan.id,
         subscriptionId: subscription.id,
+        invoiceId: initialInvoice?.id ?? null,
         planModuleCount: planModules.length,
         additionalModuleIds,
       },
       metadata: { source: 'internal_store_creation' },
     })
+
+    if (initialInvoice) {
+      await tx.insert(storeBillingEventsTable).values({
+        storeId: store.id,
+        subscriptionId: subscription.id,
+        invoiceId: initialInvoice.id,
+        eventType: 'invoice_created',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: values.reason,
+        previousValues: null,
+        newValues: {
+          invoiceId: initialInvoice.id,
+          invoiceNumber: initialInvoice.invoiceNumber,
+          status: initialInvoice.status,
+          totalAmount: initialInvoice.totalAmount,
+          dueAt: initialInvoice.dueAt,
+        },
+        metadata: { source: 'internal_store_creation' },
+      })
+    }
 
     await tx.insert(internalOperationAuditLogsTable).values({
       action: 'create_store',
@@ -756,10 +920,25 @@ export async function createInternalStore({
       reason: values.reason,
     })
 
+    await tx
+      .update(internalStoreProvisioningRequestsTable)
+      .set({
+        status: 'succeeded',
+        storeId: store.id,
+        subscriptionId: subscription.id,
+        invoiceId: initialInvoice?.id ?? null,
+        updatedAt: now,
+      })
+      .where(
+        eq(internalStoreProvisioningRequestsTable.id, provisioningRequest.id)
+      )
+
     return {
       store,
       subscription,
+      invoice: initialInvoice,
       responsibleUser,
+      idempotentReplay: false,
     }
   })
 }
@@ -908,7 +1087,9 @@ export async function archiveStore({
         statusUpdatedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(storesTable.id, storeId), ne(storesTable.status, 'archived')))
+      .where(
+        and(eq(storesTable.id, storeId), ne(storesTable.status, 'archived'))
+      )
       .returning()
 
     if (!updatedStore) throw new Error('STORE_ALREADY_ARCHIVED')

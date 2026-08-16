@@ -66,6 +66,14 @@ const getInternalStoreCreationErrorMessage = (error: unknown) => {
       return 'Selecione apenas modulos ativos para continuar.'
     }
 
+    if (error.message === 'IDEMPOTENCY_KEY_REUSED') {
+      return 'Essa tentativa de cadastro ja foi usada com outros dados. Recarregue a pagina e tente novamente.'
+    }
+
+    if (error.message === 'PROVISIONING_REQUEST_IN_PROGRESS') {
+      return 'Esse cadastro ainda esta sendo processado. Aguarde alguns segundos e tente novamente.'
+    }
+
     if (
       error.message.includes('stores_subdomain_unique') ||
       error.message.includes('duplicate key')
