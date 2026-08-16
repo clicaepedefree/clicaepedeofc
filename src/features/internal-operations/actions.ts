@@ -4,6 +4,7 @@ import {
   archiveStore,
   activateStoreAfterImplementation,
   blockStoreAccess,
+  changeStoreSubscriptionPlan,
   createInternalStore,
   findInternalStoreCreationDuplicates,
   findInternalStoreProfileUpdateDuplicates,
@@ -44,6 +45,10 @@ import {
   storeSubscriptionTermsSchema,
   type StoreSubscriptionTermsValues,
 } from '@/features/internal-operations/subscription-terms-policy'
+import {
+  storeSubscriptionPlanChangeSchema,
+  type StoreSubscriptionPlanChangeValues,
+} from '@/features/internal-operations/subscription-plan-change-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -1003,4 +1008,105 @@ export async function updateStoreSubscriptionTermsAction(formData: FormData) {
   revalidatePath('/internal/stores')
   revalidatePath('/internal-operations')
   redirectWithResult(returnPath, 'condicao-plano-atualizada')
+}
+
+export async function changeStoreSubscriptionPlanAction(formData: FormData) {
+  const operator = await requireInternalOperation('manageBillingValues')
+  const returnPath = getReturnPath(formData)
+  let wasAppliedImmediately = false
+  const values: StoreSubscriptionPlanChangeValues = (() => {
+    try {
+      return storeSubscriptionPlanChangeSchema.parse({
+        storeId: formData.get('storeId'),
+        subscriptionId: formData.get('subscriptionId'),
+        targetPlanId: formData.get('targetPlanId'),
+        timing: formData.get('timing'),
+        valueMode: formData.get('valueMode'),
+        customContractedAmount: formData.get('customContractedAmount'),
+        moduleTreatment: formData.get('moduleTreatment'),
+        prorationPolicy: formData.get('prorationPolicy'),
+        confirmation: formData.get('confirmation'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error && 'issues' in error
+          ? String(
+              (error as { issues?: { message?: string }[] }).issues?.[0]
+                ?.message
+            )
+          : 'Revise plano, vigencia, valor, modulos e motivo.'
+
+      redirectWithError(returnPath, message)
+      throw new Error('INVALID_STORE_SUBSCRIPTION_PLAN_CHANGE_FORM')
+    }
+  })()
+
+  try {
+    const result = await changeStoreSubscriptionPlan({
+      values,
+      operator,
+    })
+
+    wasAppliedImmediately = Boolean(result.appliedSubscription)
+    revalidatePath('/internal/stores')
+    revalidatePath('/internal-operations')
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ARCHIVED') {
+      redirectWithError(
+        returnPath,
+        'Loja arquivada nao permite mudanca de plano.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_SUBSCRIPTION_NOT_FOUND'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Assinatura ativa nao encontrada para esta loja.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_SUBSCRIPTION_PLAN_UNCHANGED'
+    ) {
+      redirectWithError(returnPath, 'Escolha um plano diferente do atual.')
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'STORE_SUBSCRIPTION_PLAN_CHANGE_PENDING'
+    ) {
+      redirectWithError(
+        returnPath,
+        'Ja existe uma mudanca de plano programada para esta assinatura.'
+      )
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === 'NEXT_BILLING_DATE_REQUIRED'
+    ) {
+      redirectWithError(
+        returnPath,
+        'A assinatura precisa ter proxima cobranca para programar mudanca.'
+      )
+    }
+
+    console.error(
+      '[internal-operations] Failed to change subscription plan',
+      error
+    )
+    redirectWithError(returnPath, 'Nao foi possivel mudar o plano agora.')
+  }
+
+  redirectWithResult(
+    returnPath,
+    wasAppliedImmediately
+      ? 'mudanca-plano-aplicada'
+      : 'mudanca-plano-programada'
+  )
 }

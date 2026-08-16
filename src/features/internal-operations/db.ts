@@ -22,12 +22,14 @@ import {
   storeAccessInvitesTable,
   storeAccessBlocksTable,
   storeAddressesTable,
+  storeBillingAdjustmentsTable,
   storeBillingEventsTable,
   storeBillingInvoicesTable,
   storeCompanyProfilesTable,
   storeImplementationChecklistItemsTable,
   storeImplementationChecklistEventsTable,
   storeModuleEntitlementsTable,
+  storeSubscriptionPlanChangesTable,
   storeSubscriptionsTable,
   storesTable,
   userStorePermissionsTable,
@@ -87,6 +89,15 @@ import {
   getExpectedSubscriptionBlockAt,
   type StoreSubscriptionTermsValues,
 } from './subscription-terms-policy'
+import {
+  calculatePlanChangeProration,
+  getModuleTreatmentLabel,
+  getPlanChangeTimingLabel,
+  getProrationPolicyLabel,
+  resolvePlanChangeContractedAmount,
+  resolvePlanChangeEffectiveAt,
+  type StoreSubscriptionPlanChangeValues,
+} from './subscription-plan-change-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -161,6 +172,26 @@ export type InternalBillingPlanOption = {
   billingInterval: string
   billingIntervalCount: number
   trialDays: number
+}
+
+export type InternalStorePendingPlanChange = {
+  id: number
+  fromPlanId: number
+  toPlanId: number
+  toPlanName: string
+  toPlanCode: string
+  timing: string
+  status: string
+  moduleTreatment: string
+  keepCustomAmount: boolean
+  previousContractedAmount: string
+  nextContractedAmount: string
+  currency: string
+  effectiveAt: Date
+  reason: string
+  proration: Record<string, unknown> | null
+  actorEmail: string
+  createdAt: Date
 }
 
 export type InternalBillingModuleOption = {
@@ -312,6 +343,7 @@ export type InternalStoreOverview = Pick<
     currentPeriodStart: Date | null
     currentPeriodEnd: Date | null
   }
+  pendingPlanChange: InternalStorePendingPlanChange | null
   accessBlock: {
     id: number
     reason: string
@@ -341,6 +373,20 @@ export type InternalStoreOverview = Pick<
     currency: string
     dueAt: Date
     paidAt: Date | null
+    createdAt: Date
+  }[]
+  billingAdjustments: {
+    id: number
+    planChangeId: number
+    adjustmentType: string
+    status: string
+    amount: string
+    currency: string
+    competenceStart: Date
+    competenceEnd: Date
+    calculationSnapshot: Record<string, unknown>
+    reason: string
+    actorEmail: string
     createdAt: Date
   }[]
   modules: {
@@ -1222,6 +1268,8 @@ export async function getInternalStoreOverview(
     auditLogs,
     billingEvents,
     accessBlockRows,
+    pendingPlanChangeRows,
+    billingAdjustmentRows,
   ] = await Promise.all([
     db
       .select({
@@ -1330,6 +1378,60 @@ export async function getInternalStoreOverview(
       .where(eq(storeAccessBlocksTable.storeId, storeId))
       .orderBy(desc(storeAccessBlocksTable.blockedAt))
       .limit(1),
+    db
+      .select({
+        id: storeSubscriptionPlanChangesTable.id,
+        fromPlanId: storeSubscriptionPlanChangesTable.fromPlanId,
+        toPlanId: storeSubscriptionPlanChangesTable.toPlanId,
+        toPlanName: billingPlansTable.name,
+        toPlanCode: billingPlansTable.code,
+        timing: storeSubscriptionPlanChangesTable.timing,
+        status: storeSubscriptionPlanChangesTable.status,
+        moduleTreatment: storeSubscriptionPlanChangesTable.moduleTreatment,
+        keepCustomAmount: storeSubscriptionPlanChangesTable.keepCustomAmount,
+        previousContractedAmount:
+          storeSubscriptionPlanChangesTable.previousContractedAmount,
+        nextContractedAmount:
+          storeSubscriptionPlanChangesTable.nextContractedAmount,
+        currency: storeSubscriptionPlanChangesTable.currency,
+        effectiveAt: storeSubscriptionPlanChangesTable.effectiveAt,
+        reason: storeSubscriptionPlanChangesTable.reason,
+        metadata: storeSubscriptionPlanChangesTable.metadata,
+        actorEmail: storeSubscriptionPlanChangesTable.actorEmail,
+        createdAt: storeSubscriptionPlanChangesTable.createdAt,
+      })
+      .from(storeSubscriptionPlanChangesTable)
+      .innerJoin(
+        billingPlansTable,
+        eq(billingPlansTable.id, storeSubscriptionPlanChangesTable.toPlanId)
+      )
+      .where(
+        and(
+          eq(storeSubscriptionPlanChangesTable.storeId, storeId),
+          eq(storeSubscriptionPlanChangesTable.status, 'scheduled')
+        )
+      )
+      .orderBy(desc(storeSubscriptionPlanChangesTable.createdAt))
+      .limit(1),
+    db
+      .select({
+        id: storeBillingAdjustmentsTable.id,
+        planChangeId: storeBillingAdjustmentsTable.planChangeId,
+        adjustmentType: storeBillingAdjustmentsTable.adjustmentType,
+        status: storeBillingAdjustmentsTable.status,
+        amount: storeBillingAdjustmentsTable.amount,
+        currency: storeBillingAdjustmentsTable.currency,
+        competenceStart: storeBillingAdjustmentsTable.competenceStart,
+        competenceEnd: storeBillingAdjustmentsTable.competenceEnd,
+        calculationSnapshot: storeBillingAdjustmentsTable.calculationSnapshot,
+        reason: storeBillingAdjustmentsTable.reason,
+        actorEmail: storeBillingAdjustmentsTable.actorEmail,
+        createdAt: storeBillingAdjustmentsTable.createdAt,
+      })
+      .from(storeBillingAdjustmentsTable)
+      .where(eq(storeBillingAdjustmentsTable.storeId, storeId))
+      .orderBy(desc(storeBillingAdjustmentsTable.createdAt))
+      .limit(6),
   ])
 
   const invoiceSummary = invoiceRows.reduce(
@@ -1369,6 +1471,9 @@ export async function getInternalStoreOverview(
       .sort((a, b) => b.getTime() - a.getTime())[0] ?? null
   const metrics = metricsRows[0]
   const accessBlock = accessBlockRows[0] ?? null
+  const pendingPlanChange = pendingPlanChangeRows[0] ?? null
+  const pendingPlanChangeMetadata =
+    (pendingPlanChange?.metadata as Record<string, unknown> | undefined) ?? {}
 
   return {
     id: store.id,
@@ -1438,6 +1543,14 @@ export async function getInternalStoreOverview(
       currentPeriodStart: store.currentPeriodStart,
       currentPeriodEnd: store.currentPeriodEnd,
     },
+    pendingPlanChange: pendingPlanChange
+      ? {
+          ...pendingPlanChange,
+          proration:
+            (pendingPlanChangeMetadata.proration as Record<string, unknown>) ??
+            null,
+        }
+      : null,
     accessBlock: accessBlock
       ? {
           ...accessBlock,
@@ -1446,6 +1559,11 @@ export async function getInternalStoreOverview(
       : null,
     invoiceSummary,
     invoices: invoiceRows,
+    billingAdjustments: billingAdjustmentRows.map(adjustment => ({
+      ...adjustment,
+      calculationSnapshot:
+        (adjustment.calculationSnapshot as Record<string, unknown>) ?? {},
+    })),
     modules: moduleRows,
     users: userRows,
     metrics: {
@@ -2081,6 +2199,14 @@ export const buildInternalStoreInitialInvoiceNumber = ({
   storeId: number
   subscriptionId: number
 }) => `CP-${storeId}-${subscriptionId}-001`
+
+export const buildInternalStoreProrationInvoiceNumber = ({
+  storeId,
+  planChangeId,
+}: {
+  storeId: number
+  planChangeId: number
+}) => `CP-${storeId}-PROR-${planChangeId}`
 
 export const shouldCreateInternalStoreInitialInvoice = (
   subscriptionStatus: ReturnType<typeof getSubscriptionPeriod>['status']
@@ -3343,6 +3469,1034 @@ export async function updateStoreSubscriptionTerms({
     })
 
     return updatedSubscription
+  })
+}
+
+export async function changeStoreSubscriptionPlan({
+  values,
+  operator,
+}: {
+  values: StoreSubscriptionPlanChangeValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [store] = await tx
+      .select({
+        id: storesTable.id,
+        status: storesTable.status,
+      })
+      .from(storesTable)
+      .where(eq(storesTable.id, values.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [subscription] = await tx
+      .select({
+        id: storeSubscriptionsTable.id,
+        storeId: storeSubscriptionsTable.storeId,
+        status: storeSubscriptionsTable.status,
+        planId: storeSubscriptionsTable.planId,
+        contractedAmount: storeSubscriptionsTable.contractedAmount,
+        currency: storeSubscriptionsTable.currency,
+        billingInterval: storeSubscriptionsTable.billingInterval,
+        billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+        discountType: storeSubscriptionsTable.discountType,
+        discountValue: storeSubscriptionsTable.discountValue,
+        discountValidUntil: storeSubscriptionsTable.discountValidUntil,
+        paymentGraceDays: storeSubscriptionsTable.paymentGraceDays,
+        startsAt: storeSubscriptionsTable.startsAt,
+        currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
+        currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
+        nextBillingAt: storeSubscriptionsTable.nextBillingAt,
+      })
+      .from(storeSubscriptionsTable)
+      .where(
+        and(
+          eq(storeSubscriptionsTable.id, values.subscriptionId),
+          eq(storeSubscriptionsTable.storeId, values.storeId),
+          inArray(storeSubscriptionsTable.status, [
+            'trialing',
+            'active',
+            'past_due',
+            'paused',
+          ])
+        )
+      )
+      .limit(1)
+
+    if (!subscription) throw new Error('STORE_SUBSCRIPTION_NOT_FOUND')
+    if (subscription.planId === values.targetPlanId) {
+      throw new Error('STORE_SUBSCRIPTION_PLAN_UNCHANGED')
+    }
+
+    const [pendingPlanChange] = await tx
+      .select({ id: storeSubscriptionPlanChangesTable.id })
+      .from(storeSubscriptionPlanChangesTable)
+      .where(
+        and(
+          eq(storeSubscriptionPlanChangesTable.subscriptionId, subscription.id),
+          eq(storeSubscriptionPlanChangesTable.status, 'scheduled')
+        )
+      )
+      .limit(1)
+
+    if (pendingPlanChange) {
+      throw new Error('STORE_SUBSCRIPTION_PLAN_CHANGE_PENDING')
+    }
+
+    const [targetPlan] = await tx
+      .select()
+      .from(billingPlansTable)
+      .where(
+        and(
+          eq(billingPlansTable.id, values.targetPlanId),
+          eq(billingPlansTable.status, 'active')
+        )
+      )
+      .limit(1)
+
+    if (!targetPlan) throw new Error('BILLING_PLAN_NOT_FOUND')
+
+    const [currentPlan] = await tx
+      .select()
+      .from(billingPlansTable)
+      .where(eq(billingPlansTable.id, subscription.planId))
+      .limit(1)
+
+    const nextContractedAmount = normalizeCurrencyAmount(
+      resolvePlanChangeContractedAmount({
+        valueMode: values.valueMode,
+        currentContractedAmount: subscription.contractedAmount,
+        planDefaultAmount: targetPlan.defaultAmount,
+        customContractedAmount: values.customContractedAmount,
+      })
+    )
+    const effectiveAt = resolvePlanChangeEffectiveAt({
+      timing: values.timing,
+      now,
+      nextBillingAt: subscription.nextBillingAt,
+    })
+    const keepCustomAmount = values.valueMode !== 'use_plan_default'
+    const proration = calculatePlanChangeProration({
+      timing: values.timing,
+      policy: values.prorationPolicy,
+      currentContractedAmount: subscription.contractedAmount,
+      nextContractedAmount,
+      currency: targetPlan.currency,
+      periodStart: subscription.currentPeriodStart,
+      periodEnd: subscription.currentPeriodEnd,
+      effectiveAt,
+    })
+
+    const planModules = await tx
+      .select({
+        id: billingPlanModulesTable.id,
+        moduleId: billingPlanModulesTable.moduleId,
+      })
+      .from(billingPlanModulesTable)
+      .innerJoin(
+        billingModulesTable,
+        and(
+          eq(billingModulesTable.id, billingPlanModulesTable.moduleId),
+          eq(billingModulesTable.status, 'active')
+        )
+      )
+      .where(
+        and(
+          eq(billingPlanModulesTable.planId, targetPlan.id),
+          eq(billingPlanModulesTable.status, 'active'),
+          sql`${billingPlanModulesTable.endsAt} is null`
+        )
+      )
+
+    const currentPlanEntitlements = await tx
+      .select({
+        moduleId: storeModuleEntitlementsTable.moduleId,
+        startsAt: storeModuleEntitlementsTable.startsAt,
+      })
+      .from(storeModuleEntitlementsTable)
+      .where(
+        and(
+          eq(storeModuleEntitlementsTable.storeId, values.storeId),
+          eq(storeModuleEntitlementsTable.subscriptionId, subscription.id),
+          eq(storeModuleEntitlementsTable.origin, 'plan'),
+          eq(storeModuleEntitlementsTable.status, 'active'),
+          sql`${storeModuleEntitlementsTable.endsAt} is null`
+        )
+      )
+
+    const targetPlanModuleIds = new Set(
+      planModules.map(module => module.moduleId)
+    )
+    const previousPlanModuleIds = [
+      ...new Set(currentPlanEntitlements.map(module => module.moduleId)),
+    ]
+    const removedModuleIds = previousPlanModuleIds.filter(
+      moduleId => !targetPlanModuleIds.has(moduleId)
+    )
+    const previousValues = {
+      subscriptionId: subscription.id,
+      plan: currentPlan
+        ? {
+            id: currentPlan.id,
+            code: currentPlan.code,
+            name: currentPlan.name,
+            defaultAmount: currentPlan.defaultAmount,
+            billingInterval: currentPlan.billingInterval,
+            billingIntervalCount: currentPlan.billingIntervalCount,
+          }
+        : { id: subscription.planId },
+      contractedAmount: subscription.contractedAmount,
+      currency: subscription.currency,
+      billingInterval: subscription.billingInterval,
+      billingIntervalCount: subscription.billingIntervalCount,
+      currentPeriodStart: subscription.currentPeriodStart.toISOString(),
+      currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
+      nextBillingAt: subscription.nextBillingAt.toISOString(),
+      moduleIds: previousPlanModuleIds,
+    }
+    const newValues = {
+      plan: {
+        id: targetPlan.id,
+        code: targetPlan.code,
+        name: targetPlan.name,
+        defaultAmount: targetPlan.defaultAmount,
+        billingInterval: targetPlan.billingInterval,
+        billingIntervalCount: targetPlan.billingIntervalCount,
+      },
+      contractedAmount: nextContractedAmount,
+      currency: targetPlan.currency,
+      timing: values.timing,
+      effectiveAt: effectiveAt.toISOString(),
+      keepCustomAmount,
+      moduleTreatment: values.moduleTreatment,
+      prorationPolicy: values.prorationPolicy,
+      proration,
+      moduleIds: [...targetPlanModuleIds],
+      removedModuleIds,
+    }
+
+    if (values.timing === 'next_renewal') {
+      const [scheduledPlanChange] = await tx
+        .insert(storeSubscriptionPlanChangesTable)
+        .values({
+          storeId: values.storeId,
+          subscriptionId: subscription.id,
+          fromPlanId: subscription.planId,
+          toPlanId: targetPlan.id,
+          timing: values.timing,
+          status: 'scheduled',
+          moduleTreatment: values.moduleTreatment,
+          keepCustomAmount,
+          previousContractedAmount: subscription.contractedAmount,
+          nextContractedAmount,
+          currency: targetPlan.currency,
+          effectiveAt,
+          actorClerkId: operator.clerkId,
+          actorEmail: operator.email,
+          reason: values.reason,
+          previousValues,
+          newValues,
+          metadata: {
+            source: 'internal_plan_change',
+            stage: 'scheduled',
+            timingLabel: getPlanChangeTimingLabel(values.timing),
+            moduleTreatmentLabel: getModuleTreatmentLabel(
+              values.moduleTreatment
+            ),
+            prorationPolicyLabel: getProrationPolicyLabel(
+              values.prorationPolicy
+            ),
+            proration,
+          },
+          updatedAt: now,
+        })
+        .returning()
+
+      await tx.insert(storeBillingEventsTable).values({
+        storeId: values.storeId,
+        subscriptionId: subscription.id,
+        eventType: 'subscription_changed',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: values.reason,
+        previousValues,
+        newValues,
+        metadata: {
+          source: 'internal_plan_change',
+          stage: 'scheduled',
+          planChangeId: scheduledPlanChange.id,
+          proration,
+        },
+      })
+
+      await tx.insert(internalOperationAuditLogsTable).values({
+        action: 'change_store_subscription_plan',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        actorName: operator.name,
+        storeId: values.storeId,
+        targetUserEmail: null,
+        previousStoreStatus: store.status,
+        newStoreStatus: store.status,
+        reason: `${values.reason} | plano=${subscription.planId}->${targetPlan.id}; vigencia=proxima_renovacao; valor=${nextContractedAmount}`,
+      })
+
+      return {
+        planChange: scheduledPlanChange,
+        appliedSubscription: null,
+      }
+    }
+
+    await tx
+      .update(storeSubscriptionsTable)
+      .set({
+        status: 'canceled',
+        canceledAt: now,
+        cancellationReason: `Mudanca imediata para plano ${targetPlan.code}: ${values.reason}`,
+        updatedAt: now,
+      })
+      .where(eq(storeSubscriptionsTable.id, subscription.id))
+
+    await tx
+      .update(storeModuleEntitlementsTable)
+      .set({
+        status: 'expired',
+        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        reason: `Plano substituido por ${targetPlan.code}: ${values.reason}`,
+        actorClerkId: operator.clerkId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(storeModuleEntitlementsTable.storeId, values.storeId),
+          eq(storeModuleEntitlementsTable.subscriptionId, subscription.id),
+          eq(storeModuleEntitlementsTable.origin, 'plan'),
+          eq(storeModuleEntitlementsTable.status, 'active')
+        )
+      )
+
+    const period =
+      subscription.currentPeriodEnd.getTime() > now.getTime()
+        ? {
+            status: 'active' as const,
+            periodStart: now,
+            periodEnd: subscription.currentPeriodEnd,
+            nextBillingAt: subscription.currentPeriodEnd,
+          }
+        : getSubscriptionPeriod({
+            startsAt: now,
+            billingInterval: targetPlan.billingInterval,
+            billingIntervalCount: targetPlan.billingIntervalCount,
+            trialDays: 0,
+          })
+
+    const [newSubscription] = await tx
+      .insert(storeSubscriptionsTable)
+      .values({
+        storeId: values.storeId,
+        planId: targetPlan.id,
+        status: period.status,
+        contractedAmount: nextContractedAmount,
+        currency: targetPlan.currency,
+        billingInterval: targetPlan.billingInterval,
+        billingIntervalCount: targetPlan.billingIntervalCount,
+        discountType: subscription.discountType,
+        discountValue: subscription.discountValue,
+        discountValidUntil: subscription.discountValidUntil,
+        paymentGraceDays: subscription.paymentGraceDays,
+        startsAt: now,
+        currentPeriodStart: period.periodStart,
+        currentPeriodEnd: period.periodEnd,
+        nextBillingAt: period.nextBillingAt,
+        metadata: {
+          source: 'internal_plan_change',
+          previousSubscriptionId: subscription.id,
+          previousPlanId: subscription.planId,
+          changedBy: operator.email,
+          valueMode: values.valueMode,
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    if (planModules.length > 0) {
+      await tx.insert(storeModuleEntitlementsTable).values(
+        planModules.map(module => ({
+          storeId: values.storeId,
+          moduleId: module.moduleId,
+          subscriptionId: newSubscription.id,
+          planId: targetPlan.id,
+          planModuleId: module.id,
+          origin: 'plan' as const,
+          status: 'active' as const,
+          isAdditional: false,
+          additionalAmount: '0',
+          currency: targetPlan.currency,
+          startsAt: now,
+          reason: values.reason,
+          actorClerkId: operator.clerkId,
+          metadata: { source: 'internal_plan_change' },
+          updatedAt: now,
+        }))
+      )
+    }
+
+    if (
+      values.moduleTreatment !== 'sync_to_new_plan' &&
+      removedModuleIds.length > 0
+    ) {
+      const existingManualEntitlements = await tx
+        .select({ moduleId: storeModuleEntitlementsTable.moduleId })
+        .from(storeModuleEntitlementsTable)
+        .where(
+          and(
+            eq(storeModuleEntitlementsTable.storeId, values.storeId),
+            eq(storeModuleEntitlementsTable.origin, 'manual'),
+            eq(storeModuleEntitlementsTable.status, 'active'),
+            sql`${storeModuleEntitlementsTable.endsAt} is null`,
+            inArray(storeModuleEntitlementsTable.moduleId, removedModuleIds)
+          )
+        )
+      const existingManualModuleIds = new Set(
+        existingManualEntitlements.map(entitlement => entitlement.moduleId)
+      )
+      const manualModuleIds = removedModuleIds.filter(
+        moduleId => !existingManualModuleIds.has(moduleId)
+      )
+
+      if (manualModuleIds.length > 0) {
+        await tx.insert(storeModuleEntitlementsTable).values(
+          manualModuleIds.map(moduleId => ({
+            storeId: values.storeId,
+            moduleId,
+            origin: 'manual' as const,
+            status: 'active' as const,
+            isAdditional: false,
+            additionalAmount: '0',
+            currency: targetPlan.currency,
+            startsAt: now,
+            reason: `Mantido apos mudanca de plano: ${values.reason}`,
+            actorClerkId: operator.clerkId,
+            metadata: {
+              source: 'internal_plan_change',
+              treatment: values.moduleTreatment,
+              requiresReview: values.moduleTreatment === 'manual_review',
+              previousSubscriptionId: subscription.id,
+            },
+            updatedAt: now,
+          }))
+        )
+      }
+    }
+
+    const [appliedPlanChange] = await tx
+      .insert(storeSubscriptionPlanChangesTable)
+      .values({
+        storeId: values.storeId,
+        subscriptionId: subscription.id,
+        appliedSubscriptionId: newSubscription.id,
+        fromPlanId: subscription.planId,
+        toPlanId: targetPlan.id,
+        timing: values.timing,
+        status: 'applied',
+        moduleTreatment: values.moduleTreatment,
+        keepCustomAmount,
+        previousContractedAmount: subscription.contractedAmount,
+        nextContractedAmount,
+        currency: targetPlan.currency,
+        effectiveAt,
+        appliedAt: now,
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: values.reason,
+        previousValues,
+        newValues: {
+          ...newValues,
+          appliedSubscriptionId: newSubscription.id,
+          nextBillingAt: newSubscription.nextBillingAt.toISOString(),
+        },
+        metadata: {
+          source: 'internal_plan_change',
+          stage: 'applied',
+          timingLabel: getPlanChangeTimingLabel(values.timing),
+          moduleTreatmentLabel: getModuleTreatmentLabel(
+            values.moduleTreatment
+          ),
+          prorationPolicyLabel: getProrationPolicyLabel(
+            values.prorationPolicy
+          ),
+          proration,
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    const shouldCreateProrationInvoice =
+      proration.adjustmentType === 'debit' &&
+      values.prorationPolicy === 'create_adjustment' &&
+      Number(proration.amount) > 0
+    const adjustmentStatus =
+      proration.adjustmentType === 'none'
+        ? 'applied'
+        : values.prorationPolicy === 'waive'
+          ? 'waived'
+          : proration.adjustmentType === 'credit'
+            ? 'recorded'
+          : values.prorationPolicy === 'record_only'
+            ? 'recorded'
+            : shouldCreateProrationInvoice
+              ? 'invoiced'
+              : 'open'
+    const [billingAdjustment] = await tx
+      .insert(storeBillingAdjustmentsTable)
+      .values({
+        storeId: values.storeId,
+        planChangeId: appliedPlanChange.id,
+        sourceSubscriptionId: subscription.id,
+        targetSubscriptionId: newSubscription.id,
+        adjustmentType: proration.adjustmentType,
+        status: adjustmentStatus,
+        amount: proration.amount,
+        currency: proration.currency,
+        competenceStart: new Date(proration.effectiveAt),
+        competenceEnd: new Date(proration.periodEnd),
+        calculationSnapshot: proration,
+        reason: values.reason,
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        metadata: {
+          source: 'internal_plan_change',
+          policy: values.prorationPolicy,
+          policyLabel: getProrationPolicyLabel(values.prorationPolicy),
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    const [prorationInvoice] = shouldCreateProrationInvoice
+      ? await tx
+          .insert(storeBillingInvoicesTable)
+          .values({
+            storeId: values.storeId,
+            subscriptionId: newSubscription.id,
+            planId: targetPlan.id,
+            invoiceNumber: buildInternalStoreProrationInvoiceNumber({
+              storeId: values.storeId,
+              planChangeId: appliedPlanChange.id,
+            }),
+            status: 'pending',
+            currency: targetPlan.currency,
+            subtotalAmount: proration.amount,
+            discountAmount: '0',
+            totalAmount: proration.amount,
+            amountPaid: '0',
+            amountRefunded: '0',
+            planSnapshot: {
+              id: targetPlan.id,
+              code: targetPlan.code,
+              name: targetPlan.name,
+              defaultAmount: targetPlan.defaultAmount,
+              currency: targetPlan.currency,
+              billingInterval: targetPlan.billingInterval,
+              billingIntervalCount: targetPlan.billingIntervalCount,
+            },
+            contractSnapshot: {
+              kind: 'plan_change_proration',
+              planChangeId: appliedPlanChange.id,
+              billingAdjustmentId: billingAdjustment.id,
+              previousSubscriptionId: subscription.id,
+              newSubscriptionId: newSubscription.id,
+              contractedAmount: nextContractedAmount,
+              currency: targetPlan.currency,
+            },
+            periodStart: new Date(proration.effectiveAt),
+            periodEnd: new Date(proration.periodEnd),
+            dueAt: now,
+            metadata: {
+              kind: 'plan_change_proration',
+              planChangeId: appliedPlanChange.id,
+              billingAdjustmentId: billingAdjustment.id,
+              calculation: proration,
+            },
+            updatedAt: now,
+          })
+          .returning()
+      : [null]
+
+    if (prorationInvoice) {
+      await tx
+        .update(storeBillingAdjustmentsTable)
+        .set({
+          invoiceId: prorationInvoice.id,
+          updatedAt: now,
+        })
+        .where(eq(storeBillingAdjustmentsTable.id, billingAdjustment.id))
+    }
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: subscription.id,
+      eventType: 'subscription_cancelled',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: {
+        status: subscription.status,
+        planId: subscription.planId,
+      },
+      newValues: {
+        status: 'canceled',
+        replacementSubscriptionId: newSubscription.id,
+        planChangeId: appliedPlanChange.id,
+      },
+      metadata: { source: 'internal_plan_change' },
+    })
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: newSubscription.id,
+      invoiceId: prorationInvoice?.id ?? null,
+      eventType: 'billing_adjustment_created',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: null,
+      newValues: {
+        billingAdjustmentId: billingAdjustment.id,
+        planChangeId: appliedPlanChange.id,
+        ...proration,
+      },
+      metadata: {
+        source: 'internal_plan_change',
+        policy: values.prorationPolicy,
+      },
+    })
+
+    if (prorationInvoice) {
+      await tx.insert(storeBillingEventsTable).values({
+        storeId: values.storeId,
+        subscriptionId: newSubscription.id,
+        invoiceId: prorationInvoice.id,
+        eventType: 'invoice_created',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: values.reason,
+        previousValues: null,
+        newValues: {
+          invoiceNumber: prorationInvoice.invoiceNumber,
+          totalAmount: prorationInvoice.totalAmount,
+          billingAdjustmentId: billingAdjustment.id,
+          planChangeId: appliedPlanChange.id,
+        },
+        metadata: {
+          source: 'internal_plan_change',
+          kind: 'plan_change_proration',
+        },
+      })
+    }
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: newSubscription.id,
+      eventType: 'subscription_changed',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues: {
+        ...newValues,
+        previousSubscriptionId: subscription.id,
+        subscriptionId: newSubscription.id,
+      },
+      metadata: {
+        source: 'internal_plan_change',
+        stage: 'applied',
+        planChangeId: appliedPlanChange.id,
+      },
+    })
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'change_store_subscription_plan',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      actorName: operator.name,
+      storeId: values.storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `${values.reason} | plano=${subscription.planId}->${targetPlan.id}; vigencia=imediata; assinatura=${subscription.id}->${newSubscription.id}; valor=${nextContractedAmount}`,
+    })
+
+    return {
+      planChange: appliedPlanChange,
+      appliedSubscription: newSubscription,
+    }
+  })
+}
+
+export async function applyDueStoreSubscriptionPlanChanges({
+  now = new Date(),
+  limit = 25,
+}: {
+  now?: Date
+  limit?: number
+} = {}) {
+  const duePlanChanges = await db
+    .select({ id: storeSubscriptionPlanChangesTable.id })
+    .from(storeSubscriptionPlanChangesTable)
+    .where(
+      and(
+        eq(storeSubscriptionPlanChangesTable.status, 'scheduled'),
+        lte(storeSubscriptionPlanChangesTable.effectiveAt, now)
+      )
+    )
+    .orderBy(storeSubscriptionPlanChangesTable.effectiveAt)
+    .limit(Math.max(1, Math.min(100, limit)))
+
+  const results = []
+
+  for (const planChange of duePlanChanges) {
+    results.push(
+      await applyScheduledStoreSubscriptionPlanChange({
+        planChangeId: planChange.id,
+        now,
+      })
+    )
+  }
+
+  return results
+}
+
+export async function applyScheduledStoreSubscriptionPlanChange({
+  planChangeId,
+  now = new Date(),
+}: {
+  planChangeId: number
+  now?: Date
+}) {
+  return await db.transaction(async tx => {
+    const [planChange] = await tx
+      .select()
+      .from(storeSubscriptionPlanChangesTable)
+      .where(
+        and(
+          eq(storeSubscriptionPlanChangesTable.id, planChangeId),
+          eq(storeSubscriptionPlanChangesTable.status, 'scheduled'),
+          lte(storeSubscriptionPlanChangesTable.effectiveAt, now)
+        )
+      )
+      .limit(1)
+
+    if (!planChange) {
+      throw new Error('STORE_SUBSCRIPTION_PLAN_CHANGE_NOT_DUE')
+    }
+
+    const [store] = await tx
+      .select({
+        id: storesTable.id,
+        status: storesTable.status,
+      })
+      .from(storesTable)
+      .where(eq(storesTable.id, planChange.storeId))
+      .limit(1)
+
+    if (!store) throw new Error('STORE_NOT_FOUND')
+    if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+    const [subscription] = await tx
+      .select()
+      .from(storeSubscriptionsTable)
+      .where(
+        and(
+          eq(storeSubscriptionsTable.id, planChange.subscriptionId),
+          eq(storeSubscriptionsTable.storeId, planChange.storeId),
+          eq(storeSubscriptionsTable.planId, planChange.fromPlanId),
+          inArray(storeSubscriptionsTable.status, [
+            'trialing',
+            'active',
+            'past_due',
+            'paused',
+          ])
+        )
+      )
+      .limit(1)
+
+    if (!subscription) throw new Error('STORE_SUBSCRIPTION_NOT_FOUND')
+
+    const [targetPlan] = await tx
+      .select()
+      .from(billingPlansTable)
+      .where(
+        and(
+          eq(billingPlansTable.id, planChange.toPlanId),
+          eq(billingPlansTable.status, 'active')
+        )
+      )
+      .limit(1)
+
+    if (!targetPlan) throw new Error('BILLING_PLAN_NOT_FOUND')
+
+    const planModules = await tx
+      .select({
+        id: billingPlanModulesTable.id,
+        moduleId: billingPlanModulesTable.moduleId,
+      })
+      .from(billingPlanModulesTable)
+      .innerJoin(
+        billingModulesTable,
+        and(
+          eq(billingModulesTable.id, billingPlanModulesTable.moduleId),
+          eq(billingModulesTable.status, 'active')
+        )
+      )
+      .where(
+        and(
+          eq(billingPlanModulesTable.planId, targetPlan.id),
+          eq(billingPlanModulesTable.status, 'active'),
+          sql`${billingPlanModulesTable.endsAt} is null`
+        )
+      )
+
+    const currentPlanEntitlements = await tx
+      .select({
+        moduleId: storeModuleEntitlementsTable.moduleId,
+      })
+      .from(storeModuleEntitlementsTable)
+      .where(
+        and(
+          eq(storeModuleEntitlementsTable.storeId, planChange.storeId),
+          eq(storeModuleEntitlementsTable.subscriptionId, subscription.id),
+          eq(storeModuleEntitlementsTable.origin, 'plan'),
+          eq(storeModuleEntitlementsTable.status, 'active'),
+          sql`${storeModuleEntitlementsTable.endsAt} is null`
+        )
+      )
+
+    const targetPlanModuleIds = new Set(
+      planModules.map(module => module.moduleId)
+    )
+    const previousPlanModuleIds = [
+      ...new Set(currentPlanEntitlements.map(module => module.moduleId)),
+    ]
+    const removedModuleIds = previousPlanModuleIds.filter(
+      moduleId => !targetPlanModuleIds.has(moduleId)
+    )
+
+    await tx
+      .update(storeSubscriptionsTable)
+      .set({
+        status: 'canceled',
+        canceledAt: now,
+        cancellationReason: `Mudanca programada aplicada para plano ${targetPlan.code}: ${planChange.reason}`,
+        updatedAt: now,
+      })
+      .where(eq(storeSubscriptionsTable.id, subscription.id))
+
+    await tx
+      .update(storeModuleEntitlementsTable)
+      .set({
+        status: 'expired',
+        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        reason: `Plano substituido por ${targetPlan.code}: ${planChange.reason}`,
+        actorClerkId: planChange.actorClerkId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(storeModuleEntitlementsTable.storeId, planChange.storeId),
+          eq(storeModuleEntitlementsTable.subscriptionId, subscription.id),
+          eq(storeModuleEntitlementsTable.origin, 'plan'),
+          eq(storeModuleEntitlementsTable.status, 'active')
+        )
+      )
+
+    const period = getSubscriptionPeriod({
+      startsAt: now,
+      billingInterval: targetPlan.billingInterval,
+      billingIntervalCount: targetPlan.billingIntervalCount,
+      trialDays: 0,
+    })
+
+    const [newSubscription] = await tx
+      .insert(storeSubscriptionsTable)
+      .values({
+        storeId: planChange.storeId,
+        planId: targetPlan.id,
+        status: period.status,
+        contractedAmount: planChange.nextContractedAmount,
+        currency: targetPlan.currency,
+        billingInterval: targetPlan.billingInterval,
+        billingIntervalCount: targetPlan.billingIntervalCount,
+        discountType: subscription.discountType,
+        discountValue: subscription.discountValue,
+        discountValidUntil: subscription.discountValidUntil,
+        paymentGraceDays: subscription.paymentGraceDays,
+        startsAt: now,
+        currentPeriodStart: period.periodStart,
+        currentPeriodEnd: period.periodEnd,
+        nextBillingAt: period.nextBillingAt,
+        metadata: {
+          source: 'scheduled_plan_change',
+          planChangeId: planChange.id,
+          previousSubscriptionId: subscription.id,
+          previousPlanId: subscription.planId,
+          changedBy: planChange.actorEmail,
+        },
+        updatedAt: now,
+      })
+      .returning()
+
+    if (planModules.length > 0) {
+      await tx.insert(storeModuleEntitlementsTable).values(
+        planModules.map(module => ({
+          storeId: planChange.storeId,
+          moduleId: module.moduleId,
+          subscriptionId: newSubscription.id,
+          planId: targetPlan.id,
+          planModuleId: module.id,
+          origin: 'plan' as const,
+          status: 'active' as const,
+          isAdditional: false,
+          additionalAmount: '0',
+          currency: targetPlan.currency,
+          startsAt: now,
+          reason: planChange.reason,
+          actorClerkId: planChange.actorClerkId,
+          metadata: { source: 'scheduled_plan_change' },
+          updatedAt: now,
+        }))
+      )
+    }
+
+    if (
+      planChange.moduleTreatment !== 'sync_to_new_plan' &&
+      removedModuleIds.length > 0
+    ) {
+      const existingManualEntitlements = await tx
+        .select({ moduleId: storeModuleEntitlementsTable.moduleId })
+        .from(storeModuleEntitlementsTable)
+        .where(
+          and(
+            eq(storeModuleEntitlementsTable.storeId, planChange.storeId),
+            eq(storeModuleEntitlementsTable.origin, 'manual'),
+            eq(storeModuleEntitlementsTable.status, 'active'),
+            sql`${storeModuleEntitlementsTable.endsAt} is null`,
+            inArray(storeModuleEntitlementsTable.moduleId, removedModuleIds)
+          )
+        )
+      const existingManualModuleIds = new Set(
+        existingManualEntitlements.map(entitlement => entitlement.moduleId)
+      )
+      const manualModuleIds = removedModuleIds.filter(
+        moduleId => !existingManualModuleIds.has(moduleId)
+      )
+
+      if (manualModuleIds.length > 0) {
+        await tx.insert(storeModuleEntitlementsTable).values(
+          manualModuleIds.map(moduleId => ({
+            storeId: planChange.storeId,
+            moduleId,
+            origin: 'manual' as const,
+            status: 'active' as const,
+            isAdditional: false,
+            additionalAmount: '0',
+            currency: targetPlan.currency,
+            startsAt: now,
+            reason: `Mantido apos mudanca programada: ${planChange.reason}`,
+            actorClerkId: planChange.actorClerkId,
+            metadata: {
+              source: 'scheduled_plan_change',
+              treatment: planChange.moduleTreatment,
+              requiresReview: planChange.moduleTreatment === 'manual_review',
+              previousSubscriptionId: subscription.id,
+            },
+            updatedAt: now,
+          }))
+        )
+      }
+    }
+
+    const appliedNewValues = {
+      ...(planChange.newValues as Record<string, unknown>),
+      appliedSubscriptionId: newSubscription.id,
+      previousSubscriptionId: subscription.id,
+      nextBillingAt: newSubscription.nextBillingAt.toISOString(),
+      appliedAt: now.toISOString(),
+    }
+
+    const [updatedPlanChange] = await tx
+      .update(storeSubscriptionPlanChangesTable)
+      .set({
+        status: 'applied',
+        appliedAt: now,
+        appliedSubscriptionId: newSubscription.id,
+        newValues: appliedNewValues,
+        metadata: {
+          ...(planChange.metadata as Record<string, unknown>),
+          stage: 'applied',
+          appliedBy: 'scheduled_plan_change_runner',
+        },
+        updatedAt: now,
+      })
+      .where(eq(storeSubscriptionPlanChangesTable.id, planChange.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: planChange.storeId,
+      subscriptionId: subscription.id,
+      eventType: 'subscription_cancelled',
+      actorClerkId: planChange.actorClerkId,
+      actorEmail: planChange.actorEmail,
+      reason: planChange.reason,
+      previousValues: {
+        status: subscription.status,
+        planId: subscription.planId,
+      },
+      newValues: {
+        status: 'canceled',
+        replacementSubscriptionId: newSubscription.id,
+        planChangeId: planChange.id,
+      },
+      metadata: { source: 'scheduled_plan_change' },
+    })
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: planChange.storeId,
+      subscriptionId: newSubscription.id,
+      eventType: 'subscription_changed',
+      actorClerkId: planChange.actorClerkId,
+      actorEmail: planChange.actorEmail,
+      reason: planChange.reason,
+      previousValues: planChange.previousValues,
+      newValues: appliedNewValues,
+      metadata: {
+        source: 'scheduled_plan_change',
+        stage: 'applied',
+        planChangeId: planChange.id,
+      },
+    })
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'change_store_subscription_plan',
+      actorClerkId: planChange.actorClerkId,
+      actorEmail: planChange.actorEmail,
+      actorName: null,
+      storeId: planChange.storeId,
+      targetUserEmail: null,
+      previousStoreStatus: store.status,
+      newStoreStatus: store.status,
+      reason: `${planChange.reason} | plano=${subscription.planId}->${targetPlan.id}; vigencia=programada_aplicada; assinatura=${subscription.id}->${newSubscription.id}; valor=${planChange.nextContractedAmount}`,
+    })
+
+    return {
+      planChange: updatedPlanChange,
+      appliedSubscription: newSubscription,
+    }
   })
 }
 

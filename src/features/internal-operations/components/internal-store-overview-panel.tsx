@@ -1,5 +1,6 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
 import {
+  changeStoreSubscriptionPlanAction,
   blockStoreAccessAction,
   unblockStoreAccessAction,
   updateInternalStoreProfileAction,
@@ -11,7 +12,15 @@ import {
   resolveInternalStoreDetailTab,
   type InternalStoreDetailTab,
 } from '@/features/internal-operations/detail-tabs-policy'
-import type { InternalStoreOverview } from '@/features/internal-operations/db'
+import type {
+  InternalBillingPlanOption,
+  InternalStoreOverview,
+} from '@/features/internal-operations/db'
+import {
+  getModuleTreatmentLabel,
+  getPlanChangeTimingLabel,
+  getProrationPolicyLabel,
+} from '@/features/internal-operations/subscription-plan-change-policy'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
 import {
   getBillingIntervalLabel,
@@ -69,6 +78,7 @@ import type React from 'react'
 type InternalStoreOverviewPanelProps = {
   operator: InternalOperator
   store: InternalStoreOverview
+  billingPlans: InternalBillingPlanOption[]
   requestedTab?: string
   result?: string
   error?: string
@@ -134,6 +144,45 @@ const formatCurrency = (value: string | number | null, currency = 'BRL') => {
   }).format(Number(value))
 }
 
+const getProrationAdjustmentLabel = (type: string) => {
+  if (type === 'debit') return 'Cobranca adicional'
+  if (type === 'credit') return 'Credito'
+
+  return 'Sem ajuste'
+}
+
+const getProrationStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    open: 'Aberto',
+    invoiced: 'Faturado',
+    applied: 'Aplicado',
+    recorded: 'Registrado',
+    waived: 'Isento',
+    cancelled: 'Cancelado',
+  }
+
+  return labels[status] ?? status
+}
+
+const getProrationNumber = (
+  snapshot: Record<string, unknown> | null | undefined,
+  key: string
+) => {
+  const value = snapshot?.[key]
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') return Number(value)
+
+  return 0
+}
+
+const getProrationString = (
+  snapshot: Record<string, unknown> | null | undefined,
+  key: string
+) => {
+  const value = snapshot?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
 const DetailField = ({
   label,
   value,
@@ -158,6 +207,7 @@ const EmptyState = ({ children }: { children: React.ReactNode }) => (
 export function InternalStoreOverviewPanel({
   operator,
   store,
+  billingPlans,
   requestedTab,
   result,
   error,
@@ -303,6 +353,18 @@ export function InternalStoreOverviewPanel({
           Condicao especifica do plano atualizada com auditoria financeira.
         </div>
       )}
+      {result === 'mudanca-plano-aplicada' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Mudanca de plano aplicada agora, com assinatura nova e historico
+          preservado.
+        </div>
+      )}
+      {result === 'mudanca-plano-programada' && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Mudanca de plano programada para a proxima renovacao sem alterar a
+          assinatura atual.
+        </div>
+      )}
 
       {activeTab === 'dados' && (
         <DadosTab
@@ -314,7 +376,12 @@ export function InternalStoreOverviewPanel({
       )}
       {activeTab === 'faturas' && <FaturasTab store={store} />}
       {activeTab === 'plano' && (
-        <PlanoTab store={store} operator={operator} basePath={basePath} />
+        <PlanoTab
+          store={store}
+          operator={operator}
+          basePath={basePath}
+          billingPlans={billingPlans}
+        />
       )}
       {activeTab === 'modulos' && <ModulosTab store={store} />}
       {activeTab === 'metricas' && <MetricasTab store={store} />}
@@ -1524,10 +1591,12 @@ function PlanoTab({
   store,
   operator,
   basePath,
+  billingPlans,
 }: {
   store: InternalStoreOverview
   operator: InternalOperator
   basePath: string
+  billingPlans: InternalBillingPlanOption[]
 }) {
   const currency = store.billing.currency ?? 'BRL'
   const planCurrency = store.billing.planCurrency ?? currency
@@ -1560,6 +1629,13 @@ function PlanoTab({
     (canManageFinancialValues || canApplyBillingDiscounts) &&
     store.status !== 'archived' &&
     Boolean(store.billing.subscriptionId)
+  const canChangePlan =
+    canManageFinancialValues &&
+    store.status !== 'archived' &&
+    Boolean(store.billing.subscriptionId)
+  const availableTargetPlans = billingPlans.filter(
+    plan => plan.id !== store.billing.planId
+  )
 
   if (!store.billing.subscriptionId) {
     return (
@@ -1592,7 +1668,7 @@ function PlanoTab({
                 </p>
               </div>
             </div>
-            <div className="rounded-lg border bg-background p-4 text-left lg:min-w-[260px]">
+            <div className="space-y-3 rounded-lg border bg-background p-4 text-left lg:min-w-[280px]">
               <div className="text-xs font-medium text-muted-foreground">
                 Valor contratado da loja
               </div>
@@ -1603,10 +1679,167 @@ function PlanoTab({
                 Catalogo:{' '}
                 {formatCurrency(store.billing.planDefaultAmount, planCurrency)}
               </div>
+              {canChangePlan ? (
+                <ChangeSubscriptionPlanDialog
+                  store={store}
+                  basePath={basePath}
+                  billingPlans={availableTargetPlans}
+                />
+              ) : (
+                <Button variant="outline" disabled className="w-full">
+                  <Layers3 className="size-4" />
+                  Mudar plano
+                </Button>
+              )}
             </div>
           </div>
         </div>
         <CardContent className="space-y-4 p-5">
+          {store.pendingPlanChange && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-semibold">
+                    Mudanca programada para{' '}
+                    {store.pendingPlanChange.toPlanName}
+                  </div>
+                  <div className="mt-1">
+                    Vigencia em {formatDate(store.pendingPlanChange.effectiveAt)}
+                    , valor{' '}
+                    {formatCurrency(
+                      store.pendingPlanChange.nextContractedAmount,
+                      store.pendingPlanChange.currency
+                    )}
+                    .
+                  </div>
+                  {store.pendingPlanChange.proration && (
+                    <div className="mt-1 text-xs">
+                      Pro-rata:{' '}
+                      {getProrationAdjustmentLabel(
+                        getProrationString(
+                          store.pendingPlanChange.proration,
+                          'adjustmentType'
+                        )
+                      )}{' '}
+                      de{' '}
+                      {formatCurrency(
+                        getProrationString(
+                          store.pendingPlanChange.proration,
+                          'amount'
+                        ) || '0',
+                        store.pendingPlanChange.currency
+                      )}
+                      .
+                    </div>
+                  )}
+                </div>
+                <Badge variant="outline">
+                  {getModuleTreatmentLabel(
+                    store.pendingPlanChange.moduleTreatment as
+                      | 'sync_to_new_plan'
+                      | 'keep_current'
+                      | 'manual_review'
+                  )}
+                </Badge>
+              </div>
+            </div>
+          )}
+          {store.billingAdjustments.length > 0 && (
+            <div className="rounded-lg border bg-background/70 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-semibold text-foreground">
+                    Ajustes de pro-rata
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Memoria financeira gerada em mudancas de plano.
+                  </p>
+                </div>
+                <Badge variant="outline">
+                  {store.billingAdjustments.length} registro(s)
+                </Badge>
+              </div>
+              <div className="mt-4 space-y-3">
+                {store.billingAdjustments.map(adjustment => {
+                  const remainingDays = getProrationNumber(
+                    adjustment.calculationSnapshot,
+                    'remainingDays'
+                  )
+                  const formula = getProrationString(
+                    adjustment.calculationSnapshot,
+                    'formula'
+                  )
+
+                  return (
+                    <div
+                      key={adjustment.id}
+                      className="rounded-md border bg-muted/20 p-3 text-sm"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="font-medium text-foreground">
+                            {getProrationAdjustmentLabel(
+                              adjustment.adjustmentType
+                            )}{' '}
+                            -{' '}
+                            {formatCurrency(
+                              adjustment.amount,
+                              adjustment.currency
+                            )}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            Competencia de{' '}
+                            {formatDate(adjustment.competenceStart)} ate{' '}
+                            {formatDate(adjustment.competenceEnd)}.
+                          </div>
+                        </div>
+                        <Badge variant="outline">
+                          {getProrationStatusLabel(adjustment.status)}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-3">
+                        <span>
+                          Dias restantes:{' '}
+                          <strong className="text-foreground">
+                            {remainingDays}
+                          </strong>
+                        </span>
+                        <span>
+                          Plano anterior:{' '}
+                          <strong className="text-foreground">
+                            {formatCurrency(
+                              getProrationString(
+                                adjustment.calculationSnapshot,
+                                'currentContractedAmount'
+                              ) || '0',
+                              adjustment.currency
+                            )}
+                          </strong>
+                        </span>
+                        <span>
+                          Novo plano:{' '}
+                          <strong className="text-foreground">
+                            {formatCurrency(
+                              getProrationString(
+                                adjustment.calculationSnapshot,
+                                'nextContractedAmount'
+                              ) || '0',
+                              adjustment.currency
+                            )}
+                          </strong>
+                        </span>
+                      </div>
+                      {formula && (
+                        <div className="mt-2 rounded-md border bg-background/70 p-2 text-xs text-muted-foreground">
+                          {formula}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <div className="grid gap-3 md:grid-cols-3">
             <DetailField
               label="Periodicidade contratada"
@@ -1731,6 +1964,248 @@ function PlanTermsCard({
         ))}
       </div>
     </div>
+  )
+}
+
+function ChangeSubscriptionPlanDialog({
+  store,
+  basePath,
+  billingPlans,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+  billingPlans: InternalBillingPlanOption[]
+}) {
+  const currency = store.billing.currency ?? 'BRL'
+  const currentAmount = store.billing.contractedAmount ?? ''
+  const currentPlanLabel = `${store.billing.planName ?? 'Plano atual'} (${store.billing.planCode ?? 'sem codigo'})`
+  const nextBillingLabel = formatDate(store.billing.nextBillingAt)
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button className="w-full">
+          <Layers3 className="size-4" />
+          Mudar plano
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>Mudar plano da loja</DialogTitle>
+          <DialogDescription>
+            Escolha se a troca entra agora ou apenas na proxima renovacao da
+            assinatura.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form action={changeStoreSubscriptionPlanAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input
+            type="hidden"
+            name="subscriptionId"
+            value={store.billing.subscriptionId ?? ''}
+          />
+          <input
+            type="hidden"
+            name="returnTo"
+            value={`${basePath}?tab=plano`}
+          />
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-sm font-semibold text-foreground">
+                Plano atual
+              </div>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Plano</span>
+                  <span className="text-right font-medium">
+                    {currentPlanLabel}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Valor</span>
+                  <span className="font-medium">
+                    {formatCurrency(currentAmount, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">
+                    Proxima cobranca
+                  </span>
+                  <span className="font-medium">{nextBillingLabel}</span>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-sm font-semibold text-foreground">
+                Previa financeira
+              </div>
+              <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                <p>
+                  Aplicar agora calcula pro-rata entre hoje e o fim do ciclo
+                  atual. Aplicar na renovacao registra ajuste zero.
+                </p>
+                <div className="rounded-md border bg-background/70 p-3 text-xs">
+                  Formula: (novo valor - valor atual) proporcional aos dias
+                  restantes do ciclo.
+                </div>
+                <p>
+                  A memoria real fica salva no historico financeiro ao
+                  confirmar a mudanca.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {store.pendingPlanChange && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+              Esta assinatura ja possui uma mudanca programada para{' '}
+              {formatDate(store.pendingPlanChange.effectiveAt)}. Remova ou
+              conclua essa pendencia antes de criar outra.
+            </div>
+          )}
+
+          <FormSection title="Novo plano e vigencia">
+            <FormField label="Novo plano" htmlFor="targetPlanId">
+              <select
+                id="targetPlanId"
+                name="targetPlanId"
+                className={selectClassName}
+                required
+                disabled={billingPlans.length === 0 || !!store.pendingPlanChange}
+              >
+                <option value="">Selecione um plano</option>
+                {billingPlans.map(plan => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name} ({plan.code}) -{' '}
+                    {formatCurrency(plan.defaultAmount, plan.currency)} /{' '}
+                    {getBillingIntervalLabel({
+                      billingInterval: plan.billingInterval,
+                      billingIntervalCount: plan.billingIntervalCount,
+                    })}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Quando aplicar" htmlFor="timing">
+              <select
+                id="timing"
+                name="timing"
+                className={selectClassName}
+                defaultValue="next_renewal"
+                disabled={!!store.pendingPlanChange}
+                required
+              >
+                <option value="next_renewal">
+                  {getPlanChangeTimingLabel('next_renewal')} ({nextBillingLabel})
+                </option>
+                <option value="immediate">
+                  {getPlanChangeTimingLabel('immediate')}
+                </option>
+              </select>
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Valor e modulos">
+            <FormField label="Valor contratado" htmlFor="valueMode">
+              <select
+                id="valueMode"
+                name="valueMode"
+                className={selectClassName}
+                defaultValue="keep_current"
+                disabled={!!store.pendingPlanChange}
+                required
+              >
+                <option value="keep_current">
+                  Manter valor atual da loja
+                </option>
+                <option value="use_plan_default">
+                  Usar valor padrao do novo plano
+                </option>
+                <option value="custom">Definir novo valor personalizado</option>
+              </select>
+            </FormField>
+            <FormField
+              label={`Novo valor personalizado (${currency})`}
+              htmlFor="customContractedAmount"
+            >
+              <Input
+                id="customContractedAmount"
+                name="customContractedAmount"
+                inputMode="decimal"
+                placeholder="Ex.: 249,90"
+                disabled={!!store.pendingPlanChange}
+              />
+            </FormField>
+            <FormField label="Tratamento dos modulos" htmlFor="moduleTreatment">
+              <select
+                id="moduleTreatment"
+                name="moduleTreatment"
+                className={selectClassName}
+                defaultValue="sync_to_new_plan"
+                disabled={!!store.pendingPlanChange}
+                required
+              >
+                <option value="sync_to_new_plan">
+                  {getModuleTreatmentLabel('sync_to_new_plan')}
+                </option>
+                <option value="keep_current">
+                  {getModuleTreatmentLabel('keep_current')}
+                </option>
+                <option value="manual_review">
+                  {getModuleTreatmentLabel('manual_review')}
+                </option>
+              </select>
+            </FormField>
+            <FormField label="Ajuste proporcional" htmlFor="prorationPolicy">
+              <select
+                id="prorationPolicy"
+                name="prorationPolicy"
+                className={selectClassName}
+                defaultValue="create_adjustment"
+                disabled={!!store.pendingPlanChange}
+                required
+              >
+                <option value="create_adjustment">
+                  {getProrationPolicyLabel('create_adjustment')}
+                </option>
+                <option value="record_only">
+                  {getProrationPolicyLabel('record_only')}
+                </option>
+                <option value="waive">
+                  {getProrationPolicyLabel('waive')}
+                </option>
+              </select>
+            </FormField>
+            <FormField label="Motivo da alteracao" htmlFor="planChangeReason">
+              <Textarea
+                id="planChangeReason"
+                name="reason"
+                placeholder="Ex.: upgrade solicitado pelo cliente para liberar mais modulos."
+                disabled={!!store.pendingPlanChange}
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button
+              type="submit"
+              disabled={billingPlans.length === 0 || !!store.pendingPlanChange}
+            >
+              <CheckCircle2 className="size-4" />
+              Confirmar mudanca
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
