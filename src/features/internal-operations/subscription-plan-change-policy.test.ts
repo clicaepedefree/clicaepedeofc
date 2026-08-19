@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildPlanChangeModuleImpactPreview,
   calculatePlanChangeProration,
   getModuleTreatmentLabel,
   getPlanChangeTimingLabel,
@@ -193,5 +194,65 @@ describe('internal subscription plan change policy', () => {
 
     expect(/^\d+\.\d{4}$/.test(result.amount)).toBe(true)
     expect(result.status).toBe('open')
+  })
+
+  test('previews module impact when a plan change syncs modules', () => {
+    const preview = buildPlanChangeModuleImpactPreview({
+      moduleTreatment: 'sync_to_new_plan',
+      currentModules: [
+        { moduleId: 1, name: 'Cardapio', origin: 'plan', status: 'active' },
+        { moduleId: 2, name: 'Fiscal', origin: 'plan', status: 'active' },
+        { moduleId: 4, name: 'Relatorios', origin: 'manual', status: 'active' },
+      ],
+      targetModules: [
+        { moduleId: 1, name: 'Cardapio' },
+        { moduleId: 3, name: 'WhatsApp' },
+      ],
+    })
+
+    expect(preview.includedModuleNames).toEqual(['Cardapio', 'WhatsApp'])
+    expect(preview.addedModuleNames).toEqual(['WhatsApp'])
+    expect(preview.removedPlanModuleNames).toEqual(['Fiscal'])
+    expect(preview.existingExceptionModuleNames).toEqual([])
+    expect(preview.preservedExceptionModuleNames).toEqual([])
+    expect(preview.summary.includes('1 modulo(s) entram')).toBe(true)
+  })
+
+  test('previews preserved module exceptions when manual review is required', () => {
+    const preview = buildPlanChangeModuleImpactPreview({
+      moduleTreatment: 'manual_review',
+      currentModules: [
+        { moduleId: 1, name: 'Cardapio', origin: 'plan', status: 'active' },
+        { moduleId: 2, name: 'Fiscal', origin: 'plan', status: 'active' },
+      ],
+      targetModules: [{ moduleId: 1, name: 'Cardapio' }],
+    })
+
+    expect(preview.removedPlanModuleNames).toEqual(['Fiscal'])
+    expect(preview.preservedExceptionModuleNames).toEqual(['Fiscal'])
+    expect(preview.reviewRequiredModuleNames).toEqual(['Fiscal'])
+  })
+
+  test('previews active exceptions that become included in the target plan', () => {
+    const preview = buildPlanChangeModuleImpactPreview({
+      moduleTreatment: 'sync_to_new_plan',
+      currentModules: [
+        { moduleId: 1, name: 'Cardapio', origin: 'plan', status: 'active' },
+        { moduleId: 3, name: 'WhatsApp', origin: 'addon', status: 'active' },
+        { moduleId: 4, name: 'Fiscal', origin: 'courtesy', status: 'active' },
+        { moduleId: 5, name: 'Relatorios', origin: 'manual', status: 'active' },
+      ],
+      targetModules: [
+        { moduleId: 1, name: 'Cardapio' },
+        { moduleId: 3, name: 'WhatsApp' },
+        { moduleId: 4, name: 'Fiscal' },
+      ],
+    })
+
+    expect(preview.addedModuleNames).toEqual(['Fiscal', 'WhatsApp'])
+    expect(preview.existingExceptionModuleNames).toEqual([
+      'Fiscal',
+      'WhatsApp',
+    ])
   })
 })

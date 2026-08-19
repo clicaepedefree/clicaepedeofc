@@ -179,6 +179,11 @@ export type InternalBillingPlanOption = {
   billingInterval: string
   billingIntervalCount: number
   trialDays: number
+  modules: {
+    moduleId: number
+    code: string
+    name: string
+  }[]
 }
 
 export type InternalStorePendingPlanChange = {
@@ -1695,7 +1700,7 @@ export async function getRecentInternalAuditLogs(limit = 25) {
 export async function listActiveBillingPlansForInternalCreation(): Promise<
   InternalBillingPlanOption[]
 > {
-  return await db
+  const planRows = await db
     .select({
       id: billingPlansTable.id,
       code: billingPlansTable.code,
@@ -1710,6 +1715,52 @@ export async function listActiveBillingPlansForInternalCreation(): Promise<
     .from(billingPlansTable)
     .where(eq(billingPlansTable.status, 'active'))
     .orderBy(billingPlansTable.name)
+
+  if (planRows.length === 0) return []
+
+  const moduleRows = await db
+    .select({
+      planId: billingPlanModulesTable.planId,
+      moduleId: billingModulesTable.id,
+      code: billingModulesTable.code,
+      name: billingModulesTable.name,
+    })
+    .from(billingPlanModulesTable)
+    .innerJoin(
+      billingModulesTable,
+      and(
+        eq(billingModulesTable.id, billingPlanModulesTable.moduleId),
+        eq(billingModulesTable.status, 'active')
+      )
+    )
+    .where(
+      and(
+        inArray(
+          billingPlanModulesTable.planId,
+          planRows.map(plan => plan.id)
+        ),
+        eq(billingPlanModulesTable.status, 'active'),
+        sql`${billingPlanModulesTable.endsAt} is null`
+      )
+    )
+    .orderBy(billingModulesTable.name)
+
+  const modulesByPlanId = new Map<number, InternalBillingPlanOption['modules']>()
+
+  for (const planModule of moduleRows) {
+    const modules = modulesByPlanId.get(planModule.planId) ?? []
+    modules.push({
+      moduleId: planModule.moduleId,
+      code: planModule.code,
+      name: planModule.name,
+    })
+    modulesByPlanId.set(planModule.planId, modules)
+  }
+
+  return planRows.map(plan => ({
+    ...plan,
+    modules: modulesByPlanId.get(plan.id) ?? [],
+  }))
 }
 
 export async function listInternalStoreCityFilterOptions(): Promise<

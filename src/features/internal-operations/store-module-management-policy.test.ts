@@ -18,6 +18,15 @@ describe('internal store module management policy', () => {
       reason: 'Liberacao aprovada pela operacao.',
     })
 
+    const courtesy = storeModuleManagementSchema.parse({
+      storeId: '1',
+      moduleId: '4',
+      action: 'activate',
+      origin: 'courtesy',
+      endsAt: '2026-09-01T10:00',
+      reason: 'Cortesia comercial com vigencia aprovada.',
+    })
+
     const addon = storeModuleManagementSchema.parse({
       storeId: '1',
       moduleId: '3',
@@ -28,7 +37,20 @@ describe('internal store module management policy', () => {
     })
 
     expect(manual.origin).toBe('manual')
+    expect(courtesy.origin).toBe('courtesy')
     expect(addon.origin).toBe('addon')
+  })
+
+  test('requires an expiration date when activating a courtesy module', () => {
+    const result = storeModuleManagementSchema.safeParse({
+      storeId: '1',
+      moduleId: '4',
+      action: 'activate',
+      origin: 'courtesy',
+      reason: 'Cortesia aprovada sem prazo definido.',
+    })
+
+    expect(result.success).toBe(false)
   })
 
   test('requires confirmation and entitlement when deactivating a module', () => {
