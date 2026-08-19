@@ -6,6 +6,7 @@ import {
   type PlanChangeModulePreviewItem,
   type subscriptionPlanChangeModuleTreatments,
 } from '@/features/internal-operations/subscription-plan-change-policy'
+import { getBillingIntervalLabel } from '@/features/internal-operations/subscription-terms-policy'
 import { Badge } from '@/shared/badge'
 import { Label } from '@/shared/label'
 import { cn } from '@/shared/lib/utils'
@@ -15,6 +16,10 @@ type BillingPlanPreviewOption = {
   id: number
   code: string
   name: string
+  defaultAmount: string
+  currency: string
+  billingInterval: string
+  billingIntervalCount: number
   modules: {
     moduleId: number
     code: string
@@ -32,6 +37,15 @@ type SubscriptionPlanModuleImpactPreviewProps = {
 
 const selectClassName =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+
+const formatCurrency = (value: string | number | null, currency = 'BRL') => {
+  if (value === null || value === undefined || value === '') return 'Sem valor'
+
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+  }).format(Number(value))
+}
 
 export function SubscriptionPlanModuleImpactPreview({
   plans,
@@ -71,7 +85,12 @@ export function SubscriptionPlanModuleImpactPreview({
             <option value="">Selecione um plano</option>
             {plans.map(plan => (
               <option key={plan.id} value={plan.id}>
-                {plan.name} ({plan.code})
+                {plan.name} ({plan.code}) -{' '}
+                {formatCurrency(plan.defaultAmount, plan.currency)} /{' '}
+                {getBillingIntervalLabel({
+                  billingInterval: plan.billingInterval,
+                  billingIntervalCount: plan.billingIntervalCount,
+                })}
               </option>
             ))}
           </select>
@@ -149,6 +168,13 @@ export function SubscriptionPlanModuleImpactPreview({
                 emptyLabel="Nenhuma excecao preservada"
               />
             </div>
+            {preview.existingExceptionModuleNames.length > 0 && (
+              <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
+                Ja estavam liberados como adicional, cortesia ou manual:{' '}
+                {preview.existingExceptionModuleNames.join(', ')}. Revise a
+                cobranca dessas excecoes depois da troca, se necessario.
+              </div>
+            )}
           </div>
         ) : (
           <div className="mt-4 rounded-md border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">

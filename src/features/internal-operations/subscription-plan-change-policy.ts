@@ -114,6 +114,7 @@ export type PlanChangeModuleImpactPreview = {
   includedModuleNames: string[]
   addedModuleNames: string[]
   removedPlanModuleNames: string[]
+  existingExceptionModuleNames: string[]
   preservedExceptionModuleNames: string[]
   reviewRequiredModuleNames: string[]
   summary: string
@@ -306,6 +307,9 @@ export function buildPlanChangeModuleImpactPreview({
   const currentPlanModules = activeCurrentModules.filter(
     module => module.origin === 'plan'
   )
+  const activeExceptionModules = activeCurrentModules.filter(
+    module => module.origin && module.origin !== 'plan'
+  )
   const targetModuleIds = new Set(targetModules.map(module => module.moduleId))
   const currentPlanModuleIds = new Set(
     currentPlanModules.map(module => module.moduleId)
@@ -318,6 +322,9 @@ export function buildPlanChangeModuleImpactPreview({
   )
   const addedModules = targetModules.filter(
     module => !currentPlanModuleIds.has(module.moduleId)
+  )
+  const existingExceptionModules = activeExceptionModules.filter(module =>
+    targetModuleIds.has(module.moduleId)
   )
   const preservedExceptionModules =
     moduleTreatment === 'sync_to_new_plan' ? [] : removedPlanModules
@@ -333,6 +340,9 @@ export function buildPlanChangeModuleImpactPreview({
     addedModuleNames: uniqueNames(addedModules.map(module => module.name)),
     removedPlanModuleNames: uniqueNames(
       removedPlanModules.map(module => module.name)
+    ),
+    existingExceptionModuleNames: uniqueNames(
+      existingExceptionModules.map(module => module.name)
     ),
     preservedExceptionModuleNames: uniqueNames(
       preservedExceptionModules.map(module => module.name)

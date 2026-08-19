@@ -213,6 +213,7 @@ describe('internal subscription plan change policy', () => {
     expect(preview.includedModuleNames).toEqual(['Cardapio', 'WhatsApp'])
     expect(preview.addedModuleNames).toEqual(['WhatsApp'])
     expect(preview.removedPlanModuleNames).toEqual(['Fiscal'])
+    expect(preview.existingExceptionModuleNames).toEqual([])
     expect(preview.preservedExceptionModuleNames).toEqual([])
     expect(preview.summary.includes('1 modulo(s) entram')).toBe(true)
   })
@@ -230,5 +231,28 @@ describe('internal subscription plan change policy', () => {
     expect(preview.removedPlanModuleNames).toEqual(['Fiscal'])
     expect(preview.preservedExceptionModuleNames).toEqual(['Fiscal'])
     expect(preview.reviewRequiredModuleNames).toEqual(['Fiscal'])
+  })
+
+  test('previews active exceptions that become included in the target plan', () => {
+    const preview = buildPlanChangeModuleImpactPreview({
+      moduleTreatment: 'sync_to_new_plan',
+      currentModules: [
+        { moduleId: 1, name: 'Cardapio', origin: 'plan', status: 'active' },
+        { moduleId: 3, name: 'WhatsApp', origin: 'addon', status: 'active' },
+        { moduleId: 4, name: 'Fiscal', origin: 'courtesy', status: 'active' },
+        { moduleId: 5, name: 'Relatorios', origin: 'manual', status: 'active' },
+      ],
+      targetModules: [
+        { moduleId: 1, name: 'Cardapio' },
+        { moduleId: 3, name: 'WhatsApp' },
+        { moduleId: 4, name: 'Fiscal' },
+      ],
+    })
+
+    expect(preview.addedModuleNames).toEqual(['Fiscal', 'WhatsApp'])
+    expect(preview.existingExceptionModuleNames).toEqual([
+      'Fiscal',
+      'WhatsApp',
+    ])
   })
 })
