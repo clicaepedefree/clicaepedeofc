@@ -38,6 +38,7 @@ import {
   type SelectStore,
   type StoreImplementationChecklistItemKey,
 } from '@/services/db/schema'
+import { storeBillingPaymentsTable } from '@/services/db/schema/store-billing-payments'
 import { createHash } from 'node:crypto'
 import {
   and,
@@ -373,18 +374,35 @@ export type InternalStoreOverview = Pick<
     totalInvoices: number
     openInvoices: number
     overdueInvoices: number
+    paidInvoices: number
+    closedInvoices: number
+    totalAmount: number
     openAmount: number
     overdueAmount: number
+    paidAmount: number
   }
   invoices: {
     id: number
     invoiceNumber: string
     status: string
+    subtotalAmount: string
+    discountAmount: string
     totalAmount: string
     amountPaid: string
+    amountRefunded: string
     currency: string
+    periodStart: Date
+    periodEnd: Date
     dueAt: Date
     paidAt: Date | null
+    cancelledAt: Date | null
+    refundedAt: Date | null
+    paymentMethod: string | null
+    paymentStatus: string | null
+    paymentProvider: string | null
+    paymentPaidAt: Date | null
+    paymentLink: string | null
+    outstandingAmount: number
     createdAt: Date
   }[]
   billingAdjustments: {
@@ -731,6 +749,82 @@ export function getInvoiceReceivableAmount({
     parseInternalDashboardAmount(totalAmount) -
       parseInternalDashboardAmount(amountPaid)
   )
+}
+
+function getMetadataString(metadata: unknown, keys: string[]): string | null {
+  if (!metadata || typeof metadata !== 'object') return null
+
+  const record = metadata as Record<string, unknown>
+
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+
+  return null
+}
+
+function getBillingPaymentLink({
+  invoiceMetadata,
+  paymentMetadata,
+}: {
+  invoiceMetadata: unknown
+  paymentMetadata: unknown
+}) {
+  const linkKeys = [
+    'paymentLink',
+    'paymentLinkUrl',
+    'paymentUrl',
+    'checkoutUrl',
+    'invoiceUrl',
+    'hostedInvoiceUrl',
+  ]
+
+  return (
+    getMetadataString(paymentMetadata, linkKeys) ??
+    getMetadataString(invoiceMetadata, linkKeys)
+  )
+}
+
+function getInvoiceStatusWhereClause(
+  storeId: number,
+  invoiceStatusFilter: string | undefined
+) {
+  const storeWhereClause = eq(storeBillingInvoicesTable.storeId, storeId)
+
+  if (invoiceStatusFilter === 'open') {
+    return and(
+      storeWhereClause,
+      eq(storeBillingInvoicesTable.status, 'pending'),
+      gte(storeBillingInvoicesTable.dueAt, new Date())
+    )
+  }
+
+  if (invoiceStatusFilter === 'overdue') {
+    return and(
+      storeWhereClause,
+      or(
+        eq(storeBillingInvoicesTable.status, 'overdue'),
+        and(
+          eq(storeBillingInvoicesTable.status, 'pending'),
+          lte(storeBillingInvoicesTable.dueAt, new Date())
+        )
+      )
+    )
+  }
+
+  if (invoiceStatusFilter === 'paid') {
+    return and(storeWhereClause, eq(storeBillingInvoicesTable.status, 'paid'))
+  }
+
+  if (invoiceStatusFilter === 'closed') {
+    return and(
+      storeWhereClause,
+      inArray(storeBillingInvoicesTable.status, ['cancelled', 'refunded'])
+    )
+  }
+
+  return storeWhereClause
 }
 
 function emptyInternalDashboardIndicators({
@@ -1192,8 +1286,11 @@ export async function listInternalStores({
 }
 
 export async function getInternalStoreOverview(
-  storeId: number
+  storeId: number,
+  options: { includeBillingInvoices?: boolean; invoiceStatus?: string } = {}
 ): Promise<InternalStoreOverview | null> {
+  const includeBillingInvoices = options.includeBillingInvoices ?? true
+  const invoiceStatusFilter = options.invoiceStatus
   const [store] = await db
     .select({
       id: storesTable.id,
@@ -1285,6 +1382,7 @@ export async function getInternalStoreOverview(
 
   const [
     invoiceRows,
+    invoiceSummaryRows,
     moduleCatalogRows,
     moduleEntitlementRows,
     userRows,
@@ -1295,22 +1393,43 @@ export async function getInternalStoreOverview(
     pendingPlanChangeRows,
     billingAdjustmentRows,
   ] = await Promise.all([
-    db
-      .select({
-        id: storeBillingInvoicesTable.id,
-        invoiceNumber: storeBillingInvoicesTable.invoiceNumber,
-        status: storeBillingInvoicesTable.status,
-        totalAmount: storeBillingInvoicesTable.totalAmount,
-        amountPaid: storeBillingInvoicesTable.amountPaid,
-        currency: storeBillingInvoicesTable.currency,
-        dueAt: storeBillingInvoicesTable.dueAt,
-        paidAt: storeBillingInvoicesTable.paidAt,
-        createdAt: storeBillingInvoicesTable.createdAt,
-      })
-      .from(storeBillingInvoicesTable)
-      .where(eq(storeBillingInvoicesTable.storeId, storeId))
-      .orderBy(desc(storeBillingInvoicesTable.dueAt))
-      .limit(8),
+    includeBillingInvoices
+      ? db
+          .select({
+            id: storeBillingInvoicesTable.id,
+            invoiceNumber: storeBillingInvoicesTable.invoiceNumber,
+            status: storeBillingInvoicesTable.status,
+            subtotalAmount: storeBillingInvoicesTable.subtotalAmount,
+            discountAmount: storeBillingInvoicesTable.discountAmount,
+            totalAmount: storeBillingInvoicesTable.totalAmount,
+            amountPaid: storeBillingInvoicesTable.amountPaid,
+            amountRefunded: storeBillingInvoicesTable.amountRefunded,
+            currency: storeBillingInvoicesTable.currency,
+            periodStart: storeBillingInvoicesTable.periodStart,
+            periodEnd: storeBillingInvoicesTable.periodEnd,
+            dueAt: storeBillingInvoicesTable.dueAt,
+            paidAt: storeBillingInvoicesTable.paidAt,
+            cancelledAt: storeBillingInvoicesTable.cancelledAt,
+            refundedAt: storeBillingInvoicesTable.refundedAt,
+            metadata: storeBillingInvoicesTable.metadata,
+            createdAt: storeBillingInvoicesTable.createdAt,
+          })
+          .from(storeBillingInvoicesTable)
+          .where(getInvoiceStatusWhereClause(storeId, invoiceStatusFilter))
+          .orderBy(desc(storeBillingInvoicesTable.dueAt))
+          .limit(50)
+      : Promise.resolve([]),
+    includeBillingInvoices
+      ? db
+          .select({
+            status: storeBillingInvoicesTable.status,
+            totalAmount: storeBillingInvoicesTable.totalAmount,
+            amountPaid: storeBillingInvoicesTable.amountPaid,
+            dueAt: storeBillingInvoicesTable.dueAt,
+          })
+          .from(storeBillingInvoicesTable)
+          .where(eq(storeBillingInvoicesTable.storeId, storeId))
+      : Promise.resolve([]),
     db
       .select({
         id: billingModulesTable.id,
@@ -1346,7 +1465,10 @@ export async function getInternalStoreOverview(
         eq(billingModulesTable.id, storeModuleEntitlementsTable.moduleId)
       )
       .where(eq(storeModuleEntitlementsTable.storeId, storeId))
-      .orderBy(billingModulesTable.name, desc(storeModuleEntitlementsTable.createdAt)),
+      .orderBy(
+        billingModulesTable.name,
+        desc(storeModuleEntitlementsTable.createdAt)
+      ),
     db
       .select({
         userId: usersTable.id,
@@ -1474,11 +1596,62 @@ export async function getInternalStoreOverview(
       .limit(6),
   ])
 
-  const invoiceSummary = invoiceRows.reduce(
+  const invoiceIds = invoiceRows.map(invoice => invoice.id)
+  const invoicePaymentRows =
+    invoiceIds.length > 0
+      ? await db
+          .select({
+            invoiceId: storeBillingPaymentsTable.invoiceId,
+            status: storeBillingPaymentsTable.status,
+            method: storeBillingPaymentsTable.method,
+            provider: storeBillingPaymentsTable.provider,
+            paidAt: storeBillingPaymentsTable.paidAt,
+            metadata: storeBillingPaymentsTable.metadata,
+            createdAt: storeBillingPaymentsTable.createdAt,
+          })
+          .from(storeBillingPaymentsTable)
+          .where(inArray(storeBillingPaymentsTable.invoiceId, invoiceIds))
+          .orderBy(
+            storeBillingPaymentsTable.invoiceId,
+            sql`case ${storeBillingPaymentsTable.status} when 'confirmed' then 0 when 'pending' then 1 else 2 end`,
+            desc(storeBillingPaymentsTable.createdAt)
+          )
+      : []
+  const paymentsByInvoiceId = new Map<
+    number,
+    (typeof invoicePaymentRows)[number]
+  >()
+
+  for (const payment of invoicePaymentRows) {
+    if (!paymentsByInvoiceId.has(payment.invoiceId)) {
+      paymentsByInvoiceId.set(payment.invoiceId, payment)
+    }
+  }
+
+  const invoices = invoiceRows.map(invoice => {
+    const payment = paymentsByInvoiceId.get(invoice.id) ?? null
+
+    return {
+      ...invoice,
+      paymentMethod: payment?.method ?? null,
+      paymentStatus: payment?.status ?? null,
+      paymentProvider: payment?.provider ?? null,
+      paymentPaidAt: payment?.paidAt ?? null,
+      paymentLink: getBillingPaymentLink({
+        invoiceMetadata: invoice.metadata,
+        paymentMetadata: payment?.metadata,
+      }),
+      outstandingAmount: getInvoiceReceivableAmount(invoice),
+    }
+  })
+
+  const invoiceSummary = invoiceSummaryRows.reduce(
     (summary, invoice) => {
       const receivableAmount = getInvoiceReceivableAmount(invoice)
 
       summary.totalInvoices += 1
+      summary.totalAmount += parseInternalDashboardAmount(invoice.totalAmount)
+      summary.paidAmount += parseInternalDashboardAmount(invoice.amountPaid)
 
       if (invoice.status === 'pending' || invoice.status === 'overdue') {
         summary.openInvoices += 1
@@ -1493,14 +1666,26 @@ export async function getInternalStoreOverview(
         summary.overdueAmount += receivableAmount
       }
 
+      if (invoice.status === 'paid') {
+        summary.paidInvoices += 1
+      }
+
+      if (invoice.status === 'cancelled' || invoice.status === 'refunded') {
+        summary.closedInvoices += 1
+      }
+
       return summary
     },
     {
       totalInvoices: 0,
       openInvoices: 0,
       overdueInvoices: 0,
+      paidInvoices: 0,
+      closedInvoices: 0,
+      totalAmount: 0,
       openAmount: 0,
       overdueAmount: 0,
+      paidAmount: 0,
     }
   )
 
@@ -1547,7 +1732,7 @@ export async function getInternalStoreOverview(
         ? 'expired'
         : latestEntitlement?.status === 'active'
           ? 'inactive'
-          : latestEntitlement?.status ?? 'not_enabled'
+          : (latestEntitlement?.status ?? 'not_enabled')
     const origin = latestEntitlement?.origin ?? null
     const canDeactivate =
       Boolean(reservedEntitlement) && reservedEntitlement?.origin !== 'plan'
@@ -1668,7 +1853,7 @@ export async function getInternalStoreOverview(
         }
       : null,
     invoiceSummary,
-    invoices: invoiceRows,
+    invoices,
     billingAdjustments: billingAdjustmentRows.map(adjustment => ({
       ...adjustment,
       calculationSnapshot:
@@ -1745,7 +1930,10 @@ export async function listActiveBillingPlansForInternalCreation(): Promise<
     )
     .orderBy(billingModulesTable.name)
 
-  const modulesByPlanId = new Map<number, InternalBillingPlanOption['modules']>()
+  const modulesByPlanId = new Map<
+    number,
+    InternalBillingPlanOption['modules']
+  >()
 
   for (const planModule of moduleRows) {
     const modules = modulesByPlanId.get(planModule.planId) ?? []
@@ -4251,12 +4439,8 @@ export async function changeStoreSubscriptionPlan({
           source: 'internal_plan_change',
           stage: 'applied',
           timingLabel: getPlanChangeTimingLabel(values.timing),
-          moduleTreatmentLabel: getModuleTreatmentLabel(
-            values.moduleTreatment
-          ),
-          prorationPolicyLabel: getProrationPolicyLabel(
-            values.prorationPolicy
-          ),
+          moduleTreatmentLabel: getModuleTreatmentLabel(values.moduleTreatment),
+          prorationPolicyLabel: getProrationPolicyLabel(values.prorationPolicy),
           proration,
         },
         updatedAt: now,
@@ -4274,11 +4458,11 @@ export async function changeStoreSubscriptionPlan({
           ? 'waived'
           : proration.adjustmentType === 'credit'
             ? 'recorded'
-          : values.prorationPolicy === 'record_only'
-            ? 'recorded'
-            : shouldCreateProrationInvoice
-              ? 'invoiced'
-              : 'open'
+            : values.prorationPolicy === 'record_only'
+              ? 'recorded'
+              : shouldCreateProrationInvoice
+                ? 'invoiced'
+                : 'open'
     const [billingAdjustment] = await tx
       .insert(storeBillingAdjustmentsTable)
       .values({

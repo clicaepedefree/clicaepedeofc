@@ -22,10 +22,18 @@ import {
   getPlanChangeTimingLabel,
   getProrationPolicyLabel,
 } from '@/features/internal-operations/subscription-plan-change-policy'
-import { SubscriptionPlanModuleImpactPreview } from '@/features/internal-operations/components/subscription-plan-module-impact-preview'
 import {
-  getModuleEntitlementOriginLabel,
-} from '@/features/internal-operations/store-module-management-policy'
+  canCopyInternalInvoicePaymentLink,
+  getInternalInvoiceStatusLabel,
+  getInternalInvoiceStatusTone,
+  getInternalInvoiceFilterDescription,
+  internalInvoiceStatusFilters,
+  parseInternalInvoiceStatusFilter,
+  type InternalInvoiceStatusFilter,
+} from '@/features/internal-operations/billing-invoices-policy'
+import { CopyInvoicePaymentLinkButton } from '@/features/internal-operations/components/copy-invoice-payment-link-button'
+import { SubscriptionPlanModuleImpactPreview } from '@/features/internal-operations/components/subscription-plan-module-impact-preview'
+import { getModuleEntitlementOriginLabel } from '@/features/internal-operations/store-module-management-policy'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
 import {
   AlertDialog,
@@ -75,6 +83,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock,
+  Eye,
   FilePenLine,
   History,
   KeyRound,
@@ -98,6 +107,7 @@ type InternalStoreOverviewPanelProps = {
   store: InternalStoreOverview
   billingPlans: InternalBillingPlanOption[]
   requestedTab?: string
+  invoiceStatus?: string
   result?: string
   error?: string
   basePath: string
@@ -227,6 +237,7 @@ export function InternalStoreOverviewPanel({
   store,
   billingPlans,
   requestedTab,
+  invoiceStatus,
   result,
   error,
   basePath,
@@ -392,7 +403,14 @@ export function InternalStoreOverviewPanel({
           basePath={basePath}
         />
       )}
-      {activeTab === 'faturas' && <FaturasTab store={store} />}
+      {activeTab === 'faturas' && (
+        <FaturasTab
+          store={store}
+          operator={operator}
+          basePath={basePath}
+          invoiceStatus={invoiceStatus}
+        />
+      )}
       {activeTab === 'plano' && (
         <PlanoTab
           store={store}
@@ -1586,23 +1604,330 @@ function FormField({
   )
 }
 
-function FaturasTab({ store }: { store: InternalStoreOverview }) {
+const invoiceFilterLabels: Record<InternalInvoiceStatusFilter, string> = {
+  all: 'Todas',
+  open: 'Abertas',
+  overdue: 'Vencidas',
+  paid: 'Pagas',
+  closed: 'Encerradas',
+}
+
+const invoiceStatusStyles = {
+  open: {
+    card: 'border-l-primary bg-primary/5',
+    badge:
+      'border-primary/30 bg-primary/10 text-primary dark:border-primary/40 dark:bg-primary/15',
+  },
+  overdue: {
+    card: 'border-l-destructive bg-destructive/5',
+    badge:
+      'border-destructive/30 bg-destructive/10 text-destructive dark:border-destructive/40 dark:bg-destructive/15 dark:text-rose-200',
+  },
+  paid: {
+    card: 'border-l-emerald-500 bg-emerald-500/5',
+    badge:
+      'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-200',
+  },
+  closed: {
+    card: 'border-l-muted-foreground bg-muted/30',
+    badge:
+      'border-muted-foreground/30 bg-muted text-muted-foreground dark:border-muted-foreground/40',
+  },
+} as const
+
+const getPaymentMethodLabel = (method: string | null) => {
+  const labels: Record<string, string> = {
+    pix: 'Pix',
+    credit_card: 'Cartao',
+    boleto: 'Boleto',
+    manual: 'Manual',
+    external: 'Externo',
+  }
+
+  return method ? (labels[method] ?? method) : 'Nao informado'
+}
+
+function FaturasTab({
+  store,
+  operator,
+  basePath,
+  invoiceStatus,
+}: {
+  store: InternalStoreOverview
+  operator: InternalOperator
+  basePath: string
+  invoiceStatus?: string
+}) {
+  const currency = store.billing.currency ?? 'BRL'
+  const activeFilter = parseInternalInvoiceStatusFilter(invoiceStatus)
+  const canManageBillingInvoices = canRunInternalOperation({
+    operator,
+    operation: 'manageBillingInvoices',
+  })
+  const filterHref = (filter: InternalInvoiceStatusFilter) =>
+    filter === 'all'
+      ? `${basePath}?tab=faturas`
+      : `${basePath}?tab=faturas&invoiceStatus=${filter}`
+
   if (store.invoices.length === 0) {
     return <EmptyState>Nenhuma fatura gerada para esta loja.</EmptyState>
   }
 
   return (
-    <div className="rounded-lg border bg-card">
-      <TableLike
-        headers={['Fatura', 'Status', 'Vencimento', 'Total', 'Pago']}
-        rows={store.invoices.map(invoice => [
-          invoice.invoiceNumber,
-          invoice.status,
-          formatDate(invoice.dueAt),
-          formatCurrency(invoice.totalAmount, invoice.currency),
-          formatCurrency(invoice.amountPaid, invoice.currency),
-        ])}
-      />
+    <div className="space-y-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          icon={ReceiptText}
+          label="Faturado"
+          value={formatCurrency(store.invoiceSummary.totalAmount, currency)}
+          detail={`${store.invoiceSummary.totalInvoices} faturas no historico`}
+        />
+        <SummaryCard
+          icon={Clock}
+          label="Em aberto"
+          value={formatCurrency(store.invoiceSummary.openAmount, currency)}
+          detail={`${store.invoiceSummary.openInvoices} aguardando pagamento`}
+        />
+        <SummaryCard
+          icon={ShieldAlert}
+          label="Vencidas"
+          value={formatCurrency(store.invoiceSummary.overdueAmount, currency)}
+          detail={`${store.invoiceSummary.overdueInvoices} exigem acao`}
+        />
+        <SummaryCard
+          icon={CheckCircle2}
+          label="Pago"
+          value={formatCurrency(store.invoiceSummary.paidAmount, currency)}
+          detail={`${store.invoiceSummary.paidInvoices} quitadas`}
+        />
+      </section>
+
+      <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Faturas da loja
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Consulte competencia, vencimento, pagamento, valores e acoes de
+            cobranca.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {getInternalInvoiceFilterDescription(activeFilter)}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {internalInvoiceStatusFilters.map(filter => (
+            <Button
+              key={filter}
+              asChild
+              size="sm"
+              variant={activeFilter === filter ? 'default' : 'outline'}
+              isClickable
+            >
+              <Link href={filterHref(filter)}>
+                {invoiceFilterLabels[filter]}
+              </Link>
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {store.invoices.length === 0 ? (
+        <EmptyState>
+          Nenhuma fatura encontrada para o filtro selecionado.
+        </EmptyState>
+      ) : (
+        <div className="space-y-3">
+          {store.invoices.map(invoice => {
+            const tone = getInternalInvoiceStatusTone(invoice)
+            const statusLabel = getInternalInvoiceStatusLabel(invoice)
+            const copyAllowed = canCopyInternalInvoicePaymentLink({
+              invoice,
+              canManageBillingInvoices,
+              storeStatus: store.status,
+            })
+
+            return (
+              <div
+                key={invoice.id}
+                className={cn(
+                  'rounded-lg border border-l-4 bg-card p-4 shadow-xs',
+                  invoiceStatusStyles[tone].card
+                )}
+              >
+                <div className="grid gap-4 xl:grid-cols-[1.4fr_1.2fr_1fr_1fr_1.4fr] xl:items-center">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-foreground">
+                        {invoice.invoiceNumber}
+                      </h3>
+                      <Badge
+                        variant="outline"
+                        className={invoiceStatusStyles[tone].badge}
+                      >
+                        {statusLabel}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Competencia {formatDate(invoice.periodStart)} a{' '}
+                      {formatDate(invoice.periodEnd)}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Vencimento</span>
+                    <span className="font-medium text-foreground">
+                      {formatDate(invoice.dueAt)}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Pagamento</span>
+                    <span className="font-medium text-foreground">
+                      {invoice.paidAt
+                        ? formatDate(invoice.paidAt)
+                        : getPaymentMethodLabel(invoice.paymentMethod)}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">Saldo</span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(
+                        invoice.outstandingAmount,
+                        invoice.currency
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" isClickable>
+                          <Eye className="size-4" />
+                          Detalhes
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle>
+                            Fatura {invoice.invoiceNumber}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Detalhes financeiros, competencia e forma de
+                            pagamento registrada.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <DetailField label="Status" value={statusLabel} />
+                          <DetailField
+                            label="Forma"
+                            value={getPaymentMethodLabel(invoice.paymentMethod)}
+                          />
+                          <DetailField
+                            label="Competencia"
+                            value={`${formatDate(invoice.periodStart)} a ${formatDate(invoice.periodEnd)}`}
+                          />
+                          <DetailField
+                            label="Vencimento"
+                            value={formatDate(invoice.dueAt)}
+                          />
+                          <DetailField
+                            label="Subtotal"
+                            value={formatCurrency(
+                              invoice.subtotalAmount,
+                              invoice.currency
+                            )}
+                          />
+                          <DetailField
+                            label="Desconto"
+                            value={formatCurrency(
+                              invoice.discountAmount,
+                              invoice.currency
+                            )}
+                          />
+                          <DetailField
+                            label="Total"
+                            value={formatCurrency(
+                              invoice.totalAmount,
+                              invoice.currency
+                            )}
+                          />
+                          <DetailField
+                            label="Pago"
+                            value={formatCurrency(
+                              invoice.amountPaid,
+                              invoice.currency
+                            )}
+                          />
+                          <DetailField
+                            label="Reembolsado"
+                            value={formatCurrency(
+                              invoice.amountRefunded,
+                              invoice.currency
+                            )}
+                          />
+                          <DetailField
+                            label="Saldo"
+                            value={formatCurrency(
+                              invoice.outstandingAmount,
+                              invoice.currency
+                            )}
+                          />
+                        </div>
+                        <DialogFooter>
+                          <CopyInvoicePaymentLinkButton
+                            paymentLink={invoice.paymentLink}
+                            disabled={!copyAllowed}
+                            disabledReason="Disponivel apenas para faturas abertas ou vencidas com link e permissao financeira."
+                          />
+                          <DialogClose asChild>
+                            <Button variant="outline" isClickable>
+                              Fechar
+                            </Button>
+                          </DialogClose>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    <CopyInvoicePaymentLinkButton
+                      paymentLink={invoice.paymentLink}
+                      disabled={!copyAllowed}
+                      disabledReason="Disponivel apenas para faturas abertas ou vencidas com link e permissao financeira."
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-2 border-t pt-3 text-sm md:grid-cols-4">
+                  <span className="text-muted-foreground">
+                    Total:{' '}
+                    <strong className="text-foreground">
+                      {formatCurrency(invoice.totalAmount, invoice.currency)}
+                    </strong>
+                  </span>
+                  <span className="text-muted-foreground">
+                    Pago:{' '}
+                    <strong className="text-foreground">
+                      {formatCurrency(invoice.amountPaid, invoice.currency)}
+                    </strong>
+                  </span>
+                  <span className="text-muted-foreground">
+                    Provedor:{' '}
+                    <strong className="text-foreground">
+                      {invoice.paymentProvider ?? 'Nao informado'}
+                    </strong>
+                  </span>
+                  <span className="text-muted-foreground">
+                    Criada:{' '}
+                    <strong className="text-foreground">
+                      {formatDate(invoice.createdAt)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -1720,12 +2045,11 @@ function PlanoTab({
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-semibold">
-                    Mudanca programada para{' '}
-                    {store.pendingPlanChange.toPlanName}
+                    Mudanca programada para {store.pendingPlanChange.toPlanName}
                   </div>
                   <div className="mt-1">
-                    Vigencia em {formatDate(store.pendingPlanChange.effectiveAt)}
-                    , valor{' '}
+                    Vigencia em{' '}
+                    {formatDate(store.pendingPlanChange.effectiveAt)}, valor{' '}
                     {formatCurrency(
                       store.pendingPlanChange.nextContractedAmount,
                       store.pendingPlanChange.currency
@@ -2077,8 +2401,8 @@ function ChangeSubscriptionPlanDialog({
                   restantes do ciclo.
                 </div>
                 <p>
-                  A memoria real fica salva no historico financeiro ao
-                  confirmar a mudanca.
+                  A memoria real fica salva no historico financeiro ao confirmar
+                  a mudanca.
                 </p>
               </div>
             </div>
@@ -2108,7 +2432,8 @@ function ChangeSubscriptionPlanDialog({
                 required
               >
                 <option value="next_renewal">
-                  {getPlanChangeTimingLabel('next_renewal')} ({nextBillingLabel})
+                  {getPlanChangeTimingLabel('next_renewal')} ({nextBillingLabel}
+                  )
                 </option>
                 <option value="immediate">
                   {getPlanChangeTimingLabel('immediate')}
@@ -2127,9 +2452,7 @@ function ChangeSubscriptionPlanDialog({
                 disabled={!!store.pendingPlanChange}
                 required
               >
-                <option value="keep_current">
-                  Manter valor atual da loja
-                </option>
+                <option value="keep_current">Manter valor atual da loja</option>
                 <option value="use_plan_default">
                   Usar valor padrao do novo plano
                 </option>
@@ -2387,7 +2710,9 @@ function ModulosTab({
     operator,
     operation: 'manageStoreModules',
   })
-  const activeModules = store.modules.filter(module => module.status === 'active')
+  const activeModules = store.modules.filter(
+    module => module.status === 'active'
+  )
   const planModules = activeModules.filter(module => module.origin === 'plan')
   const paidModules = activeModules.filter(module => module.isAdditional)
   const exceptionModules = activeModules.filter(module =>
@@ -2551,12 +2876,19 @@ function ActivateModuleDialog({
           </DialogDescription>
         </DialogHeader>
         <form action={manageStoreModuleEntitlementAction} className="space-y-4">
-          <input type="hidden" name="returnTo" value={`${basePath}?tab=modulos`} />
+          <input
+            type="hidden"
+            name="returnTo"
+            value={`${basePath}?tab=modulos`}
+          />
           <input type="hidden" name="storeId" value={storeId} />
           <input type="hidden" name="moduleId" value={module.moduleId} />
           <input type="hidden" name="action" value="activate" />
           <FormSection title="Liberacao">
-            <FormField label="Origem" htmlFor={`module-${module.moduleId}-origin`}>
+            <FormField
+              label="Origem"
+              htmlFor={`module-${module.moduleId}-origin`}
+            >
               <select
                 id={`module-${module.moduleId}-origin`}
                 name="origin"
@@ -2678,7 +3010,11 @@ function DeactivateModuleDialog({
           action={manageStoreModuleEntitlementAction}
           className="space-y-3"
         >
-          <input type="hidden" name="returnTo" value={`${basePath}?tab=modulos`} />
+          <input
+            type="hidden"
+            name="returnTo"
+            value={`${basePath}?tab=modulos`}
+          />
           <input type="hidden" name="storeId" value={storeId} />
           <input type="hidden" name="moduleId" value={module.moduleId} />
           <input
@@ -2687,10 +3023,7 @@ function DeactivateModuleDialog({
             value={module.entitlementId ?? ''}
           />
           <input type="hidden" name="action" value="deactivate" />
-          <FormField
-            label="Motivo da desativacao"
-            htmlFor={`${formId}-reason`}
-          >
+          <FormField label="Motivo da desativacao" htmlFor={`${formId}-reason`}>
             <Textarea
               id={`${formId}-reason`}
               name="reason"
@@ -2698,10 +3031,7 @@ function DeactivateModuleDialog({
               required
             />
           </FormField>
-          <FormField
-            label="Confirmacao"
-            htmlFor={`${formId}-confirmation`}
-          >
+          <FormField label="Confirmacao" htmlFor={`${formId}-confirmation`}>
             <Input
               id={`${formId}-confirmation`}
               name="confirmation"
