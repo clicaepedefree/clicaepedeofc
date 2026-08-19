@@ -103,6 +103,22 @@ export type PlanChangeProrationPreview = {
   explanation: string
 }
 
+export type PlanChangeModulePreviewItem = {
+  moduleId: number
+  name: string
+  origin?: string | null
+  status?: string | null
+}
+
+export type PlanChangeModuleImpactPreview = {
+  includedModuleNames: string[]
+  addedModuleNames: string[]
+  removedPlanModuleNames: string[]
+  preservedExceptionModuleNames: string[]
+  reviewRequiredModuleNames: string[]
+  summary: string
+}
+
 export function parseCurrencyAmount(value: string) {
   return Number(value.replace(/\./g, '').replace(',', '.'))
 }
@@ -271,6 +287,62 @@ export function resolvePlanChangeContractedAmount({
   }
 
   return String(parseCurrencyAmount(customContractedAmount))
+}
+
+const uniqueNames = (names: string[]) => [...new Set(names)].sort()
+
+export function buildPlanChangeModuleImpactPreview({
+  currentModules,
+  targetModules,
+  moduleTreatment,
+}: {
+  currentModules: PlanChangeModulePreviewItem[]
+  targetModules: PlanChangeModulePreviewItem[]
+  moduleTreatment: (typeof subscriptionPlanChangeModuleTreatments)[number]
+}): PlanChangeModuleImpactPreview {
+  const activeCurrentModules = currentModules.filter(
+    module => module.status === 'active'
+  )
+  const currentPlanModules = activeCurrentModules.filter(
+    module => module.origin === 'plan'
+  )
+  const targetModuleIds = new Set(targetModules.map(module => module.moduleId))
+  const currentPlanModuleIds = new Set(
+    currentPlanModules.map(module => module.moduleId)
+  )
+  const targetModulesById = new Map(
+    targetModules.map(module => [module.moduleId, module])
+  )
+  const removedPlanModules = currentPlanModules.filter(
+    module => !targetModuleIds.has(module.moduleId)
+  )
+  const addedModules = targetModules.filter(
+    module => !currentPlanModuleIds.has(module.moduleId)
+  )
+  const preservedExceptionModules =
+    moduleTreatment === 'sync_to_new_plan' ? [] : removedPlanModules
+  const reviewRequiredModuleNames =
+    moduleTreatment === 'manual_review'
+      ? preservedExceptionModules.map(module => module.name)
+      : []
+
+  return {
+    includedModuleNames: uniqueNames(
+      [...targetModulesById.values()].map(module => module.name)
+    ),
+    addedModuleNames: uniqueNames(addedModules.map(module => module.name)),
+    removedPlanModuleNames: uniqueNames(
+      removedPlanModules.map(module => module.name)
+    ),
+    preservedExceptionModuleNames: uniqueNames(
+      preservedExceptionModules.map(module => module.name)
+    ),
+    reviewRequiredModuleNames: uniqueNames(reviewRequiredModuleNames),
+    summary:
+      addedModules.length === 0 && removedPlanModules.length === 0
+        ? 'O novo plano mantem a mesma composicao de modulos do plano atual.'
+        : `${addedModules.length} modulo(s) entram e ${removedPlanModules.length} modulo(s) saem da composicao do plano.`,
+  }
 }
 
 export function getPlanChangeTimingLabel(

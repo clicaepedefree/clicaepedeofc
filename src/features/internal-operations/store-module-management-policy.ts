@@ -68,6 +68,18 @@ export const storeModuleManagementSchema = z
 
     if (
       values.action === 'activate' &&
+      values.origin === 'courtesy' &&
+      !values.endsAt
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endsAt'],
+        message: 'Informe ate quando a cortesia fica valida.',
+      })
+    }
+
+    if (
+      values.action === 'activate' &&
       values.origin !== 'addon' &&
       values.additionalAmount &&
       Number(values.additionalAmount.replace(/\./g, '').replace(',', '.')) > 0

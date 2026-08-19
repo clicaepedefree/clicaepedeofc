@@ -22,6 +22,7 @@ import {
   getPlanChangeTimingLabel,
   getProrationPolicyLabel,
 } from '@/features/internal-operations/subscription-plan-change-policy'
+import { SubscriptionPlanModuleImpactPreview } from '@/features/internal-operations/components/subscription-plan-module-impact-preview'
 import {
   getModuleEntitlementOriginLabel,
 } from '@/features/internal-operations/store-module-management-policy'
@@ -1999,6 +2000,12 @@ function ChangeSubscriptionPlanDialog({
   const currentAmount = store.billing.contractedAmount ?? ''
   const currentPlanLabel = `${store.billing.planName ?? 'Plano atual'} (${store.billing.planCode ?? 'sem codigo'})`
   const nextBillingLabel = formatDate(store.billing.nextBillingAt)
+  const currentModulePreviewItems = store.modules.map(module => ({
+    moduleId: module.moduleId,
+    name: module.name,
+    origin: module.origin,
+    status: module.status,
+  }))
 
   return (
     <Dialog>
@@ -2086,27 +2093,11 @@ function ChangeSubscriptionPlanDialog({
           )}
 
           <FormSection title="Novo plano e vigencia">
-            <FormField label="Novo plano" htmlFor="targetPlanId">
-              <select
-                id="targetPlanId"
-                name="targetPlanId"
-                className={selectClassName}
-                required
-                disabled={billingPlans.length === 0 || !!store.pendingPlanChange}
-              >
-                <option value="">Selecione um plano</option>
-                {billingPlans.map(plan => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name} ({plan.code}) -{' '}
-                    {formatCurrency(plan.defaultAmount, plan.currency)} /{' '}
-                    {getBillingIntervalLabel({
-                      billingInterval: plan.billingInterval,
-                      billingIntervalCount: plan.billingIntervalCount,
-                    })}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+            <SubscriptionPlanModuleImpactPreview
+              plans={billingPlans}
+              currentModules={currentModulePreviewItems}
+              disabled={billingPlans.length === 0 || !!store.pendingPlanChange}
+            />
             <FormField label="Quando aplicar" htmlFor="timing">
               <select
                 id="timing"
@@ -2126,7 +2117,7 @@ function ChangeSubscriptionPlanDialog({
             </FormField>
           </FormSection>
 
-          <FormSection title="Valor e modulos">
+          <FormSection title="Valor e ajuste">
             <FormField label="Valor contratado" htmlFor="valueMode">
               <select
                 id="valueMode"
@@ -2156,26 +2147,6 @@ function ChangeSubscriptionPlanDialog({
                 placeholder="Ex.: 249,90"
                 disabled={!!store.pendingPlanChange}
               />
-            </FormField>
-            <FormField label="Tratamento dos modulos" htmlFor="moduleTreatment">
-              <select
-                id="moduleTreatment"
-                name="moduleTreatment"
-                className={selectClassName}
-                defaultValue="sync_to_new_plan"
-                disabled={!!store.pendingPlanChange}
-                required
-              >
-                <option value="sync_to_new_plan">
-                  {getModuleTreatmentLabel('sync_to_new_plan')}
-                </option>
-                <option value="keep_current">
-                  {getModuleTreatmentLabel('keep_current')}
-                </option>
-                <option value="manual_review">
-                  {getModuleTreatmentLabel('manual_review')}
-                </option>
-              </select>
             </FormField>
             <FormField label="Ajuste proporcional" htmlFor="prorationPolicy">
               <select
@@ -2615,7 +2586,7 @@ function ActivateModuleDialog({
               />
             </FormField>
             <FormField
-              label="Fim da vigencia"
+              label="Fim da vigencia da cortesia"
               htmlFor={`module-${module.moduleId}-ends-at`}
             >
               <Input
@@ -2623,6 +2594,10 @@ function ActivateModuleDialog({
                 name="endsAt"
                 type="datetime-local"
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Obrigatorio para cortesia. Adicionais e liberacoes manuais podem
+                ficar sem data final quando aprovados pela operacao.
+              </p>
             </FormField>
             <FormField
               label="Motivo da liberacao"
