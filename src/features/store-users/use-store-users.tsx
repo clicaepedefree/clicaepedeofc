@@ -7,11 +7,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAtomValue } from 'jotai'
 import {
   getStoreUsers,
+  blockStoreUserAccess,
   inviteStoreUser,
   requestStoreUserPasswordReset,
   resendStoreUserInvite,
   revokeStoreUser,
   revokeStoreUserInvite,
+  unblockStoreUserAccess,
   updateStoreUser,
   type StoreUsersStatusFilter,
 } from './api'
@@ -30,7 +32,13 @@ export function useStoreUsers({
 }) {
   const selectedStoreId = useAtomValue(selectedStoreIdAtom)
   const queryClient = useQueryClient()
-  const queryKey = storeUsersCacheKey(selectedStoreId, page, search, status, role)
+  const queryKey = storeUsersCacheKey(
+    selectedStoreId,
+    page,
+    search,
+    status,
+    role
+  )
 
   const query = useQuery({
     enabled: !!selectedStoreId,
@@ -69,7 +77,8 @@ export function useStoreUsers({
       dispatchToast({
         type: 'error',
         message:
-          error instanceof Error && error.message === 'STORE_USER_ALREADY_ACTIVE'
+          error instanceof Error &&
+          error.message === 'STORE_USER_ALREADY_ACTIVE'
             ? 'Este e-mail ja possui acesso ativo nesta loja.'
             : 'Nao foi possivel criar o convite.',
       })
@@ -127,6 +136,64 @@ export function useStoreUsers({
           error instanceof Error && error.message === 'LAST_ACTIVE_STORE_OWNER'
             ? 'Nao e possivel remover o ultimo proprietario ativo da loja.'
             : 'Nao foi possivel desvincular o usuario.',
+      })
+    },
+  })
+
+  const blockMutation = useMutation({
+    mutationFn: (values: {
+      userId: string
+      reason: string
+      notificationChannel: 'none' | 'email' | 'whatsapp' | 'manual'
+      notificationNote?: string
+    }) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return blockStoreUserAccess(selectedStoreId, values)
+    },
+    onSuccess: result => {
+      dispatchToast({
+        type: result.sessionRevocationFailed ? 'warning' : 'success',
+        message: result.sessionRevocationFailed
+          ? 'Acesso bloqueado, mas nao foi possivel confirmar o encerramento das sessoes no Clerk.'
+          : result.revokedSessionCount > 0
+            ? `Acesso bloqueado e ${result.revokedSessionCount} sessao(oes) encerrada(s).`
+            : 'Acesso bloqueado.',
+      })
+      invalidate()
+    },
+    onError: error => {
+      const message =
+        error instanceof Error && error.message === 'LAST_ACTIVE_STORE_OWNER'
+          ? 'Nao e possivel bloquear o ultimo proprietario ativo da loja.'
+          : error instanceof Error && error.message === 'LAST_ACTIVE_STORE_USER'
+            ? 'Nao e possivel bloquear o ultimo usuario ativo da loja.'
+            : error instanceof Error &&
+                error.message === 'STORE_USER_ALREADY_BLOCKED'
+              ? 'Este usuario ja esta bloqueado nesta loja.'
+              : error instanceof Error && error.message === 'CANNOT_BLOCK_SELF'
+                ? 'Voce nao pode bloquear o seu proprio acesso por aqui.'
+                : 'Nao foi possivel bloquear o acesso.'
+
+      dispatchToast({ type: 'error', message })
+    },
+  })
+
+  const unblockMutation = useMutation({
+    mutationFn: (values: { userId: string; reason: string }) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return unblockStoreUserAccess(selectedStoreId, values)
+    },
+    onSuccess: () => {
+      dispatchToast({ type: 'success', message: 'Acesso desbloqueado.' })
+      invalidate()
+    },
+    onError: error => {
+      dispatchToast({
+        type: 'error',
+        message:
+          error instanceof Error && error.message === 'STORE_USER_NOT_BLOCKED'
+            ? 'Este usuario nao possui bloqueio ativo.'
+            : 'Nao foi possivel desbloquear o acesso.',
       })
     },
   })
@@ -198,12 +265,16 @@ export function useStoreUsers({
     inviteUser: inviteMutation.mutateAsync,
     resendInvite: resendInviteMutation.mutateAsync,
     updateUser: updateMutation.mutateAsync,
+    blockUser: blockMutation.mutateAsync,
+    unblockUser: unblockMutation.mutateAsync,
     revokeUser: revokeMutation.mutateAsync,
     revokeInvite: revokeInviteMutation.mutateAsync,
     requestPasswordReset: passwordResetMutation.mutateAsync,
     isInvitingUser: inviteMutation.isPending,
     isResendingInvite: resendInviteMutation.isPending,
     isUpdatingUser: updateMutation.isPending,
+    isBlockingUser: blockMutation.isPending,
+    isUnblockingUser: unblockMutation.isPending,
     isRevokingUser: revokeMutation.isPending,
     isRevokingInvite: revokeInviteMutation.isPending,
     isRequestingPasswordReset: passwordResetMutation.isPending,

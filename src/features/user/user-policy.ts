@@ -2,7 +2,10 @@ import type { SelectUser } from '@/services/db/schema'
 
 export const USER_EMAIL_ALREADY_LINKED_ERROR = 'USER_EMAIL_ALREADY_LINKED'
 
-type ExistingUserIdentity = Pick<SelectUser, 'id' | 'email' | 'clerkId' | 'status'>
+type ExistingUserIdentity = Pick<
+  SelectUser,
+  'id' | 'email' | 'clerkId' | 'status'
+>
 
 export const normalizeUserEmail = (email: string) => email.trim().toLowerCase()
 
@@ -22,9 +25,11 @@ export function assertClerkLoginCanUseEmail({
 export function shouldBlockStoreOperations({
   status,
   hasActiveAccessBlock = false,
+  hasActiveUserAccessBlock = false,
 }: {
   status: string
   hasActiveAccessBlock?: boolean
+  hasActiveUserAccessBlock?: boolean
 }) {
-  return status !== 'active' || hasActiveAccessBlock
+  return status !== 'active' || hasActiveAccessBlock || hasActiveUserAccessBlock
 }

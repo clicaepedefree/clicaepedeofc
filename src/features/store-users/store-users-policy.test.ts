@@ -1,5 +1,6 @@
 import {
   assertCanAssignPrimaryResponsibleRole,
+  assertCanBlockStoreUser,
   assertCanChangeStoreUserRole,
   assertCanRevokeStoreUser,
   assertCanUnsetPrimaryResponsible,
@@ -65,6 +66,29 @@ describe('store users policy', () => {
         users: [active('user-1', true), active('user-2')],
       })
     ).not.toThrow()
+  })
+
+  test('blocks user access only when another active owner remains', () => {
+    expect(() =>
+      assertCanBlockStoreUser({
+        targetUserId: 'user-1',
+        users: [
+          active('user-1', true),
+          { ...active('user-2'), blockedAt: new Date('2026-08-21T10:00:00Z') },
+          active('user-3'),
+        ],
+      })
+    ).not.toThrow()
+
+    expect(() =>
+      assertCanBlockStoreUser({
+        targetUserId: 'user-1',
+        users: [
+          active('user-1', true),
+          { ...active('user-2'), blockedAt: new Date('2026-08-21T10:00:00Z') },
+        ],
+      })
+    ).toThrow('LAST_ACTIVE_STORE_USER')
   })
 
   test('chooses another active user when revoking the primary responsible', () => {

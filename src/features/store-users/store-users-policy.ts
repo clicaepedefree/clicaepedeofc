@@ -3,8 +3,7 @@ export const storeUserRoleOptions = [
     value: 'owner',
     label: 'Proprietário',
     shortLabel: 'Gestão total',
-    description:
-      'Acesso total, gestão de equipe e regras protegidas da loja.',
+    description: 'Acesso total, gestão de equipe e regras protegidas da loja.',
   },
   {
     value: 'manager',
@@ -29,7 +28,8 @@ export const storeUserRoleOptions = [
     value: 'waiter',
     label: 'Garçom',
     shortLabel: 'Salão',
-    description: 'Lança e acompanha pedidos de mesa quando o salão estiver ativo.',
+    description:
+      'Lança e acompanha pedidos de mesa quando o salão estiver ativo.',
   },
   {
     value: 'courier',
@@ -63,24 +63,25 @@ export type StorePermission = (typeof storePermissionOptions)[number]
 
 const allStorePermissions = [...storePermissionOptions]
 
-export const storeRolePermissionMap: Record<StoreUserRole, StorePermission[]> = {
-  owner: allStorePermissions,
-  manager: [
-    'store.access',
-    'store.settings.manage',
-    'menu.manage',
-    'orders.manage',
-    'pos.operate',
-    'fiscal.manage',
-    'integrations.manage',
-    'reports.view',
-    'delivery.operate',
-  ],
-  attendant: ['store.access', 'orders.manage'],
-  cashier: ['store.access', 'orders.manage', 'pos.operate'],
-  waiter: ['store.access', 'orders.manage', 'pos.operate'],
-  courier: ['store.access', 'delivery.operate'],
-}
+export const storeRolePermissionMap: Record<StoreUserRole, StorePermission[]> =
+  {
+    owner: allStorePermissions,
+    manager: [
+      'store.access',
+      'store.settings.manage',
+      'menu.manage',
+      'orders.manage',
+      'pos.operate',
+      'fiscal.manage',
+      'integrations.manage',
+      'reports.view',
+      'delivery.operate',
+    ],
+    attendant: ['store.access', 'orders.manage'],
+    cashier: ['store.access', 'orders.manage', 'pos.operate'],
+    waiter: ['store.access', 'orders.manage', 'pos.operate'],
+    courier: ['store.access', 'delivery.operate'],
+  }
 
 export function normalizeStoreUserRole(
   role: StoreUserRole | 'admin'
@@ -92,7 +93,9 @@ export function roleHasStorePermission(
   role: StoreUserRole | 'admin',
   permission: StorePermission
 ) {
-  return storeRolePermissionMap[normalizeStoreUserRole(role)].includes(permission)
+  return storeRolePermissionMap[normalizeStoreUserRole(role)].includes(
+    permission
+  )
 }
 
 export function getStoreUserRoleOption(role: StoreUserRole | 'admin') {
@@ -109,11 +112,14 @@ export type StoreUserAccessState = {
   role: StoreUserRole
   isPrimaryResponsible: boolean
   revokedAt: Date | null
+  blockedAt?: Date | null
   userStatus: 'active' | 'deleted'
 }
 
 export function getActiveStoreUsers(users: StoreUserAccessState[]) {
-  return users.filter(user => !user.revokedAt && user.userStatus === 'active')
+  return users.filter(
+    user => !user.revokedAt && !user.blockedAt && user.userStatus === 'active'
+  )
 }
 
 export function assertCanRevokeStoreUser({
@@ -134,6 +140,16 @@ export function assertCanRevokeStoreUser({
   ) {
     throw new Error('LAST_ACTIVE_STORE_OWNER')
   }
+}
+
+export function assertCanBlockStoreUser({
+  targetUserId,
+  users,
+}: {
+  targetUserId: string
+  users: StoreUserAccessState[]
+}) {
+  assertCanRevokeStoreUser({ targetUserId, users })
 }
 
 export function getFallbackPrimaryResponsibleUserId({
