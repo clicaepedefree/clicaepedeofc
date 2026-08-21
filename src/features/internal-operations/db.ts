@@ -39,7 +39,7 @@ import {
   type StoreImplementationChecklistItemKey,
 } from '@/services/db/schema'
 import { storeBillingPaymentsTable } from '@/services/db/schema/store-billing-payments'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   and,
   count,
@@ -106,6 +106,20 @@ import {
   normalizeModuleAdditionalAmount,
   type StoreModuleManagementValues,
 } from './store-module-management-policy'
+import {
+  assertManualBillingActionAllowed,
+  calculateManualInvoiceAdjustment,
+  formatMoneyAmount,
+  getManualInvoiceOutstandingAmount,
+  getManualInvoiceRefundableAmount,
+  parseMoneyAmount,
+  type AdjustBillingInvoiceAmountValues,
+  type CancelBillingInvoiceValues,
+  type CreateManualBillingInvoiceValues,
+  type MarkManualBillingInvoicePaymentValues,
+  type RefundBillingInvoiceValues,
+  type RescheduleBillingInvoiceDueDateValues,
+} from './billing-manual-actions-policy'
 
 export type InternalStoreStatus = SelectStore['status']
 
@@ -749,6 +763,87 @@ export function getInvoiceReceivableAmount({
     parseInternalDashboardAmount(totalAmount) -
       parseInternalDashboardAmount(amountPaid)
   )
+}
+
+const asRecordMetadata = (metadata: unknown): Record<string, unknown> =>
+  metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : {}
+
+const getInvoiceFinancialSnapshot = (
+  invoice: Pick<
+    typeof storeBillingInvoicesTable.$inferSelect,
+    | 'status'
+    | 'subtotalAmount'
+    | 'discountAmount'
+    | 'totalAmount'
+    | 'amountPaid'
+    | 'amountRefunded'
+    | 'dueAt'
+    | 'paidAt'
+    | 'cancelledAt'
+    | 'refundedAt'
+  >
+) => ({
+  status: invoice.status,
+  subtotalAmount: invoice.subtotalAmount,
+  discountAmount: invoice.discountAmount,
+  totalAmount: invoice.totalAmount,
+  amountPaid: invoice.amountPaid,
+  amountRefunded: invoice.amountRefunded,
+  dueAt: invoice.dueAt.toISOString(),
+  paidAt: invoice.paidAt?.toISOString() ?? null,
+  cancelledAt: invoice.cancelledAt?.toISOString() ?? null,
+  refundedAt: invoice.refundedAt?.toISOString() ?? null,
+})
+
+const withManualBillingMetadata = ({
+  metadata,
+  action,
+  operator,
+  reason,
+  now,
+}: {
+  metadata: unknown
+  action: string
+  operator: InternalOperator
+  reason: string
+  now: Date
+}) => ({
+  ...asRecordMetadata(metadata),
+  lastManualAction: {
+    action,
+    actorEmail: operator.email,
+    actorClerkId: operator.clerkId,
+    reason,
+    at: now.toISOString(),
+  },
+})
+
+const insertManualBillingAuditLog = async ({
+  tx,
+  action,
+  operator,
+  store,
+  reason,
+}: {
+  tx: InternalStoreTransaction
+  action: (typeof internalOperationAuditLogsTable.$inferInsert)['action']
+  operator: InternalOperator
+  store: Pick<SelectStore, 'id' | 'status'>
+  reason: string
+}) => {
+  await tx.insert(internalOperationAuditLogsTable).values({
+    action,
+    actorClerkId: operator.clerkId,
+    actorEmail: operator.email,
+    actorName: operator.name,
+    storeId: store.id,
+    targetUserEmail: null,
+    previousStoreStatus: store.status,
+    newStoreStatus: store.status,
+    reason,
+  })
 }
 
 function getMetadataString(metadata: unknown, keys: string[]): string | null {
@@ -1872,6 +1967,557 @@ export async function getInternalStoreOverview(
     auditLogs,
     billingEvents,
   }
+}
+
+const getManualBillingStore = async (
+  tx: InternalStoreTransaction,
+  storeId: number
+) => {
+  const [store] = await tx
+    .select({
+      id: storesTable.id,
+      status: storesTable.status,
+    })
+    .from(storesTable)
+    .where(eq(storesTable.id, storeId))
+    .limit(1)
+
+  if (!store) throw new Error('STORE_NOT_FOUND')
+  if (store.status === 'archived') throw new Error('STORE_ARCHIVED')
+
+  return store
+}
+
+const getManualBillingInvoice = async ({
+  tx,
+  storeId,
+  invoiceId,
+}: {
+  tx: InternalStoreTransaction
+  storeId: number
+  invoiceId: number
+}) => {
+  const [invoice] = await tx
+    .select()
+    .from(storeBillingInvoicesTable)
+    .where(
+      and(
+        eq(storeBillingInvoicesTable.id, invoiceId),
+        eq(storeBillingInvoicesTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!invoice) throw new Error('STORE_BILLING_INVOICE_NOT_FOUND')
+
+  return invoice
+}
+
+export async function createManualBillingInvoice({
+  values,
+  operator,
+}: {
+  values: CreateManualBillingInvoiceValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const amount = normalizeCurrencyAmount(values.amount)
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const [subscription] = await tx
+      .select({
+        id: storeSubscriptionsTable.id,
+        planId: storeSubscriptionsTable.planId,
+        status: storeSubscriptionsTable.status,
+        contractedAmount: storeSubscriptionsTable.contractedAmount,
+        currency: storeSubscriptionsTable.currency,
+        billingInterval: storeSubscriptionsTable.billingInterval,
+        billingIntervalCount: storeSubscriptionsTable.billingIntervalCount,
+        currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
+        currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
+        planCode: billingPlansTable.code,
+        planName: billingPlansTable.name,
+      })
+      .from(storeSubscriptionsTable)
+      .innerJoin(
+        billingPlansTable,
+        eq(billingPlansTable.id, storeSubscriptionsTable.planId)
+      )
+      .where(
+        and(
+          eq(storeSubscriptionsTable.storeId, values.storeId),
+          inArray(storeSubscriptionsTable.status, [
+            'trialing',
+            'active',
+            'past_due',
+            'paused',
+          ])
+        )
+      )
+      .limit(1)
+
+    if (!subscription) throw new Error('STORE_SUBSCRIPTION_NOT_FOUND')
+
+    const invoiceNumber = `CP-${values.storeId}-MAN-${now
+      .toISOString()
+      .replace(/\D/g, '')
+      .slice(0, 14)}-${randomUUID().slice(0, 8).toUpperCase()}`
+    const periodStart = now
+    const periodEnd = new Date(now.getTime() + 1)
+    const metadata = {
+      source: 'internal_manual_invoice',
+      description: values.description,
+      createdByEmail: operator.email,
+      reason: values.reason,
+    }
+
+    const [invoice] = await tx
+      .insert(storeBillingInvoicesTable)
+      .values({
+        storeId: values.storeId,
+        subscriptionId: subscription.id,
+        planId: subscription.planId,
+        invoiceNumber,
+        status: 'pending',
+        currency: subscription.currency,
+        subtotalAmount: amount,
+        discountAmount: '0.0000',
+        totalAmount: amount,
+        amountPaid: '0.0000',
+        amountRefunded: '0.0000',
+        planSnapshot: {
+          id: subscription.planId,
+          code: subscription.planCode,
+          name: subscription.planName,
+        },
+        contractSnapshot: {
+          contractedAmount: subscription.contractedAmount,
+          currency: subscription.currency,
+          billingInterval: subscription.billingInterval,
+          billingIntervalCount: subscription.billingIntervalCount,
+          currentPeriodStart: subscription.currentPeriodStart.toISOString(),
+          currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
+          manualInvoiceDescription: values.description,
+        },
+        periodStart,
+        periodEnd,
+        dueAt: values.dueAt,
+        metadata,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: subscription.id,
+      invoiceId: invoice.id,
+      eventType: 'invoice_created',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: null,
+      newValues: getInvoiceFinancialSnapshot(invoice),
+      metadata,
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'create_manual_billing_invoice',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}; valor=${amount}`,
+    })
+
+    return invoice
+  })
+}
+
+export async function markManualBillingInvoicePayment({
+  values,
+  operator,
+}: {
+  values: MarkManualBillingInvoicePaymentValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const amountNumber = parseMoneyAmount(values.amount)
+  const amount = normalizeCurrencyAmount(values.amount)
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const invoice = await getManualBillingInvoice({
+      tx,
+      storeId: values.storeId,
+      invoiceId: values.invoiceId,
+    })
+
+    assertManualBillingActionAllowed({ action: 'mark_payment', invoice })
+
+    const outstandingAmount = getManualInvoiceOutstandingAmount(invoice)
+    if (amountNumber > outstandingAmount) {
+      throw new Error('MANUAL_BILLING_PAYMENT_EXCEEDS_OUTSTANDING')
+    }
+
+    const previousValues = getInvoiceFinancialSnapshot(invoice)
+    const nextAmountPaid = parseMoneyAmount(invoice.amountPaid) + amountNumber
+    const nextStatus =
+      nextAmountPaid >= parseMoneyAmount(invoice.totalAmount)
+        ? 'paid'
+        : 'pending'
+    const nextPaidAt = nextStatus === 'paid' ? values.paidAt : invoice.paidAt
+    const metadata = {
+      source: 'internal_manual_payment',
+      paymentReference: values.paymentReference || null,
+      reason: values.reason,
+    }
+
+    const [payment] = await tx
+      .insert(storeBillingPaymentsTable)
+      .values({
+        storeId: values.storeId,
+        invoiceId: invoice.id,
+        status: 'confirmed',
+        method: 'manual',
+        amount,
+        currency: invoice.currency,
+        provider: 'internal',
+        providerPaymentId: null,
+        paidAt: values.paidAt,
+        metadata,
+        updatedAt: now,
+      })
+      .returning()
+
+    const [updatedInvoice] = await tx
+      .update(storeBillingInvoicesTable)
+      .set({
+        status: nextStatus,
+        amountPaid: formatMoneyAmount(nextAmountPaid),
+        paidAt: nextPaidAt,
+        metadata: withManualBillingMetadata({
+          metadata: invoice.metadata,
+          action: 'mark_payment',
+          operator,
+          reason: values.reason,
+          now,
+        }),
+        updatedAt: now,
+      })
+      .where(eq(storeBillingInvoicesTable.id, invoice.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: invoice.subscriptionId,
+      invoiceId: invoice.id,
+      paymentId: payment.id,
+      eventType: 'payment_confirmed',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues: getInvoiceFinancialSnapshot(updatedInvoice),
+      metadata,
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'mark_manual_billing_invoice_payment',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}; valor=${amount}`,
+    })
+
+    return { invoice: updatedInvoice, payment }
+  })
+}
+
+export async function rescheduleBillingInvoiceDueDate({
+  values,
+  operator,
+}: {
+  values: RescheduleBillingInvoiceDueDateValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const invoice = await getManualBillingInvoice({
+      tx,
+      storeId: values.storeId,
+      invoiceId: values.invoiceId,
+    })
+
+    assertManualBillingActionAllowed({ action: 'reschedule_due_date', invoice })
+
+    const previousValues = getInvoiceFinancialSnapshot(invoice)
+    const [updatedInvoice] = await tx
+      .update(storeBillingInvoicesTable)
+      .set({
+        status: 'pending',
+        dueAt: values.dueAt,
+        metadata: withManualBillingMetadata({
+          metadata: invoice.metadata,
+          action: 'reschedule_due_date',
+          operator,
+          reason: values.reason,
+          now,
+        }),
+        updatedAt: now,
+      })
+      .where(eq(storeBillingInvoicesTable.id, invoice.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: invoice.subscriptionId,
+      invoiceId: invoice.id,
+      eventType: 'invoice_status_changed',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues: getInvoiceFinancialSnapshot(updatedInvoice),
+      metadata: { source: 'internal_manual_due_date_change' },
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'reschedule_billing_invoice_due_date',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}; vencimento=${values.dueAt.toISOString()}`,
+    })
+
+    return updatedInvoice
+  })
+}
+
+export async function adjustBillingInvoiceAmount({
+  values,
+  operator,
+}: {
+  values: AdjustBillingInvoiceAmountValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const invoice = await getManualBillingInvoice({
+      tx,
+      storeId: values.storeId,
+      invoiceId: values.invoiceId,
+    })
+
+    assertManualBillingActionAllowed({ action: 'apply_adjustment', invoice })
+
+    const adjustment = calculateManualInvoiceAdjustment({
+      invoice,
+      adjustmentType: values.adjustmentType,
+      amount: values.amount,
+    })
+    const normalizedAmount = normalizeCurrencyAmount(values.amount)
+    const [updatedInvoice] = await tx
+      .update(storeBillingInvoicesTable)
+      .set({
+        subtotalAmount: adjustment.subtotalAmount,
+        discountAmount: adjustment.discountAmount,
+        totalAmount: adjustment.totalAmount,
+        metadata: {
+          ...withManualBillingMetadata({
+            metadata: invoice.metadata,
+            action: 'apply_adjustment',
+            operator,
+            reason: values.reason,
+            now,
+          }),
+          manualAdjustment: {
+            type: values.adjustmentType,
+            amount: normalizedAmount,
+            previousValues: adjustment.previousValues,
+            newValues: adjustment.newValues,
+          },
+        },
+        updatedAt: now,
+      })
+      .where(eq(storeBillingInvoicesTable.id, invoice.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: invoice.subscriptionId,
+      invoiceId: invoice.id,
+      eventType: 'billing_adjustment_created',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues: adjustment.previousValues,
+      newValues: adjustment.newValues,
+      metadata: {
+        source: 'internal_manual_invoice_adjustment',
+        adjustmentType: values.adjustmentType,
+        amount: normalizedAmount,
+      },
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'adjust_billing_invoice_amount',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}; tipo=${values.adjustmentType}; valor=${normalizedAmount}`,
+    })
+
+    return updatedInvoice
+  })
+}
+
+export async function cancelBillingInvoice({
+  values,
+  operator,
+}: {
+  values: CancelBillingInvoiceValues
+  operator: InternalOperator
+}) {
+  if (values.confirmation !== 'CANCELAR') {
+    throw new Error('MANUAL_BILLING_CONFIRMATION_INVALID')
+  }
+
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const invoice = await getManualBillingInvoice({
+      tx,
+      storeId: values.storeId,
+      invoiceId: values.invoiceId,
+    })
+
+    assertManualBillingActionAllowed({ action: 'cancel_invoice', invoice })
+
+    const previousValues = getInvoiceFinancialSnapshot(invoice)
+    const [updatedInvoice] = await tx
+      .update(storeBillingInvoicesTable)
+      .set({
+        status: 'cancelled',
+        cancelledAt: now,
+        metadata: withManualBillingMetadata({
+          metadata: invoice.metadata,
+          action: 'cancel_invoice',
+          operator,
+          reason: values.reason,
+          now,
+        }),
+        updatedAt: now,
+      })
+      .where(eq(storeBillingInvoicesTable.id, invoice.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: invoice.subscriptionId,
+      invoiceId: invoice.id,
+      eventType: 'invoice_status_changed',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues: getInvoiceFinancialSnapshot(updatedInvoice),
+      metadata: { source: 'internal_manual_invoice_cancel' },
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'cancel_billing_invoice',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}`,
+    })
+
+    return updatedInvoice
+  })
+}
+
+export async function refundBillingInvoice({
+  values,
+  operator,
+}: {
+  values: RefundBillingInvoiceValues
+  operator: InternalOperator
+}) {
+  const now = new Date()
+  const amountNumber = parseMoneyAmount(values.amount)
+  const amount = normalizeCurrencyAmount(values.amount)
+
+  return await db.transaction(async tx => {
+    const store = await getManualBillingStore(tx, values.storeId)
+    const invoice = await getManualBillingInvoice({
+      tx,
+      storeId: values.storeId,
+      invoiceId: values.invoiceId,
+    })
+
+    assertManualBillingActionAllowed({ action: 'refund_invoice', invoice })
+
+    const refundableAmount = getManualInvoiceRefundableAmount(invoice)
+    if (amountNumber > refundableAmount) {
+      throw new Error('MANUAL_BILLING_REFUND_EXCEEDS_PAID')
+    }
+
+    const previousValues = getInvoiceFinancialSnapshot(invoice)
+    const nextAmountRefunded =
+      parseMoneyAmount(invoice.amountRefunded) + amountNumber
+    const isFullyRefunded =
+      nextAmountRefunded >= parseMoneyAmount(invoice.amountPaid)
+
+    const [updatedInvoice] = await tx
+      .update(storeBillingInvoicesTable)
+      .set({
+        status: isFullyRefunded ? 'refunded' : invoice.status,
+        amountRefunded: formatMoneyAmount(nextAmountRefunded),
+        refundedAt: isFullyRefunded ? now : invoice.refundedAt,
+        metadata: withManualBillingMetadata({
+          metadata: invoice.metadata,
+          action: 'refund_invoice',
+          operator,
+          reason: values.reason,
+          now,
+        }),
+        updatedAt: now,
+      })
+      .where(eq(storeBillingInvoicesTable.id, invoice.id))
+      .returning()
+
+    await tx.insert(storeBillingEventsTable).values({
+      storeId: values.storeId,
+      subscriptionId: invoice.subscriptionId,
+      invoiceId: invoice.id,
+      eventType: 'refund_registered',
+      actorClerkId: operator.clerkId,
+      actorEmail: operator.email,
+      reason: values.reason,
+      previousValues,
+      newValues: getInvoiceFinancialSnapshot(updatedInvoice),
+      metadata: {
+        source: 'internal_manual_invoice_refund',
+        amount,
+        paymentReference: values.paymentReference || null,
+      },
+    })
+
+    await insertManualBillingAuditLog({
+      tx,
+      action: 'refund_billing_invoice',
+      operator,
+      store,
+      reason: `${values.reason} | fatura=${invoice.invoiceNumber}; valor=${amount}`,
+    })
+
+    return updatedInvoice
+  })
 }
 
 export async function getRecentInternalAuditLogs(limit = 25) {

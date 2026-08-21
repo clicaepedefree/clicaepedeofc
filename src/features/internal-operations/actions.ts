@@ -3,14 +3,20 @@
 import {
   archiveStore,
   activateStoreAfterImplementation,
+  adjustBillingInvoiceAmount,
   blockStoreAccess,
+  cancelBillingInvoice,
   changeStoreSubscriptionPlan,
   createInternalStore,
+  createManualBillingInvoice,
   findInternalStoreCreationDuplicates,
   findInternalStoreProfileUpdateDuplicates,
   manageStoreModuleEntitlement,
+  markManualBillingInvoicePayment,
   reactivateStoreWithAdmin,
+  refundBillingInvoice,
   resendStoreAccessInvite,
+  rescheduleBillingInvoiceDueDate,
   unblockStoreAccess,
   updateInternalStoreProfile,
   updateStoreCommercialLifecycle,
@@ -54,6 +60,20 @@ import {
   storeModuleManagementSchema,
   type StoreModuleManagementValues,
 } from '@/features/internal-operations/store-module-management-policy'
+import {
+  adjustBillingInvoiceAmountSchema,
+  cancelBillingInvoiceSchema,
+  createManualBillingInvoiceSchema,
+  markManualBillingInvoicePaymentSchema,
+  refundBillingInvoiceSchema,
+  rescheduleBillingInvoiceDueDateSchema,
+  type AdjustBillingInvoiceAmountValues,
+  type CancelBillingInvoiceValues,
+  type CreateManualBillingInvoiceValues,
+  type MarkManualBillingInvoicePaymentValues,
+  type RefundBillingInvoiceValues,
+  type RescheduleBillingInvoiceDueDateValues,
+} from '@/features/internal-operations/billing-manual-actions-policy'
 import {
   lookupBrazilianPostalCode,
   type InternalPostalCodeAddress,
@@ -1116,6 +1136,250 @@ export async function changeStoreSubscriptionPlanAction(formData: FormData) {
   )
 }
 
+const getFormIssueMessage = (error: unknown, fallback: string) =>
+  error instanceof Error && 'issues' in error
+    ? String(
+        (error as { issues?: { message?: string }[] }).issues?.[0]?.message
+      )
+    : fallback
+
+const handleManualBillingActionError = ({
+  error,
+  returnPath,
+}: {
+  error: unknown
+  returnPath: string
+}): never => {
+  if (error instanceof Error) {
+    const messages: Record<string, string> = {
+      STORE_ARCHIVED: 'Loja arquivada nao permite acoes financeiras.',
+      STORE_NOT_FOUND: 'Loja nao encontrada.',
+      STORE_SUBSCRIPTION_NOT_FOUND:
+        'Assinatura ativa nao encontrada para gerar cobranca.',
+      STORE_BILLING_INVOICE_NOT_FOUND: 'Fatura nao encontrada para esta loja.',
+      MANUAL_BILLING_ACTION_NOT_ALLOWED:
+        'Esta acao nao e compativel com o status atual da fatura.',
+      MANUAL_BILLING_PAYMENT_EXCEEDS_OUTSTANDING:
+        'O pagamento informado e maior que o saldo em aberto.',
+      MANUAL_BILLING_REFUND_EXCEEDS_PAID:
+        'O estorno informado e maior que o valor pago.',
+      MANUAL_BILLING_DISCOUNT_EXCEEDS_TOTAL:
+        'O desconto nao pode deixar a fatura negativa.',
+      MANUAL_BILLING_CONFIRMATION_INVALID:
+        'Digite CANCELAR para confirmar o cancelamento.',
+    }
+
+    if (messages[error.message]) {
+      redirectWithError(returnPath, messages[error.message])
+    }
+  }
+
+  console.error('[internal-operations] Failed manual billing action', error)
+  redirectWithError(
+    returnPath,
+    'Nao foi possivel executar a acao financeira agora.'
+  )
+  throw new Error('UNREACHABLE_MANUAL_BILLING_ACTION_REDIRECT')
+}
+
+export async function createManualBillingInvoiceAction(formData: FormData) {
+  const operator = await requireInternalOperation('manageBillingInvoices')
+  const returnPath = getReturnPath(formData)
+  const values: CreateManualBillingInvoiceValues = (() => {
+    try {
+      return createManualBillingInvoiceSchema.parse({
+        storeId: formData.get('storeId'),
+        amount: formData.get('amount'),
+        dueAt: formData.get('dueAt'),
+        description: formData.get('description'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(
+          error,
+          'Revise valor, vencimento, descricao e motivo.'
+        )
+      )
+      throw new Error('INVALID_CREATE_MANUAL_BILLING_INVOICE_FORM')
+    }
+  })()
+
+  try {
+    await createManualBillingInvoice({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'cobranca-avulsa-criada')
+}
+
+export async function markManualBillingInvoicePaymentAction(
+  formData: FormData
+) {
+  const operator = await requireInternalOperation('manageBillingInvoices')
+  const returnPath = getReturnPath(formData)
+  const values: MarkManualBillingInvoicePaymentValues = (() => {
+    try {
+      return markManualBillingInvoicePaymentSchema.parse({
+        storeId: formData.get('storeId'),
+        invoiceId: formData.get('invoiceId'),
+        amount: formData.get('amount'),
+        paidAt: formData.get('paidAt'),
+        paymentReference: formData.get('paymentReference'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(error, 'Revise valor, data, referencia e motivo.')
+      )
+      throw new Error('INVALID_MARK_MANUAL_BILLING_PAYMENT_FORM')
+    }
+  })()
+
+  try {
+    await markManualBillingInvoicePayment({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'pagamento-manual-registrado')
+}
+
+export async function rescheduleBillingInvoiceDueDateAction(
+  formData: FormData
+) {
+  const operator = await requireInternalOperation('manageBillingInvoices')
+  const returnPath = getReturnPath(formData)
+  const values: RescheduleBillingInvoiceDueDateValues = (() => {
+    try {
+      return rescheduleBillingInvoiceDueDateSchema.parse({
+        storeId: formData.get('storeId'),
+        invoiceId: formData.get('invoiceId'),
+        dueAt: formData.get('dueAt'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(error, 'Revise novo vencimento e motivo.')
+      )
+      throw new Error('INVALID_RESCHEDULE_BILLING_INVOICE_FORM')
+    }
+  })()
+
+  try {
+    await rescheduleBillingInvoiceDueDate({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'vencimento-fatura-atualizado')
+}
+
+export async function adjustBillingInvoiceAmountAction(formData: FormData) {
+  const operator = await requireInternalOperation('applyBillingDiscounts')
+  const returnPath = getReturnPath(formData)
+  const values: AdjustBillingInvoiceAmountValues = (() => {
+    try {
+      return adjustBillingInvoiceAmountSchema.parse({
+        storeId: formData.get('storeId'),
+        invoiceId: formData.get('invoiceId'),
+        adjustmentType: formData.get('adjustmentType'),
+        amount: formData.get('amount'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(error, 'Revise tipo de ajuste, valor e motivo.')
+      )
+      throw new Error('INVALID_ADJUST_BILLING_INVOICE_FORM')
+    }
+  })()
+
+  try {
+    await adjustBillingInvoiceAmount({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'valor-fatura-ajustado')
+}
+
+export async function cancelBillingInvoiceAction(formData: FormData) {
+  const operator = await requireInternalOperation('cancelBilling')
+  const returnPath = getReturnPath(formData)
+  const values: CancelBillingInvoiceValues = (() => {
+    try {
+      return cancelBillingInvoiceSchema.parse({
+        storeId: formData.get('storeId'),
+        invoiceId: formData.get('invoiceId'),
+        confirmation: formData.get('confirmation'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(error, 'Revise confirmacao e motivo.')
+      )
+      throw new Error('INVALID_CANCEL_BILLING_INVOICE_FORM')
+    }
+  })()
+
+  try {
+    await cancelBillingInvoice({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'fatura-cancelada')
+}
+
+export async function refundBillingInvoiceAction(formData: FormData) {
+  const operator = await requireInternalOperation('cancelBilling')
+  const returnPath = getReturnPath(formData)
+  const values: RefundBillingInvoiceValues = (() => {
+    try {
+      return refundBillingInvoiceSchema.parse({
+        storeId: formData.get('storeId'),
+        invoiceId: formData.get('invoiceId'),
+        amount: formData.get('amount'),
+        paymentReference: formData.get('paymentReference'),
+        reason: formData.get('reason'),
+      })
+    } catch (error) {
+      redirectWithError(
+        returnPath,
+        getFormIssueMessage(error, 'Revise valor, referencia e motivo.')
+      )
+      throw new Error('INVALID_REFUND_BILLING_INVOICE_FORM')
+    }
+  })()
+
+  try {
+    await refundBillingInvoice({ values, operator })
+  } catch (error) {
+    handleManualBillingActionError({ error, returnPath })
+  }
+
+  revalidatePath('/internal/stores')
+  revalidatePath('/internal-operations')
+  redirectWithResult(returnPath, 'estorno-registrado')
+}
+
 export async function manageStoreModuleEntitlementAction(formData: FormData) {
   const operator = await requireInternalOperation('manageStoreModules')
   const returnPath = getReturnPath(formData)
@@ -1159,7 +1423,10 @@ export async function manageStoreModuleEntitlementAction(formData: FormData) {
       )
     }
 
-    if (error instanceof Error && error.message === 'BILLING_MODULE_NOT_FOUND') {
+    if (
+      error instanceof Error &&
+      error.message === 'BILLING_MODULE_NOT_FOUND'
+    ) {
       redirectWithError(returnPath, 'Modulo ativo nao encontrado no catalogo.')
     }
 
