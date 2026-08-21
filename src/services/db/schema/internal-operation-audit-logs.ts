@@ -26,6 +26,10 @@ export const internalOperationActions = [
   'refund_billing_invoice',
   'auto_unblock_billing_access',
   'manage_store_module_entitlement',
+  'create_store_user_invite',
+  'update_store_user',
+  'revoke_store_user',
+  'transfer_store_primary_responsible',
   'reactivate_store',
   'archive_store',
 ] as const

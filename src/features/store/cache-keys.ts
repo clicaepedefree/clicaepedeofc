@@ -13,3 +13,10 @@ export const storeOperationConfigurationCacheKey = (storeId: number | null) => [
   storeId,
   'operation-configuration',
 ]
+
+export const storeUsersCacheKey = (
+  storeId: number | null,
+  page: number,
+  search: string,
+  status: string
+) => ['stores', storeId, 'users', page, search, status]
