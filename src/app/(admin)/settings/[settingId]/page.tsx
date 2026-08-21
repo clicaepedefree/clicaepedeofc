@@ -5,6 +5,7 @@ import { CompanySettings } from '@/features/legal-entity/components/company-sett
 import { LegalSettings } from '@/features/legal-entity/components/legal-settings'
 import { StoreDeliverySettings } from '@/features/store/components/store-delivery-settings'
 import { StoreOperationSettings } from '@/features/store/components/store-operation-settings'
+import { StoreUsersSettings } from '@/features/store-users/components/store-users-settings'
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/tabs'
 import { useParams, useRouter } from 'next/navigation'
@@ -39,6 +40,12 @@ const settingsPages = [
     title: 'Integrações',
     label: 'Integrações',
     pageComponent: () => <IntegrationsSettings />,
+  },
+  {
+    id: 'users',
+    title: 'Usuários da loja',
+    label: 'Usuários',
+    pageComponent: () => <StoreUsersSettings />,
   },
 ]
 
