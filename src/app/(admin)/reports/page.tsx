@@ -1,50 +1,46 @@
 'use client'
 
 import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
+import { ReportPeriodFilter } from '@/features/reports/components/report-period-filter'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
 import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
-import {
-  reportPeriodsOptions,
-  type ReportPeriod,
-} from '@/features/reports/form-validation/report-period'
+import type { ReportPeriodSelection } from '@/features/reports/form-validation/report-period'
 import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/card'
-import { Combobox } from '@/shared/combobox'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { LoadingSpinner } from '@/shared/spinner'
 import { Body } from '@/shared/typography/body'
 import { useState } from 'react'
 
 export default function Page() {
-  const [selectedPeriod, setSelectedPeriod] =
-    useState<ReportPeriod>('LAST_30_DAYS')
+  const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriodSelection>({
+    preset: 'LAST_7_DAYS',
+  })
 
-  const { revenueSummary, isLoading, isEnabled, dates } =
+  const { revenueSummary, isLoading, isEnabled, period } =
     useRevenueSummary(selectedPeriod)
 
   return (
     <>
       <AdminPageInfo pageInfo={{ title: 'Relatórios' }} />
       <div className="p-4 max-w-[inherit]">
-        <div className="flex items-center justify-between gap-4 w-full mb-4">
-          <div className="min-w-52">
-            <Combobox
-              options={[...reportPeriodsOptions]}
-              value={selectedPeriod}
-              onChange={(value: string) =>
-                setSelectedPeriod(value as ReportPeriod)
-              }
-              placeholder="Selecione um período"
-              searchPlaceholder="Buscar período"
-              noResultMessage="Nenhum período encontrado"
-              disabled={isLoading}
-              disableUnselectingOption
-              contentClassName="min-w-fit"
-            />
-          </div>
-        </div>
-        {(isLoading || !isEnabled) && <LoadingSpinner />}
-        {!isLoading && isEnabled && !revenueSummary?.totalOrders && (
+        <ReportPeriodFilter
+          value={selectedPeriod}
+          period={period}
+          onChange={setSelectedPeriod}
+          disabled={isLoading}
+          className="mb-4"
+        />
+        {!period.isRangeValid && (
+          <Body variant={100} className="w-full text-center py-4">
+            Ajuste o período para consultar os indicadores.
+          </Body>
+        )}
+        {(isLoading || !isEnabled) && period.isRangeValid && <LoadingSpinner />}
+        {!isLoading &&
+          isEnabled &&
+          period.isRangeValid &&
+          !revenueSummary?.totalOrders && (
           <Body variant={100} className="w-full text-center py-4">
             Loja não possui vendas para o período
           </Body>
@@ -94,7 +90,10 @@ export default function Page() {
                 />
                 <RevenueMultilineChart
                   chartData={revenueSummary.dailyBreakdowns}
-                  dates={dates}
+                  dates={{
+                    startDate: period.startDate,
+                    endDate: period.endDate,
+                  }}
                 />
               </div>
             )}

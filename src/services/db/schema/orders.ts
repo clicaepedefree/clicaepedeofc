@@ -1,7 +1,8 @@
 import { storesTable } from '@/services/db/schema/stores'
 import { createdAt, updatedAt } from '@/services/db/schema/utils'
-import { isNotNull } from 'drizzle-orm'
+import { isNotNull, sql } from 'drizzle-orm'
 import {
+  index,
   integer,
   jsonb,
   numeric,
@@ -89,6 +90,9 @@ export const ordersTable = pgTable(
     uniqueIndex('orders_store_id_idempotency_key_unique')
       .on(table.storeId, table.idempotencyKey)
       .where(isNotNull(table.idempotencyKey)),
+    index('orders_report_completed_store_created_idx')
+      .on(table.storeId, table.createdAt)
+      .where(sql`${table.status} = 'COMPLETED'`),
   ]
 )
 
