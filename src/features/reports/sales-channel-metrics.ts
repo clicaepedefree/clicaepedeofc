@@ -56,6 +56,22 @@ export type TopSellingProduct = {
   predominantChannelLabel: string
 }
 
+export type CustomerActivityRow = {
+  customerPhone?: string | null
+  customerDocument?: string | null
+  createdAt: Date | string
+}
+
+export type StoreAdoptionMetrics = {
+  registeredProducts: number
+  activeProducts: number
+  totalCustomers: number
+  newCustomersInPeriod: number
+  lastSaleAt: Date | string | null
+  lastAccessAt: Date | string | null
+  uniqueCustomerCriteria: string
+}
+
 type OperationalSalesChannelInfo = {
   label: string
   description: string
@@ -142,6 +158,47 @@ const parseDatabaseMoney = (value: number | string | null | undefined) => {
 
 const compareTextDeterministically = (left: string, right: string) =>
   left.localeCompare(right, 'pt-BR', { sensitivity: 'base' })
+
+const normalizeNumericIdentifier = (value?: string | null) => {
+  const normalized = value?.replace(/\D/g, '') ?? ''
+  return normalized || null
+}
+
+export const uniqueCustomerCriteria =
+  'Cliente unico = telefone normalizado; quando telefone nao existe, documento normalizado. Pedidos sem telefone e sem documento nao entram nessa contagem.'
+
+export const getUniqueCustomerKey = ({
+  customerPhone,
+  customerDocument,
+}: Pick<CustomerActivityRow, 'customerPhone' | 'customerDocument'>) =>
+  normalizeNumericIdentifier(customerPhone) ??
+  normalizeNumericIdentifier(customerDocument)
+
+export const buildStoreAdoptionMetrics = ({
+  registeredProducts,
+  activeProducts,
+  totalCustomers,
+  newCustomersInPeriod,
+  lastSaleAt,
+  lastAccessAt,
+}: {
+  registeredProducts: number | string | null
+  activeProducts: number | string | null
+  totalCustomers: number | string | null
+  newCustomersInPeriod: number | string | null
+  lastSaleAt?: Date | string | null
+  lastAccessAt?: Date | string | null
+}): StoreAdoptionMetrics => {
+  return {
+    registeredProducts: Number(registeredProducts ?? 0),
+    activeProducts: Number(activeProducts ?? 0),
+    totalCustomers: Number(totalCustomers ?? 0),
+    newCustomersInPeriod: Number(newCustomersInPeriod ?? 0),
+    lastSaleAt: lastSaleAt ?? null,
+    lastAccessAt: lastAccessAt ?? null,
+    uniqueCustomerCriteria,
+  }
+}
 
 export const buildOperationalSalesMetricsSummary = (
   rows: OperationalSalesMetricRow[]

@@ -4,6 +4,7 @@ import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
 import { ReportPeriodFilter } from '@/features/reports/components/report-period-filter'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
 import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
+import { StoreAdoptionMetrics } from '@/features/reports/components/store-adoption-metrics'
 import { TopSellingProducts } from '@/features/reports/components/top-selling-products'
 import type { ReportPeriodSelection } from '@/features/reports/form-validation/report-period'
 import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
@@ -76,6 +77,7 @@ export default function Page() {
             classificationNote={revenueSummary?.classificationNote}
             revenueTreatmentNote={revenueSummary?.revenueTreatmentNote}
           />
+          <StoreAdoptionMetrics metrics={revenueSummary?.adoptionMetrics} />
           <TopSellingProducts
             products={revenueSummary?.topSellingProducts ?? []}
           />

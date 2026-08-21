@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  buildStoreAdoptionMetrics,
   buildTopSellingProducts,
   buildOperationalSalesMetricsSummary,
   classifyOperationalSalesChannel,
+  getUniqueCustomerKey,
   isOperationalRevenueStatus,
 } from './sales-channel-metrics'
 
@@ -205,5 +207,57 @@ describe('operational sales channel metrics', () => {
     expect(product.quantity).toBe('8.0000')
     expect(product.revenue).toBe('310.0000')
     expect(product.predominantChannel).toBe('tables')
+  })
+})
+
+describe('store adoption metrics', () => {
+  test('documents unique customers by normalized phone with document fallback', () => {
+    expect(getUniqueCustomerKey({ customerPhone: '(11) 99999-8888' })).toBe(
+      '11999998888'
+    )
+    expect(
+      getUniqueCustomerKey({
+        customerPhone: '',
+        customerDocument: '123.456.789-09',
+      })
+    ).toBe('12345678909')
+    expect(
+      getUniqueCustomerKey({ customerPhone: '', customerDocument: '' })
+    ).toBe(null)
+  })
+
+  test('builds adoption metrics from database aggregates', () => {
+    const metrics = buildStoreAdoptionMetrics({
+      registeredProducts: 4,
+      activeProducts: 2,
+      totalCustomers: 12,
+      newCustomersInPeriod: 3,
+      lastSaleAt: '2026-08-20T12:00:00',
+      lastAccessAt: '2026-08-21T09:00:00',
+    })
+
+    expect(metrics.registeredProducts).toBe(4)
+    expect(metrics.activeProducts).toBe(2)
+    expect(metrics.totalCustomers).toBe(12)
+    expect(metrics.newCustomersInPeriod).toBe(3)
+    expect(
+      metrics.uniqueCustomerCriteria.includes('telefone normalizado')
+    ).toBe(true)
+  })
+
+  test('returns zeroed adoption metrics for stores without data', () => {
+    const metrics = buildStoreAdoptionMetrics({
+      registeredProducts: null,
+      activeProducts: null,
+      totalCustomers: null,
+      newCustomersInPeriod: null,
+    })
+
+    expect(metrics.registeredProducts).toBe(0)
+    expect(metrics.activeProducts).toBe(0)
+    expect(metrics.totalCustomers).toBe(0)
+    expect(metrics.newCustomersInPeriod).toBe(0)
+    expect(metrics.lastSaleAt).toBe(null)
+    expect(metrics.lastAccessAt).toBe(null)
   })
 })
