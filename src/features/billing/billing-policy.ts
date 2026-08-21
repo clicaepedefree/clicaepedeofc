@@ -17,6 +17,19 @@ export type BillingPeriod = {
   nextBillingAt: Date
 }
 
+export type RecurringBillingGenerationInput = {
+  status: SelectStoreSubscription['status']
+  nextBillingAt: Date
+  now: Date
+  invoiceLeadDays: number
+}
+
+export type RecurringBillingInvoiceNumberInput = {
+  storeId: number
+  subscriptionId: number
+  periodStart: Date
+}
+
 export type BillingInvoiceDraftInput = {
   invoiceNumber: string
   dueAt: Date
@@ -47,9 +60,33 @@ export type BillingInvoiceDraftInput = {
   >
 }
 
+export type RecurringBillingInvoiceDraftInput = Omit<
+  BillingInvoiceDraftInput,
+  'subscription'
+> & {
+  subscription: BillingInvoiceDraftInput['subscription'] &
+    Pick<SelectStoreSubscription, 'status'>
+}
+
+export type RecurringBillingInvoiceDraft = {
+  invoice: InsertStoreBillingInvoice
+  nextPeriod: BillingPeriod
+  nextSubscriptionStatus: SelectStoreSubscription['status']
+}
+
 export const supportedBillingInvoiceStatuses = [
   ...storeBillingInvoiceStatuses,
 ] as const
+
+export const recurringBillingEligibleStatuses = [
+  'trialing',
+  'active',
+  'past_due',
+] as const satisfies SelectStoreSubscription['status'][]
+
+const recurringBillingEligibleStatusSet: ReadonlySet<
+  SelectStoreSubscription['status']
+> = new Set(recurringBillingEligibleStatuses)
 
 const intervalToMonths: Record<BillingInterval, number> = {
   monthly: 1,
@@ -60,6 +97,11 @@ const intervalToMonths: Record<BillingInterval, number> = {
 
 const normalizePositiveCount = (count: number) =>
   Number.isFinite(count) && count > 0 ? Math.trunc(count) : 1
+
+export const normalizeInvoiceLeadDays = (invoiceLeadDays: number) =>
+  Number.isFinite(invoiceLeadDays) && invoiceLeadDays >= 0
+    ? Math.min(Math.trunc(invoiceLeadDays), 60)
+    : 7
 
 const lastDayOfMonth = (year: number, monthIndex: number) =>
   new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
@@ -106,6 +148,83 @@ export const calculateNextBillingPeriod = ({
     periodStart,
     periodEnd,
     nextBillingAt: periodEnd,
+  }
+}
+
+export const calculateRecurringBillingGenerationCutoff = ({
+  now,
+  invoiceLeadDays,
+}: {
+  now: Date
+  invoiceLeadDays: number
+}) => {
+  const cutoff = new Date(now)
+  cutoff.setUTCDate(
+    cutoff.getUTCDate() + normalizeInvoiceLeadDays(invoiceLeadDays)
+  )
+  return cutoff
+}
+
+export const shouldGenerateRecurringBillingInvoice = ({
+  status,
+  nextBillingAt,
+  now,
+  invoiceLeadDays,
+}: RecurringBillingGenerationInput) => {
+  if (!recurringBillingEligibleStatusSet.has(status)) {
+    return false
+  }
+
+  return (
+    nextBillingAt.getTime() <=
+    calculateRecurringBillingGenerationCutoff({
+      now,
+      invoiceLeadDays,
+    }).getTime()
+  )
+}
+
+const formatInvoicePeriodDate = (date: Date) =>
+  [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0'),
+  ].join('')
+
+export const buildRecurringBillingInvoiceNumber = ({
+  storeId,
+  subscriptionId,
+  periodStart,
+}: RecurringBillingInvoiceNumberInput) =>
+  `CP-${storeId}-REC-${subscriptionId}-${formatInvoicePeriodDate(periodStart)}`
+
+export const buildRecurringBillingInvoiceDraft = ({
+  invoiceNumber,
+  dueAt,
+  plan,
+  subscription,
+}: RecurringBillingInvoiceDraftInput): RecurringBillingInvoiceDraft => {
+  const nextPeriod = calculateNextBillingPeriod({
+    currentPeriodEnd: subscription.currentPeriodEnd,
+    billingInterval: subscription.billingInterval,
+    billingIntervalCount: subscription.billingIntervalCount,
+  })
+  const billableSubscription = {
+    ...subscription,
+    currentPeriodStart: nextPeriod.periodStart,
+    currentPeriodEnd: nextPeriod.periodEnd,
+  }
+
+  return {
+    invoice: buildBillingInvoiceDraft({
+      invoiceNumber,
+      dueAt,
+      plan,
+      subscription: billableSubscription,
+    }),
+    nextPeriod,
+    nextSubscriptionStatus:
+      subscription.status === 'trialing' ? 'active' : subscription.status,
   }
 }
 

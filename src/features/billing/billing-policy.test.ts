@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   buildBillingInvoiceDraft,
+  buildRecurringBillingInvoiceDraft,
+  buildRecurringBillingInvoiceNumber,
   calculateBillingInvoiceAmounts,
   calculateNextBillingPeriod,
+  calculateRecurringBillingGenerationCutoff,
+  normalizeInvoiceLeadDays,
+  shouldGenerateRecurringBillingInvoice,
   supportedBillingInvoiceStatuses,
 } from './billing-policy'
 
@@ -171,5 +176,143 @@ describe('billing policy', () => {
       'cancelled',
       'refunded',
     ])
+  })
+
+  test('calcula janela de geracao recorrente antes do vencimento', () => {
+    const now = new Date('2026-08-10T09:00:00.000Z')
+
+    expect(
+      calculateRecurringBillingGenerationCutoff({
+        now,
+        invoiceLeadDays: 7,
+      }).toISOString()
+    ).toBe('2026-08-17T09:00:00.000Z')
+    expect(normalizeInvoiceLeadDays(Number.NaN)).toBe(7)
+    expect(normalizeInvoiceLeadDays(-1)).toBe(7)
+    expect(normalizeInvoiceLeadDays(90)).toBe(60)
+  })
+
+  test('gera fatura recorrente somente para assinaturas elegiveis na janela', () => {
+    const now = new Date('2026-08-10T09:00:00.000Z')
+
+    expect(
+      shouldGenerateRecurringBillingInvoice({
+        status: 'active',
+        nextBillingAt: new Date('2026-08-17T09:00:00.000Z'),
+        now,
+        invoiceLeadDays: 7,
+      })
+    ).toBe(true)
+    expect(
+      shouldGenerateRecurringBillingInvoice({
+        status: 'active',
+        nextBillingAt: new Date('2026-08-18T09:00:00.000Z'),
+        now,
+        invoiceLeadDays: 7,
+      })
+    ).toBe(false)
+    expect(
+      shouldGenerateRecurringBillingInvoice({
+        status: 'paused',
+        nextBillingAt: new Date('2026-08-17T09:00:00.000Z'),
+        now,
+        invoiceLeadDays: 7,
+      })
+    ).toBe(false)
+  })
+
+  test('usa numero deterministico para permitir retry sem duplicar fatura', () => {
+    const input = {
+      storeId: 15,
+      subscriptionId: 99,
+      periodStart: new Date('2026-08-01T00:00:00.000Z'),
+    }
+
+    expect(buildRecurringBillingInvoiceNumber(input)).toBe(
+      'CP-15-REC-99-20260801'
+    )
+    expect(buildRecurringBillingInvoiceNumber(input)).toBe(
+      buildRecurringBillingInvoiceNumber({ ...input })
+    )
+  })
+
+  test('fatura recorrente usa a proxima competencia e nao a competencia atual ja faturada', () => {
+    const plan = {
+      id: 10,
+      code: 'PRO',
+      name: 'Plano Pro',
+      defaultAmount: '299.9000',
+      currency: 'BRL',
+      billingInterval: 'monthly' as const,
+      billingIntervalCount: 1,
+    }
+    const subscription = {
+      id: 20,
+      storeId: 30,
+      planId: 10,
+      status: 'active' as const,
+      contractedAmount: '249.9000',
+      currency: 'BRL',
+      billingInterval: 'monthly' as const,
+      billingIntervalCount: 1,
+      discountType: null,
+      discountValue: null,
+      discountValidUntil: null,
+      currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
+      currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
+    }
+
+    const result = buildRecurringBillingInvoiceDraft({
+      invoiceNumber: buildRecurringBillingInvoiceNumber({
+        storeId: subscription.storeId,
+        subscriptionId: subscription.id,
+        periodStart: subscription.currentPeriodEnd,
+      }),
+      dueAt: new Date('2026-09-01T00:00:00.000Z'),
+      plan,
+      subscription,
+    })
+
+    expect(result.invoice.periodStart.toISOString()).toBe(
+      '2026-09-01T00:00:00.000Z'
+    )
+    expect(result.invoice.periodEnd.toISOString()).toBe(
+      '2026-10-01T00:00:00.000Z'
+    )
+    expect(result.invoice.invoiceNumber).toBe('CP-30-REC-20-20260901')
+    expect(result.nextSubscriptionStatus).toBe('active')
+  })
+
+  test('fatura recorrente transforma trial em assinatura ativa apos geracao valida', () => {
+    const result = buildRecurringBillingInvoiceDraft({
+      invoiceNumber: 'CP-30-REC-20-20260901',
+      dueAt: new Date('2026-09-01T00:00:00.000Z'),
+      plan: {
+        id: 10,
+        code: 'PRO',
+        name: 'Plano Pro',
+        defaultAmount: '299.9000',
+        currency: 'BRL',
+        billingInterval: 'monthly',
+        billingIntervalCount: 1,
+      },
+      subscription: {
+        id: 20,
+        storeId: 30,
+        planId: 10,
+        status: 'trialing',
+        contractedAmount: '249.9000',
+        currency: 'BRL',
+        billingInterval: 'monthly',
+        billingIntervalCount: 1,
+        discountType: null,
+        discountValue: null,
+        discountValidUntil: null,
+        currentPeriodStart: new Date('2026-08-01T00:00:00.000Z'),
+        currentPeriodEnd: new Date('2026-09-01T00:00:00.000Z'),
+      },
+    })
+
+    expect(result.nextSubscriptionStatus).toBe('active')
   })
 })
