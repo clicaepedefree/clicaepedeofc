@@ -19,6 +19,7 @@ export const internalOperationPermissionRequirements = {
   cancelBilling: 'cancel_billing',
   manageStoreModules: 'manage_store_modules',
   blockStore: 'block_store',
+  exportPersonalData: 'export_personal_data',
 } as const satisfies Record<string, InternalPermission>
 
 export type InternalOperationKey =

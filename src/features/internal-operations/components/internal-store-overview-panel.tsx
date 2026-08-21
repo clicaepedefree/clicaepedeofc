@@ -1,4 +1,5 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
+import { canViewInternalPersonalData } from '@/features/internal-operations/access'
 import {
   adjustBillingInvoiceAmountAction,
   changeStoreSubscriptionPlanAction,
@@ -270,6 +271,7 @@ export function InternalStoreOverviewPanel({
     .filter(Boolean)
     .join(' - ')
   const currency = store.billing.currency ?? 'BRL'
+  const personalDataMasked = !canViewInternalPersonalData(operator)
 
   return (
     <div className="space-y-6">
@@ -368,6 +370,13 @@ export function InternalStoreOverviewPanel({
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-100">
           {error}
+        </div>
+      )}
+      {personalDataMasked && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+          <LockKeyhole className="size-4 text-primary" />
+          Dados pessoais desta loja aparecem mascarados conforme a permissao do
+          seu perfil.
         </div>
       )}
       {result === 'dados-atualizados' && (

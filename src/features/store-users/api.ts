@@ -36,6 +36,13 @@ import {
 
 const storeUsersPageSize = 8
 
+const maskStoreUserAuditPhone = (value: string | null | undefined) => {
+  const digits = value?.replace(/\D/g, '') ?? ''
+  if (!digits) return '-'
+
+  return `***${digits.slice(-4)}`
+}
+
 const storeUserInviteSchema = z.object({
   email: z.string().email('Informe um e-mail valido.'),
   name: z.string().trim().max(120).optional(),
@@ -727,7 +734,7 @@ export async function updateStoreUser(
       targetUserEmail: target.email,
       previousStoreStatus: 'store_user_active',
       newStoreStatus: 'store_user_updated',
-      reason: `Usuario atualizado pela loja. nome=${target.name ?? '-'} -> ${normalizeTextInput(parsed.name) ?? '-'}; telefone=${target.phone ?? '-'} -> ${normalizeTextInput(parsed.phone) ?? '-'}; perfil=${target.role} -> ${parsed.role}.`,
+      reason: `Usuario atualizado pela loja. nome=${target.name ?? '-'} -> ${normalizeTextInput(parsed.name) ?? '-'}; telefone=${maskStoreUserAuditPhone(target.phone)} -> ${maskStoreUserAuditPhone(parsed.phone)}; perfil=${target.role} -> ${parsed.role}.`,
     })
 
     return { success: true }

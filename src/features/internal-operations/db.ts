@@ -1,4 +1,5 @@
 import {
+  canViewInternalPersonalData,
   canUseInternalPermission,
   type InternalOperator,
 } from '@/features/internal-operations/access'
@@ -296,6 +297,7 @@ export type InternalStoreListFilters = {
   createdTo?: Date
   page?: number
   perPage?: number
+  operator?: Pick<InternalOperator, 'role'> | null
 }
 
 export type InternalStoreListResult = {
@@ -1150,7 +1152,9 @@ export async function listInternalStores({
   createdTo,
   page = 1,
   perPage = internalStoreListDefaultPerPage,
+  operator,
 }: InternalStoreListFilters): Promise<InternalStoreListResult> {
+  const canViewPersonalData = canViewInternalPersonalData(operator ?? null)
   const safePage = Math.max(1, page)
   const safePerPage = Math.min(
     internalStoreListMaxPerPage,
@@ -1308,7 +1312,10 @@ export async function listInternalStores({
       status: item.status,
       requiredForActivation: item.requiredForActivation,
       completedAt: item.completedAt,
-      completedByEmail: item.completedByEmail,
+      completedByEmail: protectInternalPersonalEmail({
+        value: item.completedByEmail,
+        canViewPersonalData,
+      }),
       completedByName: item.completedByName,
       observation: item.observation,
       updatedAt: item.updatedAt,
@@ -1343,8 +1350,15 @@ export async function listInternalStores({
     const admins = adminsByStoreId.get(admin.storeId) ?? []
     admins.push({
       userId: admin.userId,
-      email: admin.email,
-      phone: admin.phone,
+      email: protectInternalRequiredPersonalEmail({
+        value: admin.email,
+        canViewPersonalData,
+      }),
+      phone: protectInternalPersonalDigits({
+        value: admin.phone,
+        fallback: 'telefone informado',
+        canViewPersonalData,
+      }),
       name: admin.name,
       userStatus: admin.userStatus,
       isPrimaryResponsible: admin.isPrimaryResponsible,
@@ -1366,18 +1380,34 @@ export async function listInternalStores({
       updatedAt: store.updatedAt,
       company: {
         responsibleName: store.responsibleName,
-        responsibleEmail: store.responsibleEmail,
-        responsiblePhone: store.responsiblePhone,
-        companyEmail: store.companyEmail,
-        companyPhone: store.companyPhone,
-        companyTaxNumber: maskInternalStoreSensitiveDigits(
-          store.companyTaxNumber ?? '',
-          'CNPJ nao informado'
-        ),
-        responsibleTaxNumber: maskInternalStoreSensitiveDigits(
-          store.responsibleTaxNumber ?? '',
-          'CPF nao informado'
-        ),
+        responsibleEmail: protectInternalPersonalEmail({
+          value: store.responsibleEmail,
+          canViewPersonalData,
+        }),
+        responsiblePhone: protectInternalPersonalDigits({
+          value: store.responsiblePhone,
+          fallback: 'telefone informado',
+          canViewPersonalData,
+        }),
+        companyEmail: protectInternalPersonalEmail({
+          value: store.companyEmail,
+          canViewPersonalData,
+        }),
+        companyPhone: protectInternalPersonalDigits({
+          value: store.companyPhone,
+          fallback: 'telefone informado',
+          canViewPersonalData,
+        }),
+        companyTaxNumber: protectInternalPersonalDigits({
+          value: store.companyTaxNumber,
+          fallback: 'CNPJ informado',
+          canViewPersonalData,
+        }),
+        responsibleTaxNumber: protectInternalPersonalDigits({
+          value: store.responsibleTaxNumber,
+          fallback: 'CPF informado',
+          canViewPersonalData,
+        }),
         city: store.companyCity ?? store.addressCity,
         stateCode: store.companyStateCode ?? store.addressStateCode,
       },
@@ -1411,10 +1441,17 @@ export async function listInternalStores({
 
 export async function getInternalStoreOverview(
   storeId: number,
-  options: { includeBillingInvoices?: boolean; invoiceStatus?: string } = {}
+  options: {
+    includeBillingInvoices?: boolean
+    invoiceStatus?: string
+    operator?: Pick<InternalOperator, 'role'> | null
+  } = {}
 ): Promise<InternalStoreOverview | null> {
   const includeBillingInvoices = options.includeBillingInvoices ?? true
   const invoiceStatusFilter = options.invoiceStatus
+  const canViewPersonalData = canViewInternalPersonalData(
+    options.operator ?? null
+  )
   const [store] = await db
     .select({
       id: storesTable.id,
@@ -1959,20 +1996,40 @@ export async function getInternalStoreOverview(
     updatedAt: store.updatedAt,
     company: {
       companyName: store.companyName,
-      companyTaxNumber: maskInternalStoreSensitiveDigits(
-        store.companyTaxNumber ?? '',
-        'CNPJ nao informado'
-      ),
-      email: store.companyEmail,
-      phone1: store.companyPhone1,
-      phone2: store.companyPhone2,
+      companyTaxNumber: protectInternalPersonalDigits({
+        value: store.companyTaxNumber,
+        fallback: 'CNPJ informado',
+        canViewPersonalData,
+      }),
+      email: protectInternalPersonalEmail({
+        value: store.companyEmail,
+        canViewPersonalData,
+      }),
+      phone1: protectInternalPersonalDigits({
+        value: store.companyPhone1,
+        fallback: 'telefone informado',
+        canViewPersonalData,
+      }),
+      phone2: protectInternalPersonalDigits({
+        value: store.companyPhone2,
+        fallback: 'telefone informado',
+        canViewPersonalData,
+      }),
       responsibleName: store.responsibleName,
-      responsibleTaxNumber: maskInternalStoreSensitiveDigits(
-        store.responsibleTaxNumber ?? '',
-        'CPF nao informado'
-      ),
-      responsiblePhone: store.responsiblePhone,
-      responsibleEmail: store.responsibleEmail,
+      responsibleTaxNumber: protectInternalPersonalDigits({
+        value: store.responsibleTaxNumber,
+        fallback: 'CPF informado',
+        canViewPersonalData,
+      }),
+      responsiblePhone: protectInternalPersonalDigits({
+        value: store.responsiblePhone,
+        fallback: 'telefone informado',
+        canViewPersonalData,
+      }),
+      responsibleEmail: protectInternalPersonalEmail({
+        value: store.responsibleEmail,
+        canViewPersonalData,
+      }),
     },
     commercial: {
       acquisitionSource: store.acquisitionSource,
@@ -2020,6 +2077,10 @@ export async function getInternalStoreOverview(
     pendingPlanChange: pendingPlanChange
       ? {
           ...pendingPlanChange,
+          actorEmail: protectInternalRequiredPersonalEmail({
+            value: pendingPlanChange.actorEmail,
+            canViewPersonalData,
+          }),
           proration:
             (pendingPlanChangeMetadata.proration as Record<string, unknown>) ??
             null,
@@ -2028,19 +2089,44 @@ export async function getInternalStoreOverview(
     accessBlock: accessBlock
       ? {
           ...accessBlock,
+          blockedByEmail: protectInternalRequiredPersonalEmail({
+            value: accessBlock.blockedByEmail,
+            canViewPersonalData,
+          }),
           isActive: isStoreAccessBlockActive(accessBlock),
         }
       : null,
     invoiceSummary,
     invoices,
-    billingReminders: billingReminderRows,
+    billingReminders: billingReminderRows.map(reminder => ({
+      ...reminder,
+      recipient: protectInternalPersonalRecipient({
+        value: reminder.recipient,
+        canViewPersonalData,
+      }),
+    })),
     billingAdjustments: billingAdjustmentRows.map(adjustment => ({
       ...adjustment,
+      actorEmail: protectInternalRequiredPersonalEmail({
+        value: adjustment.actorEmail,
+        canViewPersonalData,
+      }),
       calculationSnapshot:
         (adjustment.calculationSnapshot as Record<string, unknown>) ?? {},
     })),
     modules: moduleOverviewRows,
-    users: userRows,
+    users: userRows.map(user => ({
+      ...user,
+      email: protectInternalRequiredPersonalEmail({
+        value: user.email,
+        canViewPersonalData,
+      }),
+      phone: protectInternalPersonalDigits({
+        value: user.phone,
+        fallback: 'telefone informado',
+        canViewPersonalData,
+      }),
+    })),
     metrics: {
       totalOrders: metrics?.totalOrders ?? 0,
       digitalMenuOrders: metrics?.digitalMenuOrders ?? 0,
@@ -2049,8 +2135,16 @@ export async function getInternalStoreOverview(
       lastOrderAt: metrics?.lastOrderAt ?? null,
       lastAccessAt,
     },
-    auditLogs,
-    billingEvents,
+    auditLogs: auditLogs.map(log =>
+      protectInternalAuditLog(log, canViewPersonalData)
+    ),
+    billingEvents: billingEvents.map(event => ({
+      ...event,
+      actorEmail: protectInternalPersonalEmail({
+        value: event.actorEmail,
+        canViewPersonalData,
+      }),
+    })),
   }
 }
 
@@ -2718,12 +2812,18 @@ export async function refundBillingInvoice({
   })
 }
 
-export async function getRecentInternalAuditLogs(limit = 25) {
-  return await db
+export async function getRecentInternalAuditLogs(
+  limit = 25,
+  operator?: Pick<InternalOperator, 'role'> | null
+) {
+  const canViewPersonalData = canViewInternalPersonalData(operator ?? null)
+  const logs = await db
     .select()
     .from(internalOperationAuditLogsTable)
     .orderBy(desc(internalOperationAuditLogsTable.createdAt))
     .limit(limit)
+
+  return logs.map(log => protectInternalAuditLog(log, canViewPersonalData))
 }
 
 export async function listActiveBillingPlansForInternalCreation(): Promise<
@@ -2877,7 +2977,7 @@ export async function listBillingModulesForInternalCreation(): Promise<
   return [...modulesById.values()]
 }
 
-const maskEmail = (email: string) => {
+export const maskInternalStoreEmail = (email: string) => {
   const [localPart = '', domain = ''] = email.split('@')
   if (!localPart || !domain) return 'e-mail informado'
 
@@ -2895,6 +2995,81 @@ export const maskInternalStoreSensitiveDigits = (
 }
 
 const maskLast4 = maskInternalStoreSensitiveDigits
+const maskEmail = maskInternalStoreEmail
+
+export const protectInternalPersonalEmail = ({
+  value,
+  canViewPersonalData,
+}: {
+  value: string | null
+  canViewPersonalData: boolean
+}) => {
+  if (!value) return null
+  if (canViewPersonalData) return value
+
+  return maskInternalStoreEmail(value)
+}
+
+export const protectInternalRequiredPersonalEmail = ({
+  value,
+  canViewPersonalData,
+}: {
+  value: string
+  canViewPersonalData: boolean
+}) => {
+  if (canViewPersonalData) return value
+
+  return maskInternalStoreEmail(value)
+}
+
+export const protectInternalPersonalDigits = ({
+  value,
+  fallback,
+  canViewPersonalData,
+}: {
+  value: string | null
+  fallback: string
+  canViewPersonalData: boolean
+}) => {
+  if (!value) return null
+  if (canViewPersonalData) return value
+
+  return maskInternalStoreSensitiveDigits(value, fallback)
+}
+
+export const protectInternalPersonalRecipient = ({
+  value,
+  canViewPersonalData,
+}: {
+  value: string | null
+  canViewPersonalData: boolean
+}) => {
+  if (!value) return null
+  if (canViewPersonalData) return value
+  if (value.includes('@')) return maskInternalStoreEmail(value)
+
+  const digits = value.replace(/\D/g, '')
+  if (digits.length >= 4) {
+    return maskInternalStoreSensitiveDigits(value, 'destinatario informado')
+  }
+
+  return 'destinatario informado'
+}
+
+const protectInternalAuditLog = (
+  log: InternalAuditLog,
+  canViewPersonalData: boolean
+): InternalAuditLog => ({
+  ...log,
+  actorEmail: protectInternalRequiredPersonalEmail({
+    value: log.actorEmail,
+    canViewPersonalData,
+  }),
+  targetUserEmail: protectInternalPersonalEmail({
+    value: log.targetUserEmail,
+    canViewPersonalData,
+  }),
+})
 
 export async function findInternalStoreCreationDuplicates(
   values: InternalStoreCreationValues
@@ -3891,8 +4066,16 @@ const buildStoreProfileAuditRecords = ({
       before: before.companyEmail ? maskEmail(before.companyEmail) : null,
       after: after.companyEmail ? maskEmail(after.companyEmail) : null,
     },
-    { label: 'Telefone 1', before: before.phone1, after: after.phone1 },
-    { label: 'Telefone 2', before: before.phone2, after: after.phone2 },
+    {
+      label: 'Telefone 1',
+      before: before.phone1 ? maskLast4(before.phone1, 'nao informado') : null,
+      after: after.phone1 ? maskLast4(after.phone1, 'nao informado') : null,
+    },
+    {
+      label: 'Telefone 2',
+      before: before.phone2 ? maskLast4(before.phone2, 'nao informado') : null,
+      after: after.phone2 ? maskLast4(after.phone2, 'nao informado') : null,
+    },
     {
       label: 'Responsavel',
       before: before.responsibleName,
@@ -3912,8 +4095,12 @@ const buildStoreProfileAuditRecords = ({
     },
     {
       label: 'Telefone do responsavel',
-      before: before.responsiblePhone,
-      after: after.responsiblePhone,
+      before: before.responsiblePhone
+        ? maskLast4(before.responsiblePhone, 'nao informado')
+        : null,
+      after: after.responsiblePhone
+        ? maskLast4(after.responsiblePhone, 'nao informado')
+        : null,
     },
     { label: 'CEP', before: before.postalCode, after: after.postalCode },
     { label: 'Endereco', before: before.street, after: after.street },

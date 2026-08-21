@@ -1,4 +1,5 @@
 import {
+  canViewInternalPersonalData,
   canUseInternalPermission,
   type InternalOperator,
 } from '@/features/internal-operations/access'
@@ -206,6 +207,7 @@ export async function InternalStoresPanel({
           createdFrom,
           createdTo,
           page,
+          operator,
         }),
         getInternalStoreDashboardIndicators({
           status,
@@ -216,7 +218,7 @@ export async function InternalStoresPanel({
           createdFrom,
           createdTo,
         }),
-        getRecentInternalAuditLogs(12),
+        getRecentInternalAuditLogs(12, operator),
         listActiveBillingPlansForInternalCreation(),
         listInternalStoreCityFilterOptions(),
       ])
@@ -266,6 +268,7 @@ export async function InternalStoresPanel({
     currentRole: operator.role,
     permission: 'activate_implemented_store',
   })
+  const personalDataMasked = !canViewInternalPersonalData(operator)
   const selectClassName =
     'h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30'
   const hasAdvancedFilters = Boolean(
@@ -604,6 +607,7 @@ export async function InternalStoresPanel({
 
         <InternalStoresTable
           stores={serializeStoresForClient(stores.items)}
+          personalDataMasked={personalDataMasked}
           canReactivate={canReactivate}
           canArchive={canArchive}
           canCreateStore={canCreateStore}

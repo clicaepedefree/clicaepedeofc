@@ -39,6 +39,14 @@ export type StoreLifecycleSubscriptionSnapshot = {
   nextBillingAt: Date | null
 }
 
+export const archivedStoreDataRetentionPolicy = {
+  status: 'archived',
+  retention: 'retain_for_legal_billing_and_audit_history',
+  access: 'internal_operations_only',
+  mutability: 'read_only',
+  personalDataVisibility: 'masked_unless_role_can_view_personal_data',
+} as const
+
 export const storeLifecycleTransitionSchema = z.object({
   storeId: z.coerce.number().int().positive(),
   targetStatus: z.enum(storeLifecycleTargetStatuses),
@@ -73,6 +81,12 @@ export function isStoreLifecycleTransitionAllowed({
   targetStatus: StoreLifecycleTargetStatus
 }) {
   return getAllowedStoreLifecycleTargets(currentStatus).includes(targetStatus)
+}
+
+export function getStoreDataRetentionPolicy(status: InternalStoreStatus) {
+  if (status === 'archived') return archivedStoreDataRetentionPolicy
+
+  return null
 }
 
 export function isFinanciallyValidForStoreActivation(
