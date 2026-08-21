@@ -37,6 +37,25 @@ export type OperationalSalesMetricsSummary = {
   revenueTreatmentNote: string
 }
 
+export type ProductPerformanceRow = {
+  itemId: number
+  itemName: string
+  quantity: number | string | null
+  revenue: number | string | null
+  salesChannel: string
+  orderType: string
+  origin?: string | null
+}
+
+export type TopSellingProduct = {
+  itemId: number
+  itemName: string
+  quantity: string
+  revenue: string
+  predominantChannel: OperationalSalesChannelKey
+  predominantChannelLabel: string
+}
+
 type OperationalSalesChannelInfo = {
   label: string
   description: string
@@ -121,6 +140,9 @@ const parseDatabaseMoney = (value: number | string | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+const compareTextDeterministically = (left: string, right: string) =>
+  left.localeCompare(right, 'pt-BR', { sensitivity: 'base' })
+
 export const buildOperationalSalesMetricsSummary = (
   rows: OperationalSalesMetricRow[]
 ): OperationalSalesMetricsSummary => {
@@ -181,4 +203,99 @@ export const buildOperationalSalesMetricsSummary = (
     revenueTreatmentNote:
       'Apenas pedidos COMPLETED entram em vendas, faturamento e ticket medio. Cancelados e rejeitados ficam fora; estornos financeiros futuros precisam de evento operacional proprio para abater automaticamente.',
   }
+}
+
+export const buildTopSellingProducts = (
+  rows: ProductPerformanceRow[],
+  limit = 5
+): TopSellingProduct[] => {
+  const productsBySnapshot = new Map<
+    string,
+    {
+      itemId: number
+      itemName: string
+      quantity: number
+      revenue: number
+      channels: Map<
+        OperationalSalesChannelKey,
+        { quantity: number; revenue: number }
+      >
+    }
+  >()
+
+  for (const row of rows) {
+    const key = `${row.itemId}:${row.itemName}`
+    const channel = classifyOperationalSalesChannel({
+      salesChannel: row.salesChannel,
+      orderType: row.orderType,
+      origin: row.origin,
+    })
+    const current = productsBySnapshot.get(key) ?? {
+      itemId: row.itemId,
+      itemName: row.itemName,
+      quantity: 0,
+      revenue: 0,
+      channels: new Map<
+        OperationalSalesChannelKey,
+        { quantity: number; revenue: number }
+      >(),
+    }
+
+    const quantity = parseDatabaseMoney(row.quantity)
+    const revenue = parseDatabaseMoney(row.revenue)
+    const channelTotals = current.channels.get(channel) ?? {
+      quantity: 0,
+      revenue: 0,
+    }
+
+    current.quantity += quantity
+    current.revenue += revenue
+    channelTotals.quantity += quantity
+    channelTotals.revenue += revenue
+    current.channels.set(channel, channelTotals)
+    productsBySnapshot.set(key, current)
+  }
+
+  return [...productsBySnapshot.values()]
+    .sort((left, right) => {
+      const quantityDifference = right.quantity - left.quantity
+      if (quantityDifference !== 0) return quantityDifference
+
+      const revenueDifference = right.revenue - left.revenue
+      if (revenueDifference !== 0) return revenueDifference
+
+      const nameDifference = compareTextDeterministically(
+        left.itemName,
+        right.itemName
+      )
+      if (nameDifference !== 0) return nameDifference
+
+      return left.itemId - right.itemId
+    })
+    .slice(0, limit)
+    .map(product => {
+      const [predominantChannel] = [...product.channels.entries()].sort(
+        ([leftKey, left], [rightKey, right]) => {
+          const quantityDifference = right.quantity - left.quantity
+          if (quantityDifference !== 0) return quantityDifference
+
+          const revenueDifference = right.revenue - left.revenue
+          if (revenueDifference !== 0) return revenueDifference
+
+          return (
+            operationalSalesChannelKeys.indexOf(leftKey) -
+            operationalSalesChannelKeys.indexOf(rightKey)
+          )
+        }
+      )[0] ?? ['own_delivery']
+
+      return {
+        itemId: product.itemId,
+        itemName: product.itemName,
+        quantity: toMoneyString(product.quantity),
+        revenue: toMoneyString(product.revenue),
+        predominantChannel,
+        predominantChannelLabel: channelInfo[predominantChannel].label,
+      }
+    })
 }

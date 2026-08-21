@@ -4,6 +4,7 @@ import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
 import { ReportPeriodFilter } from '@/features/reports/components/report-period-filter'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
 import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
+import { TopSellingProducts } from '@/features/reports/components/top-selling-products'
 import type { ReportPeriodSelection } from '@/features/reports/form-validation/report-period'
 import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/card'
@@ -74,6 +75,9 @@ export default function Page() {
             channels={revenueSummary?.channelBreakdowns ?? []}
             classificationNote={revenueSummary?.classificationNote}
             revenueTreatmentNote={revenueSummary?.revenueTreatmentNote}
+          />
+          <TopSellingProducts
+            products={revenueSummary?.topSellingProducts ?? []}
           />
           <RevenueMultilineChart
             chartData={revenueSummary?.dailyBreakdowns ?? []}
