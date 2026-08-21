@@ -41,7 +41,7 @@ import { validateUserPermissionsForStore } from '../store/api'
 
 export const createCategory = async (newCategory: NewCategory) => {
   const storeId = newCategory.storeId
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   const categoryIndex =
     newCategory.index ?? (await getNextCategoryIndex(storeId))
@@ -53,7 +53,7 @@ export const updateCategory = async (
   updatedCategory: RequiredBy<InsertCategory, 'id'>
 ) => {
   const storeId = updatedCategory.storeId
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await updateCategoryOnDb(updatedCategory.id, storeId, updatedCategory)
 }
@@ -65,7 +65,7 @@ export const listCategories = async ({
   storeId: number
   includeItems?: boolean
 }): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   const categoriesWithItems = await db.query.categoriesTable.findMany({
     columns: {
@@ -133,7 +133,7 @@ export const listCategories = async ({
 }
 
 export const deleteCategory = async (categoryId: number, storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   await db
     .delete(categoriesTable)
@@ -154,7 +154,7 @@ export const moveCategory = async ({
   storeId: number
   direction: 'up' | 'down'
 }) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   await db.transaction(async tx => {
     const categories = await tx
@@ -188,7 +188,7 @@ export const createItem = async (
   newItem: NewItem & { optionGroupIds?: number[] }
 ) => {
   const storeId = newItem.storeId
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await db.transaction(async tx => {
     await assertCategoriesBelongToStore({
@@ -248,7 +248,7 @@ export const duplicateItem = async ({
   itemOfferingId: number
   storeId: number
 }) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await db.transaction(async tx => {
     const [source] = await tx
@@ -344,7 +344,7 @@ export const updateItem = async (
   }
 ) => {
   const storeId = updatedItem.storeId
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await db.transaction(async tx => {
     await assertCategoriesBelongToStore({
@@ -443,7 +443,7 @@ export const updateItemOfferingAvailability = async ({
   storeId: number
   isAvailable: boolean
 }) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   const updatedItemOffering = await updateItemOfferingAvailabilityOnDb({
     itemOfferingId,
@@ -459,7 +459,7 @@ export const updateItemOfferingAvailability = async ({
 }
 
 export const deleteItem = async (itemId: number, storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   await db
     .delete(itemsTable)
@@ -467,7 +467,7 @@ export const deleteItem = async (itemId: number, storeId: number) => {
 }
 
 export const listMenuItems = async ({ storeId }: { storeId: number }): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
   const categoryImagesTable = alias(storeFilesTable, 'categoryImages')
   const menuItems = await db
     .select({

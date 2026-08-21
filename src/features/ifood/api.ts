@@ -33,7 +33,7 @@ interface UserCodeResponse {
  * Returns only userCode and verificationUrl - sensitive data stays server-side.
  */
 export const initiateIFoodOAuth = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   if (!IFOOD_CLIENT_ID) {
     throw new Error('iFood client ID not configured')
@@ -89,7 +89,7 @@ export const exchangeIFoodAuthCode = async (
   storeId: number,
   authorizationCode: string
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   // Get the stored OAuth session (contains the verifier)
   const session = await getIFoodOAuthSession(storeId)
@@ -135,7 +135,7 @@ export const getMerchantCatalogs = async (
   storeId: number,
   merchantId: string
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   if (!merchantId) {
     throw new Error('Merchant ID is required')
@@ -184,7 +184,7 @@ export const completeIFoodConnection = async (
   catalogName: string,
   merchantName?: string
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   if (!merchantId) {
     throw new Error('Merchant ID is required')
@@ -242,7 +242,7 @@ export const connectIFoodAccountWithCode = async (
   refreshToken: string,
   expiresIn: number
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   // Store encrypted tokens
   await createIFoodIntegration({
@@ -256,12 +256,12 @@ export const connectIFoodAccountWithCode = async (
 }
 
 export const disconnectIFoodAccount = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
   await deleteIFoodIntegration(storeId)
 }
 
 export const getIFoodConnectionStatus = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
   const integration = await getIFoodIntegration(storeId)
 
   if (!integration) {
@@ -283,7 +283,7 @@ export const getIFoodConnectionStatus = async (storeId: number) => {
 }
 
 export const fetchIFoodMenu = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   const integration = await getIFoodIntegration(storeId)
 
@@ -332,7 +332,7 @@ export const fetchIFoodMenu = async (storeId: number) => {
 }
 
 export const getLocalMenuItems = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
   // Use existing menu API to get local items
   return await listMenuItems({ storeId })
 }
@@ -341,7 +341,7 @@ export const updateIFoodPDVCodes = async (
   storeId: number,
   updates: Array<{ ifoodItemId: string; pdvCode: string }>
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
 
   const integration = await getIFoodIntegration(storeId)
 

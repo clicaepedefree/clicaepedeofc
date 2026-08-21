@@ -76,7 +76,7 @@ const paymentMethodLabels: Record<string, string> = {
 }
 
 export const getDigitalMenuAdminOverview = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   const [store] = await db
     .select({
@@ -299,7 +299,7 @@ export const saveDigitalMenuPromotion = async (
   storeId: number,
   input: z.input<typeof promotionSchema>
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
   const values = promotionSchema.parse(input)
   const code = values.code || null
 
@@ -428,7 +428,7 @@ export const deleteDigitalMenuPromotion = async (
   storeId: number,
   promotionId: number
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
   await db
     .delete(digitalMenuPromotionsTable)
     .where(
@@ -443,7 +443,7 @@ export const updateDigitalMenuPublication = async (
   storeId: number,
   input: z.input<typeof publicationActionSchema>
 ) => {
-  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(storeId, 'store.settings.manage')
   const values = publicationActionSchema.parse(input)
 
   if (values.action === 'PUBLISH') {

@@ -7,6 +7,11 @@ import type {
   StoreUsersStatusFilter,
 } from '@/features/store-users/api'
 import {
+  getStoreUserRoleOption,
+  storeUserRoleOptions,
+  type StoreUserRole,
+} from '@/features/store-users/store-users-policy'
+import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
@@ -85,6 +90,7 @@ export function StoreUsersSettings() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StoreUsersStatusFilter>('all')
+  const [role, setRole] = useState<StoreUserRole | 'all'>('all')
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteResult, setInviteResult] = useState<{
     inviteUrl: string
@@ -108,7 +114,7 @@ export function StoreUsersSettings() {
     isUpdatingUser,
     isRevokingUser,
     isRevokingInvite,
-  } = useStoreUsers({ page, search, status })
+  } = useStoreUsers({ page, search, status, role })
 
   const users = data?.users ?? []
   const pendingInvites = data?.pendingInvites ?? []
@@ -123,9 +129,14 @@ export function StoreUsersSettings() {
     setPage(1)
   }
 
+  const handleRoleChange = (value: StoreUserRole | 'all') => {
+    setRole(value)
+    setPage(1)
+  }
+
   if (!selectedStoreId) {
     return (
-      <SettingsCategoryBlock title="Usuários da loja" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock title="Equipe e perfis" contentClassName="grid-cols-1">
         <EmptyState
           title="Selecione uma loja"
           description="Escolha uma loja no topo do painel para gerenciar os acessos vinculados a ela."
@@ -136,7 +147,7 @@ export function StoreUsersSettings() {
 
   return (
     <div className="space-y-4">
-      <SettingsCategoryBlock title="Usuários da loja" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock title="Equipe e perfis" contentClassName="grid-cols-1">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
             <div className="space-y-1">
@@ -145,7 +156,7 @@ export function StoreUsersSettings() {
                 Acessos vinculados
               </div>
               <p className="text-sm text-muted-foreground">
-                Convide, edite e desvincule usuários que administram esta loja.
+                Convide, edite e desvincule usuários conforme o perfil de acesso.
               </p>
             </div>
             <Button onClick={() => setInviteOpen(true)}>
@@ -154,7 +165,7 @@ export function StoreUsersSettings() {
             </Button>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
+          <div className="grid gap-3 lg:grid-cols-[1fr_220px_220px]">
             <label className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -172,6 +183,20 @@ export function StoreUsersSettings() {
               }
             >
               {statusOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="h-9 rounded border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-primary/20 dark:bg-input/30"
+              value={role}
+              onChange={event =>
+                handleRoleChange(event.target.value as StoreUserRole | 'all')
+              }
+            >
+              <option value="all">Todos os perfis</option>
+              {storeUserRoleOptions.map(option => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -214,7 +239,7 @@ export function StoreUsersSettings() {
                     <TableCell colSpan={5} className="p-0">
                       <EmptyState
                         title="Nenhum usuário encontrado"
-                        description="Ajuste os filtros ou convide um novo administrador para esta loja."
+                        description="Ajuste os filtros ou convide um novo usuário para esta loja."
                       />
                     </TableCell>
                   </TableRow>
@@ -237,7 +262,7 @@ export function StoreUsersSettings() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">Admin</Badge>
+                          <RoleBadge role={user.role} />
                           {user.isPrimaryResponsible && (
                             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
                               <ShieldCheck className="size-3" aria-hidden="true" />
@@ -401,6 +426,20 @@ function EmptyState({
   )
 }
 
+function RoleBadge({ role }: { role: StoreUserRole }) {
+  const roleOption = getStoreUserRoleOption(role)
+
+  return (
+    <Badge variant="outline" className="gap-1">
+      {role === 'owner' && (
+        <ShieldCheck className="size-3 text-primary" aria-hidden="true" />
+      )}
+      <span>{roleOption.label}</span>
+      <span className="text-muted-foreground">· {roleOption.shortLabel}</span>
+    </Badge>
+  )
+}
+
 function PendingInvitesList({
   invites,
   onRevoke,
@@ -426,6 +465,9 @@ function PendingInvitesList({
               </div>
               <div className="truncate text-xs text-muted-foreground">
                 {invite.targetEmail}
+              </div>
+              <div className="mt-2">
+                <RoleBadge role={invite.role} />
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 Expira em {formatDateTime(invite.expiresAt)}
@@ -457,14 +499,16 @@ function InviteUserDialog({
     email: string
     name?: string
     phone?: string
+    role: StoreUserRole
   }) => Promise<void>
 }) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [role, setRole] = useState<StoreUserRole>('manager')
 
   const handleSubmit = async () => {
-    await onSubmit({ email, name, phone })
+    await onSubmit({ email, name, phone, role })
   }
 
   const handleCopy = async () => {
@@ -478,7 +522,7 @@ function InviteUserDialog({
         <DialogHeader>
           <DialogTitle>Convidar usuário</DialogTitle>
           <DialogDescription>
-            Crie um link manual para vincular outro administrador a esta loja.
+            Crie um link manual para vincular uma pessoa com o perfil correto.
           </DialogDescription>
         </DialogHeader>
 
@@ -522,6 +566,23 @@ function InviteUserDialog({
                 onChange={event => setPhone(event.target.value)}
               />
             </label>
+            <label className="grid gap-1 text-sm font-medium">
+              Perfil de acesso
+              <select
+                className="h-9 rounded border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-primary/20 dark:bg-input/30"
+                value={role}
+                onChange={event => setRole(event.target.value as StoreUserRole)}
+              >
+                {storeUserRoleOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label} - {option.shortLabel}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-muted-foreground">
+                {getStoreUserRoleOption(role).description}
+              </span>
+            </label>
           </div>
         )}
 
@@ -552,19 +613,26 @@ function EditUserDialog({
   onSubmit: (values: {
     name?: string
     phone?: string
+    role: StoreUserRole
     isPrimaryResponsible: boolean
   }) => Promise<void>
 }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [role, setRole] = useState<StoreUserRole>('manager')
   const [isPrimaryResponsible, setIsPrimaryResponsible] = useState(false)
 
   useEffect(() => {
     if (!user) return
     setName(user.name ?? '')
     setPhone(user.phone ?? '')
+    setRole(user.role)
     setIsPrimaryResponsible(user.isPrimaryResponsible)
   }, [user])
+
+  useEffect(() => {
+    if (role !== 'owner') setIsPrimaryResponsible(false)
+  }, [role])
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
@@ -588,6 +656,23 @@ function EditUserDialog({
               onChange={event => setPhone(event.target.value)}
             />
           </label>
+          <label className="grid gap-1 text-sm font-medium">
+            Perfil de acesso
+            <select
+              className="h-9 rounded border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-primary/20 dark:bg-input/30"
+              value={role}
+              onChange={event => setRole(event.target.value as StoreUserRole)}
+            >
+              {storeUserRoleOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label} - {option.shortLabel}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">
+              {getStoreUserRoleOption(role).description}
+            </span>
+          </label>
           <div
             className={cn(
               'flex items-center justify-between gap-3 rounded-lg border p-3',
@@ -599,13 +684,13 @@ function EditUserDialog({
                 Responsável principal
               </div>
               <p className="text-xs text-muted-foreground">
-                Só um usuário ativo pode ocupar este papel por loja.
+                Apenas o perfil Proprietário pode ser responsável principal.
               </p>
             </div>
             <Switch
               checked={isPrimaryResponsible}
               onCheckedChange={setIsPrimaryResponsible}
-              disabled={user?.isPrimaryResponsible}
+              disabled={user?.isPrimaryResponsible || role !== 'owner'}
             />
           </div>
         </div>
@@ -616,7 +701,7 @@ function EditUserDialog({
           </Button>
           <Button
             isLoading={busy}
-            onClick={() => onSubmit({ name, phone, isPrimaryResponsible })}
+            onClick={() => onSubmit({ name, phone, role, isPrimaryResponsible })}
           >
             Salvar
           </Button>

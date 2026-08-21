@@ -2033,7 +2033,7 @@ export const getDigitalMenuPreviewBySlug = async (rawStoreSlug: string) => {
     .limit(1)
 
   if (!store) return null
-  await validateUserPermissionsForStore(store.id, 'admin')
+  await validateUserPermissionsForStore(store.id, 'store.settings.manage')
   return getDigitalMenuBySlugInternal(storeSlug, true)
 }
 

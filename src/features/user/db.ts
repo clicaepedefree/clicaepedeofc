@@ -101,7 +101,7 @@ export const handleClerkUserDeleted = async (clerkId: string) => {
       .where(
         and(
           eq(userStorePermissionsTable.userId, user.id),
-          eq(userStorePermissionsTable.role, 'admin'),
+          eq(userStorePermissionsTable.role, 'owner'),
           sql`${userStorePermissionsTable.revokedAt} is null`
         )
       )
@@ -143,7 +143,7 @@ export const handleClerkUserDeleted = async (clerkId: string) => {
         .where(
           and(
             eq(userStorePermissionsTable.storeId, storeId),
-            eq(userStorePermissionsTable.role, 'admin'),
+            eq(userStorePermissionsTable.role, 'owner'),
             sql`${userStorePermissionsTable.revokedAt} is null`,
             eq(usersTable.status, 'active')
           )

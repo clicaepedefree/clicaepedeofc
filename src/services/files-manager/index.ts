@@ -87,7 +87,7 @@ export async function uploadStoreImageFile({
 }): Promise<UploadedStoreFile> {
   assertValidImageFile(file)
 
-  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(storeId, 'menu.manage')
   const { supabaseUrl, serviceRoleKey } = getSupabaseStorageConfig()
   const objectPath = buildStorageObjectPath(storeId, file)
 

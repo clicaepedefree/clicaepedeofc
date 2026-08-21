@@ -17,6 +17,15 @@ import {
 import { storesTable } from './stores'
 import { usersTable } from './users'
 
+export const userStorePermissionRoles = [
+  'owner',
+  'manager',
+  'attendant',
+  'cashier',
+  'waiter',
+  'courier',
+] as const
+
 export const userStorePermissionsTable = pgTable(
   'user_store_permissions',
   {
@@ -26,7 +35,7 @@ export const userStorePermissionsTable = pgTable(
     storeId: integer('store_id')
       .notNull()
       .references(() => storesTable.id, { onDelete: 'cascade' }),
-    role: text('role', { enum: ['admin'] }).notNull(),
+    role: text('role', { enum: userStorePermissionRoles }).notNull(),
     isPrimaryResponsible: boolean('is_primary_responsible')
       .notNull()
       .default(false),
@@ -42,7 +51,7 @@ export const userStorePermissionsTable = pgTable(
     uniqueIndex('user_store_permissions_one_primary_responsible_idx')
       .on(table.storeId)
       .where(
-        sql`${table.isPrimaryResponsible} = true and ${table.revokedAt} is null and ${table.role} = 'admin'`
+        sql`${table.isPrimaryResponsible} = true and ${table.revokedAt} is null and ${table.role} = 'owner'`
       ),
   ]
 )

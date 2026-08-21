@@ -13,36 +13,49 @@ import {
   updateStoreUser,
   type StoreUsersStatusFilter,
 } from './api'
+import type { StoreUserRole } from './store-users-policy'
 
 export function useStoreUsers({
   page,
   search,
   status,
+  role,
 }: {
   page: number
   search: string
   status: StoreUsersStatusFilter
+  role: StoreUserRole | 'all'
 }) {
   const selectedStoreId = useAtomValue(selectedStoreIdAtom)
   const queryClient = useQueryClient()
-  const queryKey = storeUsersCacheKey(selectedStoreId, page, search, status)
+  const queryKey = storeUsersCacheKey(selectedStoreId, page, search, status, role)
 
   const query = useQuery({
     enabled: !!selectedStoreId,
     queryKey,
     queryFn: () => {
       if (!selectedStoreId) throw new Error('No store selected')
-      return getStoreUsers(selectedStoreId, { page, search, status })
+      return getStoreUsers(selectedStoreId, { page, search, status, role })
     },
   })
 
   const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey: ['stores', selectedStoreId, 'users'],
-    })
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ['stores', selectedStoreId, 'users'],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['stores'],
+      }),
+    ])
 
   const inviteMutation = useMutation({
-    mutationFn: (values: { email: string; name?: string; phone?: string }) => {
+    mutationFn: (values: {
+      email: string
+      name?: string
+      phone?: string
+      role: StoreUserRole
+    }) => {
       if (!selectedStoreId) throw new Error('No store selected')
       return inviteStoreUser(selectedStoreId, values)
     },
@@ -66,6 +79,7 @@ export function useStoreUsers({
       userId: string
       name?: string
       phone?: string
+      role: StoreUserRole
       isPrimaryResponsible: boolean
     }) => {
       if (!selectedStoreId) throw new Error('No store selected')
@@ -76,13 +90,21 @@ export function useStoreUsers({
       invalidate()
     },
     onError: error => {
+      const message =
+        error instanceof Error &&
+        error.message === 'PRIMARY_RESPONSIBLE_TRANSFER_REQUIRED'
+          ? 'Defina outro responsavel principal antes de remover este papel.'
+          : error instanceof Error &&
+              error.message === 'LAST_ACTIVE_STORE_OWNER'
+            ? 'Nao e possivel rebaixar o ultimo proprietario ativo da loja.'
+            : error instanceof Error &&
+                error.message === 'PRIMARY_RESPONSIBLE_REQUIRES_OWNER'
+              ? 'Apenas proprietarios podem ser responsaveis principais.'
+              : 'Nao foi possivel atualizar o usuario.'
+
       dispatchToast({
         type: 'error',
-        message:
-          error instanceof Error &&
-          error.message === 'PRIMARY_RESPONSIBLE_TRANSFER_REQUIRED'
-            ? 'Defina outro responsavel principal antes de remover este papel.'
-            : 'Nao foi possivel atualizar o usuario.',
+        message,
       })
     },
   })
@@ -100,8 +122,8 @@ export function useStoreUsers({
       dispatchToast({
         type: 'error',
         message:
-          error instanceof Error && error.message === 'LAST_ACTIVE_STORE_ADMIN'
-            ? 'Nao e possivel remover o ultimo administrador ativo da loja.'
+          error instanceof Error && error.message === 'LAST_ACTIVE_STORE_OWNER'
+            ? 'Nao e possivel remover o ultimo proprietario ativo da loja.'
             : 'Nao foi possivel desvincular o usuario.',
       })
     },

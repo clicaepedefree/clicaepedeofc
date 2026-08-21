@@ -18,5 +18,6 @@ export const storeUsersCacheKey = (
   storeId: number | null,
   page: number,
   search: string,
-  status: string
-) => ['stores', storeId, 'users', page, search, status]
+  status: string,
+  role: string
+) => ['stores', storeId, 'users', page, search, status, role]

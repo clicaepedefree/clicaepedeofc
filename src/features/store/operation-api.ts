@@ -100,7 +100,7 @@ export type StoreBusinessHourInput = z.input<typeof businessHourSchema>
 export type StoreSpecialHourInput = z.input<typeof specialHourSchema>
 
 export const getStoreOperationConfiguration = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
   const logoFilesTable = alias(storeFilesTable, 'digitalMenuLogoFiles')
   const bannerFilesTable = alias(storeFilesTable, 'digitalMenuBannerFiles')
 
@@ -224,7 +224,7 @@ export const saveStorePublicProfile = async (
   input: StorePublicProfileInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = publicProfileSchema.parse(input)
 
     await assertStoreFileBelongsToStore({ fileId: values.logoFileId, storeId })
@@ -267,7 +267,7 @@ export const saveStoreOperationSettings = async (
   input: StoreOperationSettingsInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = operationSettingsSchema.parse(input)
     const message = values.operationalStatusMessage?.trim() || null
 
@@ -301,7 +301,7 @@ export const saveStoreBusinessHour = async (
   input: StoreBusinessHourInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = businessHourSchema.parse(input)
     const { id, ...hourValues } = values
 
@@ -329,7 +329,7 @@ export const saveStoreBusinessHour = async (
 }
 
 export const deleteStoreBusinessHour = async (storeId: number, id: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   await db
     .delete(storeBusinessHoursTable)
@@ -346,7 +346,7 @@ export const saveStoreSpecialHour = async (
   input: StoreSpecialHourInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = specialHourSchema.parse(input)
     const normalized = {
       date: values.date,
@@ -381,7 +381,7 @@ export const saveStoreSpecialHour = async (
 }
 
 export const deleteStoreSpecialHour = async (storeId: number, id: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   await db
     .delete(storeSpecialHoursTable)

@@ -14,7 +14,7 @@ export const createLegalEntity = async (
 ) => {
   const { user } = await validateUserPermissionsForStore(
     newLegalEntity.storeId,
-    'admin'
+    'store.settings.manage'
   )
 
   const createdLegalEntity = await createLegalEntityOnDb({
@@ -55,7 +55,7 @@ const toCompanyProfileInput = (
 }
 
 export const getStoreCompanyProfile = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   return toCompanyProfileInput(await getStoreCompanyProfileOnDb(storeId))
 }
@@ -64,7 +64,7 @@ export const saveStoreCompanyProfile = async (
   storeId: number,
   profile: StoreCompanyProfileInput
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   return toCompanyProfileInput(
     await upsertStoreCompanyProfileOnDb({ storeId, ...profile })

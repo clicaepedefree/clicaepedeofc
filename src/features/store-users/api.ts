@@ -7,6 +7,7 @@ import { db } from '@/services/db'
 import {
   internalOperationAuditLogsTable,
   storeAccessInvitesTable,
+  userStorePermissionRoles,
   userStorePermissionsTable,
   usersTable,
 } from '@/services/db/schema'
@@ -30,9 +31,12 @@ import {
 } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  assertCanAssignPrimaryResponsibleRole,
+  assertCanChangeStoreUserRole,
   assertCanRevokeStoreUser,
   assertCanUnsetPrimaryResponsible,
   getFallbackPrimaryResponsibleUserId,
+  type StoreUserRole,
   type StoreUserAccessState,
 } from './store-users-policy'
 
@@ -42,12 +46,14 @@ const storeUserInviteSchema = z.object({
   email: z.string().email('Informe um e-mail valido.'),
   name: z.string().trim().max(120).optional(),
   phone: z.string().trim().max(32).optional(),
+  role: z.enum(userStorePermissionRoles),
 })
 
 const storeUserUpdateSchema = z.object({
   userId: z.string().uuid(),
   name: z.string().trim().max(120).optional(),
   phone: z.string().trim().max(32).optional(),
+  role: z.enum(userStorePermissionRoles),
   isPrimaryResponsible: z.boolean(),
 })
 
@@ -67,6 +73,7 @@ export type StoreUsersQuery = {
   page?: number
   search?: string
   status?: StoreUsersStatusFilter
+  role?: StoreUserRole | 'all'
 }
 
 export type StoreUserListItem = {
@@ -75,7 +82,7 @@ export type StoreUserListItem = {
   name: string | null
   phone: string | null
   userStatus: 'active' | 'deleted'
-  role: 'admin'
+  role: StoreUserRole
   isPrimaryResponsible: boolean
   lastLoginAt: Date | null
   permissionCreatedAt: Date
@@ -90,6 +97,7 @@ export type StorePendingInvite = {
   targetEmail: string
   targetName: string | null
   targetPhone: string | null
+  role: StoreUserRole
   deliveryStatus: string
   expiresAt: Date
   createdAt: Date
@@ -134,15 +142,18 @@ const getStoreUsersWhere = ({
   storeId,
   search,
   status,
+  role,
 }: {
   storeId: number
   search: string
   status: StoreUsersStatusFilter
+  role: StoreUserRole | 'all'
 }) => {
-  const conditions: SQL[] = [
-    eq(userStorePermissionsTable.storeId, storeId),
-    eq(userStorePermissionsTable.role, 'admin'),
-  ]
+  const conditions: SQL[] = [eq(userStorePermissionsTable.storeId, storeId)]
+
+  if (role !== 'all') {
+    conditions.push(eq(userStorePermissionsTable.role, role))
+  }
 
   if (search) {
     const pattern = `%${search.toLowerCase()}%`
@@ -189,18 +200,14 @@ async function getStoreAccessStates(
   const rows = await tx
     .select({
       userId: userStorePermissionsTable.userId,
+      role: userStorePermissionsTable.role,
       isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
       revokedAt: userStorePermissionsTable.revokedAt,
       userStatus: usersTable.status,
     })
     .from(userStorePermissionsTable)
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
-    .where(
-      and(
-        eq(userStorePermissionsTable.storeId, storeId),
-        eq(userStorePermissionsTable.role, 'admin')
-      )
-    )
+    .where(eq(userStorePermissionsTable.storeId, storeId))
 
   return rows satisfies StoreUserAccessState[]
 }
@@ -209,12 +216,13 @@ export async function getStoreUsers(
   storeId: number,
   query: StoreUsersQuery = {}
 ) {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
 
   const page = Math.max(1, query.page ?? 1)
   const search = query.search?.trim() ?? ''
   const status = query.status ?? 'all'
-  const where = getStoreUsersWhere({ storeId, search, status })
+  const role = query.role ?? 'all'
+  const where = getStoreUsersWhere({ storeId, search, status, role })
   const offset = (page - 1) * storeUsersPageSize
 
   const [users, totalRows, pendingInvites] = await Promise.all([
@@ -254,6 +262,7 @@ export async function getStoreUsers(
         targetEmail: storeAccessInvitesTable.targetEmail,
         targetName: usersTable.name,
         targetPhone: usersTable.phone,
+        role: storeAccessInvitesTable.role,
         deliveryStatus: storeAccessInvitesTable.deliveryStatus,
         expiresAt: storeAccessInvitesTable.expiresAt,
         createdAt: storeAccessInvitesTable.createdAt,
@@ -263,6 +272,7 @@ export async function getStoreUsers(
       .where(
         and(
           eq(storeAccessInvitesTable.storeId, storeId),
+          role !== 'all' ? eq(storeAccessInvitesTable.role, role) : undefined,
           eq(storeAccessInvitesTable.status, 'pending'),
           sql`${storeAccessInvitesTable.usedAt} is null`,
           sql`${storeAccessInvitesTable.revokedAt} is null`,
@@ -296,7 +306,7 @@ export async function inviteStoreUser(
 ) {
   const parsed = storeUserInviteSchema.parse(values)
   const actor = await getActor()
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
 
   const normalizedEmail = normalizeUserEmail(parsed.email)
   const now = new Date()
@@ -336,7 +346,6 @@ export async function inviteStoreUser(
         and(
           eq(userStorePermissionsTable.userId, targetUser.id),
           eq(userStorePermissionsTable.storeId, storeId),
-          eq(userStorePermissionsTable.role, 'admin'),
           sql`${userStorePermissionsTable.revokedAt} is null`
         )
       )
@@ -374,7 +383,7 @@ export async function inviteStoreUser(
         storeId,
         targetUserId: targetUser.id,
         targetEmail: normalizedEmail,
-        role: 'admin',
+        role: parsed.role,
         tokenHash,
         status: 'pending',
         deliveryChannel: 'manual',
@@ -396,7 +405,7 @@ export async function inviteStoreUser(
       targetUserEmail: normalizedEmail,
       previousStoreStatus: 'store_user_not_linked',
       newStoreStatus: 'store_user_invited',
-      reason: 'Convite de acesso criado por administrador da loja.',
+      reason: `Convite de acesso criado pela loja. perfil=${parsed.role}.`,
     })
 
     return {
@@ -417,7 +426,7 @@ export async function updateStoreUser(
 ) {
   const parsed = storeUserUpdateSchema.parse(values)
   const actor = await getActor()
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
   const now = new Date()
 
   return await db.transaction(async tx => {
@@ -427,6 +436,7 @@ export async function updateStoreUser(
         email: usersTable.email,
         name: usersTable.name,
         phone: usersTable.phone,
+        role: userStorePermissionsTable.role,
         isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
         revokedAt: userStorePermissionsTable.revokedAt,
         userStatus: usersTable.status,
@@ -436,8 +446,7 @@ export async function updateStoreUser(
       .where(
         and(
           eq(userStorePermissionsTable.storeId, storeId),
-          eq(userStorePermissionsTable.userId, parsed.userId),
-          eq(userStorePermissionsTable.role, 'admin')
+          eq(userStorePermissionsTable.userId, parsed.userId)
         )
       )
       .limit(1)
@@ -449,11 +458,21 @@ export async function updateStoreUser(
 
     const users = await getStoreAccessStates(storeId, tx)
 
+    assertCanChangeStoreUserRole({
+      targetUserId: parsed.userId,
+      nextRole: parsed.role,
+      users,
+    })
+
     if (!parsed.isPrimaryResponsible) {
       assertCanUnsetPrimaryResponsible({
         targetUserId: parsed.userId,
         users,
       })
+    }
+
+    if (parsed.isPrimaryResponsible) {
+      assertCanAssignPrimaryResponsibleRole(parsed.role)
     }
 
     await tx
@@ -482,6 +501,7 @@ export async function updateStoreUser(
       await tx
         .update(userStorePermissionsTable)
         .set({
+          role: parsed.role,
           isPrimaryResponsible: true,
           assignedPrimaryAt: now,
           updatedAt: now,
@@ -505,6 +525,35 @@ export async function updateStoreUser(
         newStoreStatus: 'primary_responsible_assigned',
         reason: 'Responsavel principal da loja atualizado pelo painel da loja.',
       })
+    } else if (target.role !== parsed.role) {
+      const updatedPermissions = await tx
+        .update(userStorePermissionsTable)
+        .set({
+          role: parsed.role,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(userStorePermissionsTable.storeId, storeId),
+            eq(userStorePermissionsTable.userId, parsed.userId),
+            target.role === 'owner'
+              ? sql`(
+                  select count(*)
+                  from ${userStorePermissionsTable} usp
+                  inner join ${usersTable} u on u.id = usp.user_id
+                  where usp.store_id = ${storeId}
+                    and usp.role = 'owner'
+                    and usp.revoked_at is null
+                    and u.status = 'active'
+                ) > 1`
+              : sql`true`
+          )
+        )
+        .returning({ userId: userStorePermissionsTable.userId })
+
+      if (updatedPermissions.length === 0) {
+        throw new Error('LAST_ACTIVE_STORE_OWNER')
+      }
     }
 
     await tx.insert(internalOperationAuditLogsTable).values({
@@ -517,7 +566,7 @@ export async function updateStoreUser(
       targetUserEmail: target.email,
       previousStoreStatus: 'store_user_active',
       newStoreStatus: 'store_user_updated',
-      reason: `Usuario atualizado pela loja. nome=${target.name ?? '-'} -> ${normalizeTextInput(parsed.name) ?? '-'}; telefone=${target.phone ?? '-'} -> ${normalizeTextInput(parsed.phone) ?? '-'}.`,
+      reason: `Usuario atualizado pela loja. nome=${target.name ?? '-'} -> ${normalizeTextInput(parsed.name) ?? '-'}; telefone=${target.phone ?? '-'} -> ${normalizeTextInput(parsed.phone) ?? '-'}; perfil=${target.role} -> ${parsed.role}.`,
     })
 
     return { success: true }
@@ -530,7 +579,7 @@ export async function revokeStoreUser(
 ) {
   const parsed = storeUserRevokeSchema.parse(values)
   const actor = await getActor()
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
   const now = new Date()
 
   return await db.transaction(async tx => {
@@ -544,6 +593,7 @@ export async function revokeStoreUser(
     const [target] = await tx
       .select({
         email: usersTable.email,
+        role: userStorePermissionsTable.role,
         isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
       })
       .from(userStorePermissionsTable)
@@ -573,21 +623,23 @@ export async function revokeStoreUser(
           eq(userStorePermissionsTable.storeId, storeId),
           eq(userStorePermissionsTable.userId, parsed.userId),
           sql`${userStorePermissionsTable.revokedAt} is null`,
-          sql`(
-            select count(*)
-            from ${userStorePermissionsTable} usp
-            inner join ${usersTable} u on u.id = usp.user_id
-            where usp.store_id = ${storeId}
-              and usp.role = 'admin'
-              and usp.revoked_at is null
-              and u.status = 'active'
-          ) > 1`
+          target.role === 'owner'
+            ? sql`(
+                select count(*)
+                from ${userStorePermissionsTable} usp
+                inner join ${usersTable} u on u.id = usp.user_id
+                where usp.store_id = ${storeId}
+                  and usp.role = 'owner'
+                  and usp.revoked_at is null
+                  and u.status = 'active'
+              ) > 1`
+            : sql`true`
         )
       )
       .returning({ userId: userStorePermissionsTable.userId })
 
     if (revokedRows.length === 0) {
-      throw new Error('LAST_ACTIVE_STORE_ADMIN')
+      throw new Error('LAST_ACTIVE_STORE_OWNER')
     }
 
     if (fallbackPrimaryUserId) {
@@ -632,7 +684,7 @@ export async function revokeStoreUserInvite(
 ) {
   const parsed = storeInviteRevokeSchema.parse(values)
   const actor = await getActor()
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
   const now = new Date()
 
   const [invite] = await db
