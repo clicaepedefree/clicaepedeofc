@@ -26,6 +26,7 @@ import {
   storeBillingAdjustmentsTable,
   storeBillingEventsTable,
   storeBillingInvoicesTable,
+  storeBillingReminderDeliveriesTable,
   storeCompanyProfilesTable,
   storeImplementationChecklistItemsTable,
   storeImplementationChecklistEventsTable,
@@ -417,6 +418,21 @@ export type InternalStoreOverview = Pick<
     paymentPaidAt: Date | null
     paymentLink: string | null
     outstandingAmount: number
+    expectedBlockAt: Date | null
+    reminderCount: number
+    latestReminderAt: Date | null
+    createdAt: Date
+  }[]
+  billingReminders: {
+    id: number
+    invoiceId: number
+    channel: string
+    daysAfterDue: number
+    status: string
+    recipient: string | null
+    title: string
+    sentAt: Date | null
+    skippedAt: Date | null
     createdAt: Date
   }[]
   billingAdjustments: {
@@ -1692,26 +1708,49 @@ export async function getInternalStoreOverview(
   ])
 
   const invoiceIds = invoiceRows.map(invoice => invoice.id)
-  const invoicePaymentRows =
+  const [invoicePaymentRows, billingReminderRows] =
     invoiceIds.length > 0
-      ? await db
-          .select({
-            invoiceId: storeBillingPaymentsTable.invoiceId,
-            status: storeBillingPaymentsTable.status,
-            method: storeBillingPaymentsTable.method,
-            provider: storeBillingPaymentsTable.provider,
-            paidAt: storeBillingPaymentsTable.paidAt,
-            metadata: storeBillingPaymentsTable.metadata,
-            createdAt: storeBillingPaymentsTable.createdAt,
-          })
-          .from(storeBillingPaymentsTable)
-          .where(inArray(storeBillingPaymentsTable.invoiceId, invoiceIds))
-          .orderBy(
-            storeBillingPaymentsTable.invoiceId,
-            sql`case ${storeBillingPaymentsTable.status} when 'confirmed' then 0 when 'pending' then 1 else 2 end`,
-            desc(storeBillingPaymentsTable.createdAt)
-          )
-      : []
+      ? await Promise.all([
+          db
+            .select({
+              invoiceId: storeBillingPaymentsTable.invoiceId,
+              status: storeBillingPaymentsTable.status,
+              method: storeBillingPaymentsTable.method,
+              provider: storeBillingPaymentsTable.provider,
+              paidAt: storeBillingPaymentsTable.paidAt,
+              metadata: storeBillingPaymentsTable.metadata,
+              createdAt: storeBillingPaymentsTable.createdAt,
+            })
+            .from(storeBillingPaymentsTable)
+            .where(inArray(storeBillingPaymentsTable.invoiceId, invoiceIds))
+            .orderBy(
+              storeBillingPaymentsTable.invoiceId,
+              sql`case ${storeBillingPaymentsTable.status} when 'confirmed' then 0 when 'pending' then 1 else 2 end`,
+              desc(storeBillingPaymentsTable.createdAt)
+            ),
+          db
+            .select({
+              id: storeBillingReminderDeliveriesTable.id,
+              invoiceId: storeBillingReminderDeliveriesTable.invoiceId,
+              channel: storeBillingReminderDeliveriesTable.channel,
+              daysAfterDue: storeBillingReminderDeliveriesTable.daysAfterDue,
+              status: storeBillingReminderDeliveriesTable.status,
+              recipient: storeBillingReminderDeliveriesTable.recipient,
+              title: storeBillingReminderDeliveriesTable.title,
+              sentAt: storeBillingReminderDeliveriesTable.sentAt,
+              skippedAt: storeBillingReminderDeliveriesTable.skippedAt,
+              createdAt: storeBillingReminderDeliveriesTable.createdAt,
+            })
+            .from(storeBillingReminderDeliveriesTable)
+            .where(
+              inArray(storeBillingReminderDeliveriesTable.invoiceId, invoiceIds)
+            )
+            .orderBy(
+              storeBillingReminderDeliveriesTable.invoiceId,
+              desc(storeBillingReminderDeliveriesTable.createdAt)
+            ),
+        ])
+      : [[], []]
   const paymentsByInvoiceId = new Map<
     number,
     (typeof invoicePaymentRows)[number]
@@ -1723,8 +1762,20 @@ export async function getInternalStoreOverview(
     }
   }
 
+  const remindersByInvoiceId = new Map<
+    number,
+    (typeof billingReminderRows)[number][]
+  >()
+
+  for (const reminder of billingReminderRows) {
+    const current = remindersByInvoiceId.get(reminder.invoiceId) ?? []
+    current.push(reminder)
+    remindersByInvoiceId.set(reminder.invoiceId, current)
+  }
+
   const invoices = invoiceRows.map(invoice => {
     const payment = paymentsByInvoiceId.get(invoice.id) ?? null
+    const reminders = remindersByInvoiceId.get(invoice.id) ?? []
 
     return {
       ...invoice,
@@ -1737,6 +1788,12 @@ export async function getInternalStoreOverview(
         paymentMetadata: payment?.metadata,
       }),
       outstandingAmount: getInvoiceReceivableAmount(invoice),
+      expectedBlockAt: getExpectedSubscriptionBlockAt({
+        nextBillingAt: invoice.dueAt,
+        paymentGraceDays: store.paymentGraceDays ?? 0,
+      }),
+      reminderCount: reminders.length,
+      latestReminderAt: reminders[0]?.createdAt ?? null,
     }
   })
 
@@ -1949,6 +2006,7 @@ export async function getInternalStoreOverview(
       : null,
     invoiceSummary,
     invoices,
+    billingReminders: billingReminderRows,
     billingAdjustments: billingAdjustmentRows.map(adjustment => ({
       ...adjustment,
       calculationSnapshot:
