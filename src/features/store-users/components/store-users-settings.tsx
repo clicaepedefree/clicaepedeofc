@@ -47,8 +47,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  KeyRound,
   Mail,
   Pencil,
+  RefreshCw,
   Search,
   ShieldCheck,
   UserMinus,
@@ -96,24 +98,37 @@ export function StoreUsersSettings() {
     inviteUrl: string
     targetEmail: string
   } | null>(null)
+  const [generatedAccessLink, setGeneratedAccessLink] = useState<{
+    title: string
+    description: string
+    url: string
+    targetEmail: string
+    warning: string
+  } | null>(null)
   const [editingUser, setEditingUser] = useState<StoreUserListItem | null>(null)
   const [revokingUser, setRevokingUser] = useState<StoreUserListItem | null>(null)
   const [revokingInvite, setRevokingInvite] = useState<StorePendingInvite | null>(
     null
   )
+  const [resendingInviteId, setResendingInviteId] = useState<number | null>(null)
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null)
 
   const {
     selectedStoreId,
     data,
     isLoading,
     inviteUser,
+    resendInvite,
     updateUser,
     revokeUser,
     revokeInvite,
+    requestPasswordReset,
     isInvitingUser,
+    isResendingInvite,
     isUpdatingUser,
     isRevokingUser,
     isRevokingInvite,
+    isRequestingPasswordReset,
   } = useStoreUsers({ page, search, status, role })
 
   const users = data?.users ?? []
@@ -207,6 +222,24 @@ export function StoreUsersSettings() {
           {pendingInvites.length > 0 && (
             <PendingInvitesList
               invites={pendingInvites}
+              resendingInviteId={resendingInviteId}
+              isResending={isResendingInvite}
+              onResend={async invite => {
+                setResendingInviteId(invite.id)
+                try {
+                  const result = await resendInvite({ inviteId: invite.id })
+                  setGeneratedAccessLink({
+                    title: 'Convite reenviado',
+                    description: `Novo convite gerado para ${result.targetEmail}.`,
+                    url: result.inviteUrl,
+                    targetEmail: result.targetEmail,
+                    warning:
+                      'O link anterior foi invalidado. Envie apenas este novo link.',
+                  })
+                } finally {
+                  setResendingInviteId(null)
+                }
+              }}
               onRevoke={setRevokingInvite}
             />
           )}
@@ -284,6 +317,36 @@ export function StoreUsersSettings() {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={user.accessStatus !== 'active'}
+                            isLoading={
+                              resettingUserId === user.userId &&
+                              isRequestingPasswordReset
+                            }
+                            onClick={async () => {
+                              setResettingUserId(user.userId)
+                              try {
+                                const result = await requestPasswordReset({
+                                  userId: user.userId,
+                                })
+                                setGeneratedAccessLink({
+                                  title: 'Link de redefinição criado',
+                                  description: `Link temporario gerado para ${result.targetEmail}.`,
+                                  url: result.resetUrl,
+                                  targetEmail: result.targetEmail,
+                                  warning:
+                                    'A senha nunca fica visivel para a loja. Este link e temporario, de uso unico e deve ser enviado apenas para a pessoa dona da conta.',
+                                })
+                              } finally {
+                                setResettingUserId(null)
+                              }
+                            }}
+                          >
+                            <KeyRound className="size-4" aria-hidden="true" />
+                            Enviar redefinição
+                          </Button>
                           <Button
                             variant="outline"
                             size="sm"
@@ -404,6 +467,13 @@ export function StoreUsersSettings() {
           setRevokingInvite(null)
         }}
       />
+
+      <AccessLinkResultDialog
+        result={generatedAccessLink}
+        onOpenChange={open => {
+          if (!open) setGeneratedAccessLink(null)
+        }}
+      />
     </div>
   )
 }
@@ -442,9 +512,15 @@ function RoleBadge({ role }: { role: StoreUserRole }) {
 
 function PendingInvitesList({
   invites,
+  resendingInviteId,
+  isResending,
+  onResend,
   onRevoke,
 }: {
   invites: StorePendingInvite[]
+  resendingInviteId: number | null
+  isResending: boolean
+  onResend: (invite: StorePendingInvite) => Promise<void>
   onRevoke: (invite: StorePendingInvite) => void
 }) {
   return (
@@ -473,14 +549,77 @@ function PendingInvitesList({
                 Expira em {formatDateTime(invite.expiresAt)}
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => onRevoke(invite)}>
-              <XCircle className="size-4" aria-hidden="true" />
-              <span className="sr-only">Cancelar convite</span>
-            </Button>
+            <div className="flex shrink-0 gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                isLoading={isResending && resendingInviteId === invite.id}
+                onClick={() => onResend(invite)}
+              >
+                <RefreshCw className="size-4" aria-hidden="true" />
+                Reenviar
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => onRevoke(invite)}>
+                <XCircle className="size-4" aria-hidden="true" />
+                <span className="sr-only">Cancelar convite</span>
+              </Button>
+            </div>
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+function AccessLinkResultDialog({
+  result,
+  onOpenChange,
+}: {
+  result: {
+    title: string
+    description: string
+    url: string
+    targetEmail: string
+    warning: string
+  } | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const handleCopy = async () => {
+    if (!result) return
+    await navigator.clipboard.writeText(result.url)
+  }
+
+  return (
+    <Dialog open={!!result} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{result?.title ?? 'Link gerado'}</DialogTitle>
+          <DialogDescription>{result?.description}</DialogDescription>
+        </DialogHeader>
+
+        {result && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+              {result.warning}
+            </div>
+            <div className="grid gap-1 text-sm font-medium">
+              Link para {result.targetEmail}
+              <div className="flex gap-2">
+                <Input readOnly value={result.url} />
+                <Button variant="outline" onClick={handleCopy}>
+                  <Copy className="size-4" aria-hidden="true" />
+                  Copiar
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

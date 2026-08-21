@@ -8,6 +8,8 @@ import { useAtomValue } from 'jotai'
 import {
   getStoreUsers,
   inviteStoreUser,
+  requestStoreUserPasswordReset,
+  resendStoreUserInvite,
   revokeStoreUser,
   revokeStoreUserInvite,
   updateStoreUser,
@@ -146,16 +148,64 @@ export function useStoreUsers({
     },
   })
 
+  const resendInviteMutation = useMutation({
+    mutationFn: (values: { inviteId: number }) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return resendStoreUserInvite(selectedStoreId, values)
+    },
+    onSuccess: () => {
+      dispatchToast({
+        type: 'success',
+        message: 'Convite reenviado. O link anterior foi invalidado.',
+      })
+      invalidate()
+    },
+    onError: () => {
+      dispatchToast({
+        type: 'error',
+        message: 'Nao foi possivel reenviar o convite.',
+      })
+    },
+  })
+
+  const passwordResetMutation = useMutation({
+    mutationFn: (values: { userId: string }) => {
+      if (!selectedStoreId) throw new Error('No store selected')
+      return requestStoreUserPasswordReset(selectedStoreId, values)
+    },
+    onSuccess: () => {
+      dispatchToast({
+        type: 'success',
+        message: 'Link temporario de redefinicao criado.',
+      })
+      invalidate()
+    },
+    onError: error => {
+      dispatchToast({
+        type: 'error',
+        message:
+          error instanceof Error &&
+          error.message === 'STORE_USER_HAS_NO_CLERK_ACCOUNT'
+            ? 'Este usuario ainda nao possui conta ativa no Clerk.'
+            : 'Nao foi possivel criar o link de redefinicao.',
+      })
+    },
+  })
+
   return {
     selectedStoreId,
     ...query,
     inviteUser: inviteMutation.mutateAsync,
+    resendInvite: resendInviteMutation.mutateAsync,
     updateUser: updateMutation.mutateAsync,
     revokeUser: revokeMutation.mutateAsync,
     revokeInvite: revokeInviteMutation.mutateAsync,
+    requestPasswordReset: passwordResetMutation.mutateAsync,
     isInvitingUser: inviteMutation.isPending,
+    isResendingInvite: resendInviteMutation.isPending,
     isUpdatingUser: updateMutation.isPending,
     isRevokingUser: revokeMutation.isPending,
     isRevokingInvite: revokeInviteMutation.isPending,
+    isRequestingPasswordReset: passwordResetMutation.isPending,
   }
 }

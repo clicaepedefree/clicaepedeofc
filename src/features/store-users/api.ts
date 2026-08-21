@@ -7,6 +7,7 @@ import { db } from '@/services/db'
 import {
   internalOperationAuditLogsTable,
   storeAccessInvitesTable,
+  storeUserPasswordResetRequestsTable,
   userStorePermissionRoles,
   userStorePermissionsTable,
   usersTable,
@@ -67,6 +68,18 @@ const storeInviteRevokeSchema = z.object({
   reason: z.string().trim().min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
 })
 
+const storeInviteResendSchema = z.object({
+  inviteId: z.number().int().positive(),
+})
+
+const storePasswordResetRequestSchema = z.object({
+  userId: z.string().uuid(),
+})
+
+const passwordResetLinkConsumedSchema = z.object({
+  requestId: z.string().uuid(),
+})
+
 export type StoreUsersStatusFilter = 'all' | 'active' | 'revoked' | 'deleted'
 
 export type StoreUsersQuery = {
@@ -120,6 +133,8 @@ const getAppBaseUrl = () => {
   return `${protocol}://${domain}`
 }
 
+const STORE_USER_PASSWORD_RESET_TTL_SECONDS = 60 * 60
+
 const getActor = async () => {
   const [user, clerkAuth] = await Promise.all([requireAuth(), auth()])
 
@@ -136,6 +151,19 @@ const getActor = async () => {
 const normalizeTextInput = (value: string | undefined) => {
   const trimmed = value?.trim()
   return trimmed ? trimmed : null
+}
+
+const getPasswordResetExpiresAt = (now = new Date()) =>
+  new Date(now.getTime() + STORE_USER_PASSWORD_RESET_TTL_SECONDS * 1000)
+
+const buildPasswordResetUrl = ({
+  requestId,
+}: {
+  requestId: string
+}) => {
+  const url = new URL('/acesso-temporario', getAppBaseUrl())
+  url.searchParams.set('request', requestId)
+  return url.toString()
 }
 
 const getStoreUsersWhere = ({
@@ -718,6 +746,317 @@ export async function revokeStoreUserInvite(
     previousStoreStatus: 'store_user_invited',
     newStoreStatus: 'store_user_invite_revoked',
     reason: parsed.reason,
+  })
+
+  return { success: true }
+}
+
+export async function resendStoreUserInvite(
+  storeId: number,
+  values: z.infer<typeof storeInviteResendSchema>
+) {
+  const parsed = storeInviteResendSchema.parse(values)
+  const actor = await getActor()
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
+  const now = new Date()
+
+  return await db.transaction(async tx => {
+    const [currentInvite] = await tx
+      .select()
+      .from(storeAccessInvitesTable)
+      .where(
+        and(
+          eq(storeAccessInvitesTable.id, parsed.inviteId),
+          eq(storeAccessInvitesTable.storeId, storeId),
+          eq(storeAccessInvitesTable.status, 'pending'),
+          sql`${storeAccessInvitesTable.usedAt} is null`,
+          sql`${storeAccessInvitesTable.revokedAt} is null`,
+          sql`${storeAccessInvitesTable.expiresAt} > now()`
+        )
+      )
+      .limit(1)
+
+    if (!currentInvite) throw new Error('STORE_INVITE_NOT_PENDING')
+
+    await tx
+      .update(storeAccessInvitesTable)
+      .set({
+        status: 'revoked',
+        revokedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(storeAccessInvitesTable.id, currentInvite.id))
+
+    const token = createStoreAccessInviteToken()
+    const tokenHash = hashStoreAccessInviteToken(
+      token,
+      getStoreAccessInviteSecret()
+    )
+    const expiresAt = getStoreAccessInviteExpiresAt(now)
+
+    const [invite] = await tx
+      .insert(storeAccessInvitesTable)
+      .values({
+        storeId,
+        targetUserId: currentInvite.targetUserId,
+        targetEmail: currentInvite.targetEmail,
+        role: currentInvite.role,
+        tokenHash,
+        status: 'pending',
+        deliveryChannel: currentInvite.deliveryChannel,
+        deliveryStatus: 'ready',
+        expiresAt,
+        createdByClerkId: actor.clerkId,
+        createdByEmail: actor.email,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'resend_store_user_invite',
+      actorClerkId: actor.clerkId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      storeId,
+      targetUserId: currentInvite.targetUserId,
+      targetUserEmail: currentInvite.targetEmail,
+      previousStoreStatus: 'store_user_invite_pending',
+      newStoreStatus: 'store_user_invite_reissued',
+      reason: `Convite reenviado pela loja. convite_anterior=${currentInvite.id}; novo_convite=${invite.id}; perfil=${invite.role}.`,
+    })
+
+    return {
+      inviteId: invite.id,
+      inviteUrl: buildStoreAccessInviteUrl({
+        token,
+        baseUrl: getAppBaseUrl(),
+      }),
+      targetEmail: invite.targetEmail,
+      expiresAt,
+    }
+  })
+}
+
+export async function requestStoreUserPasswordReset(
+  storeId: number,
+  values: z.infer<typeof storePasswordResetRequestSchema>
+) {
+  const parsed = storePasswordResetRequestSchema.parse(values)
+  const actor = await getActor()
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
+  const now = new Date()
+  const expiresAt = getPasswordResetExpiresAt(now)
+
+  const [target] = await db
+    .select({
+      userId: usersTable.id,
+      email: usersTable.email,
+      name: usersTable.name,
+      clerkId: usersTable.clerkId,
+      userStatus: usersTable.status,
+      revokedAt: userStorePermissionsTable.revokedAt,
+    })
+    .from(userStorePermissionsTable)
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .where(
+      and(
+        eq(userStorePermissionsTable.storeId, storeId),
+        eq(userStorePermissionsTable.userId, parsed.userId)
+      )
+    )
+    .limit(1)
+
+  if (!target || target.revokedAt || target.userStatus !== 'active') {
+    throw new Error('STORE_USER_NOT_ACTIVE')
+  }
+
+  if (!target.clerkId) throw new Error('STORE_USER_HAS_NO_CLERK_ACCOUNT')
+  const targetClerkId = target.clerkId
+
+  const request = await db.transaction(async tx => {
+    await tx
+      .update(storeUserPasswordResetRequestsTable)
+      .set({
+        status: 'revoked',
+        revokedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(storeUserPasswordResetRequestsTable.storeId, storeId),
+          eq(storeUserPasswordResetRequestsTable.targetUserId, target.userId),
+          sql`${storeUserPasswordResetRequestsTable.status} in ('pending', 'consumed')`,
+          sql`${storeUserPasswordResetRequestsTable.revokedAt} is null`,
+          sql`${storeUserPasswordResetRequestsTable.completedAt} is null`
+        )
+      )
+
+    const [request] = await tx
+      .insert(storeUserPasswordResetRequestsTable)
+      .values({
+        storeId,
+        targetUserId: target.userId,
+        targetEmail: target.email,
+        targetClerkId,
+        status: 'pending',
+        expiresAt,
+        requestedByClerkId: actor.clerkId,
+        requestedByEmail: actor.email,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'request_store_user_password_reset',
+      actorClerkId: actor.clerkId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      storeId,
+      targetUserId: target.userId,
+      targetUserEmail: target.email,
+      previousStoreStatus: 'store_user_active',
+      newStoreStatus: 'store_user_password_reset_requested',
+      reason:
+        'Link temporario de recuperacao solicitado pela loja. O codigo de redefinicao e enviado somente ao e-mail do usuario alvo.',
+    })
+
+    return request
+  })
+
+  return {
+    requestId: request.id,
+    resetUrl: buildPasswordResetUrl({
+      requestId: request.id,
+    }),
+    targetEmail: target.email,
+    expiresAt,
+  }
+}
+
+export async function getStoreUserPasswordResetRequestPreview(requestId: string) {
+  const parsed = passwordResetLinkConsumedSchema.parse({ requestId })
+  const now = new Date()
+
+  const [request] = await db
+    .select({
+      targetEmail: storeUserPasswordResetRequestsTable.targetEmail,
+      status: storeUserPasswordResetRequestsTable.status,
+      expiresAt: storeUserPasswordResetRequestsTable.expiresAt,
+      revokedAt: storeUserPasswordResetRequestsTable.revokedAt,
+      completedAt: storeUserPasswordResetRequestsTable.completedAt,
+    })
+    .from(storeUserPasswordResetRequestsTable)
+    .where(eq(storeUserPasswordResetRequestsTable.id, parsed.requestId))
+    .limit(1)
+
+  if (!request) return { status: 'invalid' as const }
+  if (request.completedAt || request.status === 'completed') {
+    return { status: 'completed' as const }
+  }
+  if (request.revokedAt || request.status === 'revoked') {
+    return { status: 'revoked' as const }
+  }
+  if (request.expiresAt <= now || request.status === 'expired') {
+    return { status: 'expired' as const }
+  }
+  if (request.status === 'consumed') {
+    return { status: 'consumed' as const }
+  }
+
+  return {
+    status: 'valid' as const,
+    targetEmail: request.targetEmail,
+    expiresAt: request.expiresAt,
+  }
+}
+
+export async function markStoreUserPasswordResetLinkConsumed(values: {
+  requestId: string
+}) {
+  const parsed = passwordResetLinkConsumedSchema.parse(values)
+  const now = new Date()
+
+  const [request] = await db
+    .update(storeUserPasswordResetRequestsTable)
+    .set({
+      status: 'consumed',
+      consumedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(storeUserPasswordResetRequestsTable.id, parsed.requestId),
+        eq(storeUserPasswordResetRequestsTable.status, 'pending'),
+        sql`${storeUserPasswordResetRequestsTable.expiresAt} > now()`,
+        sql`${storeUserPasswordResetRequestsTable.revokedAt} is null`,
+        sql`${storeUserPasswordResetRequestsTable.consumedAt} is null`
+      )
+    )
+    .returning()
+
+  if (!request) throw new Error('PASSWORD_RESET_REQUEST_NOT_AVAILABLE')
+
+  await db.insert(internalOperationAuditLogsTable).values({
+    action: 'consume_store_user_password_reset',
+    actorClerkId: request.targetClerkId,
+    actorEmail: request.targetEmail,
+    actorName: null,
+    storeId: request.storeId,
+    targetUserId: request.targetUserId,
+    targetUserEmail: request.targetEmail,
+    previousStoreStatus: 'store_user_password_reset_pending',
+    newStoreStatus: 'store_user_password_reset_code_sent',
+    reason:
+      'Codigo de redefinicao solicitado pelo fluxo temporario e enviado pelo Clerk somente ao e-mail do usuario alvo.',
+  })
+
+  return { success: true }
+}
+
+export async function completeStoreUserPasswordReset(values: {
+  requestId: string
+}) {
+  const parsed = passwordResetLinkConsumedSchema.parse(values)
+  const clerkAuth = await auth()
+
+  if (!clerkAuth.userId) throw new Error('NOT_AUTHENTICATED')
+
+  const now = new Date()
+
+  const [request] = await db
+    .update(storeUserPasswordResetRequestsTable)
+    .set({
+      status: 'completed',
+      completedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(storeUserPasswordResetRequestsTable.id, parsed.requestId),
+        eq(
+          storeUserPasswordResetRequestsTable.targetClerkId,
+          clerkAuth.userId
+        ),
+        eq(storeUserPasswordResetRequestsTable.status, 'consumed'),
+        sql`${storeUserPasswordResetRequestsTable.revokedAt} is null`,
+        sql`${storeUserPasswordResetRequestsTable.completedAt} is null`
+      )
+    )
+    .returning()
+
+  if (!request) return { success: true }
+
+  await db.insert(internalOperationAuditLogsTable).values({
+    action: 'complete_store_user_password_reset',
+    actorClerkId: clerkAuth.userId,
+    actorEmail: request.targetEmail,
+    actorName: null,
+    storeId: request.storeId,
+    targetUserId: request.targetUserId,
+    targetUserEmail: request.targetEmail,
+    previousStoreStatus: 'store_user_password_reset_code_sent',
+    newStoreStatus: 'store_user_password_reset_completed',
+    reason: 'Redefinicao de senha concluida no fluxo seguro do Clerk.',
   })
 
   return { success: true }
