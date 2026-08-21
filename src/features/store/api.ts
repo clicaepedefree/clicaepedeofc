@@ -272,5 +272,9 @@ export const validateUserPermissionsForStore = async (
       message: 'Usuário não possui permissão para executar operação na loja',
     })
 
-  return { user, storePermissions: userPermissionsForStore.permission }
+  return {
+    user,
+    store: userPermissionsForStore.store,
+    storePermissions: userPermissionsForStore.permission,
+  }
 }

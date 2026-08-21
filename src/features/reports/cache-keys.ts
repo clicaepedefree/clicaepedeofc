@@ -1,5 +1,9 @@
 export const revenueSummaryCacheKey = (
   storeId: number | null,
-  startDate: string,
-  endDate: string
-) => ['stores', storeId, 'revenue-summary', { startDate, endDate }]
+  period: {
+    preset: string
+    startDate?: string
+    endDate?: string
+    timeZone?: string
+  }
+) => ['stores', storeId, 'revenue-summary', period]

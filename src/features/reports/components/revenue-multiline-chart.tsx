@@ -48,8 +48,8 @@ type ChartDatum = {
 type RevenueMultilineChartProps = {
   chartData: ChartDatum[]
   dates: {
-    startDate: string
-    endDate: string
+    startDate?: string
+    endDate?: string
   }
   isLoading?: boolean
 }
@@ -64,6 +64,13 @@ export function RevenueMultilineChart({
   isLoading,
 }: RevenueMultilineChartProps) {
   const [activeCharts, setActiveCharts] = useState<ChartKey[]>(['dailyRevenue'])
+  const sortedChartData = useMemo(
+    () =>
+      [...chartData].sort((a, b) => dayjs(a.date).diff(dayjs(b.date), 'day')),
+    [chartData]
+  )
+  const displayStartDate = dates.startDate ?? sortedChartData[0]?.date
+  const displayEndDate = dates.endDate ?? sortedChartData.at(-1)?.date
 
   const toggleChartVisibility = (chartKey: ChartKey) => {
     setActiveCharts(prev => {
@@ -76,15 +83,20 @@ export function RevenueMultilineChart({
   }
 
   const chartDataParsed = useMemo(() => {
+    const effectiveStartDate = dates.startDate ?? sortedChartData[0]?.date
+    const effectiveEndDate = dates.endDate ?? sortedChartData.at(-1)?.date
+
+    if (!effectiveStartDate || !effectiveEndDate) return []
+
     const revenueByDate = new Map(
-      chartData.map(item => [dayjs(item.date).format('YYYY-MM-DD'), item])
+      sortedChartData.map(item => [dayjs(item.date).format('YYYY-MM-DD'), item])
     )
 
     const totalDaysInPeriod =
-      dayjs(dates.endDate).diff(dayjs(dates.startDate), 'day') + 1
+      dayjs(effectiveEndDate).diff(dayjs(effectiveStartDate), 'day') + 1
 
     return Array.from({ length: totalDaysInPeriod }, (_, dayIndex) => {
-      const currentDay = dayjs(dates.startDate).add(dayIndex, 'day')
+      const currentDay = dayjs(effectiveStartDate).add(dayIndex, 'day')
       const dailyRevenueData = revenueByDate.get(currentDay.format('YYYY-MM-DD'))
 
       if (dailyRevenueData) {
@@ -104,7 +116,7 @@ export function RevenueMultilineChart({
         dailyAverageOrderValue: 0,
       }
     })
-  }, [chartData, dates.startDate, dates.endDate])
+  }, [dates.startDate, dates.endDate, sortedChartData])
 
   return (
     <Card className="pt-0">
@@ -117,13 +129,15 @@ export function RevenueMultilineChart({
           <div className="data-[active=true]:bg-muted/50 relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 text-left even:border-l sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
             <span className="text-muted-foreground text-xs">De</span>
             <span className="text-lg leading-none font-semibold sm:text-xl text-nowrap">
-              {formatDate(dates.startDate, 'DD MMMM YYYY')}
+              {displayStartDate
+                ? formatDate(displayStartDate, 'DD MMMM YYYY')
+                : '-'}
             </span>
           </div>
           <div className="data-[active=true]:bg-muted/50 relative z-30 flex flex-1 flex-col justify-center gap-1 border-t px-6 py-4 text-left even:border-l sm:border-t-0 sm:border-l sm:px-8 sm:py-6">
             <span className="text-muted-foreground text-xs">Até</span>
             <span className="text-lg leading-none font-semibold sm:text-xl text-nowrap">
-              {formatDate(dates.endDate, 'DD MMMM YYYY')}
+              {displayEndDate ? formatDate(displayEndDate, 'DD MMMM YYYY') : '-'}
             </span>
           </div>
         </div>
@@ -167,6 +181,7 @@ export function RevenueMultilineChart({
                 formatValueToCurrency({
                   value,
                   includeCurrencySymbol: true,
+                  normalizeDisplayValue: true,
                 })
               }
               hide={
@@ -198,6 +213,7 @@ export function RevenueMultilineChart({
                     return formatValueToCurrency({
                       value: value.toString(),
                       includeCurrencySymbol: true,
+                      normalizeDisplayValue: true,
                     })
                   }}
                 />

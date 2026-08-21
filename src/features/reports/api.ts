@@ -4,24 +4,60 @@ import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 import { ordersTable } from '@/services/db/schema/orders'
 import { coalesce, jsonAgg } from '@/services/db/utils'
-import { and, count, eq, gte, lte, sql, sum } from 'drizzle-orm'
+import { and, count, eq, gte, lt, sql, sum } from 'drizzle-orm'
+import {
+  ensureValidReportRange,
+  isSupportedReportTimeZone,
+  maxAllTimeDailyBreakdownDays,
+  reportTimeZone,
+  type ReportPeriodPreset,
+} from './form-validation/report-period'
 import { buildOperationalSalesMetricsSummary } from './sales-channel-metrics'
+
+type GetRevenueSummaryOptions = {
+  startDate?: string
+  endDate?: string
+  periodPreset?: ReportPeriodPreset
+}
 
 export const getRevenueSummary = async (
   storeId: number,
-  startDate?: string,
-  endDate?: string
+  options: GetRevenueSummaryOptions = {}
 ): Promise<any> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  const { store } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { startDate, endDate, periodPreset } = options
+  const timeZone = isSupportedReportTimeZone(store.timezone)
+    ? store.timezone
+    : reportTimeZone
+  const isAllTime = periodPreset === 'ALL_TIME' && !startDate && !endDate
 
-  const orderCreatedAtWithTimezone = sql<Date>`date(timezone('America/Sao_Paulo', ${ordersTable.createdAt}))`
+  ensureValidReportRange(startDate, endDate)
+
+  const orderCreatedAtWithTimezone = sql<Date>`date(timezone(${timeZone}, ${ordersTable.createdAt}))`
   const eligibleOrderFilters = and(
     eq(ordersTable.storeId, storeId),
     eq(ordersTable.status, 'COMPLETED'),
     startDate
-      ? gte(orderCreatedAtWithTimezone, sql`date(${startDate})`)
+      ? gte(
+          ordersTable.createdAt,
+          sql`${startDate}::date::timestamp at time zone ${timeZone}`
+        )
       : undefined,
-    endDate ? lte(orderCreatedAtWithTimezone, sql`date(${endDate})`) : undefined
+    endDate
+      ? lt(
+          ordersTable.createdAt,
+          sql`(${endDate}::date + interval '1 day')::timestamp at time zone ${timeZone}`
+        )
+      : undefined
+  )
+  const dailyBreakdownFilters = and(
+    eligibleOrderFilters,
+    isAllTime
+      ? gte(
+          ordersTable.createdAt,
+          sql`now() - make_interval(days => ${maxAllTimeDailyBreakdownDays - 1})`
+        )
+      : undefined
   )
   const dailyBreakdownsTempTable = db.$with('dailyBreakdownsTempTable').as(
     db
@@ -34,7 +70,7 @@ export const getRevenueSummary = async (
         ).as('dailyRevenue'),
       })
       .from(ordersTable)
-      .where(eligibleOrderFilters)
+      .where(dailyBreakdownFilters)
       .groupBy(orderCreatedAtWithTimezone)
       .orderBy(orderCreatedAtWithTimezone)
   )
@@ -79,5 +115,12 @@ export const getRevenueSummary = async (
     channelBreakdowns: operationalSummary.channelBreakdowns,
     classificationNote: operationalSummary.classificationNote,
     revenueTreatmentNote: operationalSummary.revenueTreatmentNote,
+    periodPreset,
+    periodStartDate: startDate,
+    periodEndDate: endDate,
+    periodTimeZone: timeZone,
+    dailyBreakdownLimitDays: isAllTime
+      ? maxAllTimeDailyBreakdownDays
+      : undefined,
   }
 }

@@ -1,46 +1,38 @@
 'use client'
 
 import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
+import { ReportPeriodFilter } from '@/features/reports/components/report-period-filter'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
 import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
-import {
-  reportPeriodsOptions,
-  type ReportPeriod,
-} from '@/features/reports/form-validation/report-period'
+import type { ReportPeriodSelection } from '@/features/reports/form-validation/report-period'
 import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/card'
-import { Combobox } from '@/shared/combobox'
 import { formatValueToCurrency } from '@/shared/formatters/currency'
 import { useState } from 'react'
 
 export default function Page() {
-  const [selectedPeriod, setSelectedPeriod] =
-    useState<ReportPeriod>('LAST_30_DAYS')
+  const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriodSelection>({
+    preset: 'LAST_7_DAYS',
+  })
 
-  const { revenueSummary, isLoading, isEnabled, dates } =
+  const { revenueSummary, isLoading, period } =
     useRevenueSummary(selectedPeriod)
 
   return (
     <>
       <AdminPageInfo pageInfo={{ title: 'Dashboard' }} />
       <div className="w-full max-w-[inherit] space-y-4 p-4 md:p-6">
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="w-full sm:w-64">
-            <Combobox
-              options={[...reportPeriodsOptions]}
-              value={selectedPeriod}
-              onChange={(value: string) =>
-                setSelectedPeriod(value as ReportPeriod)
-              }
-              placeholder="Selecione um período"
-              searchPlaceholder="Buscar período"
-              noResultMessage="Nenhum período encontrado"
-              disabled={isLoading}
-              disableUnselectingOption
-              contentClassName="min-w-fit"
-            />
-          </div>
-        </div>
+        <ReportPeriodFilter
+          value={selectedPeriod}
+          period={period}
+          onChange={setSelectedPeriod}
+          disabled={isLoading}
+        />
+        {!period.isRangeValid && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Ajuste o período para consultar os indicadores.
+          </p>
+        )}
         <>
           <div className="mb-4 grid auto-rows-min gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <Card className="@container/card w-full">
@@ -85,7 +77,10 @@ export default function Page() {
           />
           <RevenueMultilineChart
             chartData={revenueSummary?.dailyBreakdowns ?? []}
-            dates={dates}
+            dates={{
+              startDate: period.startDate,
+              endDate: period.endDate,
+            }}
             isLoading={isLoading}
           />
         </>

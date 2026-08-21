@@ -17,6 +17,7 @@ export const storesTable = pgTable('stores', {
   id: serial('id').primaryKey(),
   subdomain: text('subdomain').unique().notNull(),
   name: text('name').notNull(),
+  timezone: text('timezone').notNull().default('America/Sao_Paulo'),
   status: text('status', { enum: storeStatuses }).notNull().default('active'),
   statusReason: text('status_reason'),
   statusUpdatedAt: baseTimestampColumnGenerator('status_updated_at')
