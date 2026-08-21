@@ -1784,6 +1784,16 @@ function RegisterManualPaymentDialog({
   invoice: InternalInvoiceOverview
   returnTo: string
 }) {
+  const activeAccessBlock = store.accessBlock?.isActive
+    ? store.accessBlock
+    : null
+  const unlocksBillingBlock =
+    activeAccessBlock?.source === 'billing_delinquency' &&
+    activeAccessBlock.invoiceId === invoice.id
+  const preservesManualBlock =
+    activeAccessBlock !== null &&
+    activeAccessBlock.source !== 'billing_delinquency'
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -1806,6 +1816,37 @@ function RegisterManualPaymentDialog({
           <input type="hidden" name="storeId" value={store.id} />
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <input type="hidden" name="returnTo" value={returnTo} />
+
+          {(unlocksBillingBlock || preservesManualBlock) && (
+            <div
+              className={cn(
+                'rounded-lg border p-4 text-sm',
+                unlocksBillingBlock
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100'
+                  : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100'
+              )}
+            >
+              <div className="flex gap-3">
+                {unlocksBillingBlock ? (
+                  <ShieldOff className="mt-0.5 size-4 shrink-0" />
+                ) : (
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+                )}
+                <div>
+                  <p className="font-semibold">
+                    {unlocksBillingBlock
+                      ? 'Quitacao libera o acesso financeiro'
+                      : 'Bloqueio manual permanece ativo'}
+                  </p>
+                  <p className="mt-1 opacity-80">
+                    {unlocksBillingBlock
+                      ? 'Ao registrar o saldo total desta fatura, o bloqueio financeiro automatico sera removido e auditado. Pagamentos parciais mantem o bloqueio ate a quitacao.'
+                      : 'Esta loja possui um bloqueio manual. O pagamento da fatura nao remove esse bloqueio; use a acao de desbloqueio de acesso quando for apropriado.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <FormSection title="Pagamento">
             <FormField
