@@ -1,12 +1,28 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  normalizeBillingGatewayProvider,
   normalizeBillingGatewayEvent,
+  resolveAllowedBillingGatewayProviders,
   resolveBillingGatewayEventProcessing,
   signBillingGatewayWebhookPayload,
   verifyBillingGatewayWebhookSignature,
 } from './gateway-webhooks-policy'
 
 describe('billing gateway webhooks policy', () => {
+  test('normalizes provider allowlist without accepting empty entries', () => {
+    expect(normalizeBillingGatewayProvider(' Valida Pay ')).toBe('valida_pay')
+    expect(normalizeBillingGatewayProvider(null)).toBe('generic_gateway')
+
+    expect(resolveAllowedBillingGatewayProviders(undefined)).toEqual([
+      'validapay',
+      'generic_gateway',
+    ])
+    expect(
+      resolveAllowedBillingGatewayProviders(' Valida Pay, , Custom.Provider ')
+    ).toEqual(['valida_pay', 'custom_provider'])
+    expect(resolveAllowedBillingGatewayProviders(' , ')).toEqual([])
+  })
+
   test('validates signed payloads with timestamp tolerance', () => {
     const rawBody = JSON.stringify({ id: 'evt_1', type: 'payment_succeeded' })
     const timestamp = '2026-08-21T15:00:00.000Z'

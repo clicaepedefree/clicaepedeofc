@@ -30,6 +30,7 @@ export type BillingGatewaySignatureVerification =
 const MAX_PROVIDER_LENGTH = 80
 const MAX_EVENT_ID_LENGTH = 160
 const SIGNATURE_TOLERANCE_SECONDS = 300
+const DEFAULT_ALLOWED_PROVIDERS = ['validapay', 'generic_gateway']
 
 const eventTypeAliases: Record<string, BillingGatewayEventType> = {
   paid: 'payment_succeeded',
@@ -87,13 +88,34 @@ const pickNumber = (...values: unknown[]) => {
   return null
 }
 
-const normalizeProvider = (provider: string | null | undefined) =>
+export const normalizeBillingGatewayProvider = (
+  provider: string | null | undefined
+) =>
   (
     provider
       ?.trim()
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, '_') || 'generic_gateway'
   ).slice(0, MAX_PROVIDER_LENGTH)
+
+export function resolveAllowedBillingGatewayProviders(
+  rawProviders: string | null | undefined
+) {
+  if (rawProviders !== undefined && (rawProviders ?? '').trim() === '') {
+    return []
+  }
+
+  const providers = (rawProviders ?? DEFAULT_ALLOWED_PROVIDERS.join(','))
+    .split(',')
+    .map(provider => provider.trim())
+    .filter(Boolean)
+    .map(normalizeBillingGatewayProvider)
+    .filter(Boolean)
+
+  return rawProviders === undefined && providers.length === 0
+    ? DEFAULT_ALLOWED_PROVIDERS
+    : providers
+}
 
 const normalizeEventId = ({
   provider,
@@ -210,7 +232,7 @@ export function normalizeBillingGatewayEvent({
     ...pickNestedRecord(payload, 'metadata'),
     ...pickNestedRecord(data, 'metadata'),
   }
-  const provider = normalizeProvider(
+  const provider = normalizeBillingGatewayProvider(
     pickString(providerFromHeader, payload.provider, data.provider)
   )
   const payloadHash = calculateBillingGatewayPayloadHash(rawBody)

@@ -43,6 +43,8 @@ export type BillingGatewayQueueResult = {
   ignored: number
 }
 
+type BillingGatewayProcessingStatus = keyof BillingGatewayQueueResult
+
 const DEFAULT_QUEUE_LIMIT = 25
 const MAX_QUEUE_LIMIT = 100
 const SYSTEM_ACTOR_EMAIL = 'billing-gateway@clicaepede.internal'
@@ -303,7 +305,7 @@ async function processSucceededPayment({
   gatewayEvent: typeof storeBillingGatewayEventsTable.$inferSelect
   invoice: SelectStoreBillingInvoice
   now: Date
-}) {
+}): Promise<Exclude<BillingGatewayProcessingStatus, 'ignored'>> {
   const paymentAmount = gatewayEvent.amount
 
   if (!paymentAmount) {
@@ -329,7 +331,7 @@ async function processSucceededPayment({
         attempts: gatewayEvent.attempts + 1,
       }),
     })
-    return
+    return 'failed'
   }
 
   const paidAt = gatewayEvent.occurredAt ?? now
@@ -354,7 +356,7 @@ async function processSucceededPayment({
       now,
       paymentId: existingPayment.id,
     })
-    return
+    return 'processed'
   }
 
   let reconciliation: ReturnType<typeof reconcileConfirmedPayment>
@@ -392,7 +394,7 @@ async function processSucceededPayment({
       lastError: reason,
       nextAttemptAt: now,
     })
-    return
+    return 'failed'
   }
 
   await db.transaction(async tx => {
@@ -519,6 +521,8 @@ async function processSucceededPayment({
       })
       .where(eq(storeBillingGatewayEventsTable.id, gatewayEvent.id))
   })
+
+  return 'processed'
 }
 
 async function processFailedOrCancelledPayment({
@@ -529,7 +533,7 @@ async function processFailedOrCancelledPayment({
   gatewayEvent: typeof storeBillingGatewayEventsTable.$inferSelect
   invoice: SelectStoreBillingInvoice
   now: Date
-}) {
+}): Promise<Exclude<BillingGatewayProcessingStatus, 'ignored'>> {
   await db.transaction(async tx => {
     let paymentId: number | null = null
     if (gatewayEvent.providerPaymentId && gatewayEvent.amount) {
@@ -606,6 +610,8 @@ async function processFailedOrCancelledPayment({
       })
       .where(eq(storeBillingGatewayEventsTable.id, gatewayEvent.id))
   })
+
+  return 'processed'
 }
 
 async function processRefundPayment({
@@ -616,7 +622,7 @@ async function processRefundPayment({
   gatewayEvent: typeof storeBillingGatewayEventsTable.$inferSelect
   invoice: SelectStoreBillingInvoice
   now: Date
-}) {
+}): Promise<Exclude<BillingGatewayProcessingStatus, 'ignored'>> {
   const refundAmount = toMoneyNumber(gatewayEvent.amount)
   const refundableAmount =
     toMoneyNumber(invoice.amountPaid) - toMoneyNumber(invoice.amountRefunded)
@@ -641,7 +647,7 @@ async function processRefundPayment({
       lastError: 'refund_exceeds_paid',
       nextAttemptAt: now,
     })
-    return
+    return 'failed'
   }
 
   await db.transaction(async tx => {
@@ -725,6 +731,8 @@ async function processRefundPayment({
       })
       .where(eq(storeBillingGatewayEventsTable.id, gatewayEvent.id))
   })
+
+  return 'processed'
 }
 
 async function processGatewayEvent(
@@ -810,14 +818,14 @@ async function processGatewayEvent(
   }
 
   if (gatewayEvent.eventType === 'payment_succeeded') {
-    await processSucceededPayment({ gatewayEvent, invoice, now })
+    return await processSucceededPayment({ gatewayEvent, invoice, now })
   } else if (
     gatewayEvent.eventType === 'payment_failed' ||
     gatewayEvent.eventType === 'payment_cancelled'
   ) {
-    await processFailedOrCancelledPayment({ gatewayEvent, invoice, now })
+    return await processFailedOrCancelledPayment({ gatewayEvent, invoice, now })
   } else if (gatewayEvent.eventType === 'payment_refunded') {
-    await processRefundPayment({ gatewayEvent, invoice, now })
+    return await processRefundPayment({ gatewayEvent, invoice, now })
   }
 
   return 'processed' as const
