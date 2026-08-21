@@ -23,6 +23,8 @@ export const internalRoleLabels: Record<InternalRole, string> = {
 
 export const internalPermissions = [
   'view_internal_operations',
+  'view_personal_data',
+  'export_personal_data',
   'create_store',
   'manage_store_profile',
   'manage_implementation_checklist',
@@ -60,6 +62,7 @@ const rolePermissionMap: Record<
   ]),
   sales: new Set([
     'view_internal_operations',
+    'view_personal_data',
     'create_store',
     'manage_store_profile',
     'manage_implementation_checklist',
@@ -69,6 +72,7 @@ const rolePermissionMap: Record<
   ]),
   implementation: new Set([
     'view_internal_operations',
+    'view_personal_data',
     'manage_store_profile',
     'manage_implementation_checklist',
     'activate_implemented_store',
@@ -105,6 +109,32 @@ export function canUseInternalPermission({
   if (!currentRole) return false
 
   return rolePermissionMap[currentRole].has(permission)
+}
+
+export function canViewInternalPersonalData(
+  operator: Pick<InternalOperator, 'role'> | null
+) {
+  return canUseInternalPermission({
+    currentRole: operator?.role ?? null,
+    permission: 'view_personal_data',
+  })
+}
+
+export function canExportInternalPersonalData(
+  operator: Pick<InternalOperator, 'role'> | null
+) {
+  return canUseInternalPermission({
+    currentRole: operator?.role ?? null,
+    permission: 'export_personal_data',
+  })
+}
+
+export function requireInternalPersonalDataExportPermission(
+  operator: Pick<InternalOperator, 'role'> | null
+) {
+  if (!canExportInternalPersonalData(operator)) {
+    throw new Error('INTERNAL_PERSONAL_DATA_EXPORT_FORBIDDEN')
+  }
 }
 
 export const canUseInternalRole = ({

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   getAllowedStoreLifecycleTargets,
   getDefaultStoreLifecycleSubscriptionEffect,
+  getStoreDataRetentionPolicy,
   getStoreLifecycleAuditAction,
   isFinanciallyValidForStoreActivation,
   isStoreLifecycleTransitionAllowed,
@@ -89,6 +90,17 @@ describe('store commercial lifecycle policy', () => {
         expectedConfirmation: 'loja-certa',
       })
     ).toBe(null)
+  })
+
+  test('defines archived store data retention and access policy', () => {
+    expect(getStoreDataRetentionPolicy('archived')).toEqual({
+      status: 'archived',
+      retention: 'retain_for_legal_billing_and_audit_history',
+      access: 'internal_operations_only',
+      mutability: 'read_only',
+      personalDataVisibility: 'masked_unless_role_can_view_personal_data',
+    })
+    expect(getStoreDataRetentionPolicy('active')).toBe(null)
   })
 
   test('normalizes form payload and maps defaults for lifecycle actions', () => {

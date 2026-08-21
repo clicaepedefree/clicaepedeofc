@@ -39,6 +39,7 @@ export default async function InternalStoreDetailPage({
         operation: 'manageBillingInvoices',
       }),
       invoiceStatus,
+      operator,
     }),
     listActiveBillingPlansForInternalCreation(),
   ])

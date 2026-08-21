@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import {
   canUseInternalPermission,
   canUseInternalRole,
+  canExportInternalPersonalData,
+  canViewInternalPersonalData,
   internalPermissions,
   internalRoles,
   parseInternalRole,
+  requireInternalPersonalDataExportPermission,
   type InternalPermission,
   type InternalRole,
 } from './access'
@@ -109,6 +112,7 @@ describe('internal operation access policy', () => {
       role: 'sales',
       allowed: [
         'view_internal_operations',
+        'view_personal_data',
         'create_store',
         'manage_store_profile',
         'manage_implementation_checklist',
@@ -124,6 +128,7 @@ describe('internal operation access policy', () => {
       role: 'implementation',
       allowed: [
         'view_internal_operations',
+        'view_personal_data',
         'manage_store_profile',
         'manage_implementation_checklist',
         'activate_implemented_store',
@@ -157,6 +162,7 @@ describe('internal operation access policy', () => {
       cancelBilling: 'cancel_billing',
       manageStoreModules: 'manage_store_modules',
       blockStore: 'block_store',
+      exportPersonalData: 'export_personal_data',
     })
   })
 
@@ -227,5 +233,30 @@ describe('internal operation access policy', () => {
         operation: 'applyBillingDiscounts',
       })
     ).toBe(false)
+  })
+
+  test('separates personal data visibility from export authorization', () => {
+    expect(canViewInternalPersonalData({ role: 'superadmin' })).toBe(true)
+    expect(canViewInternalPersonalData({ role: 'sales' })).toBe(true)
+    expect(canViewInternalPersonalData({ role: 'implementation' })).toBe(true)
+    expect(canViewInternalPersonalData({ role: 'finance' })).toBe(false)
+    expect(canViewInternalPersonalData({ role: 'support' })).toBe(false)
+    expect(canViewInternalPersonalData({ role: 'viewer' })).toBe(false)
+
+    expect(canExportInternalPersonalData({ role: 'superadmin' })).toBe(true)
+    expect(canExportInternalPersonalData({ role: 'sales' })).toBe(false)
+    expect(canExportInternalPersonalData({ role: 'implementation' })).toBe(
+      false
+    )
+    expect(canExportInternalPersonalData({ role: 'finance' })).toBe(false)
+    expect(canExportInternalPersonalData({ role: 'support' })).toBe(false)
+    expect(canExportInternalPersonalData({ role: 'viewer' })).toBe(false)
+
+    expect(() =>
+      requireInternalPersonalDataExportPermission({ role: 'viewer' })
+    ).toThrow('INTERNAL_PERSONAL_DATA_EXPORT_FORBIDDEN')
+    expect(() =>
+      requireInternalPersonalDataExportPermission({ role: 'superadmin' })
+    ).not.toThrow()
   })
 })

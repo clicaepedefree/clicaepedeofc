@@ -4,12 +4,17 @@ import {
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
   getMonthlyContractedRevenue,
+  maskInternalStoreEmail,
   maskInternalStoreSensitiveDigits,
   parseInternalStoreAccessFilter,
   parseInternalStoreDateFilter,
   parseStoreStatus,
   parseInternalDashboardAmount,
   parseInternalStorePositiveInteger,
+  protectInternalPersonalDigits,
+  protectInternalPersonalEmail,
+  protectInternalPersonalRecipient,
+  protectInternalRequiredPersonalEmail,
   shouldCreateInternalStoreInitialInvoice,
 } from './db'
 import type { InternalStoreCreationValues } from './internal-store-creation-policy'
@@ -102,6 +107,77 @@ describe('internal operation store policy', () => {
     expect(maskInternalStoreSensitiveDigits('', 'nao informado')).toBe(
       'nao informado'
     )
+  })
+
+  test('masks personal e-mail while preserving operational context', () => {
+    expect(maskInternalStoreEmail('responsavel@cliente.com')).toBe(
+      're***@cliente.com'
+    )
+    expect(maskInternalStoreEmail('a@cliente.com')).toBe('a***@cliente.com')
+    expect(maskInternalStoreEmail('sem-dominio')).toBe('e-mail informado')
+  })
+
+  test('protects internal personal values according to role visibility', () => {
+    expect(
+      protectInternalRequiredPersonalEmail({
+        value: 'operador@clicaepede.com',
+        canViewPersonalData: false,
+      })
+    ).toBe('op***@clicaepede.com')
+    expect(
+      protectInternalPersonalEmail({
+        value: 'financeiro@cliente.com',
+        canViewPersonalData: false,
+      })
+    ).toBe('fi***@cliente.com')
+    expect(
+      protectInternalPersonalDigits({
+        value: '(11) 99999-1234',
+        fallback: 'telefone informado',
+        canViewPersonalData: false,
+      })
+    ).toBe('***1234')
+
+    expect(
+      protectInternalRequiredPersonalEmail({
+        value: 'operador@clicaepede.com',
+        canViewPersonalData: true,
+      })
+    ).toBe('operador@clicaepede.com')
+    expect(
+      protectInternalPersonalDigits({
+        value: '(11) 99999-1234',
+        fallback: 'telefone informado',
+        canViewPersonalData: true,
+      })
+    ).toBe('(11) 99999-1234')
+  })
+
+  test('protects billing reminder recipients by detected contact type', () => {
+    expect(
+      protectInternalPersonalRecipient({
+        value: 'cobranca@cliente.com',
+        canViewPersonalData: false,
+      })
+    ).toBe('co***@cliente.com')
+    expect(
+      protectInternalPersonalRecipient({
+        value: '+55 (11) 98888-7777',
+        canViewPersonalData: false,
+      })
+    ).toBe('***7777')
+    expect(
+      protectInternalPersonalRecipient({
+        value: 'canal interno',
+        canViewPersonalData: false,
+      })
+    ).toBe('destinatario informado')
+    expect(
+      protectInternalPersonalRecipient({
+        value: '+55 (11) 98888-7777',
+        canViewPersonalData: true,
+      })
+    ).toBe('+55 (11) 98888-7777')
   })
 
   test('builds deterministic initial invoice numbers from provisioned ids', () => {
