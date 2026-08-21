@@ -971,6 +971,12 @@ export async function updateStoreSubscriptionTermsAction(formData: FormData) {
         discountValue: formData.get('discountValue'),
         discountValidUntil: formData.get('discountValidUntil'),
         paymentGraceDays: formData.get('paymentGraceDays'),
+        billingAccessExemptionKind:
+          formData.get('billingAccessExemptionKind') ?? 'none',
+        billingAccessExemptUntil: formData.get('billingAccessExemptUntil'),
+        billingAccessExemptionReason: formData.get(
+          'billingAccessExemptionReason'
+        ),
         reason: formData.get('reason'),
       })
     } catch (error) {

@@ -57,6 +57,7 @@ import {
   AlertDialogTrigger,
 } from '@/shared/alert-dialog'
 import {
+  getBillingAccessExemptionLabel,
   getBillingIntervalLabel,
   getDiscountLabel,
   getExpectedSubscriptionBlockAt,
@@ -1234,10 +1235,18 @@ function StoreAccessBlockPanel({
 }) {
   const activeBlock = store.accessBlock?.isActive ? store.accessBlock : null
   const isArchived = store.status === 'archived'
-  const statusLabel = activeBlock ? 'Bloqueado' : 'Liberado'
+  const isAutomaticBillingBlock = activeBlock?.source === 'billing_delinquency'
+  const statusLabel = activeBlock
+    ? isAutomaticBillingBlock
+      ? 'Bloqueado - financeiro automatico'
+      : 'Bloqueado'
+    : 'Liberado'
   const statusTone = activeBlock
     ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100'
     : 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100'
+  const billingBlockInvoice = activeBlock?.invoiceId
+    ? store.invoices.find(invoice => invoice.id === activeBlock.invoiceId)
+    : null
 
   return (
     <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
@@ -1261,6 +1270,20 @@ function StoreAccessBlockPanel({
           <DetailField
             label="Motivo atual"
             value={activeBlock?.reason ?? 'Sem bloqueio ativo'}
+          />
+          <DetailField
+            label="Origem"
+            value={
+              activeBlock
+                ? isAutomaticBillingBlock
+                  ? 'Inadimplencia automatica'
+                  : 'Manual'
+                : null
+            }
+          />
+          <DetailField
+            label="Fatura de origem"
+            value={billingBlockInvoice?.invoiceNumber ?? null}
           />
           <DetailField
             label="Bloqueado em"
@@ -2249,8 +2272,8 @@ function FaturasTab({
                 </h3>
                 <p className="mt-1 text-amber-900/80 dark:text-amber-100/80">
                   A tolerancia financeira desta loja e de{' '}
-                  {store.billing.paymentGraceDays} dia(s). Novos lembretes
-                  param automaticamente quando a fatura e paga, cancelada ou
+                  {store.billing.paymentGraceDays} dia(s). Novos lembretes param
+                  automaticamente quando a fatura e paga, cancelada ou
                   reembolsada.
                 </p>
               </div>
@@ -2889,6 +2912,19 @@ function PlanoTab({
                 ['Bloqueio previsto', formatDate(expectedBlockAt)],
                 ['Base do calculo', formatDate(store.billing.nextBillingAt)],
                 [
+                  'Excecao financeira',
+                  getBillingAccessExemptionLabel({
+                    billingAccessExemptionKind:
+                      store.billing.billingAccessExemptionKind,
+                    billingAccessExemptUntil:
+                      store.billing.billingAccessExemptUntil,
+                  }),
+                ],
+                [
+                  'Validade da excecao',
+                  formatDate(store.billing.billingAccessExemptUntil),
+                ],
+                [
                   'Acesso atual',
                   store.accessBlock?.isActive ? 'Bloqueado' : 'Liberado',
                 ],
@@ -3211,6 +3247,7 @@ function SubscriptionTermsDialog({
               'Valor contratado desta loja',
               'Desconto e validade',
               'Tolerancia e bloqueio previsto',
+              'Excecao/cortesia contra bloqueio automatico',
               'Auditoria financeira',
             ]}
             unchanged={[
@@ -3307,6 +3344,76 @@ function SubscriptionTermsDialog({
                   store.billing.discountValidUntil
                 )}
               />
+            </FormField>
+          </FormSection>
+
+          <FormSection title="Excecao de bloqueio financeiro">
+            <FormField
+              label="Tipo de excecao"
+              htmlFor="billingAccessExemptionKind"
+            >
+              <select
+                id="billingAccessExemptionKind"
+                name="billingAccessExemptionKind"
+                className={selectClassName}
+                defaultValue={
+                  store.billing.billingAccessExemptionKind ?? 'none'
+                }
+                disabled={!canManageFinancialValues}
+              >
+                <option value="none">Sem excecao</option>
+                <option value="courtesy">Cortesia</option>
+                <option value="manual_exception">Excecao manual</option>
+              </select>
+              {!canManageFinancialValues && (
+                <input
+                  type="hidden"
+                  name="billingAccessExemptionKind"
+                  value={store.billing.billingAccessExemptionKind ?? 'none'}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Validade da excecao"
+              htmlFor="billingAccessExemptUntil"
+            >
+              <Input
+                id="billingAccessExemptUntil"
+                name="billingAccessExemptUntil"
+                type="datetime-local"
+                defaultValue={formatDateTimeLocalValue(
+                  store.billing.billingAccessExemptUntil
+                )}
+                disabled={!canManageFinancialValues}
+              />
+              {!canManageFinancialValues && (
+                <input
+                  type="hidden"
+                  name="billingAccessExemptUntil"
+                  value={formatDateTimeLocalValue(
+                    store.billing.billingAccessExemptUntil
+                  )}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Motivo da excecao"
+              htmlFor="billingAccessExemptionReason"
+            >
+              <Textarea
+                id="billingAccessExemptionReason"
+                name="billingAccessExemptionReason"
+                defaultValue={store.billing.billingAccessExemptionReason ?? ''}
+                placeholder="Ex.: cortesia temporaria aprovada pelo financeiro."
+                disabled={!canManageFinancialValues}
+              />
+              {!canManageFinancialValues && (
+                <input
+                  type="hidden"
+                  name="billingAccessExemptionReason"
+                  value={store.billing.billingAccessExemptionReason ?? ''}
+                />
+              )}
             </FormField>
             <FormField label="Motivo da alteracao" htmlFor="reason">
               <Textarea

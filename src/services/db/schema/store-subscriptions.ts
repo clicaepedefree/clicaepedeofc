@@ -33,6 +33,11 @@ export const storeSubscriptionDiscountTypes = [
   'percentage',
 ] as const
 
+export const storeSubscriptionBillingAccessExemptionKinds = [
+  'courtesy',
+  'manual_exception',
+] as const
+
 export const storeSubscriptionsTable = pgTable(
   'store_subscriptions',
   {
@@ -61,6 +66,13 @@ export const storeSubscriptionsTable = pgTable(
     discountValue: baseCurrencyColumnGenerator('discount_value'),
     discountValidUntil: baseTimestampColumnGenerator('discount_valid_until'),
     paymentGraceDays: integer('payment_grace_days').notNull().default(0),
+    billingAccessExemptionKind: text('billing_access_exemption_kind', {
+      enum: storeSubscriptionBillingAccessExemptionKinds,
+    }),
+    billingAccessExemptUntil: baseTimestampColumnGenerator(
+      'billing_access_exempt_until'
+    ),
+    billingAccessExemptionReason: text('billing_access_exemption_reason'),
     startsAt: baseTimestampColumnGenerator('starts_at').notNull(),
     currentPeriodStart: baseTimestampColumnGenerator(
       'current_period_start'
@@ -80,6 +92,9 @@ export const storeSubscriptionsTable = pgTable(
       table.status
     ),
     index('store_subscriptions_next_billing_idx').on(table.nextBillingAt),
+    index('store_subscriptions_billing_access_exempt_until_idx').on(
+      table.billingAccessExemptUntil
+    ),
     uniqueIndex('store_subscriptions_one_open_per_store_idx')
       .on(table.storeId)
       .where(

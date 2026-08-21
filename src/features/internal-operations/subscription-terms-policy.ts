@@ -31,6 +31,16 @@ export const storeSubscriptionTermsSchema = z
     discountValue: z.string().trim().optional().or(z.literal('')).default(''),
     discountValidUntil: optionalDateSchema,
     paymentGraceDays: z.coerce.number().int().min(0).max(90),
+    billingAccessExemptionKind: z
+      .enum(['none', 'courtesy', 'manual_exception'])
+      .default('none'),
+    billingAccessExemptUntil: optionalDateSchema,
+    billingAccessExemptionReason: z
+      .string()
+      .trim()
+      .max(500, 'Use ate 500 caracteres.')
+      .optional()
+      .default(''),
     reason: z
       .string()
       .trim()
@@ -46,19 +56,16 @@ export const storeSubscriptionTermsSchema = z
           message: 'Validade exige desconto contratado.',
         })
       }
-      return
-    }
-
-    if (!values.discountValue || !moneyRegex.test(values.discountValue)) {
+    } else if (
+      !values.discountValue ||
+      !moneyRegex.test(values.discountValue)
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['discountValue'],
         message: 'Informe o desconto contratado.',
       })
-      return
-    }
-
-    if (
+    } else if (
       values.discountType === 'percentage' &&
       parseDecimalNumber(values.discountValue) > 100
     ) {
@@ -66,6 +73,40 @@ export const storeSubscriptionTermsSchema = z
         code: z.ZodIssueCode.custom,
         path: ['discountValue'],
         message: 'Informe um percentual ate 100.',
+      })
+    }
+
+    if (values.billingAccessExemptionKind === 'none') {
+      if (values.billingAccessExemptUntil) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billingAccessExemptUntil'],
+          message: 'Validade exige uma excecao financeira ativa.',
+        })
+      }
+      if (values.billingAccessExemptionReason) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billingAccessExemptionReason'],
+          message: 'Motivo de excecao exige uma excecao financeira ativa.',
+        })
+      }
+      return
+    }
+
+    if (!values.billingAccessExemptUntil) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingAccessExemptUntil'],
+        message: 'Informe ate quando a excecao financeira vale.',
+      })
+    }
+
+    if (values.billingAccessExemptionReason.length < 8) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['billingAccessExemptionReason'],
+        message: 'Informe o motivo da excecao financeira.',
       })
     }
   })
@@ -133,4 +174,24 @@ export function getDiscountLabel({
     style: 'currency',
     currency,
   }).format(Number(discountValue))
+}
+
+export function getBillingAccessExemptionLabel({
+  billingAccessExemptionKind,
+  billingAccessExemptUntil,
+  now = new Date(),
+}: {
+  billingAccessExemptionKind: string | null
+  billingAccessExemptUntil: Date | null
+  now?: Date
+}) {
+  if (!billingAccessExemptionKind || !billingAccessExemptUntil) {
+    return 'Sem excecao'
+  }
+
+  const kindLabel =
+    billingAccessExemptionKind === 'courtesy' ? 'Cortesia' : 'Excecao manual'
+  const statusLabel = billingAccessExemptUntil > now ? 'ativa' : 'expirada'
+
+  return `${kindLabel} ${statusLabel}`
 }
