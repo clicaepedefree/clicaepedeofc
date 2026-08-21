@@ -48,6 +48,8 @@ import {
   ChevronRight,
   Copy,
   KeyRound,
+  LockKeyhole,
+  LockKeyholeOpen,
   Mail,
   Pencil,
   RefreshCw,
@@ -63,19 +65,27 @@ import { useEffect, useState } from 'react'
 const statusOptions: Array<{ value: StoreUsersStatusFilter; label: string }> = [
   { value: 'all', label: 'Todos' },
   { value: 'active', label: 'Ativos' },
+  { value: 'blocked', label: 'Bloqueados' },
   { value: 'revoked', label: 'Desvinculados' },
   { value: 'deleted', label: 'Contas deletadas' },
 ]
 
 const accessStatusLabels: Record<StoreUserListItem['accessStatus'], string> = {
   active: 'Ativo',
+  blocked: 'Bloqueado',
   revoked: 'Desvinculado',
   deleted: 'Conta deletada',
 }
 
-const accessStatusClassNames: Record<StoreUserListItem['accessStatus'], string> = {
-  active: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  revoked: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+const accessStatusClassNames: Record<
+  StoreUserListItem['accessStatus'],
+  string
+> = {
+  active:
+    'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  blocked:
+    'border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-300',
+  revoked: 'border-muted-foreground/30 bg-muted text-muted-foreground',
   deleted: 'border-destructive/40 bg-destructive/10 text-destructive',
 }
 
@@ -106,11 +116,19 @@ export function StoreUsersSettings() {
     warning: string
   } | null>(null)
   const [editingUser, setEditingUser] = useState<StoreUserListItem | null>(null)
-  const [revokingUser, setRevokingUser] = useState<StoreUserListItem | null>(null)
-  const [revokingInvite, setRevokingInvite] = useState<StorePendingInvite | null>(
+  const [blockingUser, setBlockingUser] = useState<StoreUserListItem | null>(
     null
   )
-  const [resendingInviteId, setResendingInviteId] = useState<number | null>(null)
+  const [unblockingUser, setUnblockingUser] =
+    useState<StoreUserListItem | null>(null)
+  const [revokingUser, setRevokingUser] = useState<StoreUserListItem | null>(
+    null
+  )
+  const [revokingInvite, setRevokingInvite] =
+    useState<StorePendingInvite | null>(null)
+  const [resendingInviteId, setResendingInviteId] = useState<number | null>(
+    null
+  )
   const [resettingUserId, setResettingUserId] = useState<string | null>(null)
 
   const {
@@ -120,12 +138,16 @@ export function StoreUsersSettings() {
     inviteUser,
     resendInvite,
     updateUser,
+    blockUser,
+    unblockUser,
     revokeUser,
     revokeInvite,
     requestPasswordReset,
     isInvitingUser,
     isResendingInvite,
     isUpdatingUser,
+    isBlockingUser,
+    isUnblockingUser,
     isRevokingUser,
     isRevokingInvite,
     isRequestingPasswordReset,
@@ -151,7 +173,10 @@ export function StoreUsersSettings() {
 
   if (!selectedStoreId) {
     return (
-      <SettingsCategoryBlock title="Equipe e perfis" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock
+        title="Equipe e perfis"
+        contentClassName="grid-cols-1"
+      >
         <EmptyState
           title="Selecione uma loja"
           description="Escolha uma loja no topo do painel para gerenciar os acessos vinculados a ela."
@@ -162,7 +187,10 @@ export function StoreUsersSettings() {
 
   return (
     <div className="space-y-4">
-      <SettingsCategoryBlock title="Equipe e perfis" contentClassName="grid-cols-1">
+      <SettingsCategoryBlock
+        title="Equipe e perfis"
+        contentClassName="grid-cols-1"
+      >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
             <div className="space-y-1">
@@ -171,7 +199,8 @@ export function StoreUsersSettings() {
                 Acessos vinculados
               </div>
               <p className="text-sm text-muted-foreground">
-                Convide, edite e desvincule usuários conforme o perfil de acesso.
+                Convide, edite e desvincule usuários conforme o perfil de
+                acesso.
               </p>
             </div>
             <Button onClick={() => setInviteOpen(true)}>
@@ -298,7 +327,10 @@ export function StoreUsersSettings() {
                           <RoleBadge role={user.role} />
                           {user.isPrimaryResponsible && (
                             <Badge className="bg-primary/10 text-primary hover:bg-primary/10">
-                              <ShieldCheck className="size-3" aria-hidden="true" />
+                              <ShieldCheck
+                                className="size-3"
+                                aria-hidden="true"
+                              />
                               Responsável
                             </Badge>
                           )}
@@ -356,6 +388,32 @@ export function StoreUsersSettings() {
                             <Pencil className="size-4" aria-hidden="true" />
                             Editar
                           </Button>
+                          {user.accessStatus === 'blocked' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setUnblockingUser(user)}
+                            >
+                              <LockKeyholeOpen
+                                className="size-4"
+                                aria-hidden="true"
+                              />
+                              Desbloquear
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={user.accessStatus !== 'active'}
+                              onClick={() => setBlockingUser(user)}
+                            >
+                              <LockKeyhole
+                                className="size-4"
+                                aria-hidden="true"
+                              />
+                              Bloquear
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -433,10 +491,40 @@ export function StoreUsersSettings() {
       />
 
       <RevokeAccessDialog
+        title="Desbloquear acesso"
+        description={
+          unblockingUser
+            ? `Informe o motivo para restaurar o acesso de ${unblockingUser.email}.`
+            : ''
+        }
+        open={!!unblockingUser}
+        busy={isUnblockingUser}
+        confirmLabel="Desbloquear"
+        confirmVariant="default"
+        onOpenChange={open => !open && setUnblockingUser(null)}
+        onConfirm={async reason => {
+          if (!unblockingUser) return
+          await unblockUser({ userId: unblockingUser.userId, reason })
+          setUnblockingUser(null)
+        }}
+      />
+
+      <BlockAccessDialog
+        user={blockingUser}
+        busy={isBlockingUser}
+        onOpenChange={open => !open && setBlockingUser(null)}
+        onConfirm={async values => {
+          if (!blockingUser) return
+          await blockUser({ userId: blockingUser.userId, ...values })
+          setBlockingUser(null)
+        }}
+      />
+
+      <RevokeAccessDialog
         title="Desvincular usuário"
         description={
           revokingUser
-            ? `Informe o motivo para remover o acesso de ${revokingUser.email}.`
+            ? `Informe o motivo para remover o acesso de ${revokingUser.email}. Para voltar, sera necessario criar um novo convite.`
             : ''
         }
         open={!!revokingUser}
@@ -559,7 +647,11 @@ function PendingInvitesList({
                 <RefreshCw className="size-4" aria-hidden="true" />
                 Reenviar
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => onRevoke(invite)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onRevoke(invite)}
+              >
                 <XCircle className="size-4" aria-hidden="true" />
                 <span className="sr-only">Cancelar convite</span>
               </Button>
@@ -730,7 +822,11 @@ function InviteUserDialog({
             Fechar
           </Button>
           {!inviteResult && (
-            <Button isLoading={busy} disabled={!email.trim()} onClick={handleSubmit}>
+            <Button
+              isLoading={busy}
+              disabled={!email.trim()}
+              onClick={handleSubmit}
+            >
               Criar convite
             </Button>
           )}
@@ -786,7 +882,10 @@ function EditUserDialog({
         <div className="space-y-3">
           <label className="grid gap-1 text-sm font-medium">
             Nome
-            <Input value={name} onChange={event => setName(event.target.value)} />
+            <Input
+              value={name}
+              onChange={event => setName(event.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-sm font-medium">
             Telefone
@@ -840,7 +939,9 @@ function EditUserDialog({
           </Button>
           <Button
             isLoading={busy}
-            onClick={() => onSubmit({ name, phone, role, isPrimaryResponsible })}
+            onClick={() =>
+              onSubmit({ name, phone, role, isPrimaryResponsible })
+            }
           >
             Salvar
           </Button>
@@ -850,12 +951,108 @@ function EditUserDialog({
   )
 }
 
+function BlockAccessDialog({
+  user,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  user: StoreUserListItem | null
+  busy: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: (values: {
+    reason: string
+    notificationChannel: 'none' | 'email' | 'whatsapp' | 'manual'
+    notificationNote?: string
+  }) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [notificationChannel, setNotificationChannel] = useState<
+    'none' | 'email' | 'whatsapp' | 'manual'
+  >('none')
+  const [notificationNote, setNotificationNote] = useState('')
+
+  const reset = () => {
+    setReason('')
+    setNotificationChannel('none')
+    setNotificationNote('')
+  }
+
+  const handleConfirm = async () => {
+    await onConfirm({ reason, notificationChannel, notificationNote })
+    reset()
+  }
+
+  return (
+    <AlertDialog
+      open={!!user}
+      onOpenChange={open => {
+        onOpenChange(open)
+        if (!open) reset()
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Bloquear acesso de usuário</AlertDialogTitle>
+          <AlertDialogDescription>
+            {user
+              ? `O vinculo de ${user.email} com esta loja sera mantido, mas o acesso sera negado imediatamente e sessoes ativas serao encerradas.`
+              : ''}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-3">
+          <Textarea
+            className="min-h-24"
+            placeholder="Ex.: usuario afastado temporariamente da operacao"
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+          />
+          <label className="grid gap-1 text-sm font-medium text-foreground">
+            Registrar canal de notificação
+            <select
+              className="h-9 rounded border border-input bg-background px-3 text-sm text-foreground shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-primary/20 dark:bg-input/30"
+              value={notificationChannel}
+              onChange={event =>
+                setNotificationChannel(
+                  event.target.value as 'none' | 'email' | 'whatsapp' | 'manual'
+                )
+              }
+            >
+              <option value="none">Sem notificação agora</option>
+              <option value="email">Registrar e-mail como canal</option>
+              <option value="whatsapp">Registrar WhatsApp como canal</option>
+              <option value="manual">Contato manual registrado</option>
+            </select>
+          </label>
+          <Input
+            placeholder="Observação interna sobre a notificação"
+            value={notificationNote}
+            onChange={event => setNotificationNote(event.target.value)}
+          />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            isLoading={busy}
+            disabled={reason.trim().length < 8}
+            onClick={handleConfirm}
+          >
+            Bloquear acesso
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 function RevokeAccessDialog({
   title,
   description,
   open,
   busy,
   confirmLabel,
+  confirmVariant = 'destructive',
   onOpenChange,
   onConfirm,
 }: {
@@ -864,6 +1061,7 @@ function RevokeAccessDialog({
   open: boolean
   busy: boolean
   confirmLabel: string
+  confirmVariant?: 'default' | 'destructive'
   onOpenChange: (open: boolean) => void
   onConfirm: (reason: string) => Promise<void>
 }) {
@@ -892,7 +1090,7 @@ function RevokeAccessDialog({
             Cancelar
           </AlertDialogCancel>
           <Button
-            variant="destructive"
+            variant={confirmVariant}
             isLoading={busy}
             disabled={reason.trim().length < 8}
             onClick={handleConfirm}

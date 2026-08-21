@@ -7,6 +7,7 @@ import { db } from '@/services/db'
 import {
   internalOperationAuditLogsTable,
   storeAccessInvitesTable,
+  storeUserAccessBlocksTable,
   storeUserPasswordResetRequestsTable,
   userStorePermissionRoles,
   userStorePermissionsTable,
@@ -19,20 +20,12 @@ import {
   getStoreAccessInviteSecret,
   hashStoreAccessInviteToken,
 } from '@/features/store-access-invites/invite-policy'
-import { auth } from '@clerk/nextjs/server'
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  or,
-  sql,
-  type SQL,
-} from 'drizzle-orm'
+import { auth, clerkClient } from '@clerk/nextjs/server'
+import { and, asc, count, desc, eq, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   assertCanAssignPrimaryResponsibleRole,
+  assertCanBlockStoreUser,
   assertCanChangeStoreUserRole,
   assertCanRevokeStoreUser,
   assertCanUnsetPrimaryResponsible,
@@ -60,12 +53,38 @@ const storeUserUpdateSchema = z.object({
 
 const storeUserRevokeSchema = z.object({
   userId: z.string().uuid(),
-  reason: z.string().trim().min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
+  reason: z
+    .string()
+    .trim()
+    .min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
+})
+
+const storeUserBlockSchema = z.object({
+  userId: z.string().uuid(),
+  reason: z
+    .string()
+    .trim()
+    .min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
+  notificationChannel: z
+    .enum(['none', 'email', 'whatsapp', 'manual'])
+    .default('none'),
+  notificationNote: z.string().trim().max(500).optional(),
+})
+
+const storeUserUnblockSchema = z.object({
+  userId: z.string().uuid(),
+  reason: z
+    .string()
+    .trim()
+    .min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
 })
 
 const storeInviteRevokeSchema = z.object({
   inviteId: z.number().int().positive(),
-  reason: z.string().trim().min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
+  reason: z
+    .string()
+    .trim()
+    .min(8, 'Informe um motivo com pelo menos 8 caracteres.'),
 })
 
 const storeInviteResendSchema = z.object({
@@ -80,7 +99,12 @@ const passwordResetLinkConsumedSchema = z.object({
   requestId: z.string().uuid(),
 })
 
-export type StoreUsersStatusFilter = 'all' | 'active' | 'revoked' | 'deleted'
+export type StoreUsersStatusFilter =
+  | 'all'
+  | 'active'
+  | 'blocked'
+  | 'revoked'
+  | 'deleted'
 
 export type StoreUsersQuery = {
   page?: number
@@ -102,7 +126,13 @@ export type StoreUserListItem = {
   permissionUpdatedAt: Date
   revokedAt: Date | null
   revokedReason: string | null
-  accessStatus: 'active' | 'revoked' | 'deleted'
+  blockedAt: Date | null
+  blockedReason: string | null
+  blockNotificationChannel: 'none' | 'email' | 'whatsapp' | 'manual' | null
+  blockNotificationNote: string | null
+  unblockedAt: Date | null
+  unblockedReason: string | null
+  accessStatus: 'active' | 'blocked' | 'revoked' | 'deleted'
 }
 
 export type StorePendingInvite = {
@@ -156,14 +186,25 @@ const normalizeTextInput = (value: string | undefined) => {
 const getPasswordResetExpiresAt = (now = new Date()) =>
   new Date(now.getTime() + STORE_USER_PASSWORD_RESET_TTL_SECONDS * 1000)
 
-const buildPasswordResetUrl = ({
-  requestId,
-}: {
-  requestId: string
-}) => {
+const buildPasswordResetUrl = ({ requestId }: { requestId: string }) => {
   const url = new URL('/acesso-temporario', getAppBaseUrl())
   url.searchParams.set('request', requestId)
   return url.toString()
+}
+
+async function revokeActiveClerkSessionsForUser(clerkUserId: string) {
+  const client = await clerkClient()
+  const sessions = await client.sessions.getSessionList({
+    userId: clerkUserId,
+    status: 'active',
+    limit: 500,
+  })
+
+  await Promise.all(
+    sessions.data.map(session => client.sessions.revokeSession(session.id))
+  )
+
+  return sessions.data.length
 }
 
 const getStoreUsersWhere = ({
@@ -197,6 +238,25 @@ const getStoreUsersWhere = ({
   if (status === 'active') {
     conditions.push(
       sql`${userStorePermissionsTable.revokedAt} is null`,
+      sql`not exists (
+        select 1 from ${storeUserAccessBlocksTable} suab
+        where suab.store_id = ${userStorePermissionsTable.storeId}
+          and suab.user_id = ${userStorePermissionsTable.userId}
+          and suab.unblocked_at is null
+      )`,
+      eq(usersTable.status, 'active')
+    )
+  }
+
+  if (status === 'blocked') {
+    conditions.push(
+      sql`${userStorePermissionsTable.revokedAt} is null`,
+      sql`exists (
+        select 1 from ${storeUserAccessBlocksTable} suab
+        where suab.store_id = ${userStorePermissionsTable.storeId}
+          and suab.user_id = ${userStorePermissionsTable.userId}
+          and suab.unblocked_at is null
+      )`,
       eq(usersTable.status, 'active')
     )
   }
@@ -215,9 +275,11 @@ const getStoreUsersWhere = ({
 const mapAccessStatus = (row: {
   userStatus: 'active' | 'deleted'
   revokedAt: Date | null
+  blockedAt: Date | null
 }): StoreUserListItem['accessStatus'] => {
   if (row.userStatus === 'deleted') return 'deleted'
   if (row.revokedAt) return 'revoked'
+  if (row.blockedAt) return 'blocked'
   return 'active'
 }
 
@@ -231,10 +293,22 @@ async function getStoreAccessStates(
       role: userStorePermissionsTable.role,
       isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
       revokedAt: userStorePermissionsTable.revokedAt,
+      blockedAt: storeUserAccessBlocksTable.blockedAt,
       userStatus: usersTable.status,
     })
     .from(userStorePermissionsTable)
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .leftJoin(
+      storeUserAccessBlocksTable,
+      and(
+        eq(
+          storeUserAccessBlocksTable.storeId,
+          userStorePermissionsTable.storeId
+        ),
+        eq(storeUserAccessBlocksTable.userId, userStorePermissionsTable.userId),
+        sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+      )
+    )
     .where(eq(userStorePermissionsTable.storeId, storeId))
 
   return rows satisfies StoreUserAccessState[]
@@ -268,12 +342,37 @@ export async function getStoreUsers(
         permissionUpdatedAt: userStorePermissionsTable.updatedAt,
         revokedAt: userStorePermissionsTable.revokedAt,
         revokedReason: userStorePermissionsTable.revokedReason,
+        blockedAt: storeUserAccessBlocksTable.blockedAt,
+        blockedReason: storeUserAccessBlocksTable.reason,
+        blockNotificationChannel:
+          storeUserAccessBlocksTable.notificationChannel,
+        blockNotificationNote: storeUserAccessBlocksTable.notificationNote,
+        unblockedAt: storeUserAccessBlocksTable.unblockedAt,
+        unblockedReason: storeUserAccessBlocksTable.unblockReason,
       })
       .from(userStorePermissionsTable)
-      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
+      .leftJoin(
+        storeUserAccessBlocksTable,
+        and(
+          eq(
+            storeUserAccessBlocksTable.storeId,
+            userStorePermissionsTable.storeId
+          ),
+          eq(
+            storeUserAccessBlocksTable.userId,
+            userStorePermissionsTable.userId
+          ),
+          sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+        )
+      )
       .where(where)
       .orderBy(
         userStorePermissionsTable.revokedAt,
+        storeUserAccessBlocksTable.blockedAt,
         desc(userStorePermissionsTable.isPrimaryResponsible),
         asc(usersTable.email)
       )
@@ -282,7 +381,10 @@ export async function getStoreUsers(
     db
       .select({ value: count() })
       .from(userStorePermissionsTable)
-      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
       .where(where),
     db
       .select({
@@ -296,7 +398,10 @@ export async function getStoreUsers(
         createdAt: storeAccessInvitesTable.createdAt,
       })
       .from(storeAccessInvitesTable)
-      .leftJoin(usersTable, eq(usersTable.id, storeAccessInvitesTable.targetUserId))
+      .leftJoin(
+        usersTable,
+        eq(usersTable.id, storeAccessInvitesTable.targetUserId)
+      )
       .where(
         and(
           eq(storeAccessInvitesTable.storeId, storeId),
@@ -467,10 +572,28 @@ export async function updateStoreUser(
         role: userStorePermissionsTable.role,
         isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
         revokedAt: userStorePermissionsTable.revokedAt,
+        blockedAt: storeUserAccessBlocksTable.blockedAt,
         userStatus: usersTable.status,
       })
       .from(userStorePermissionsTable)
-      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
+      .leftJoin(
+        storeUserAccessBlocksTable,
+        and(
+          eq(
+            storeUserAccessBlocksTable.storeId,
+            userStorePermissionsTable.storeId
+          ),
+          eq(
+            storeUserAccessBlocksTable.userId,
+            userStorePermissionsTable.userId
+          ),
+          sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+        )
+      )
       .where(
         and(
           eq(userStorePermissionsTable.storeId, storeId),
@@ -480,7 +603,11 @@ export async function updateStoreUser(
       .limit(1)
 
     if (!target) throw new Error('STORE_USER_NOT_FOUND')
-    if (target.revokedAt || target.userStatus !== 'active') {
+    if (
+      target.revokedAt ||
+      target.blockedAt ||
+      target.userStatus !== 'active'
+    ) {
       throw new Error('STORE_USER_NOT_ACTIVE')
     }
 
@@ -572,6 +699,12 @@ export async function updateStoreUser(
                   where usp.store_id = ${storeId}
                     and usp.role = 'owner'
                     and usp.revoked_at is null
+                    and not exists (
+                      select 1 from ${storeUserAccessBlocksTable} suab
+                      where suab.store_id = usp.store_id
+                        and suab.user_id = usp.user_id
+                        and suab.unblocked_at is null
+                    )
                     and u.status = 'active'
                 ) > 1`
               : sql`true`
@@ -601,6 +734,241 @@ export async function updateStoreUser(
   })
 }
 
+export async function blockStoreUserAccess(
+  storeId: number,
+  values: z.infer<typeof storeUserBlockSchema>
+) {
+  const parsed = storeUserBlockSchema.parse(values)
+  const actor = await getActor()
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
+  const now = new Date()
+
+  const blockResult = await db.transaction(async tx => {
+    await tx.execute(
+      sql`select 1 from ${userStorePermissionsTable} where store_id = ${storeId} for update`
+    )
+
+    const users = await getStoreAccessStates(storeId, tx)
+    assertCanBlockStoreUser({ targetUserId: parsed.userId, users })
+
+    const fallbackPrimaryUserId = getFallbackPrimaryResponsibleUserId({
+      targetUserId: parsed.userId,
+      users,
+    })
+
+    const [target] = await tx
+      .select({
+        email: usersTable.email,
+        clerkId: usersTable.clerkId,
+        role: userStorePermissionsTable.role,
+        isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
+        activeBlockId: storeUserAccessBlocksTable.id,
+      })
+      .from(userStorePermissionsTable)
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
+      .leftJoin(
+        storeUserAccessBlocksTable,
+        and(
+          eq(
+            storeUserAccessBlocksTable.storeId,
+            userStorePermissionsTable.storeId
+          ),
+          eq(
+            storeUserAccessBlocksTable.userId,
+            userStorePermissionsTable.userId
+          ),
+          sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+        )
+      )
+      .where(
+        and(
+          eq(userStorePermissionsTable.storeId, storeId),
+          eq(userStorePermissionsTable.userId, parsed.userId),
+          sql`${userStorePermissionsTable.revokedAt} is null`,
+          eq(usersTable.status, 'active')
+        )
+      )
+      .limit(1)
+
+    if (!target) throw new Error('STORE_USER_NOT_ACTIVE')
+    if (target.activeBlockId) throw new Error('STORE_USER_ALREADY_BLOCKED')
+    if (target.clerkId && target.clerkId === actor.clerkId) {
+      throw new Error('CANNOT_BLOCK_SELF')
+    }
+
+    const [block] = await tx
+      .insert(storeUserAccessBlocksTable)
+      .values({
+        storeId,
+        userId: parsed.userId,
+        reason: parsed.reason,
+        notificationChannel: parsed.notificationChannel,
+        notificationNote: normalizeTextInput(parsed.notificationNote),
+        blockedAt: now,
+        blockedByClerkId: actor.clerkId,
+        blockedByEmail: actor.email,
+        blockedByName: actor.name,
+        updatedAt: now,
+      })
+      .returning()
+
+    if (target.isPrimaryResponsible) {
+      await tx
+        .update(userStorePermissionsTable)
+        .set({
+          isPrimaryResponsible: false,
+          assignedPrimaryAt: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(userStorePermissionsTable.storeId, storeId),
+            eq(userStorePermissionsTable.userId, parsed.userId)
+          )
+        )
+    }
+
+    if (fallbackPrimaryUserId) {
+      await tx
+        .update(userStorePermissionsTable)
+        .set({
+          isPrimaryResponsible: true,
+          assignedPrimaryAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(userStorePermissionsTable.storeId, storeId),
+            eq(userStorePermissionsTable.userId, fallbackPrimaryUserId),
+            sql`${userStorePermissionsTable.revokedAt} is null`
+          )
+        )
+    }
+
+    await tx.insert(internalOperationAuditLogsTable).values({
+      action: 'block_store_user_access',
+      actorClerkId: actor.clerkId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      storeId,
+      targetUserId: parsed.userId,
+      targetUserEmail: target.email,
+      previousStoreStatus: 'store_user_active',
+      newStoreStatus: fallbackPrimaryUserId
+        ? 'store_user_blocked_primary_transferred'
+        : 'store_user_blocked',
+      reason: `Bloqueio de acesso individual. motivo=${parsed.reason}; notificacao=${parsed.notificationChannel}.`,
+    })
+
+    return {
+      blockId: block.id,
+      targetClerkId: target.clerkId,
+    }
+  })
+
+  let revokedSessionCount = 0
+  let sessionRevocationFailed = false
+
+  if (blockResult.targetClerkId) {
+    try {
+      revokedSessionCount = await revokeActiveClerkSessionsForUser(
+        blockResult.targetClerkId
+      )
+    } catch (error) {
+      sessionRevocationFailed = true
+      console.error('[StoreUsers] Failed to revoke Clerk sessions:', error)
+    }
+  }
+
+  return {
+    success: true,
+    blockId: blockResult.blockId,
+    revokedSessionCount,
+    sessionRevocationFailed,
+  }
+}
+
+export async function unblockStoreUserAccess(
+  storeId: number,
+  values: z.infer<typeof storeUserUnblockSchema>
+) {
+  const parsed = storeUserUnblockSchema.parse(values)
+  const actor = await getActor()
+  await validateUserPermissionsForStore(storeId, 'store.users.manage')
+  const now = new Date()
+
+  const [target] = await db
+    .select({
+      email: usersTable.email,
+      userStatus: usersTable.status,
+      revokedAt: userStorePermissionsTable.revokedAt,
+      blockedAt: storeUserAccessBlocksTable.blockedAt,
+    })
+    .from(userStorePermissionsTable)
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .leftJoin(
+      storeUserAccessBlocksTable,
+      and(
+        eq(
+          storeUserAccessBlocksTable.storeId,
+          userStorePermissionsTable.storeId
+        ),
+        eq(storeUserAccessBlocksTable.userId, userStorePermissionsTable.userId),
+        sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+      )
+    )
+    .where(
+      and(
+        eq(userStorePermissionsTable.storeId, storeId),
+        eq(userStorePermissionsTable.userId, parsed.userId)
+      )
+    )
+    .limit(1)
+
+  if (!target || target.revokedAt || target.userStatus !== 'active') {
+    throw new Error('STORE_USER_NOT_ACTIVE')
+  }
+
+  const [block] = await db
+    .update(storeUserAccessBlocksTable)
+    .set({
+      unblockedAt: now,
+      unblockedByClerkId: actor.clerkId,
+      unblockedByEmail: actor.email,
+      unblockedByName: actor.name,
+      unblockReason: parsed.reason,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(storeUserAccessBlocksTable.storeId, storeId),
+        eq(storeUserAccessBlocksTable.userId, parsed.userId),
+        sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+      )
+    )
+    .returning()
+
+  if (!block) throw new Error('STORE_USER_NOT_BLOCKED')
+
+  await db.insert(internalOperationAuditLogsTable).values({
+    action: 'unblock_store_user_access',
+    actorClerkId: actor.clerkId,
+    actorEmail: actor.email,
+    actorName: actor.name,
+    storeId,
+    targetUserId: parsed.userId,
+    targetUserEmail: target.email,
+    previousStoreStatus: 'store_user_blocked',
+    newStoreStatus: 'store_user_active',
+    reason: parsed.reason,
+  })
+
+  return { success: true }
+}
+
 export async function revokeStoreUser(
   storeId: number,
   values: z.infer<typeof storeUserRevokeSchema>
@@ -625,7 +993,10 @@ export async function revokeStoreUser(
         isPrimaryResponsible: userStorePermissionsTable.isPrimaryResponsible,
       })
       .from(userStorePermissionsTable)
-      .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+      .innerJoin(
+        usersTable,
+        eq(usersTable.id, userStorePermissionsTable.userId)
+      )
       .where(
         and(
           eq(userStorePermissionsTable.storeId, storeId),
@@ -659,6 +1030,12 @@ export async function revokeStoreUser(
                 where usp.store_id = ${storeId}
                   and usp.role = 'owner'
                   and usp.revoked_at is null
+                  and not exists (
+                    select 1 from ${storeUserAccessBlocksTable} suab
+                    where suab.store_id = usp.store_id
+                      and suab.user_id = usp.user_id
+                      and suab.unblocked_at is null
+                  )
                   and u.status = 'active'
               ) > 1`
             : sql`true`
@@ -855,9 +1232,21 @@ export async function requestStoreUserPasswordReset(
       clerkId: usersTable.clerkId,
       userStatus: usersTable.status,
       revokedAt: userStorePermissionsTable.revokedAt,
+      blockedAt: storeUserAccessBlocksTable.blockedAt,
     })
     .from(userStorePermissionsTable)
     .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .leftJoin(
+      storeUserAccessBlocksTable,
+      and(
+        eq(
+          storeUserAccessBlocksTable.storeId,
+          userStorePermissionsTable.storeId
+        ),
+        eq(storeUserAccessBlocksTable.userId, userStorePermissionsTable.userId),
+        sql`${storeUserAccessBlocksTable.unblockedAt} is null`
+      )
+    )
     .where(
       and(
         eq(userStorePermissionsTable.storeId, storeId),
@@ -866,7 +1255,12 @@ export async function requestStoreUserPasswordReset(
     )
     .limit(1)
 
-  if (!target || target.revokedAt || target.userStatus !== 'active') {
+  if (
+    !target ||
+    target.revokedAt ||
+    target.blockedAt ||
+    target.userStatus !== 'active'
+  ) {
     throw new Error('STORE_USER_NOT_ACTIVE')
   }
 
@@ -933,7 +1327,9 @@ export async function requestStoreUserPasswordReset(
   }
 }
 
-export async function getStoreUserPasswordResetRequestPreview(requestId: string) {
+export async function getStoreUserPasswordResetRequestPreview(
+  requestId: string
+) {
   const parsed = passwordResetLinkConsumedSchema.parse({ requestId })
   const now = new Date()
 
@@ -1033,10 +1429,7 @@ export async function completeStoreUserPasswordReset(values: {
     .where(
       and(
         eq(storeUserPasswordResetRequestsTable.id, parsed.requestId),
-        eq(
-          storeUserPasswordResetRequestsTable.targetClerkId,
-          clerkAuth.userId
-        ),
+        eq(storeUserPasswordResetRequestsTable.targetClerkId, clerkAuth.userId),
         eq(storeUserPasswordResetRequestsTable.status, 'consumed'),
         sql`${storeUserPasswordResetRequestsTable.revokedAt} is null`,
         sql`${storeUserPasswordResetRequestsTable.completedAt} is null`

@@ -20,6 +20,7 @@ import { db } from '@/services/db'
 import { configurationsTable } from '@/services/db/schema/configurations'
 import { storeConfigurationsTable } from '@/services/db/schema/store-configurations'
 import { storeAccessBlocksTable } from '@/services/db/schema/store-access-blocks'
+import { storeUserAccessBlocksTable } from '@/services/db/schema/store-user-access-blocks'
 import { InsertStoreFile } from '@/services/db/schema/store-files'
 import { storesTable } from '@/services/db/schema/stores'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
@@ -67,13 +68,19 @@ export const getAvailableStores = async (): Promise<any[]> => {
         sql`${userStorePermissionsTable.revokedAt} is null`,
         eq(storesTable.status, 'active'),
         sql`not exists (
-          select 1 from ${storeAccessBlocksTable}
-          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
-            and ${storeAccessBlocksTable.unblockedAt} is null
+          select 1 from store_access_blocks sab
+          where sab.store_id = ${storesTable.id}
+            and sab.unblocked_at is null
             and (
-              ${storeAccessBlocksTable.scheduledUnblockAt} is null
-              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+              sab.scheduled_unblock_at is null
+              or sab.scheduled_unblock_at > now()
             )
+        )`,
+        sql`not exists (
+          select 1 from ${storeUserAccessBlocksTable} suab
+          where suab.store_id = ${storesTable.id}
+            and suab.user_id = ${userStorePermissionsTable.userId}
+            and suab.unblocked_at is null
         )`
       )
     )
@@ -93,7 +100,9 @@ export const getRecoverableStoresForCurrentUserEmail = async () => {
   return await getPendingRecoveryStoresByEmail(primaryEmailAddress.emailAddress)
 }
 
-export const getStoreConfigurations = async (storeId: number): Promise<any[]> => {
+export const getStoreConfigurations = async (
+  storeId: number
+): Promise<any[]> => {
   await validateUserPermissionsForStore(storeId, 'store.access')
 
   return await db
@@ -278,7 +287,12 @@ export const validateUserPermissionsForStore = async (
     ) ||
     shouldBlockStoreOperations({
       status: userPermissionsForStore.store.status,
-      hasActiveAccessBlock: Boolean(userPermissionsForStore.activeAccessBlockId),
+      hasActiveAccessBlock: Boolean(
+        userPermissionsForStore.activeAccessBlockId
+      ),
+      hasActiveUserAccessBlock: Boolean(
+        userPermissionsForStore.activeUserAccessBlockId
+      ),
     })
   )
     throw new PermissionsError({

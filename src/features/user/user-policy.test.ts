@@ -57,7 +57,15 @@ describe('user identity policy', () => {
         hasActiveAccessBlock: true,
       })
     ).toBe(true)
-    expect(shouldBlockStoreOperations({ status: 'pending_recovery' })).toBe(true)
+    expect(
+      shouldBlockStoreOperations({
+        status: 'active',
+        hasActiveUserAccessBlock: true,
+      })
+    ).toBe(true)
+    expect(shouldBlockStoreOperations({ status: 'pending_recovery' })).toBe(
+      true
+    )
     expect(shouldBlockStoreOperations({ status: 'inactive' })).toBe(true)
     expect(shouldBlockStoreOperations({ status: 'archived' })).toBe(true)
   })

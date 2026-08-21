@@ -29,6 +29,8 @@ export const internalOperationActions = [
   'create_store_user_invite',
   'resend_store_user_invite',
   'update_store_user',
+  'block_store_user_access',
+  'unblock_store_user_access',
   'revoke_store_user',
   'request_store_user_password_reset',
   'consume_store_user_password_reset',

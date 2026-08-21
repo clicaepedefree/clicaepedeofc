@@ -6,6 +6,7 @@ import {
 } from '@/services/db/schema/store-files'
 import { InsertStore, storesTable } from '@/services/db/schema/stores'
 import { storeAccessBlocksTable } from '@/services/db/schema/store-access-blocks'
+import { storeUserAccessBlocksTable } from '@/services/db/schema/store-user-access-blocks'
 import { userStorePermissionsTable } from '@/services/db/schema/user-store-permissions'
 import { usersTable } from '@/services/db/schema/users'
 import { getTableColumnsWithExclusions } from '@/services/db/utils'
@@ -39,13 +40,19 @@ export const isUserAdminOfAnyStore = async (userId: string) => {
         sql`${userStorePermissionsTable.revokedAt} is null`,
         eq(storesTable.status, 'active'),
         sql`not exists (
-          select 1 from ${storeAccessBlocksTable}
-          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
-            and ${storeAccessBlocksTable.unblockedAt} is null
+          select 1 from store_access_blocks sab
+          where sab.store_id = ${storesTable.id}
+            and sab.unblocked_at is null
             and (
-              ${storeAccessBlocksTable.scheduledUnblockAt} is null
-              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+              sab.scheduled_unblock_at is null
+              or sab.scheduled_unblock_at > now()
             )
+        )`,
+        sql`not exists (
+          select 1 from ${storeUserAccessBlocksTable} suab
+          where suab.store_id = ${storesTable.id}
+            and suab.user_id = ${userStorePermissionsTable.userId}
+            and suab.unblocked_at is null
         )`,
         eq(usersTable.status, 'active')
       )
@@ -70,13 +77,19 @@ export const hasAnyActiveStoreAccess = async (userId: string) => {
         sql`${userStorePermissionsTable.revokedAt} is null`,
         eq(storesTable.status, 'active'),
         sql`not exists (
-          select 1 from ${storeAccessBlocksTable}
-          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
-            and ${storeAccessBlocksTable.unblockedAt} is null
+          select 1 from store_access_blocks sab
+          where sab.store_id = ${storesTable.id}
+            and sab.unblocked_at is null
             and (
-              ${storeAccessBlocksTable.scheduledUnblockAt} is null
-              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+              sab.scheduled_unblock_at is null
+              or sab.scheduled_unblock_at > now()
             )
+        )`,
+        sql`not exists (
+          select 1 from ${storeUserAccessBlocksTable} suab
+          where suab.store_id = ${storesTable.id}
+            and suab.user_id = ${userStorePermissionsTable.userId}
+            and suab.unblocked_at is null
         )`,
         eq(usersTable.status, 'active')
       )
@@ -95,6 +108,7 @@ export const getUserStorePermissions = async (
       permission: userStorePermissionsTable,
       store: storesTable,
       activeAccessBlockId: storeAccessBlocksTable.id,
+      activeUserAccessBlockId: storeUserAccessBlocksTable.id,
     })
     .from(userStorePermissionsTable)
     .innerJoin(
@@ -108,6 +122,14 @@ export const getUserStorePermissions = async (
         eq(storeAccessBlocksTable.storeId, storesTable.id),
         sql`${storeAccessBlocksTable.unblockedAt} is null`,
         sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > now())`
+      )
+    )
+    .leftJoin(
+      storeUserAccessBlocksTable,
+      and(
+        eq(storeUserAccessBlocksTable.storeId, storesTable.id),
+        eq(storeUserAccessBlocksTable.userId, userStorePermissionsTable.userId),
+        sql`${storeUserAccessBlocksTable.unblockedAt} is null`
       )
     )
     .where(
@@ -168,7 +190,13 @@ const createStoreWithAdminPermission = async ({
           and(
             eq(userStorePermissionsTable.userId, userId),
             eq(userStorePermissionsTable.role, 'owner'),
-            sql`${userStorePermissionsTable.revokedAt} is null`
+            sql`${userStorePermissionsTable.revokedAt} is null`,
+            sql`not exists (
+              select 1 from ${storeUserAccessBlocksTable} suab
+              where suab.store_id = ${userStorePermissionsTable.storeId}
+                and suab.user_id = ${userStorePermissionsTable.userId}
+                and suab.unblocked_at is null
+            )`
           )
         )
         .limit(1)
