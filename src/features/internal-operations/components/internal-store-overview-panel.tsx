@@ -1,8 +1,14 @@
 import type { InternalOperator } from '@/features/internal-operations/access'
 import {
+  adjustBillingInvoiceAmountAction,
   changeStoreSubscriptionPlanAction,
   blockStoreAccessAction,
+  cancelBillingInvoiceAction,
+  createManualBillingInvoiceAction,
   manageStoreModuleEntitlementAction,
+  markManualBillingInvoicePaymentAction,
+  refundBillingInvoiceAction,
+  rescheduleBillingInvoiceDueDateAction,
   unblockStoreAccessAction,
   updateInternalStoreProfileAction,
   updateStoreCommercialLifecycleAction,
@@ -31,6 +37,10 @@ import {
   parseInternalInvoiceStatusFilter,
   type InternalInvoiceStatusFilter,
 } from '@/features/internal-operations/billing-invoices-policy'
+import {
+  canRunManualBillingAction,
+  getManualInvoiceRefundableAmount,
+} from '@/features/internal-operations/billing-manual-actions-policy'
 import { CopyInvoicePaymentLinkButton } from '@/features/internal-operations/components/copy-invoice-payment-link-button'
 import { SubscriptionPlanModuleImpactPreview } from '@/features/internal-operations/components/subscription-plan-module-impact-preview'
 import { getModuleEntitlementOriginLabel } from '@/features/internal-operations/store-module-management-policy'
@@ -1647,6 +1657,477 @@ const getPaymentMethodLabel = (method: string | null) => {
   return method ? (labels[method] ?? method) : 'Nao informado'
 }
 
+type InternalInvoiceOverview = InternalStoreOverview['invoices'][number]
+
+const getFaturasReturnPath = (
+  basePath: string,
+  activeFilter: InternalInvoiceStatusFilter
+) =>
+  activeFilter === 'all'
+    ? `${basePath}?tab=faturas`
+    : `${basePath}?tab=faturas&invoiceStatus=${activeFilter}`
+
+function CreateManualBillingInvoiceDialog({
+  store,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  returnTo: string
+}) {
+  const currency = store.billing.currency ?? 'BRL'
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button size="sm" isClickable>
+          <CircleDollarSign className="size-4" />
+          Cobranca avulsa
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Criar cobranca avulsa</DialogTitle>
+          <DialogDescription>
+            Gere uma fatura manual vinculada a assinatura atual da loja.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={createManualBillingInvoiceAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Cobranca">
+            <FormField label={`Valor (${currency})`} htmlFor="manualAmount">
+              <Input
+                id="manualAmount"
+                name="amount"
+                inputMode="decimal"
+                placeholder="Ex.: 150,00"
+                required
+              />
+            </FormField>
+            <FormField label="Vencimento" htmlFor="manualDueAt">
+              <Input
+                id="manualDueAt"
+                name="dueAt"
+                type="datetime-local"
+                defaultValue={formatDateTimeLocalValue(
+                  new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                )}
+                required
+              />
+            </FormField>
+            <FormField label="Descricao" htmlFor="manualDescription">
+              <Input
+                id="manualDescription"
+                name="description"
+                placeholder="Ex.: taxa de implantacao, servico extra..."
+                required
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="manualReason">
+              <Textarea
+                id="manualReason"
+                name="reason"
+                placeholder="Explique por que esta cobranca esta sendo criada."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit" isClickable>
+              Criar fatura
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RegisterManualPaymentDialog({
+  store,
+  invoice,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  invoice: InternalInvoiceOverview
+  returnTo: string
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" isClickable>
+          <CheckCircle2 className="size-4" />
+          Pagar manual
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Registrar pagamento manual</DialogTitle>
+          <DialogDescription>
+            Confirme uma baixa controlada para a fatura {invoice.invoiceNumber}.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          action={markManualBillingInvoicePaymentAction}
+          className="space-y-5"
+        >
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Pagamento">
+            <FormField
+              label={`Valor (${invoice.currency})`}
+              htmlFor="paymentAmount"
+            >
+              <Input
+                id="paymentAmount"
+                name="amount"
+                inputMode="decimal"
+                defaultValue={invoice.outstandingAmount.toFixed(2)}
+                required
+              />
+            </FormField>
+            <FormField label="Pago em" htmlFor="paidAt">
+              <Input
+                id="paidAt"
+                name="paidAt"
+                type="datetime-local"
+                defaultValue={formatDateTimeLocalValue(new Date())}
+                required
+              />
+            </FormField>
+            <FormField label="Referencia opcional" htmlFor="paymentReference">
+              <Input
+                id="paymentReference"
+                name="paymentReference"
+                placeholder="Ex.: comprovante, Pix manual, conversa..."
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="paymentReason">
+              <Textarea
+                id="paymentReason"
+                name="reason"
+                placeholder="Explique por que o pagamento sera baixado manualmente."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit" isClickable>
+              Registrar pagamento
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RescheduleInvoiceDueDateDialog({
+  store,
+  invoice,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  invoice: InternalInvoiceOverview
+  returnTo: string
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" isClickable>
+          <CalendarClock className="size-4" />
+          Vencimento
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Alterar vencimento</DialogTitle>
+          <DialogDescription>
+            A fatura permanece com o valor original e a alteracao fica no
+            historico financeiro.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          action={rescheduleBillingInvoiceDueDateAction}
+          className="space-y-5"
+        >
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Novo prazo">
+            <FormField label="Novo vencimento" htmlFor="rescheduleDueAt">
+              <Input
+                id="rescheduleDueAt"
+                name="dueAt"
+                type="datetime-local"
+                defaultValue={formatDateTimeLocalValue(invoice.dueAt)}
+                required
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="rescheduleReason">
+              <Textarea
+                id="rescheduleReason"
+                name="reason"
+                placeholder="Explique a negociacao ou correcao do vencimento."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit" isClickable>
+              Alterar vencimento
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AdjustInvoiceAmountDialog({
+  store,
+  invoice,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  invoice: InternalInvoiceOverview
+  returnTo: string
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" isClickable>
+          <FilePenLine className="size-4" />
+          Ajustar
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Ajustar valor da fatura</DialogTitle>
+          <DialogDescription>
+            A acao preserva subtotal original e grava antes/depois no historico.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={adjustBillingInvoiceAmountAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Ajuste manual">
+            <FormField label="Tipo de ajuste" htmlFor="adjustmentType">
+              <select
+                id="adjustmentType"
+                name="adjustmentType"
+                className={selectClassName}
+                defaultValue="discount"
+                required
+              >
+                <option value="discount">Desconto</option>
+                <option value="surcharge">Acrescimo</option>
+              </select>
+            </FormField>
+            <FormField
+              label={`Valor (${invoice.currency})`}
+              htmlFor="adjustmentAmount"
+            >
+              <Input
+                id="adjustmentAmount"
+                name="amount"
+                inputMode="decimal"
+                placeholder="Ex.: 25,00"
+                required
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="adjustmentReason">
+              <Textarea
+                id="adjustmentReason"
+                name="reason"
+                placeholder="Explique o acordo, correcao ou acrescimo aplicado."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit" isClickable>
+              Aplicar ajuste
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CancelInvoiceDialog({
+  store,
+  invoice,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  invoice: InternalInvoiceOverview
+  returnTo: string
+}) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="destructive" size="sm" isClickable>
+          <XCircle className="size-4" />
+          Cancelar
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Cancelar fatura</DialogTitle>
+          <DialogDescription>
+            Esta acao encerra a fatura {invoice.invoiceNumber} e exige motivo.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={cancelBillingInvoiceAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Confirmacao">
+            <FormField label="Digite CANCELAR" htmlFor="cancelConfirmation">
+              <Input
+                id="cancelConfirmation"
+                name="confirmation"
+                placeholder="CANCELAR"
+                required
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="cancelReason">
+              <Textarea
+                id="cancelReason"
+                name="reason"
+                placeholder="Explique por que esta fatura deve ser cancelada."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Voltar
+              </Button>
+            </DialogClose>
+            <Button type="submit" variant="destructive" isClickable>
+              Cancelar fatura
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RefundInvoiceDialog({
+  store,
+  invoice,
+  returnTo,
+}: {
+  store: InternalStoreOverview
+  invoice: InternalInvoiceOverview
+  returnTo: string
+}) {
+  const refundableAmount = getManualInvoiceRefundableAmount(invoice)
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" isClickable>
+          <History className="size-4" />
+          Estornar
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Registrar estorno</DialogTitle>
+          <DialogDescription>
+            Registre um estorno controlado para a fatura {invoice.invoiceNumber}
+            .
+          </DialogDescription>
+        </DialogHeader>
+        <form action={refundBillingInvoiceAction} className="space-y-5">
+          <input type="hidden" name="storeId" value={store.id} />
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+
+          <FormSection title="Estorno">
+            <FormField
+              label={`Valor (${invoice.currency})`}
+              htmlFor="refundAmount"
+            >
+              <Input
+                id="refundAmount"
+                name="amount"
+                inputMode="decimal"
+                defaultValue={refundableAmount.toFixed(2)}
+                required
+              />
+            </FormField>
+            <FormField label="Referencia opcional" htmlFor="refundReference">
+              <Input
+                id="refundReference"
+                name="paymentReference"
+                placeholder="Ex.: comprovante do estorno"
+              />
+            </FormField>
+            <FormField label="Motivo/auditoria" htmlFor="refundReason">
+              <Textarea
+                id="refundReason"
+                name="reason"
+                placeholder="Explique por que o estorno esta sendo registrado."
+                required
+              />
+            </FormField>
+          </FormSection>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" isClickable>
+                Cancelar
+              </Button>
+            </DialogClose>
+            <Button type="submit" isClickable>
+              Registrar estorno
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function FaturasTab({
   store,
   operator,
@@ -1664,14 +2145,19 @@ function FaturasTab({
     operator,
     operation: 'manageBillingInvoices',
   })
+  const canApplyBillingDiscounts = canRunInternalOperation({
+    operator,
+    operation: 'applyBillingDiscounts',
+  })
+  const canCancelBilling = canRunInternalOperation({
+    operator,
+    operation: 'cancelBilling',
+  })
+  const returnTo = getFaturasReturnPath(basePath, activeFilter)
   const filterHref = (filter: InternalInvoiceStatusFilter) =>
     filter === 'all'
       ? `${basePath}?tab=faturas`
       : `${basePath}?tab=faturas&invoiceStatus=${filter}`
-
-  if (store.invoices.length === 0) {
-    return <EmptyState>Nenhuma fatura gerada para esta loja.</EmptyState>
-  }
 
   return (
     <div className="space-y-4">
@@ -1715,20 +2201,28 @@ function FaturasTab({
             {getInternalInvoiceFilterDescription(activeFilter)}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {internalInvoiceStatusFilters.map(filter => (
-            <Button
-              key={filter}
-              asChild
-              size="sm"
-              variant={activeFilter === filter ? 'default' : 'outline'}
-              isClickable
-            >
-              <Link href={filterHref(filter)}>
-                {invoiceFilterLabels[filter]}
-              </Link>
-            </Button>
-          ))}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap gap-2">
+            {internalInvoiceStatusFilters.map(filter => (
+              <Button
+                key={filter}
+                asChild
+                size="sm"
+                variant={activeFilter === filter ? 'default' : 'outline'}
+                isClickable
+              >
+                <Link href={filterHref(filter)}>
+                  {invoiceFilterLabels[filter]}
+                </Link>
+              </Button>
+            ))}
+          </div>
+          {canManageBillingInvoices && (
+            <CreateManualBillingInvoiceDialog
+              store={store}
+              returnTo={returnTo}
+            />
+          )}
         </div>
       </div>
 
@@ -1746,6 +2240,36 @@ function FaturasTab({
               canManageBillingInvoices,
               storeStatus: store.status,
             })
+            const canMarkPayment =
+              canManageBillingInvoices &&
+              canRunManualBillingAction({
+                action: 'mark_payment',
+                invoice,
+              })
+            const canReschedule =
+              canManageBillingInvoices &&
+              canRunManualBillingAction({
+                action: 'reschedule_due_date',
+                invoice,
+              })
+            const canAdjust =
+              canApplyBillingDiscounts &&
+              canRunManualBillingAction({
+                action: 'apply_adjustment',
+                invoice,
+              })
+            const canCancelInvoice =
+              canCancelBilling &&
+              canRunManualBillingAction({
+                action: 'cancel_invoice',
+                invoice,
+              })
+            const canRefundInvoice =
+              canCancelBilling &&
+              canRunManualBillingAction({
+                action: 'refund_invoice',
+                invoice,
+              })
 
             return (
               <div
@@ -1894,6 +2418,41 @@ function FaturasTab({
                       disabled={!copyAllowed}
                       disabledReason="Disponivel apenas para faturas abertas ou vencidas com link e permissao financeira."
                     />
+                    {canMarkPayment && (
+                      <RegisterManualPaymentDialog
+                        store={store}
+                        invoice={invoice}
+                        returnTo={returnTo}
+                      />
+                    )}
+                    {canReschedule && (
+                      <RescheduleInvoiceDueDateDialog
+                        store={store}
+                        invoice={invoice}
+                        returnTo={returnTo}
+                      />
+                    )}
+                    {canAdjust && (
+                      <AdjustInvoiceAmountDialog
+                        store={store}
+                        invoice={invoice}
+                        returnTo={returnTo}
+                      />
+                    )}
+                    {canCancelInvoice && (
+                      <CancelInvoiceDialog
+                        store={store}
+                        invoice={invoice}
+                        returnTo={returnTo}
+                      />
+                    )}
+                    {canRefundInvoice && (
+                      <RefundInvoiceDialog
+                        store={store}
+                        invoice={invoice}
+                        returnTo={returnTo}
+                      />
+                    )}
                   </div>
                 </div>
 
