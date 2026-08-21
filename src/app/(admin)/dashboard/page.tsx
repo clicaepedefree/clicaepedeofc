@@ -2,6 +2,7 @@
 
 import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
+import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
 import {
   reportPeriodsOptions,
   type ReportPeriod,
@@ -49,6 +50,7 @@ export default function Page() {
                   {formatValueToCurrency({
                     value: revenueSummary?.totalRevenue ?? 0,
                     includeCurrencySymbol: true,
+                    normalizeDisplayValue: true,
                   })}
                 </CardTitle>
               </CardHeader>
@@ -69,12 +71,18 @@ export default function Page() {
                     ? formatValueToCurrency({
                         value: revenueSummary.averageOrderValue,
                         includeCurrencySymbol: true,
+                        normalizeDisplayValue: true,
                       })
                     : '-'}
                 </CardTitle>
               </CardHeader>
             </Card>
           </div>
+          <SalesChannelBreakdown
+            channels={revenueSummary?.channelBreakdowns ?? []}
+            classificationNote={revenueSummary?.classificationNote}
+            revenueTreatmentNote={revenueSummary?.revenueTreatmentNote}
+          />
           <RevenueMultilineChart
             chartData={revenueSummary?.dailyBreakdowns ?? []}
             dates={dates}
