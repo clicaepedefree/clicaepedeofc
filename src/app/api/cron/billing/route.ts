@@ -1,3 +1,4 @@
+import { runBillingReminderCycle } from '@/features/billing/billing-reminders'
 import { runRecurringBillingCycle } from '@/features/billing/recurring-billing'
 
 export const runtime = 'nodejs'
@@ -34,9 +35,13 @@ export async function GET(request: Request) {
     invoiceLeadDays: parseInvoiceLeadDays(),
     limit: parseRunLimit(),
   })
+  const reminders = await runBillingReminderCycle({
+    limit: parseRunLimit(),
+  })
 
   return Response.json({
-    ok: result.failed === 0,
-    ...result,
+    ok: result.failed === 0 && reminders.failed === 0,
+    recurring: result,
+    reminders,
   })
 }

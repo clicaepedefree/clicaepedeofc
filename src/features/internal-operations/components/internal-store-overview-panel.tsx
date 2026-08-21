@@ -61,6 +61,7 @@ import {
   getDiscountLabel,
   getExpectedSubscriptionBlockAt,
 } from '@/features/internal-operations/subscription-terms-policy'
+import { getBillingReminderChannelLabel } from '@/features/billing/billing-reminders-policy'
 import {
   getDefaultStoreLifecycleSubscriptionEffect,
   isFinanciallyValidForStoreActivation,
@@ -89,6 +90,7 @@ import { Textarea } from '@/shared/textarea'
 import {
   Activity,
   ArrowLeft,
+  BellRing,
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
@@ -2154,6 +2156,16 @@ function FaturasTab({
     operation: 'cancelBilling',
   })
   const returnTo = getFaturasReturnPath(basePath, activeFilter)
+  const openInvoicesWithBlockDate = store.invoices.filter(
+    invoice =>
+      (invoice.status === 'pending' || invoice.status === 'overdue') &&
+      invoice.expectedBlockAt
+  )
+  const nearestBlockAt =
+    openInvoicesWithBlockDate
+      .map(invoice => invoice.expectedBlockAt)
+      .filter((date): date is Date => date instanceof Date)
+      .sort((a, b) => a.getTime() - b.getTime())[0] ?? null
   const filterHref = (filter: InternalInvoiceStatusFilter) =>
     filter === 'all'
       ? `${basePath}?tab=faturas`
@@ -2226,6 +2238,30 @@ function FaturasTab({
         </div>
       </div>
 
+      {nearestBlockAt && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div className="flex gap-3">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <h3 className="font-semibold">
+                  Bloqueio previsto em {formatDate(nearestBlockAt)}
+                </h3>
+                <p className="mt-1 text-amber-900/80 dark:text-amber-100/80">
+                  A tolerancia financeira desta loja e de{' '}
+                  {store.billing.paymentGraceDays} dia(s). Novos lembretes
+                  param automaticamente quando a fatura e paga, cancelada ou
+                  reembolsada.
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="w-fit border-amber-300">
+              {store.invoiceSummary.overdueInvoices} vencida(s)
+            </Badge>
+          </div>
+        </div>
+      )}
+
       {store.invoices.length === 0 ? (
         <EmptyState>
           Nenhuma fatura encontrada para o filtro selecionado.
@@ -2279,7 +2315,7 @@ function FaturasTab({
                   invoiceStatusStyles[tone].card
                 )}
               >
-                <div className="grid gap-4 xl:grid-cols-[1.4fr_1.2fr_1fr_1fr_1.4fr] xl:items-center">
+                <div className="grid gap-4 xl:grid-cols-[1.4fr_1.1fr_1fr_1fr_1.1fr_1.4fr] xl:items-center">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-semibold text-foreground">
@@ -2321,6 +2357,15 @@ function FaturasTab({
                         invoice.outstandingAmount,
                         invoice.currency
                       )}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-1 text-sm">
+                    <span className="text-muted-foreground">
+                      Bloqueio previsto
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {formatDate(invoice.expectedBlockAt)}
                     </span>
                   </div>
 
@@ -2397,6 +2442,14 @@ function FaturasTab({
                               invoice.outstandingAmount,
                               invoice.currency
                             )}
+                          />
+                          <DetailField
+                            label="Bloqueio previsto"
+                            value={formatDate(invoice.expectedBlockAt)}
+                          />
+                          <DetailField
+                            label="Lembretes enviados"
+                            value={`${invoice.reminderCount} registro(s)`}
                           />
                         </div>
                         <DialogFooter>
@@ -2481,6 +2534,36 @@ function FaturasTab({
                       {formatDate(invoice.createdAt)}
                     </strong>
                   </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 border-t pt-3 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1">
+                    <BellRing className="size-3.5" />
+                    {invoice.reminderCount > 0
+                      ? `${invoice.reminderCount} lembrete(s)`
+                      : 'Sem lembrete registrado'}
+                  </span>
+                  {invoice.latestReminderAt && (
+                    <span className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1">
+                      Ultimo em {formatDate(invoice.latestReminderAt)}
+                    </span>
+                  )}
+                  {store.billingReminders
+                    .filter(reminder => reminder.invoiceId === invoice.id)
+                    .slice(0, 3)
+                    .map(reminder => (
+                      <span
+                        key={reminder.id}
+                        className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1"
+                      >
+                        {getBillingReminderChannelLabel(
+                          reminder.channel as 'email' | 'whatsapp' | 'system'
+                        )}
+                        {' · '}
+                        D+{reminder.daysAfterDue}
+                        {' · '}
+                        {reminder.status}
+                      </span>
+                    ))}
                 </div>
               </div>
             )
