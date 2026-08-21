@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  buildTopSellingProducts,
   buildOperationalSalesMetricsSummary,
   classifyOperationalSalesChannel,
   isOperationalRevenueStatus,
@@ -96,5 +97,113 @@ describe('operational sales channel metrics', () => {
         0
       )
     ).toBe(300)
+  })
+
+  test('ranks the five best selling products with deterministic ties', () => {
+    const ranking = buildTopSellingProducts([
+      {
+        itemId: 10,
+        itemName: 'Produto removido do cardapio',
+        quantity: '4.0000',
+        revenue: '80.0000',
+        salesChannel: 'DIGITAL_MENU',
+        orderType: 'DELIVERY',
+        origin: 'cardapio-digital',
+      },
+      {
+        itemId: 11,
+        itemName: 'Batata',
+        quantity: '4.0000',
+        revenue: '90.0000',
+        salesChannel: 'POS',
+        orderType: 'TAKEOUT',
+        origin: 'POS',
+      },
+      {
+        itemId: 12,
+        itemName: 'Acai',
+        quantity: '2.0000',
+        revenue: '50.0000',
+        salesChannel: 'POS',
+        orderType: 'INDOOR',
+        origin: 'MANUAL',
+      },
+      {
+        itemId: 13,
+        itemName: 'Cafe',
+        quantity: '2.0000',
+        revenue: '50.0000',
+        salesChannel: 'DIGITAL_MENU',
+        orderType: 'TAKEOUT',
+        origin: 'cardapio-digital',
+      },
+      {
+        itemId: 14,
+        itemName: 'Docinho',
+        quantity: '1.0000',
+        revenue: '20.0000',
+        salesChannel: 'POS',
+        orderType: 'DELIVERY',
+        origin: 'IFOOD',
+      },
+      {
+        itemId: 15,
+        itemName: 'Empada',
+        quantity: '1.0000',
+        revenue: '10.0000',
+        salesChannel: 'POS',
+        orderType: 'TAKEOUT',
+        origin: 'POS',
+      },
+    ])
+
+    expect(ranking.map(product => product.itemName)).toEqual([
+      'Batata',
+      'Produto removido do cardapio',
+      'Acai',
+      'Cafe',
+      'Docinho',
+    ])
+    expect(ranking[1]?.itemId).toBe(10)
+    expect(ranking[1]?.quantity).toBe('4.0000')
+    expect(ranking[1]?.revenue).toBe('80.0000')
+    expect(ranking[1]?.predominantChannel).toBe('own_delivery')
+    expect(ranking).toHaveLength(5)
+  })
+
+  test('chooses the predominant product channel by quantity and then revenue', () => {
+    const [product] = buildTopSellingProducts([
+      {
+        itemId: 20,
+        itemName: 'Combo da casa',
+        quantity: '2.0000',
+        revenue: '100.0000',
+        salesChannel: 'DIGITAL_MENU',
+        orderType: 'DELIVERY',
+        origin: 'cardapio-digital',
+      },
+      {
+        itemId: 20,
+        itemName: 'Combo da casa',
+        quantity: '3.0000',
+        revenue: '90.0000',
+        salesChannel: 'POS',
+        orderType: 'TAKEOUT',
+        origin: 'POS',
+      },
+      {
+        itemId: 20,
+        itemName: 'Combo da casa',
+        quantity: '3.0000',
+        revenue: '120.0000',
+        salesChannel: 'POS',
+        orderType: 'INDOOR',
+        origin: 'MANUAL',
+      },
+    ])
+
+    expect(product.quantity).toBe('8.0000')
+    expect(product.revenue).toBe('310.0000')
+    expect(product.predominantChannel).toBe('tables')
   })
 })

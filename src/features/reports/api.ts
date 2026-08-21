@@ -2,6 +2,8 @@
 
 import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
+import { orderItemOptionsTable } from '@/services/db/schema/order-item-options'
+import { orderItemsTable } from '@/services/db/schema/order-items'
 import { ordersTable } from '@/services/db/schema/orders'
 import { coalesce, jsonAgg } from '@/services/db/utils'
 import { and, count, eq, gte, lt, sql, sum } from 'drizzle-orm'
@@ -12,7 +14,10 @@ import {
   reportTimeZone,
   type ReportPeriodPreset,
 } from './form-validation/report-period'
-import { buildOperationalSalesMetricsSummary } from './sales-channel-metrics'
+import {
+  buildOperationalSalesMetricsSummary,
+  buildTopSellingProducts,
+} from './sales-channel-metrics'
 
 type GetRevenueSummaryOptions = {
   startDate?: string
@@ -105,6 +110,49 @@ export const getRevenueSummary = async (
     .groupBy(ordersTable.salesChannel, ordersTable.type, ordersTable.origin)
 
   const operationalSummary = buildOperationalSalesMetricsSummary(channelRows)
+  const optionRevenueByOrderItem = db
+    .select({
+      orderItemId: orderItemOptionsTable.orderItemId,
+      revenue:
+        sql<string>`coalesce(sum(${orderItemOptionsTable.quantity} * ${orderItemOptionsTable.price}), 0)::text`.as(
+          'revenue'
+        ),
+    })
+    .from(orderItemOptionsTable)
+    .groupBy(orderItemOptionsTable.orderItemId)
+    .as('optionRevenueByOrderItem')
+
+  const productRows = await db
+    .select({
+      itemId: orderItemsTable.itemId,
+      itemName: orderItemsTable.itemName,
+      quantity: coalesce(sum(orderItemsTable.quantity), sql<string>`0.0000`).as(
+        'quantity'
+      ),
+      revenue:
+        sql<string>`coalesce(sum(${orderItemsTable.quantity} * (${orderItemsTable.price} + coalesce(${optionRevenueByOrderItem.revenue}::numeric, 0))), 0)::text`.as(
+          'revenue'
+        ),
+      salesChannel: ordersTable.salesChannel,
+      orderType: ordersTable.type,
+      origin: ordersTable.origin,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .leftJoin(
+      optionRevenueByOrderItem,
+      eq(optionRevenueByOrderItem.orderItemId, orderItemsTable.id)
+    )
+    .where(eligibleOrderFilters)
+    .groupBy(
+      orderItemsTable.itemId,
+      orderItemsTable.itemName,
+      ordersTable.salesChannel,
+      ordersTable.type,
+      ordersTable.origin
+    )
+
+  const topSellingProducts = buildTopSellingProducts(productRows)
 
   return {
     ...revenueSummary,
@@ -113,6 +161,7 @@ export const getRevenueSummary = async (
     averageOrderValue: operationalSummary.averageOrderValue,
     dailyBreakdowns: revenueSummary?.dailyBreakdowns ?? [],
     channelBreakdowns: operationalSummary.channelBreakdowns,
+    topSellingProducts,
     classificationNote: operationalSummary.classificationNote,
     revenueTreatmentNote: operationalSummary.revenueTreatmentNote,
     periodPreset,
