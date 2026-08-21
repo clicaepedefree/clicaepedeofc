@@ -1,5 +1,12 @@
+'use client'
+
 import * as React from 'react'
 
+import { useAvailableStores } from '@/features/store/hooks/use-available-stores'
+import {
+  roleHasStorePermission,
+  type StoreUserRole,
+} from '@/features/store-users/store-users-policy'
 import {
   Sidebar,
   SidebarContent,
@@ -29,6 +36,13 @@ export function AppSidebar({
   internalOperationHref,
   ...props
 }: AppSidebarProps) {
+  const { selectedStoreId, stores } = useAvailableStores()
+  const selectedStore = stores?.find(store => store.id === selectedStoreId)
+  const selectedRole = selectedStore?.userRole as StoreUserRole | undefined
+  const filteredMenuItems = selectedRole
+    ? filterMenuItemsByRole(menuItems, selectedRole)
+    : menuItems
+
   return (
     <Sidebar {...props}>
       <AppSidebarHeader />
@@ -37,7 +51,7 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupLabel>Páginas</SidebarGroupLabel>
           <SidebarMenu>
-            {menuItems.map(item => (
+            {filteredMenuItems.map(item => (
               <React.Fragment key={item.title}>
                 {item.type === 'section' && <AppSidebarSection section={item} />}
                 {item.type != 'section' && <AppSidebarItem item={item} />}
@@ -70,4 +84,34 @@ export function AppSidebar({
       <SidebarRail />
     </Sidebar>
   )
+}
+
+function filterMenuItemsByRole(
+  menuItems: (MenuItem | MenuSection)[],
+  role: StoreUserRole
+) {
+  return menuItems
+    .map(item => {
+      if (item.type === 'section') {
+        const visibleItems = item.items.filter(
+          child =>
+            !child.requiredPermission ||
+            roleHasStorePermission(role, child.requiredPermission)
+        )
+
+        if (visibleItems.length === 0) return null
+
+        return { ...item, items: visibleItems }
+      }
+
+      if (
+        item.requiredPermission &&
+        !roleHasStorePermission(role, item.requiredPermission)
+      ) {
+        return null
+      }
+
+      return item
+    })
+    .filter(Boolean) as (MenuItem | MenuSection)[]
 }

@@ -105,7 +105,7 @@ export type StoreDeliveryZoneInput = z.input<typeof deliveryZoneSchema>
 export type StorePaymentMethodInput = z.input<typeof paymentMethodSchema>
 
 export const getStoreDeliveryConfiguration = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   const [settings] = await db
     .select({
@@ -176,7 +176,7 @@ export const saveStoreDeliverySettings = async (
   input: StoreDeliverySettingsInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = deliverySettingsSchema.parse(input)
 
     await db
@@ -200,7 +200,7 @@ export const saveStoreDeliveryZone = async (
   input: StoreDeliveryZoneInput
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = deliveryZoneSchema.parse(input)
 
     const normalizedValues = {
@@ -250,7 +250,7 @@ export const saveStoreDeliveryZone = async (
 }
 
 export const deleteStoreDeliveryZone = async (storeId: number, zoneId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   await db
     .delete(storeDeliveryZonesTable)
@@ -267,7 +267,7 @@ export const saveStorePaymentMethods = async (
   input: StorePaymentMethodInput[]
 ) => {
   try {
-    await validateUserPermissionsForStore(storeId, 'admin')
+    await validateUserPermissionsForStore(storeId, 'store.settings.manage')
     const values = paymentMethodsSchema.parse(input)
 
     await db.transaction(async tx => {

@@ -50,7 +50,7 @@ const getPublicOrderSecuritySecret = () => {
 }
 
 export const createOrder = async (newOrder: NewOrder) => {
-  const { user } = await validateUserPermissionsForStore(newOrder.storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(newOrder.storeId, 'orders.manage')
 
   return await db.transaction(async tx => {
     // Check stock availability for all items before creating order
@@ -215,7 +215,7 @@ export const createOrder = async (newOrder: NewOrder) => {
 }
 
 export const listOrders = async (storeId: number): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'orders.manage')
 
   const orders = await db.query.ordersTable.findMany({
     where: eq(ordersTable.storeId, storeId),
@@ -318,7 +318,7 @@ export const transitionOrderStatus = async (input: {
   estimatedMinutes?: number
 }) => {
   if (!orderTransitionActions.includes(input.action)) throw new Error('Acao invalida.')
-  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'orders.manage')
   return db.transaction(tx =>
     transitionOrderOnDb({
       ...input,
@@ -334,7 +334,7 @@ export const addOrderAuditNote = async (input: {
   storeId: number
   reason: string
 }) => {
-  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'orders.manage')
   return db.transaction(tx =>
     addOrderAuditNoteOnDb({
       ...input,
@@ -349,7 +349,7 @@ export const createOrderPublicTrackingLink = async (input: {
   orderId: number
   storeId: number
 }) => {
-  const { user } = await validateUserPermissionsForStore(input.storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(input.storeId, 'orders.manage')
   const securitySecret = getPublicOrderSecuritySecret()
 
   return await db.transaction(async tx => {
@@ -489,7 +489,7 @@ export const validateCartStock = async (params: {
   storeId: number
   items: { itemId: number; quantity: number }[]
 }) => {
-  await validateUserPermissionsForStore(params.storeId, 'admin')
+  await validateUserPermissionsForStore(params.storeId, 'orders.manage')
 
   const outOfStockItems = await checkStockAvailability({
     storeId: params.storeId,
@@ -510,7 +510,13 @@ export const generateOrderReceipt = async (orderId: number) => {
       and(
         eq(userStorePermissionsTable.storeId, ordersTable.storeId),
         eq(userStorePermissionsTable.userId, user.id),
-        eq(userStorePermissionsTable.role, 'admin'),
+        inArray(userStorePermissionsTable.role, [
+          'owner',
+          'manager',
+          'attendant',
+          'cashier',
+          'waiter',
+        ]),
         sql`${userStorePermissionsTable.revokedAt} is null`
       )
     )

@@ -132,7 +132,7 @@ export function AdminOnboardingForm({
           <div className="space-y-4 text-sm text-slate-300">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-              Permissao admin criada automaticamente
+              Perfil Proprietario criado automaticamente
             </div>
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-4 w-4 text-emerald-300" />
@@ -226,7 +226,7 @@ export function AdminOnboardingForm({
                     O que acontece ao continuar
                   </p>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    Criamos a loja, vinculamos seu usuario como administrador e
+                    Criamos a loja, vinculamos seu usuario como proprietario e
                     abrimos o painel para voce comecar pelos produtos ou pelo
                     caixa.
                   </p>

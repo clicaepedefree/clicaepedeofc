@@ -26,6 +26,7 @@ export const useAvailableStores = () => {
 
   return {
     stores: result.data,
+    selectedStoreId,
     selectedStoreIsAvailable,
     isLoading: result.isLoading,
     isError: result.isError,

@@ -31,7 +31,7 @@ import type {
 export const getFiscalConfig = async (
   storeId: number
 ): Promise<StoreFiscalConfig | null> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
   const config = await getFiscalConfigByStoreId(storeId)
 
   if (!config) {
@@ -48,7 +48,7 @@ export const saveCompanyInfo = async (
   storeId: number,
   data: CompanyFormData
 ): Promise<StoreFiscalConfig> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await upsertFiscalConfig(storeId, {
     federalTaxNumber: data.federalTaxNumber,
@@ -74,7 +74,7 @@ export const saveFiscalSettings = async (
   storeId: number,
   data: FiscalSettingsFormData
 ): Promise<StoreFiscalConfig> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const encryptedApiKey =
     data.nfeioApiKey !== '********' ? encrypt(data.nfeioApiKey) : undefined
@@ -100,7 +100,7 @@ export const saveFiscalSettings = async (
 export const createNfeioCompany = async (
   storeId: number
 ): Promise<StoreFiscalConfig> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await getFiscalConfigByStoreId(storeId)
 
@@ -168,7 +168,7 @@ export const createNfeioCompany = async (
 export const updateNfeioCompany = async (
   storeId: number
 ): Promise<StoreFiscalConfig> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await getFiscalConfigByStoreId(storeId)
 
@@ -209,7 +209,7 @@ export const uploadCertificate = async (
   certificateBase64: string,
   password: string
 ): Promise<StoreFiscalConfig> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await getFiscalConfigByStoreId(storeId)
 
@@ -238,7 +238,7 @@ export const uploadCertificate = async (
 }
 
 export const getCertificateStatus = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await getFiscalConfigByStoreId(storeId)
 
@@ -290,7 +290,7 @@ export const generateNfce = async (
     totalAmount: number
   }
 ): Promise<ServiceInvoice> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   const config = await getFiscalConfigByStoreId(storeId)
 
@@ -467,12 +467,12 @@ export const getServiceInvoice = async (
   storeId: number,
   invoiceId: number
 ): Promise<ServiceInvoice | null> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
   return await getServiceInvoiceById(invoiceId)
 }
 
 export const getAutoEmissionMethods = async (storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
   return await getAutoEmissionMethodsByStoreId(storeId)
 }
 
@@ -481,7 +481,7 @@ export const toggleAutoEmissionMethod = async (
   paymentMethod: string,
   enabled: boolean
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
 
   if (enabled) {
     return await createAutoEmissionMethod({
@@ -504,6 +504,6 @@ export const updateAutoEmissionMethods = async (
   storeId: number,
   paymentMethods: string[]
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'fiscal.manage')
   return await setAutoEmissionMethods(storeId, paymentMethods)
 }

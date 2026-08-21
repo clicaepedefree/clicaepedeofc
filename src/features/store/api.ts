@@ -2,6 +2,7 @@
 import {
   createAdditionalStoreWithAdminPermission,
   createFirstStoreWithAdminPermission,
+  hasAnyActiveStoreAccess,
   getPendingRecoveryStoresByEmail,
   getUserStorePermissions,
   insertStoreFile,
@@ -26,7 +27,10 @@ import { coalesce } from '@/services/db/utils'
 import { and, eq, getTableColumns, sql } from 'drizzle-orm'
 import { redirect, RedirectType } from 'next/navigation'
 import { PermissionsError } from '../../shared/errors/permissions-error'
-import { UserStoreRole } from './types'
+import {
+  roleHasStorePermission,
+  type StorePermission,
+} from '../store-users/store-users-policy'
 
 type CreateStoreResult =
   | { success: true; storeId: number }
@@ -50,7 +54,10 @@ export const getAvailableStores = async (): Promise<any[]> => {
   const user = await requireAuth()
 
   return await db
-    .select(getTableColumns(storesTable))
+    .select({
+      ...getTableColumns(storesTable),
+      userRole: userStorePermissionsTable.role,
+    })
     .from(storesTable)
     .innerJoin(
       userStorePermissionsTable,
@@ -87,7 +94,7 @@ export const getRecoverableStoresForCurrentUserEmail = async () => {
 }
 
 export const getStoreConfigurations = async (storeId: number): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.access')
 
   return await db
     .select({
@@ -117,7 +124,7 @@ export const updateStoreConfiguration = async (
   configurationId: number,
   value: string
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'store.settings.manage')
 
   await db
     .insert(storeConfigurationsTable)
@@ -133,7 +140,10 @@ export const updateStoreConfiguration = async (
 
 export const addStoreFile = async (values: InsertStoreFile) => {
   const { storePermissions: userStorePermissions } =
-    await validateUserPermissionsForStore(values.storeId, 'admin')
+    await validateUserPermissionsForStore(
+      values.storeId,
+      'store.settings.manage'
+    )
 
   if (userStorePermissions.userId !== values.creatorId)
     throw new PermissionsError({
@@ -147,8 +157,8 @@ export const addStoreFile = async (values: InsertStoreFile) => {
 export const validateAdminAccess = async () => {
   const user = await requireAuth()
 
-  const isAdmin = await isUserAdminOfAnyStore(user.id)
-  if (!isAdmin) redirect('/unauthorized', RedirectType.replace)
+  const hasStoreAccess = await hasAnyActiveStoreAccess(user.id)
+  if (!hasStoreAccess) redirect('/unauthorized', RedirectType.replace)
 }
 
 export const createFirstStoreForCurrentUser = async (
@@ -251,7 +261,7 @@ export const createAdditionalStoreForCurrentUser = async (
 
 export const validateUserPermissionsForStore = async (
   storeId: number,
-  role: UserStoreRole
+  permission: StorePermission
 ) => {
   const user = await requireAuth()
 
@@ -261,7 +271,11 @@ export const validateUserPermissionsForStore = async (
   )
 
   if (
-    userPermissionsForStore?.permission.role !== role ||
+    !userPermissionsForStore ||
+    !roleHasStorePermission(
+      userPermissionsForStore.permission.role,
+      permission
+    ) ||
     shouldBlockStoreOperations({
       status: userPermissionsForStore.store.status,
       hasActiveAccessBlock: Boolean(userPermissionsForStore.activeAccessBlockId),

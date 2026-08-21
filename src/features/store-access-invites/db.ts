@@ -202,9 +202,18 @@ export async function acceptStoreAccessInvite({
           userStorePermissionsTable.storeId,
         ],
         set: {
-          role: invite.role,
-          isPrimaryResponsible: false,
-          assignedPrimaryAt: null,
+          role: sql`case
+            when ${userStorePermissionsTable.revokedAt} is null then ${userStorePermissionsTable.role}
+            else ${invite.role}
+          end`,
+          isPrimaryResponsible: sql`case
+            when ${userStorePermissionsTable.revokedAt} is null then ${userStorePermissionsTable.isPrimaryResponsible}
+            else false
+          end`,
+          assignedPrimaryAt: sql`case
+            when ${userStorePermissionsTable.revokedAt} is null then ${userStorePermissionsTable.assignedPrimaryAt}
+            else null
+          end`,
           revokedAt: null,
           revokedReason: null,
           updatedAt: now,

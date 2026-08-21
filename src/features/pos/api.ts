@@ -25,13 +25,13 @@ import {
 } from './db'
 
 export const listCounters = async (storeId: number): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'pos.operate')
 
   return await listStoreCountersOnDb({ storeId })
 }
 
 export const createCounter = async (newCounter: InsertCounter) => {
-  await validateUserPermissionsForStore(newCounter.storeId, 'admin')
+  await validateUserPermissionsForStore(newCounter.storeId, 'pos.operate')
 
   await createStoreCounterOnDb(newCounter)
 }
@@ -45,7 +45,7 @@ export const openCounter = async ({
   openAmount: string
   openNotes: string | null
 }) => {
-  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(storeId, 'pos.operate')
 
   const counter = await getCounterByIdOnDb(props.counterId)
 
@@ -92,7 +92,7 @@ export const closeCounter = async ({
   closeAmount: string
   closeNotes: string | null
 }) => {
-  const { user } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { user } = await validateUserPermissionsForStore(storeId, 'pos.operate')
 
   const counter = await getCounterByIdOnDb(props.counterId)
 
@@ -153,7 +153,7 @@ export const getCounterSessionSummary = async ({
   counterId: number
   counterSessionId: number
 }) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'pos.operate')
   const counterSession = await getCounterSessionByIdOnDb(counterSessionId)
 
   if (counterSession?.counter?.storeId !== storeId)

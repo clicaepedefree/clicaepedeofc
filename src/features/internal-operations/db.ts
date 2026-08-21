@@ -694,7 +694,7 @@ function buildInternalStoreWhere({
           select 1
           from ${userStorePermissionsTable}
           where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.role} = 'owner'
             and ${userStorePermissionsTable.revokedAt} is null
         )`
       : undefined,
@@ -703,7 +703,7 @@ function buildInternalStoreWhere({
           select 1
           from ${userStorePermissionsTable}
           where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.role} = 'owner'
             and ${userStorePermissionsTable.revokedAt} is null
         )`
       : undefined,
@@ -712,7 +712,7 @@ function buildInternalStoreWhere({
           select 1
           from ${userStorePermissionsTable}
           where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-            and ${userStorePermissionsTable.role} = 'admin'
+            and ${userStorePermissionsTable.role} = 'owner'
             and ${userStorePermissionsTable.revokedAt} is not null
         )`
       : undefined,
@@ -1092,7 +1092,7 @@ export async function getInternalStoreDashboardIndicators({
       .where(
         and(
           inArray(userStorePermissionsTable.storeId, storeIds),
-          eq(userStorePermissionsTable.role, 'admin')
+          eq(userStorePermissionsTable.role, 'owner')
         )
       ),
   ])
@@ -1333,7 +1333,7 @@ export async function listInternalStores({
     .where(
       and(
         inArray(userStorePermissionsTable.storeId, storeIds),
-        eq(userStorePermissionsTable.role, 'admin')
+        eq(userStorePermissionsTable.role, 'owner')
       )
     )
 
@@ -3271,7 +3271,7 @@ async function createStoreAccessInvite({
       storeId,
       targetUserId,
       targetEmail: normalizedEmail,
-      role: 'admin',
+      role: 'owner',
       tokenHash,
       status: 'pending',
       deliveryChannel,
@@ -3560,7 +3560,7 @@ export async function createInternalStore({
     await tx.insert(userStorePermissionsTable).values({
       userId: responsibleUser.id,
       storeId: store.id,
-      role: 'admin',
+      role: 'owner',
       isPrimaryResponsible: true,
       assignedPrimaryAt: now,
       updatedAt: now,
@@ -4461,7 +4461,7 @@ export async function reactivateStoreWithAdmin({
       .values({
         userId: targetUser.id,
         storeId,
-        role: 'admin',
+        role: 'owner',
         revokedAt: null,
         revokedReason: null,
       })
@@ -4471,7 +4471,7 @@ export async function reactivateStoreWithAdmin({
           userStorePermissionsTable.storeId,
         ],
         set: {
-          role: 'admin',
+          role: 'owner',
           revokedAt: null,
           revokedReason: null,
           updatedAt: now,

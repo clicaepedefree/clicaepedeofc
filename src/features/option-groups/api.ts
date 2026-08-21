@@ -24,7 +24,7 @@ import { validateUserPermissionsForStore } from '@/features/store/api'
 import { db } from '@/services/db'
 
 export const createOptionGroup = async (data: NewOptionGroup) => {
-  await validateUserPermissionsForStore(data.storeId, 'admin')
+  await validateUserPermissionsForStore(data.storeId, 'menu.manage')
 
   return await db.transaction(async (tx) => {
     await assertOptionItemsBelongToStore({
@@ -60,7 +60,7 @@ export const createOptionGroup = async (data: NewOptionGroup) => {
 }
 
 export const updateOptionGroup = async (data: UpdateOptionGroup) => {
-  await validateUserPermissionsForStore(data.storeId, 'admin')
+  await validateUserPermissionsForStore(data.storeId, 'menu.manage')
 
   return await db.transaction(async (tx) => {
     await assertOptionGroupBelongsToStore({
@@ -141,13 +141,13 @@ export const updateOptionGroup = async (data: UpdateOptionGroup) => {
 }
 
 export const deleteOptionGroup = async (id: number, storeId: number) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   await deleteOptionGroupOnDb({ id, storeId, dbSession: db })
 }
 
 export const listOptionGroups = async (storeId: number): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await getOptionGroupsByStoreId({ storeId })
 }
@@ -156,7 +156,7 @@ export const listOptionGroupsByItemOffering = async (
   itemOfferingId: number,
   storeId: number
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   return await getOptionGroupsByItemOfferingId({ itemOfferingId, storeId })
 }
@@ -164,7 +164,7 @@ export const listOptionGroupsByItemOffering = async (
 export const linkOptionGroupsToItemOffering = async (
   data: LinkOptionGroupsToItemOffering
 ) => {
-  await validateUserPermissionsForStore(data.storeId, 'admin')
+  await validateUserPermissionsForStore(data.storeId, 'menu.manage')
 
   const links = data.optionGroupIds.map((optionGroupId, index) => ({
     itemOfferingId: data.itemOfferingId,
@@ -187,7 +187,7 @@ export const unlinkOptionGroupFromOffering = async (
   optionGroupId: number,
   storeId: number
 ) => {
-  await validateUserPermissionsForStore(storeId, 'admin')
+  await validateUserPermissionsForStore(storeId, 'menu.manage')
 
   await unlinkOptionGroupFromItemOffering({
     itemOfferingId,

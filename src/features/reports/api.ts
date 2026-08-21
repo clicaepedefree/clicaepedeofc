@@ -35,7 +35,7 @@ export const getRevenueSummary = async (
   storeId: number,
   options: GetRevenueSummaryOptions = {}
 ): Promise<any> => {
-  const { store } = await validateUserPermissionsForStore(storeId, 'admin')
+  const { store } = await validateUserPermissionsForStore(storeId, 'reports.view')
   const { startDate, endDate, periodPreset } = options
   const timeZone = isSupportedReportTimeZone(store.timezone)
     ? store.timezone
@@ -247,7 +247,7 @@ export const getRevenueSummary = async (
     .where(
       and(
         eq(userStorePermissionsTable.storeId, storeId),
-        eq(userStorePermissionsTable.role, 'admin'),
+        eq(userStorePermissionsTable.role, 'owner'),
         isNull(userStorePermissionsTable.revokedAt),
         eq(usersTable.status, 'active'),
         sql`${usersTable.lastLoginAt} is not null`

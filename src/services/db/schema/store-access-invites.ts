@@ -14,6 +14,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { storesTable } from './stores'
 import { usersTable } from './users'
+import { userStorePermissionRoles } from './user-store-permissions'
 
 export const storeAccessInviteStatuses = ['pending', 'used', 'revoked'] as const
 export const storeAccessInviteDeliveryChannels = [
@@ -39,9 +40,9 @@ export const storeAccessInvitesTable = pgTable(
       onDelete: 'set null',
     }),
     targetEmail: text('target_email').notNull(),
-    role: text('role', { enum: ['admin'] })
+    role: text('role', { enum: userStorePermissionRoles })
       .notNull()
-      .default('admin'),
+      .default('manager'),
     tokenHash: text('token_hash').notNull(),
     status: text('status', { enum: storeAccessInviteStatuses })
       .notNull()

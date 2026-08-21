@@ -35,7 +35,38 @@ export const isUserAdminOfAnyStore = async (userId: string) => {
     .where(
       and(
         eq(userStorePermissionsTable.userId, userId),
-        eq(userStorePermissionsTable.role, 'admin'),
+        eq(userStorePermissionsTable.role, 'owner'),
+        sql`${userStorePermissionsTable.revokedAt} is null`,
+        eq(storesTable.status, 'active'),
+        sql`not exists (
+          select 1 from ${storeAccessBlocksTable}
+          where ${storeAccessBlocksTable.storeId} = ${storesTable.id}
+            and ${storeAccessBlocksTable.unblockedAt} is null
+            and (
+              ${storeAccessBlocksTable.scheduledUnblockAt} is null
+              or ${storeAccessBlocksTable.scheduledUnblockAt} > now()
+            )
+        )`,
+        eq(usersTable.status, 'active')
+      )
+    )
+    .limit(1)
+
+  return Boolean(store)
+}
+
+export const hasAnyActiveStoreAccess = async (userId: string) => {
+  const [store] = await db
+    .select({ id: storesTable.id })
+    .from(userStorePermissionsTable)
+    .innerJoin(
+      storesTable,
+      eq(storesTable.id, userStorePermissionsTable.storeId)
+    )
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .where(
+      and(
+        eq(userStorePermissionsTable.userId, userId),
         sql`${userStorePermissionsTable.revokedAt} is null`,
         eq(storesTable.status, 'active'),
         sql`not exists (
@@ -108,7 +139,7 @@ export const getPendingRecoveryStoresByEmail = async (email: string) => {
     .where(
       and(
         eq(storesTable.status, 'pending_recovery'),
-        eq(userStorePermissionsTable.role, 'admin'),
+        eq(userStorePermissionsTable.role, 'owner'),
         eq(usersTable.status, 'deleted'),
         sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`
       )
@@ -136,7 +167,7 @@ const createStoreWithAdminPermission = async ({
         .where(
           and(
             eq(userStorePermissionsTable.userId, userId),
-            eq(userStorePermissionsTable.role, 'admin'),
+            eq(userStorePermissionsTable.role, 'owner'),
             sql`${userStorePermissionsTable.revokedAt} is null`
           )
         )
@@ -155,7 +186,7 @@ const createStoreWithAdminPermission = async ({
     await tx.insert(userStorePermissionsTable).values({
       userId,
       storeId: createdStore.id,
-      role: 'admin',
+      role: 'owner',
       isPrimaryResponsible: true,
       assignedPrimaryAt: new Date(),
     })

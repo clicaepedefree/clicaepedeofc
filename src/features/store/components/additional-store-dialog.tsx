@@ -185,7 +185,7 @@ export const AdditionalStoreDialog = () => {
             <div className="flex gap-3">
               <WandSparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <p className="text-sm leading-6 text-muted-foreground">
-                A nova loja sera criada ativa, seu usuario sera administrador e
+                A nova loja sera criada ativa, seu usuario sera proprietario e
                 o painel mudara automaticamente para ela.
               </p>
             </div>
