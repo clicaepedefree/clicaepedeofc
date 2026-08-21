@@ -5,60 +5,54 @@ import {
   runBillingGatewayReconciliationCycle,
 } from '@/features/billing/gateway-webhooks'
 import { runRecurringBillingCycle } from '@/features/billing/recurring-billing'
+import {
+  authorizeBillingCronRequest,
+  isBillingCronRunSuccessful,
+  resolveBillingCronConfig,
+} from '@/features/billing/billing-cron-policy'
 
 export const runtime = 'nodejs'
 
-const parseInvoiceLeadDays = () => {
-  const value = Number(process.env.BILLING_INVOICE_LEAD_DAYS ?? 7)
-  return Number.isFinite(value) ? value : 7
-}
-
-const parseRunLimit = () => {
-  const value = Number(process.env.BILLING_RECURRING_RUN_LIMIT ?? 100)
-  return Number.isFinite(value) ? value : 100
-}
-
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  const authorization = request.headers.get('authorization')
+  const authorization = authorizeBillingCronRequest({
+    cronSecret: process.env.CRON_SECRET,
+    authorizationHeader: request.headers.get('authorization'),
+  })
 
-  if (!cronSecret) {
+  if (!authorization.authorized) {
     return Response.json(
-      {
-        ok: false,
-        error: 'CRON_SECRET is required to run recurring billing safely.',
-      },
-      { status: 503 }
+      { ok: false, error: authorization.error },
+      { status: authorization.status }
     )
   }
 
-  if (authorization !== `Bearer ${cronSecret}`) {
-    return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
-  }
+  const config = resolveBillingCronConfig()
 
   const result = await runRecurringBillingCycle({
-    invoiceLeadDays: parseInvoiceLeadDays(),
-    limit: parseRunLimit(),
+    invoiceLeadDays: config.invoiceLeadDays,
+    limit: config.runLimit,
   })
   const reminders = await runBillingReminderCycle({
-    limit: parseRunLimit(),
+    limit: config.runLimit,
   })
   const delinquencyBlocks = await runBillingDelinquencyAccessBlockCycle({
-    limit: parseRunLimit(),
+    limit: config.runLimit,
   })
   const gatewayWebhooks = await processBillingGatewayWebhookQueue({
-    limit: parseRunLimit(),
+    limit: config.runLimit,
   })
   const gatewayReconciliation = await runBillingGatewayReconciliationCycle({
-    limit: parseRunLimit(),
+    limit: config.runLimit,
   })
 
   return Response.json({
-    ok:
-      result.failed === 0 &&
-      reminders.failed === 0 &&
-      delinquencyBlocks.failed === 0 &&
-      gatewayWebhooks.failed === 0,
+    ok: isBillingCronRunSuccessful({
+      recurring: result,
+      reminders,
+      delinquencyBlocks,
+      gatewayWebhooks,
+      gatewayReconciliation,
+    }),
     recurring: result,
     reminders,
     delinquencyBlocks,
