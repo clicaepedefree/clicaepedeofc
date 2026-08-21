@@ -1,5 +1,9 @@
 import { runBillingDelinquencyAccessBlockCycle } from '@/features/billing/billing-delinquency-blocks'
 import { runBillingReminderCycle } from '@/features/billing/billing-reminders'
+import {
+  processBillingGatewayWebhookQueue,
+  runBillingGatewayReconciliationCycle,
+} from '@/features/billing/gateway-webhooks'
 import { runRecurringBillingCycle } from '@/features/billing/recurring-billing'
 
 export const runtime = 'nodejs'
@@ -42,14 +46,23 @@ export async function GET(request: Request) {
   const delinquencyBlocks = await runBillingDelinquencyAccessBlockCycle({
     limit: parseRunLimit(),
   })
+  const gatewayWebhooks = await processBillingGatewayWebhookQueue({
+    limit: parseRunLimit(),
+  })
+  const gatewayReconciliation = await runBillingGatewayReconciliationCycle({
+    limit: parseRunLimit(),
+  })
 
   return Response.json({
     ok:
       result.failed === 0 &&
       reminders.failed === 0 &&
-      delinquencyBlocks.failed === 0,
+      delinquencyBlocks.failed === 0 &&
+      gatewayWebhooks.failed === 0,
     recurring: result,
     reminders,
     delinquencyBlocks,
+    gatewayWebhooks,
+    gatewayReconciliation,
   })
 }
