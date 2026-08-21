@@ -2,6 +2,7 @@
 
 import { AdminPageInfo } from '@/features/admin/components/admin-page-info'
 import { RevenueMultilineChart } from '@/features/reports/components/revenue-multiline-chart'
+import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
 import {
   reportPeriodsOptions,
   type ReportPeriod,
@@ -43,12 +44,12 @@ export default function Page() {
           </div>
         </div>
         {(isLoading || !isEnabled) && <LoadingSpinner />}
-        {!isLoading && isEnabled && !revenueSummary?.dailyBreakdowns && (
+        {!isLoading && isEnabled && !revenueSummary?.totalOrders && (
           <Body variant={100} className="w-full text-center py-4">
             Loja não possui vendas para o período
           </Body>
         )}
-        {!!revenueSummary?.dailyBreakdowns && (
+        {!!revenueSummary?.totalOrders && (
           <>
             <div className="grid auto-rows-min gap-4 md:grid-cols-3 mb-4">
               <Card className="@container/card w-full">
@@ -58,6 +59,7 @@ export default function Page() {
                     {formatValueToCurrency({
                       value: revenueSummary.totalRevenue ?? 0,
                       includeCurrencySymbol: true,
+                      normalizeDisplayValue: true,
                     })}
                   </CardTitle>
                 </CardHeader>
@@ -77,16 +79,24 @@ export default function Page() {
                     {formatValueToCurrency({
                       value: revenueSummary.averageOrderValue ?? 0,
                       includeCurrencySymbol: true,
+                      normalizeDisplayValue: true,
                     })}
                   </CardTitle>
                 </CardHeader>
               </Card>
             </div>
-            {revenueSummary.dailyBreakdowns && (
-              <RevenueMultilineChart
-                chartData={revenueSummary.dailyBreakdowns}
-                dates={dates}
-              />
+            {!!revenueSummary.dailyBreakdowns.length && (
+              <div className="space-y-4">
+                <SalesChannelBreakdown
+                  channels={revenueSummary.channelBreakdowns ?? []}
+                  classificationNote={revenueSummary.classificationNote}
+                  revenueTreatmentNote={revenueSummary.revenueTreatmentNote}
+                />
+                <RevenueMultilineChart
+                  chartData={revenueSummary.dailyBreakdowns}
+                  dates={dates}
+                />
+              </div>
             )}
           </>
         )}
