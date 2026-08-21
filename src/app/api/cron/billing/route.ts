@@ -1,3 +1,4 @@
+import { runBillingDelinquencyAccessBlockCycle } from '@/features/billing/billing-delinquency-blocks'
 import { runBillingReminderCycle } from '@/features/billing/billing-reminders'
 import { runRecurringBillingCycle } from '@/features/billing/recurring-billing'
 
@@ -38,10 +39,17 @@ export async function GET(request: Request) {
   const reminders = await runBillingReminderCycle({
     limit: parseRunLimit(),
   })
+  const delinquencyBlocks = await runBillingDelinquencyAccessBlockCycle({
+    limit: parseRunLimit(),
+  })
 
   return Response.json({
-    ok: result.failed === 0 && reminders.failed === 0,
+    ok:
+      result.failed === 0 &&
+      reminders.failed === 0 &&
+      delinquencyBlocks.failed === 0,
     recurring: result,
     reminders,
+    delinquencyBlocks,
   })
 }

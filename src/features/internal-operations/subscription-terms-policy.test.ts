@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   getBillingIntervalLabel,
+  getBillingAccessExemptionLabel,
   getDiscountLabel,
   getExpectedSubscriptionBlockAt,
   storeSubscriptionTermsSchema,
@@ -16,6 +17,9 @@ describe('internal subscription terms policy', () => {
       discountValue: '10',
       discountValidUntil: '2026-09-30T12:00',
       paymentGraceDays: '7',
+      billingAccessExemptionKind: 'courtesy',
+      billingAccessExemptUntil: '2026-10-30T12:00',
+      billingAccessExemptionReason: 'Cortesia aprovada pelo financeiro.',
       reason: 'Condicao comercial negociada com a loja.',
     })
 
@@ -23,6 +27,8 @@ describe('internal subscription terms policy', () => {
     expect(parsed.subscriptionId).toBe(20)
     expect(parsed.discountValidUntil instanceof Date).toBe(true)
     expect(parsed.paymentGraceDays).toBe(7)
+    expect(parsed.billingAccessExemptionKind).toBe('courtesy')
+    expect(parsed.billingAccessExemptUntil instanceof Date).toBe(true)
   })
 
   test('blocks discount validity without a configured discount', () => {
@@ -34,7 +40,26 @@ describe('internal subscription terms policy', () => {
       discountValue: '',
       discountValidUntil: '2026-09-30T12:00',
       paymentGraceDays: 0,
+      billingAccessExemptionKind: 'none',
       reason: 'Remocao de desconto da loja.',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  test('requires full financial exception data when exemption is active', () => {
+    const result = storeSubscriptionTermsSchema.safeParse({
+      storeId: 10,
+      subscriptionId: 20,
+      contractedAmount: '199.90',
+      discountType: 'none',
+      discountValue: '',
+      discountValidUntil: '',
+      paymentGraceDays: 5,
+      billingAccessExemptionKind: 'manual_exception',
+      billingAccessExemptUntil: '',
+      billingAccessExemptionReason: '',
+      reason: 'Excecao aprovada pelo financeiro.',
     })
 
     expect(result.success).toBe(false)
@@ -80,5 +105,12 @@ describe('internal subscription terms policy', () => {
         discountValue: null,
       })
     ).toBe('Sem desconto')
+    expect(
+      getBillingAccessExemptionLabel({
+        billingAccessExemptionKind: 'manual_exception',
+        billingAccessExemptUntil: new Date('2026-10-01T00:00:00.000Z'),
+        now: new Date('2026-09-01T00:00:00.000Z'),
+      })
+    ).toBe('Excecao manual ativa')
   })
 })

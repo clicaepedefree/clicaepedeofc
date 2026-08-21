@@ -366,6 +366,9 @@ export type InternalStoreOverview = Pick<
     discountValue: string | null
     discountValidUntil: Date | null
     paymentGraceDays: number
+    billingAccessExemptionKind: string | null
+    billingAccessExemptUntil: Date | null
+    billingAccessExemptionReason: string | null
     expectedBlockAt: Date | null
     nextBillingAt: Date | null
     currentPeriodStart: Date | null
@@ -374,6 +377,11 @@ export type InternalStoreOverview = Pick<
   pendingPlanChange: InternalStorePendingPlanChange | null
   accessBlock: {
     id: number
+    source: string
+    reasonCode: string | null
+    subscriptionId: number | null
+    invoiceId: number | null
+    dedupeKey: string | null
     reason: string
     notifyStoreOwner: boolean
     notificationNote: string | null
@@ -1448,6 +1456,12 @@ export async function getInternalStoreOverview(
       discountValue: storeSubscriptionsTable.discountValue,
       discountValidUntil: storeSubscriptionsTable.discountValidUntil,
       paymentGraceDays: storeSubscriptionsTable.paymentGraceDays,
+      billingAccessExemptionKind:
+        storeSubscriptionsTable.billingAccessExemptionKind,
+      billingAccessExemptUntil:
+        storeSubscriptionsTable.billingAccessExemptUntil,
+      billingAccessExemptionReason:
+        storeSubscriptionsTable.billingAccessExemptionReason,
       nextBillingAt: storeSubscriptionsTable.nextBillingAt,
       currentPeriodStart: storeSubscriptionsTable.currentPeriodStart,
       currentPeriodEnd: storeSubscriptionsTable.currentPeriodEnd,
@@ -1637,6 +1651,11 @@ export async function getInternalStoreOverview(
     db
       .select({
         id: storeAccessBlocksTable.id,
+        source: storeAccessBlocksTable.source,
+        reasonCode: storeAccessBlocksTable.reasonCode,
+        subscriptionId: storeAccessBlocksTable.subscriptionId,
+        invoiceId: storeAccessBlocksTable.invoiceId,
+        dedupeKey: storeAccessBlocksTable.dedupeKey,
         reason: storeAccessBlocksTable.reason,
         notifyStoreOwner: storeAccessBlocksTable.notifyStoreOwner,
         notificationNote: storeAccessBlocksTable.notificationNote,
@@ -1982,6 +2001,9 @@ export async function getInternalStoreOverview(
       discountValue: store.discountValue,
       discountValidUntil: store.discountValidUntil,
       paymentGraceDays: store.paymentGraceDays ?? 0,
+      billingAccessExemptionKind: store.billingAccessExemptionKind,
+      billingAccessExemptUntil: store.billingAccessExemptUntil,
+      billingAccessExemptionReason: store.billingAccessExemptionReason,
       expectedBlockAt: getExpectedSubscriptionBlockAt({
         nextBillingAt: store.nextBillingAt,
         paymentGraceDays: store.paymentGraceDays ?? 0,
@@ -4388,6 +4410,18 @@ export async function updateStoreSubscriptionTerms({
     values.discountType === 'none' || !values.discountValue
       ? null
       : normalizeCurrencyAmount(values.discountValue)
+  const nextBillingAccessExemptionKind =
+    values.billingAccessExemptionKind === 'none'
+      ? null
+      : values.billingAccessExemptionKind
+  const nextBillingAccessExemptUntil =
+    values.billingAccessExemptionKind === 'none'
+      ? null
+      : values.billingAccessExemptUntil
+  const nextBillingAccessExemptionReason =
+    values.billingAccessExemptionKind === 'none'
+      ? null
+      : values.billingAccessExemptionReason.trim()
   const canManageFinancialValues = canUseInternalPermission({
     currentRole: operator.role,
     permission: 'manage_billing_values',
@@ -4420,6 +4454,12 @@ export async function updateStoreSubscriptionTerms({
         discountValue: storeSubscriptionsTable.discountValue,
         discountValidUntil: storeSubscriptionsTable.discountValidUntil,
         paymentGraceDays: storeSubscriptionsTable.paymentGraceDays,
+        billingAccessExemptionKind:
+          storeSubscriptionsTable.billingAccessExemptionKind,
+        billingAccessExemptUntil:
+          storeSubscriptionsTable.billingAccessExemptUntil,
+        billingAccessExemptionReason:
+          storeSubscriptionsTable.billingAccessExemptionReason,
         nextBillingAt: storeSubscriptionsTable.nextBillingAt,
       })
       .from(storeSubscriptionsTable)
@@ -4442,7 +4482,13 @@ export async function updateStoreSubscriptionTerms({
     if (
       !canManageFinancialValues &&
       (subscription.contractedAmount !== nextContractedAmount ||
-        subscription.paymentGraceDays !== values.paymentGraceDays)
+        subscription.paymentGraceDays !== values.paymentGraceDays ||
+        subscription.billingAccessExemptionKind !==
+          nextBillingAccessExemptionKind ||
+        subscription.billingAccessExemptUntil?.toISOString() !==
+          nextBillingAccessExemptUntil?.toISOString() ||
+        subscription.billingAccessExemptionReason !==
+          nextBillingAccessExemptionReason)
     ) {
       throw new Error('STORE_SUBSCRIPTION_FINANCE_PERMISSION_REQUIRED')
     }
@@ -4454,6 +4500,11 @@ export async function updateStoreSubscriptionTerms({
       discountValidUntil:
         subscription.discountValidUntil?.toISOString() ?? null,
       paymentGraceDays: subscription.paymentGraceDays,
+      billingAccessExemptionKind: subscription.billingAccessExemptionKind,
+      billingAccessExemptUntil:
+        subscription.billingAccessExemptUntil?.toISOString() ?? null,
+      billingAccessExemptionReason:
+        subscription.billingAccessExemptionReason ?? null,
       expectedBlockAt:
         getExpectedSubscriptionBlockAt({
           nextBillingAt: subscription.nextBillingAt,
@@ -4466,6 +4517,10 @@ export async function updateStoreSubscriptionTerms({
       discountValue: nextDiscountValue,
       discountValidUntil: values.discountValidUntil?.toISOString() ?? null,
       paymentGraceDays: values.paymentGraceDays,
+      billingAccessExemptionKind: nextBillingAccessExemptionKind,
+      billingAccessExemptUntil:
+        nextBillingAccessExemptUntil?.toISOString() ?? null,
+      billingAccessExemptionReason: nextBillingAccessExemptionReason,
       expectedBlockAt:
         getExpectedSubscriptionBlockAt({
           nextBillingAt: subscription.nextBillingAt,
@@ -4481,6 +4536,9 @@ export async function updateStoreSubscriptionTerms({
         discountValue: nextDiscountValue,
         discountValidUntil: values.discountValidUntil,
         paymentGraceDays: values.paymentGraceDays,
+        billingAccessExemptionKind: nextBillingAccessExemptionKind,
+        billingAccessExemptUntil: nextBillingAccessExemptUntil,
+        billingAccessExemptionReason: nextBillingAccessExemptionReason,
         updatedAt: now,
       })
       .where(eq(storeSubscriptionsTable.id, subscription.id))
@@ -4513,6 +4571,12 @@ export async function updateStoreSubscriptionTerms({
         nextDiscountType ?? 'none'
       }; tolerancia=${values.paymentGraceDays}d; bloqueio_previsto=${
         newValues.expectedBlockAt ?? 'sem data'
+      }; excecao_bloqueio=${
+        nextBillingAccessExemptionKind
+          ? `${nextBillingAccessExemptionKind} ate ${
+              newValues.billingAccessExemptUntil ?? 'sem data'
+            }`
+          : 'none'
       }`,
     })
 

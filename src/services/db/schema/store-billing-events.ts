@@ -24,6 +24,7 @@ export const storeBillingEventTypes = [
   'refund_registered',
   'billing_adjustment_created',
   'billing_reminder_sent',
+  'billing_access_blocked',
 ] as const
 
 export const storeBillingEventsTable = pgTable(
