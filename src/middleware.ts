@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   '/login(.*)',
   '/admin-onboarding(.*)',
   '/convite(.*)',
+  '/acesso-temporario(.*)',
   '/cardapio(.*)',
   '/pedido(.*)',
   '/api/files(.*)',
@@ -29,6 +30,7 @@ const isMainDomainOnlyRoute = createRouteMatcher([
   '/login(.*)', // Login pages
   '/admin-onboarding(.*)', // Onboarding
   '/convite(.*)', // Secure store access invitations
+  '/acesso-temporario(.*)', // Temporary Clerk sign-in links for password reset
   '/cardapio(.*)', // Public digital menu
   '/pedido(.*)', // Public order tracking protected by an opaque token
   '/internal(.*)', // Internal Clica e Pede operations
