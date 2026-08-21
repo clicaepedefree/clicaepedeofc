@@ -53,6 +53,7 @@ export const storeBillingPaymentsTable = pgTable(
     currency: text('currency').notNull().default('BRL'),
     provider: text('provider'),
     providerPaymentId: text('provider_payment_id'),
+    confirmationKey: text('confirmation_key'),
     paidAt: baseTimestampColumnGenerator('paid_at'),
     failedAt: baseTimestampColumnGenerator('failed_at'),
     refundedAt: baseTimestampColumnGenerator('refunded_at'),
@@ -64,6 +65,9 @@ export const storeBillingPaymentsTable = pgTable(
     uniqueIndex('store_billing_payments_provider_payment_unique')
       .on(table.provider, table.providerPaymentId)
       .where(sql`${table.providerPaymentId} is not null`),
+    uniqueIndex('store_billing_payments_confirmation_key_unique')
+      .on(table.confirmationKey)
+      .where(sql`${table.confirmationKey} is not null`),
     index('store_billing_payments_invoice_status_idx').on(
       table.invoiceId,
       table.status

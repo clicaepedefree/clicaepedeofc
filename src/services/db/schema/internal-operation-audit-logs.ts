@@ -24,6 +24,7 @@ export const internalOperationActions = [
   'adjust_billing_invoice_amount',
   'cancel_billing_invoice',
   'refund_billing_invoice',
+  'auto_unblock_billing_access',
   'manage_store_module_entitlement',
   'reactivate_store',
   'archive_store',

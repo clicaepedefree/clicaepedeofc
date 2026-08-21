@@ -3,6 +3,11 @@ import {
   type InternalOperator,
 } from '@/features/internal-operations/access'
 import { buildBillingInvoiceDraft } from '@/features/billing/billing-policy'
+import {
+  buildPaymentConfirmationDedupeKey,
+  reconcileConfirmedPayment,
+  shouldAutoUnblockBillingAccess,
+} from '@/features/billing/payment-confirmation-policy'
 import { isActiveStoreModuleEntitlement } from '@/features/billing/module-entitlements-policy'
 import {
   buildStoreAccessInviteUrl,
@@ -2221,8 +2226,14 @@ export async function markManualBillingInvoicePayment({
   operator: InternalOperator
 }) {
   const now = new Date()
-  const amountNumber = parseMoneyAmount(values.amount)
   const amount = normalizeCurrencyAmount(values.amount)
+  const confirmationKey = buildPaymentConfirmationDedupeKey({
+    invoiceId: values.invoiceId,
+    provider: 'internal_manual_payment',
+    amount,
+    paidAt: values.paidAt,
+    manualReference: values.paymentReference,
+  })
 
   return await db.transaction(async tx => {
     const store = await getManualBillingStore(tx, values.storeId)
@@ -2232,24 +2243,46 @@ export async function markManualBillingInvoicePayment({
       invoiceId: values.invoiceId,
     })
 
+    const [existingPayment] = await tx
+      .select()
+      .from(storeBillingPaymentsTable)
+      .where(eq(storeBillingPaymentsTable.confirmationKey, confirmationKey))
+      .limit(1)
+
+    if (existingPayment) {
+      return { invoice, payment: existingPayment, duplicate: true }
+    }
+
     assertManualBillingActionAllowed({ action: 'mark_payment', invoice })
 
-    const outstandingAmount = getManualInvoiceOutstandingAmount(invoice)
-    if (amountNumber > outstandingAmount) {
+    let reconciliation: ReturnType<typeof reconcileConfirmedPayment>
+    try {
+      reconciliation = reconcileConfirmedPayment({
+        invoice,
+        amount,
+        paidAt: values.paidAt,
+      })
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'PAYMENT_EXCEEDS_OUTSTANDING'
+      ) {
+        throw new Error('MANUAL_BILLING_PAYMENT_EXCEEDS_OUTSTANDING')
+      }
+
+      throw error
+    }
+
+    if (reconciliation.outstandingBeforePayment <= 0) {
       throw new Error('MANUAL_BILLING_PAYMENT_EXCEEDS_OUTSTANDING')
     }
 
     const previousValues = getInvoiceFinancialSnapshot(invoice)
-    const nextAmountPaid = parseMoneyAmount(invoice.amountPaid) + amountNumber
-    const nextStatus =
-      nextAmountPaid >= parseMoneyAmount(invoice.totalAmount)
-        ? 'paid'
-        : 'pending'
-    const nextPaidAt = nextStatus === 'paid' ? values.paidAt : invoice.paidAt
     const metadata = {
       source: 'internal_manual_payment',
       paymentReference: values.paymentReference || null,
       reason: values.reason,
+      confirmationKey,
     }
 
     const [payment] = await tx
@@ -2261,20 +2294,39 @@ export async function markManualBillingInvoicePayment({
         method: 'manual',
         amount,
         currency: invoice.currency,
-        provider: 'internal',
+        provider: 'internal_manual_payment',
         providerPaymentId: null,
+        confirmationKey,
         paidAt: values.paidAt,
         metadata,
         updatedAt: now,
       })
+      .onConflictDoNothing({
+        target: storeBillingPaymentsTable.confirmationKey,
+        where: sql`${storeBillingPaymentsTable.confirmationKey} is not null`,
+      })
       .returning()
+
+    if (!payment) {
+      const [duplicatedPayment] = await tx
+        .select()
+        .from(storeBillingPaymentsTable)
+        .where(eq(storeBillingPaymentsTable.confirmationKey, confirmationKey))
+        .limit(1)
+
+      if (duplicatedPayment) {
+        return { invoice, payment: duplicatedPayment, duplicate: true }
+      }
+
+      throw new Error('PAYMENT_CONFIRMATION_CONFLICT')
+    }
 
     const [updatedInvoice] = await tx
       .update(storeBillingInvoicesTable)
       .set({
-        status: nextStatus,
-        amountPaid: formatMoneyAmount(nextAmountPaid),
-        paidAt: nextPaidAt,
+        status: reconciliation.nextStatus,
+        amountPaid: reconciliation.nextAmountPaid,
+        paidAt: reconciliation.nextPaidAt,
         metadata: withManualBillingMetadata({
           metadata: invoice.metadata,
           action: 'mark_payment',
@@ -2300,6 +2352,72 @@ export async function markManualBillingInvoicePayment({
       newValues: getInvoiceFinancialSnapshot(updatedInvoice),
       metadata,
     })
+
+    const [activeBillingBlock] = await tx
+      .select()
+      .from(storeAccessBlocksTable)
+      .where(
+        and(
+          eq(storeAccessBlocksTable.storeId, values.storeId),
+          eq(storeAccessBlocksTable.source, 'billing_delinquency'),
+          eq(storeAccessBlocksTable.invoiceId, invoice.id),
+          sql`${storeAccessBlocksTable.unblockedAt} is null`,
+          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+        )
+      )
+      .orderBy(desc(storeAccessBlocksTable.blockedAt))
+      .limit(1)
+
+    if (
+      shouldAutoUnblockBillingAccess({
+        block: activeBillingBlock ?? null,
+        invoiceId: invoice.id,
+        invoiceStatus: updatedInvoice.status,
+      })
+    ) {
+      const unblockReason = `Desbloqueio automatico por pagamento confirmado da fatura ${invoice.invoiceNumber}.`
+
+      const [unblockedBlock] = await tx
+        .update(storeAccessBlocksTable)
+        .set({
+          unblockedAt: now,
+          unblockedByClerkId: operator.clerkId,
+          unblockedByEmail: operator.email,
+          unblockedByName: operator.name,
+          unblockReason,
+          updatedAt: now,
+        })
+        .where(eq(storeAccessBlocksTable.id, activeBillingBlock.id))
+        .returning()
+
+      await tx.insert(storeBillingEventsTable).values({
+        storeId: values.storeId,
+        subscriptionId: invoice.subscriptionId,
+        invoiceId: invoice.id,
+        paymentId: payment.id,
+        eventType: 'billing_access_unblocked',
+        actorClerkId: operator.clerkId,
+        actorEmail: operator.email,
+        reason: unblockReason,
+        previousValues: {
+          accessBlockId: activeBillingBlock.id,
+          unblockedAt: null,
+        },
+        newValues: {
+          accessBlockId: unblockedBlock.id,
+          unblockedAt: unblockedBlock.unblockedAt?.toISOString() ?? null,
+        },
+        metadata,
+      })
+
+      await insertManualBillingAuditLog({
+        tx,
+        action: 'auto_unblock_billing_access',
+        operator,
+        store,
+        reason: `${unblockReason} | fatura=${invoice.invoiceNumber}; pagamento=${payment.id}`,
+      })
+    }
 
     await insertManualBillingAuditLog({
       tx,
