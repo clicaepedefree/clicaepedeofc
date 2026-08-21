@@ -1,3 +1,187 @@
+# Codex Operational Runbook - Clica e Pede
+
+Este arquivo deve ser lido antes de tarefas de implementacao, PR, Jira, Supabase, QA ou automacao do projeto. As regras desta secao prevalecem sobre qualquer trecho legado abaixo que descreva o agente como somente leitura.
+
+## Workspace Oficial
+
+- Repositorio principal local: `D:\ProjetoIA\codex\Clica e Pede Restaurante\clica_pedidos_app\clica_pedidos_app`
+- Evitar trabalhar em copias no `C:`. Se a sessao iniciar em outro diretorio, mudar para o caminho oficial acima antes de ler, editar, testar, commitar ou rodar automacoes.
+- Antes de qualquer tarefa nova:
+  - `git status --short --branch`
+  - `git fetch clicaepede main`
+  - criar/resetar branch da tarefa a partir de `clicaepede/main`, exceto quando o usuario disser que o PR anterior ainda nao foi mergeado.
+- Remote correto para PRs: `clicaepede` -> `https://github.com/clicaepedefree/clicaepedeofc.git`
+- Evitar usar `origin` para PRs deste projeto; ele aponta para o repositorio antigo via SSH.
+
+## Fluxo Padrao De KAN
+
+Quando o usuario pedir "abra a KAN X":
+
+1. Ler a issue no Jira e copiar checklist, requisitos, dependencias e criterios de aceite.
+2. Validar se algo ja existe no codigo antes de implementar.
+3. Se a tarefa envolver UX/front/back/banco, usar os especialistas/subagentes adequados e encerrar todos ao final.
+4. Implementar somente o necessario para a KAN.
+5. Rodar validacoes locais.
+6. Fazer revisao final com foco em bug, seguranca, regressao, auditoria e multi-tenant.
+7. Commitar, subir branch, abrir PR.
+8. Atualizar checklist da KAN apenas para itens realmente implementados.
+9. Mover a KAN para a coluna de testes/analise, nao para Done, salvo se o usuario pedir explicitamente e a tarefa ja tiver teste funcional aprovado.
+
+## GitHub E PR
+
+O caminho confiavel para criar PR e:
+
+```powershell
+& 'D:/ProjetoIA/tools/gh-portable/bin/gh.exe' pr create `
+  --repo clicaepedefree/clicaepedeofc `
+  --base main `
+  --head <branch> `
+  --title '<titulo>' `
+  --body @'
+<descricao em portugues>
+'@
+```
+
+Licoes aprendidas:
+
+- Nao assumir que `gh` esta no `PATH`; usar sempre `D:/ProjetoIA/tools/gh-portable/bin/gh.exe`.
+- O conector GitHub pode retornar `403 Resource not accessible by integration`; se isso acontecer, usar o `gh.exe` portatil.
+- Se o branch ja foi publicado, o link manual de emergencia e:
+  `https://github.com/clicaepedefree/clicaepedeofc/pull/new/<branch>`
+- Depois de abrir PR, enviar ao usuario o link direto do PR.
+- Se precisar atualizar PR ja aberto, commitar e fazer `git push clicaepede <branch>`.
+- Se criar PR de teste, fechar/declinar em seguida.
+
+## Jira / Atlassian Rovo
+
+Dados conhecidos:
+
+- Cloud ID: `a56aa09e-b009-416f-8df5-d222004c3932`
+- Projeto: `KAN`
+- Board: Clica e Pede Tech
+- Transicao usada para coluna de testes/analise: id `31`
+- Status esperado apos transicao: `Em análise`
+
+Ferramentas:
+
+- Ler issue/checklist: usar busca/fetch do Atlassian Rovo quando disponivel.
+- Editar checklist/descricao: `_editjiraissue`
+- Mover status: `_transitionjiraissue`
+- Conferir transicoes se a id `31` falhar: `_gettransitionsforjiraissue`
+
+Padrao para finalizar KAN implementada:
+
+1. Atualizar a descricao preservando contexto, requisitos e relacionado.
+2. Marcar checklist com `[x]` somente para itens cobertos por codigo.
+3. Adicionar link do PR e validacoes executadas.
+4. Executar transicao:
+
+```json
+{
+  "cloudId": "a56aa09e-b009-416f-8df5-d222004c3932",
+  "issueIdOrKey": "KAN-XX",
+  "transition": { "id": "31" }
+}
+```
+
+Licoes aprendidas:
+
+- Nao mover tarefa para Done sem teste funcional aprovado.
+- Nao marcar checklist incompleto como feito.
+- Quando houver bug encontrado em teste funcional, criar uma nova KAN de bug e so retestar/mover depois do fix mergeado/deployado.
+- Evidencias de QA nao devem ser referenciadas por caminho local privado. Se forem anexadas ao Jira, usar comentario/anexo visivel pelo board.
+
+## Supabase E Banco
+
+- Projeto correto: `kktmjjmkbbtbibzbpcqj`
+- Banco correto: Clica e Pede oficial.
+- Evitar mexer em bancos/projetos antigos ou marketplace errado.
+- Alteracoes de schema devem ir por migration versionada em `supabase/migrations`.
+- Se a tarefa exigir validar banco remoto, usar o plugin/conector Supabase quando estiver disponivel.
+- Se Supabase estiver pausado ou unhealthy, pedir/aguardar restore antes de concluir validacao remota.
+- Falhas historicas que podem ser infra temporaria:
+  - timeout IPv6/Postgres
+  - `failed to list functions`
+  - `Postgres config not found`
+  - `Remote migration versions not found in local migrations directory`
+- Mesmo quando a migration falhar no preview por infra, manter a migration correta no Git e orientar recheck apos Supabase saudavel.
+
+## Testes E Build
+
+Validacoes padrao antes de PR:
+
+```powershell
+bun test <teste-focado-se-existir>
+bun test
+bun run build
+git diff --check
+```
+
+Notas:
+
+- `bun run build` pode emitir avisos conhecidos de `experimental.turbo` e Browserslist antigo; eles nao bloqueiam se o build termina com exit code 0.
+- Nao iniciar servidor local se o usuario disser que a validacao sera pela Vercel.
+- Para teste funcional/QA, usar ambiente Vercel quando o usuario pedir validacao de prod/preview.
+- Usuario QA conhecido para testes Clerk quando aplicavel:
+  - email: `qaclicapede+clerk_test@gmail.com`
+  - token fixo documentado/teste: `424242`
+
+## Subagentes
+
+- Usar subagentes quando o usuario pedir especialistas ou quando a tarefa tiver frentes separadas claras: UX, frontend, backend/banco, revisor/QA.
+- Delegar tarefas pequenas, objetivas e com escopo separado.
+- Sempre encerrar subagentes ao final com `close_agent`.
+- Revisor obrigatorio quando o usuario pedir explicitamente ou quando houver mudanca sensivel de auth, banco, auditoria, pagamento, pedidos, multi-tenant ou dados de usuario.
+- Incorporar findings reais antes de commitar/PR.
+
+## Design E UX
+
+- Referencia visual combinada: Dribbble, mas sem copiar literalmente.
+- Manter consistencia com o design system existente do app.
+- Para telas administrativas/operacionais, preferir UI densa, clara, escaneavel e sem cara de landing page.
+- Dark/light mode devem ser tratados juntos usando tokens do projeto:
+  - `bg-background`
+  - `bg-card`
+  - `text-foreground`
+  - `text-muted-foreground`
+  - `border`
+  - `bg-muted`
+  - `primary`
+  - `destructive`
+- Evitar hardcode que quebre tema, como caixas brancas (`bg-white`) em telas que precisam funcionar no dark mode.
+
+## Seguranca E Produto
+
+- Nunca commitar `.env.local` ou secrets reais.
+- Dados sensiveis ficam em Vercel/Supabase/Clerk, nao no Git.
+- Proteger sempre:
+  - multi-tenant por `storeId`
+  - permissao de usuario por loja
+  - ultimo admin/responsavel ativo
+  - auditoria para operacoes administrativas
+  - fluxos de convite/recuperacao/reativacao
+- Em convites e acessos:
+  - convite pendente nao deve dar permissao ate aceite valido
+  - aceitar convite nao deve tornar usuario responsavel principal automaticamente
+  - admin de uma loja nao deve alterar dados globais de usuario sem vinculo/aceite claro
+
+## Processo De Entrega
+
+Checklist final antes de responder:
+
+- Branch baseado no `clicaepede/main`.
+- Working tree limpo ou somente com alteracoes esperadas.
+- Testes/build executados e reportados.
+- Revisor/subagentes encerrados.
+- PR criado com descricao em portugues.
+- Jira checklist atualizado.
+- Jira movido para `Em análise` quando a tarefa estiver pronta para teste.
+- Resposta final curta com link do PR e validacoes.
+
+---
+
+## Legacy Project Assistant Notes
+
 You are a helpful project assistant and backlog manager for the "clica-pede" project.
 
 Your role is to help users understand the codebase, answer questions about features, and manage the project backlog. You can READ files and CREATE/MANAGE features, but you cannot modify source code.
