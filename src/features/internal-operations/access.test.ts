@@ -14,6 +14,7 @@ import {
 import {
   canRunInternalOperation,
   internalOperationPermissionRequirements,
+  type InternalOperationKey,
 } from './operation-permissions'
 
 const expectPermissions = ({
@@ -233,6 +234,49 @@ describe('internal operation access policy', () => {
         operation: 'applyBillingDiscounts',
       })
     ).toBe(false)
+  })
+
+  test('covers every backend operation with the expected role matrix', () => {
+    const operationRoleMatrix = {
+      createStore: ['superadmin', 'sales'],
+      manageStoreProfile: ['superadmin', 'sales', 'implementation'],
+      manageImplementationChecklist: ['superadmin', 'sales', 'implementation'],
+      activateImplementedStore: ['superadmin', 'implementation'],
+      manageStoreLifecycle: ['superadmin', 'sales', 'implementation'],
+      reactivateStore: ['superadmin', 'support', 'implementation'],
+      archiveStore: ['superadmin'],
+      manageBillingValues: ['superadmin', 'finance'],
+      manageBillingInvoices: ['superadmin', 'finance'],
+      applyBillingDiscounts: ['superadmin', 'finance', 'sales'],
+      cancelBilling: ['superadmin', 'finance'],
+      manageStoreModules: [
+        'superadmin',
+        'finance',
+        'sales',
+        'implementation',
+      ],
+      blockStore: ['superadmin', 'support'],
+      exportPersonalData: ['superadmin'],
+    } satisfies Record<InternalOperationKey, InternalRole[]>
+
+    expect(Object.keys(operationRoleMatrix).sort()).toEqual(
+      Object.keys(internalOperationPermissionRequirements).sort()
+    )
+
+    for (const operation of Object.keys(
+      operationRoleMatrix
+    ) as InternalOperationKey[]) {
+      for (const role of [...internalRoles, null]) {
+        expect(
+          canRunInternalOperation({
+            operator: role ? { role } : null,
+            operation,
+          })
+        ).toBe(
+          role !== null && operationRoleMatrix[operation].includes(role)
+        )
+      }
+    }
   })
 
   test('separates personal data visibility from export authorization', () => {
