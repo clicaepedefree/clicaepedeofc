@@ -5,6 +5,7 @@ import {
   assertCanRevokeStoreUser,
   assertCanUnsetPrimaryResponsible,
   getFallbackPrimaryResponsibleUserId,
+  normalizeStoreUserRole,
   roleHasStorePermission,
   storeUserRoleOptions,
   type StoreUserAccessState,
@@ -39,6 +40,11 @@ describe('store users policy', () => {
     expect(roleHasStorePermission('manager', 'store.users.manage')).toBe(false)
     expect(roleHasStorePermission('cashier', 'pos.operate')).toBe(true)
     expect(roleHasStorePermission('courier', 'reports.view')).toBe(false)
+  })
+
+  test('keeps legacy admin role compatible as owner during data reconciliation', () => {
+    expect(normalizeStoreUserRole('admin')).toBe('owner')
+    expect(roleHasStorePermission('admin', 'store.users.manage')).toBe(true)
   })
 
   test('blocks revoking the last active store user', () => {
