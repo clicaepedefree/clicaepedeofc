@@ -3,6 +3,7 @@ import { InternalStoreOverviewPanel } from '@/features/internal-operations/compo
 import {
   getInternalStoreOverview,
   listActiveBillingPlansForInternalCreation,
+  parseInternalStorePositiveInteger,
 } from '@/features/internal-operations/db'
 import { canRunInternalOperation } from '@/features/internal-operations/operation-permissions'
 import { notFound } from 'next/navigation'
@@ -14,6 +15,7 @@ type InternalStoreDetailPageProps = {
   searchParams: Promise<{
     tab?: string
     invoiceStatus?: string
+    auditPage?: string
     result?: string
     error?: string
   }>
@@ -25,8 +27,9 @@ export default async function InternalStoreDetailPage({
 }: InternalStoreDetailPageProps) {
   const operator = await requireInternalOperator('viewer')
   const { storeId } = await params
-  const { tab, invoiceStatus, result, error } = await searchParams
+  const { tab, invoiceStatus, auditPage, result, error } = await searchParams
   const parsedStoreId = Number(storeId)
+  const parsedAuditPage = parseInternalStorePositiveInteger(auditPage) ?? 1
 
   if (!Number.isInteger(parsedStoreId) || parsedStoreId <= 0) {
     notFound()
@@ -39,6 +42,7 @@ export default async function InternalStoreDetailPage({
         operation: 'manageBillingInvoices',
       }),
       invoiceStatus,
+      auditPage: parsedAuditPage,
       operator,
     }),
     listActiveBillingPlansForInternalCreation(),

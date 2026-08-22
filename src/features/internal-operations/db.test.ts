@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   applyDueStoreSubscriptionPlanChangeCandidates,
   buildInternalStoreInitialInvoiceNumber,
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
   getMonthlyContractedRevenue,
+  normalizeInternalAuditLogPagination,
   maskInternalStoreEmail,
   maskInternalStoreSensitiveDigits,
   parseInternalStoreAccessFilter,
@@ -83,6 +86,73 @@ describe('internal operation store policy', () => {
     expect(parseInternalStorePositiveInteger('-1')).toBe(undefined)
     expect(parseInternalStorePositiveInteger('1.5')).toBe(undefined)
     expect(parseInternalStorePositiveInteger('abc')).toBe(undefined)
+  })
+
+  test('normalizes store audit log pagination with safe limits', () => {
+    expect(
+      normalizeInternalAuditLogPagination({
+        page: 2,
+        perPage: 12,
+        totalItems: 31,
+      })
+    ).toEqual({
+      page: 2,
+      perPage: 12,
+      totalItems: 31,
+      totalPages: 3,
+      hasPreviousPage: true,
+      hasNextPage: true,
+    })
+
+    expect(
+      normalizeInternalAuditLogPagination({
+        page: -10,
+        perPage: 500,
+        totalItems: 3,
+      })
+    ).toEqual({
+      page: 1,
+      perPage: 50,
+      totalItems: 3,
+      totalPages: 1,
+      hasPreviousPage: false,
+      hasNextPage: false,
+    })
+  })
+
+  test('keeps internal operation audit logs append-only at the database layer', () => {
+    const migration = readFileSync(
+      join(
+        process.cwd(),
+        'supabase/migrations/20260822033000_kan79_internal_audit_append_only.sql'
+      ),
+      'utf8'
+    )
+
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION "reject_internal_operation_audit_log_mutation"()'
+    )
+    expect(migration).toContain(
+      'CREATE TRIGGER "internal_operation_audit_logs_append_only"'
+    )
+    expect(migration).toContain(
+      'BEFORE UPDATE OR DELETE ON "internal_operation_audit_logs"'
+    )
+    expect(migration).toContain(
+      'CREATE TRIGGER "internal_operation_audit_logs_no_truncate"'
+    )
+    expect(migration).toContain(
+      'BEFORE TRUNCATE ON "internal_operation_audit_logs"'
+    )
+    expect(migration).toContain(
+      'ALTER TABLE "internal_operation_audit_logs" FORCE ROW LEVEL SECURITY'
+    )
+    expect(migration).toContain(
+      'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE "internal_operation_audit_logs" FROM service_role'
+    )
+    expect(migration).toContain(
+      'GRANT SELECT, INSERT ON TABLE "internal_operation_audit_logs" TO service_role'
+    )
   })
 
   test('parses internal store date filters at day boundaries', () => {

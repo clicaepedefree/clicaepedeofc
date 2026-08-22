@@ -446,7 +446,9 @@ export function InternalStoreOverviewPanel({
       )}
       {activeTab === 'metricas' && <MetricasTab store={store} />}
       {activeTab === 'usuarios' && <UsuariosTab store={store} />}
-      {activeTab === 'historico' && <HistoricoTab store={store} />}
+      {activeTab === 'historico' && (
+        <HistoricoTab store={store} basePath={basePath} />
+      )}
     </div>
   )
 }
@@ -3909,49 +3911,138 @@ function UsuariosTab({ store }: { store: InternalStoreOverview }) {
   )
 }
 
-function HistoricoTab({ store }: { store: InternalStoreOverview }) {
-  const events = [
-    ...store.auditLogs.map(log => ({
-      id: `audit-${log.id}`,
-      label: log.action,
-      actor: log.actorEmail,
-      detail: `${log.previousStoreStatus} para ${log.newStoreStatus} - ${log.reason}`,
-      createdAt: log.createdAt,
-    })),
-    ...store.billingEvents.map(event => ({
-      id: `billing-${event.id}`,
-      label: event.eventType,
-      actor: event.actorEmail ?? 'sistema',
-      detail: event.reason ?? 'Evento financeiro registrado',
-      createdAt: event.createdAt,
-    })),
-  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+function HistoricoTab({
+  store,
+  basePath,
+}: {
+  store: InternalStoreOverview
+  basePath: string
+}) {
+  const auditPagination = store.auditLogs.pagination
+  const previousPageHref = `${basePath}?tab=historico&auditPage=${
+    auditPagination.page - 1
+  }`
+  const nextPageHref = `${basePath}?tab=historico&auditPage=${
+    auditPagination.page + 1
+  }`
+  const auditEvents = store.auditLogs.items.map(log => ({
+    id: `audit-${log.id}`,
+    label: log.action,
+    actor: log.actorEmail,
+    detail: `${log.previousStoreStatus} para ${log.newStoreStatus} - ${log.reason}`,
+    createdAt: log.createdAt,
+  }))
+  const billingEvents = store.billingEvents.map(event => ({
+    id: `billing-${event.id}`,
+    label: event.eventType,
+    actor: event.actorEmail ?? 'sistema',
+    detail: event.reason ?? 'Evento financeiro registrado',
+    createdAt: event.createdAt,
+  }))
 
-  if (events.length === 0) {
+  if (auditEvents.length === 0 && billingEvents.length === 0) {
     return <EmptyState>Nenhum evento registrado para esta loja.</EmptyState>
   }
 
   return (
     <div className="rounded-lg border bg-card">
-      <div className="divide-y">
-        {events.map(event => (
-          <div
-            key={event.id}
-            className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-start md:justify-between"
+      <div className="flex flex-col gap-3 border-b px-5 py-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Historico da loja</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pagina {auditPagination.page} de {auditPagination.totalPages} -{' '}
+            {auditPagination.totalItems} registros de auditoria interna.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            asChild={auditPagination.hasPreviousPage}
+            variant="outline"
+            size="sm"
+            disabled={!auditPagination.hasPreviousPage}
+            isClickable={auditPagination.hasPreviousPage}
           >
-            <div>
-              <Badge variant="outline">{event.label}</Badge>
-              <p className="mt-2 text-sm text-foreground">{event.detail}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {event.actor}
-              </p>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {formatDateTime(event.createdAt)}
-            </div>
-          </div>
-        ))}
+            {auditPagination.hasPreviousPage ? (
+              <Link href={previousPageHref}>Anterior</Link>
+            ) : (
+              'Anterior'
+            )}
+          </Button>
+          <Button
+            asChild={auditPagination.hasNextPage}
+            variant="outline"
+            size="sm"
+            disabled={!auditPagination.hasNextPage}
+            isClickable={auditPagination.hasNextPage}
+          >
+            {auditPagination.hasNextPage ? (
+              <Link href={nextPageHref}>Proxima</Link>
+            ) : (
+              'Proxima'
+            )}
+          </Button>
+        </div>
       </div>
+      <div className="divide-y">
+        {auditEvents.length === 0 ? (
+          <div className="px-5 py-6 text-sm text-muted-foreground">
+            Nenhum registro de auditoria interna nesta pagina.
+          </div>
+        ) : (
+          auditEvents.map(event => (
+            <div
+              key={event.id}
+              className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-start md:justify-between"
+            >
+              <div>
+                <Badge variant="outline">{event.label}</Badge>
+                <p className="mt-2 text-sm text-foreground">{event.detail}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {event.actor}
+                </p>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {formatDateTime(event.createdAt)}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {billingEvents.length > 0 && (
+        <div className="border-t">
+          <div className="px-5 py-4">
+            <h3 className="text-sm font-semibold">
+              Eventos financeiros recentes
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Lista fixa dos eventos financeiros mais novos para contexto; a
+              paginacao acima controla somente auditoria interna.
+            </p>
+          </div>
+          <div className="divide-y">
+            {billingEvents.map(event => (
+              <div
+                key={event.id}
+                className="flex flex-col gap-2 px-5 py-4 md:flex-row md:items-start md:justify-between"
+              >
+                <div>
+                  <Badge variant="outline">{event.label}</Badge>
+                  <p className="mt-2 text-sm text-foreground">
+                    {event.detail}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {event.actor}
+                  </p>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {formatDateTime(event.createdAt)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
