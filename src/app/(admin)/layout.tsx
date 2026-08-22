@@ -1,8 +1,4 @@
 import { AdminHeader } from '@/features/admin/components/admin-header'
-import {
-  canAccessInternalOperations,
-  getInternalOperatorSafe,
-} from '@/features/internal-operations/access'
 import { validateAdminAccess } from '@/features/store/api'
 import { PostHogProvider } from '@/services/product-management/provider'
 import { AppSidebar } from '@/shared/sidebar/app-sidebar'
@@ -107,21 +103,12 @@ export default async function AdminLayout({
   children: React.ReactNode
 }) {
   await validateAdminAccess()
-  const internalOperator = await getInternalOperatorSafe()
-  const internalOperationHref =
-    internalOperator &&
-    canAccessInternalOperations({
-      operator: internalOperator,
-    })
-      ? '/internal-operations'
-      : undefined
 
   return (
     <AuthProviders clerkProviderProps={{ afterSignOutUrl: '/login' }}>
       <SidebarProvider>
         <AppSidebar
           menuItems={adminMenuItems}
-          internalOperationHref={internalOperationHref}
           collapsible="icon"
         />
         <SidebarInset>
