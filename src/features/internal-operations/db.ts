@@ -206,6 +206,18 @@ export type InternalStoreListItem = Pick<
 export type InternalAuditLog =
   typeof internalOperationAuditLogsTable.$inferSelect
 
+export type InternalAuditLogListResult = {
+  items: InternalAuditLog[]
+  pagination: {
+    page: number
+    perPage: number
+    totalItems: number
+    totalPages: number
+    hasPreviousPage: boolean
+    hasNextPage: boolean
+  }
+}
+
 export type InternalBillingPlanOption = {
   id: number
   code: string
@@ -524,7 +536,7 @@ export type InternalStoreOverview = Pick<
     lastOrderAt: Date | null
     lastAccessAt: Date | null
   }
-  auditLogs: InternalAuditLog[]
+  auditLogs: InternalAuditLogListResult
   billingEvents: {
     id: number
     eventType: string
@@ -554,6 +566,8 @@ const accessFilterValues: InternalStoreAccessFilter[] = [
 
 export const internalStoreListDefaultPerPage = 25
 export const internalStoreListMaxPerPage = 50
+export const internalStoreAuditLogDefaultPerPage = 12
+export const internalStoreAuditLogMaxPerPage = 50
 
 const subscriptionStatusValues = [
   'trialing',
@@ -661,6 +675,32 @@ export function parseInternalStorePositiveInteger(value: unknown) {
   }
 
   return parsed
+}
+
+export function normalizeInternalAuditLogPagination({
+  page = 1,
+  perPage = internalStoreAuditLogDefaultPerPage,
+  totalItems,
+}: {
+  page?: number
+  perPage?: number
+  totalItems: number
+}): InternalAuditLogListResult['pagination'] {
+  const safePerPage = Math.min(
+    internalStoreAuditLogMaxPerPage,
+    Math.max(1, perPage)
+  )
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePerPage))
+  const currentPage = Math.min(Math.max(1, page), totalPages)
+
+  return {
+    page: currentPage,
+    perPage: safePerPage,
+    totalItems,
+    totalPages,
+    hasPreviousPage: currentPage > 1,
+    hasNextPage: currentPage < totalPages,
+  }
 }
 
 export function parseInternalStoreDateFilter(
@@ -1956,6 +1996,8 @@ export async function getInternalStoreOverview(
   options: {
     includeBillingInvoices?: boolean
     invoiceStatus?: string
+    auditPage?: number
+    auditPerPage?: number
     operator?: Pick<InternalOperator, 'role'> | null
   } = {}
 ): Promise<InternalStoreOverview | null> {
@@ -2066,7 +2108,7 @@ export async function getInternalStoreOverview(
     moduleEntitlementRows,
     userRows,
     metricsRows,
-    auditLogs,
+    auditLogResult,
     billingEvents,
     accessBlockRows,
     pendingPlanChangeRows,
@@ -2184,12 +2226,12 @@ export async function getInternalStoreOverview(
       })
       .from(ordersTable)
       .where(eq(ordersTable.storeId, storeId)),
-    db
-      .select()
-      .from(internalOperationAuditLogsTable)
-      .where(eq(internalOperationAuditLogsTable.storeId, storeId))
-      .orderBy(desc(internalOperationAuditLogsTable.createdAt))
-      .limit(12),
+    listInternalStoreAuditLogs({
+      storeId,
+      page: options.auditPage,
+      perPage: options.auditPerPage,
+      operator: options.operator,
+    }),
     db
       .select({
         id: storeBillingEventsTable.id,
@@ -2647,9 +2689,7 @@ export async function getInternalStoreOverview(
       lastOrderAt: metrics?.lastOrderAt ?? null,
       lastAccessAt,
     },
-    auditLogs: auditLogs.map(log =>
-      protectInternalAuditLog(log, canViewPersonalData)
-    ),
+    auditLogs: auditLogResult,
     billingEvents: billingEvents.map(event => ({
       ...event,
       actorEmail: protectInternalPersonalEmail({
@@ -3336,6 +3376,48 @@ export async function getRecentInternalAuditLogs(
     .limit(limit)
 
   return logs.map(log => protectInternalAuditLog(log, canViewPersonalData))
+}
+
+export async function listInternalStoreAuditLogs({
+  storeId,
+  page = 1,
+  perPage = internalStoreAuditLogDefaultPerPage,
+  operator,
+}: {
+  storeId: number
+  page?: number
+  perPage?: number
+  operator?: Pick<InternalOperator, 'role'> | null
+}): Promise<InternalAuditLogListResult> {
+  const canViewPersonalData = canViewInternalPersonalData(operator ?? null)
+  const [{ totalItems }] = await db
+    .select({
+      totalItems: count(internalOperationAuditLogsTable.id),
+    })
+    .from(internalOperationAuditLogsTable)
+    .where(eq(internalOperationAuditLogsTable.storeId, storeId))
+
+  const pagination = normalizeInternalAuditLogPagination({
+    page,
+    perPage,
+    totalItems,
+  })
+
+  const logs = await db
+    .select()
+    .from(internalOperationAuditLogsTable)
+    .where(eq(internalOperationAuditLogsTable.storeId, storeId))
+    .orderBy(
+      desc(internalOperationAuditLogsTable.createdAt),
+      desc(internalOperationAuditLogsTable.id)
+    )
+    .limit(pagination.perPage)
+    .offset((pagination.page - 1) * pagination.perPage)
+
+  return {
+    items: logs.map(log => protectInternalAuditLog(log, canViewPersonalData)),
+    pagination,
+  }
 }
 
 export async function listActiveBillingPlansForInternalCreation(): Promise<
