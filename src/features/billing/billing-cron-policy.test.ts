@@ -124,6 +124,7 @@ describe('billing cron policy', () => {
     expect(
       isBillingCronRunSuccessful({
         recurring: successful,
+        planChanges: successful,
         reminders: successful,
         delinquencyBlocks: successful,
         gatewayWebhooks: successful,
@@ -133,6 +134,17 @@ describe('billing cron policy', () => {
     expect(
       isBillingCronRunSuccessful({
         recurring: successful,
+        planChanges: { failed: 1 },
+        reminders: successful,
+        delinquencyBlocks: successful,
+        gatewayWebhooks: successful,
+        gatewayReconciliation: { divergences: 0 },
+      })
+    ).toBe(false)
+    expect(
+      isBillingCronRunSuccessful({
+        recurring: successful,
+        planChanges: successful,
         reminders: { failed: 1 },
         delinquencyBlocks: successful,
         gatewayWebhooks: successful,
@@ -142,6 +154,7 @@ describe('billing cron policy', () => {
     expect(
       isBillingCronRunSuccessful({
         recurring: successful,
+        planChanges: successful,
         reminders: successful,
         delinquencyBlocks: successful,
         gatewayWebhooks: { failed: 1 },
@@ -151,6 +164,7 @@ describe('billing cron policy', () => {
     expect(
       isBillingCronRunSuccessful({
         recurring: successful,
+        planChanges: successful,
         reminders: successful,
         delinquencyBlocks: successful,
         gatewayWebhooks: successful,
