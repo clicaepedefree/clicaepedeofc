@@ -76,12 +76,14 @@ export function authorizeBillingCronRequest({
 
 export function isBillingCronRunSuccessful({
   recurring,
+  planChanges,
   reminders,
   delinquencyBlocks,
   gatewayWebhooks,
   gatewayReconciliation,
 }: {
   recurring: BillingCronCycleResult
+  planChanges: BillingCronCycleResult
   reminders: BillingCronCycleResult
   delinquencyBlocks: BillingCronCycleResult
   gatewayWebhooks: BillingCronCycleResult
@@ -89,6 +91,7 @@ export function isBillingCronRunSuccessful({
 }) {
   return (
     recurring.failed === 0 &&
+    planChanges.failed === 0 &&
     reminders.failed === 0 &&
     delinquencyBlocks.failed === 0 &&
     gatewayWebhooks.failed === 0 &&

@@ -5702,15 +5702,100 @@ export async function changeStoreSubscriptionPlan({
   })
 }
 
+export type DueStoreSubscriptionPlanChangeCycleResult = {
+  processedPlanChanges: number
+  applied: number
+  failed: number
+  processed: Array<{
+    planChangeId: number
+    status: 'applied' | 'failed'
+    storeId?: number
+    subscriptionId?: number
+    reason?: string
+  }>
+}
+
+const toFailureMessage = (error: unknown) =>
+  error instanceof Error ? error.message : 'Erro desconhecido'
+
+type DueStoreSubscriptionPlanChangeCandidate = {
+  id: number
+  storeId: number
+}
+
+type ApplyScheduledStoreSubscriptionPlanChangeFn = ({
+  planChangeId,
+  now,
+}: {
+  planChangeId: number
+  now?: Date
+}) => Promise<{
+  planChange: {
+    id: number
+    storeId: number
+  }
+  appliedSubscription: {
+    id: number
+  }
+}>
+
+export async function applyDueStoreSubscriptionPlanChangeCandidates({
+  candidates,
+  now = new Date(),
+  applyPlanChange = applyScheduledStoreSubscriptionPlanChange,
+}: {
+  candidates: DueStoreSubscriptionPlanChangeCandidate[]
+  now?: Date
+  applyPlanChange?: ApplyScheduledStoreSubscriptionPlanChangeFn
+}): Promise<DueStoreSubscriptionPlanChangeCycleResult> {
+  const result: DueStoreSubscriptionPlanChangeCycleResult = {
+    processedPlanChanges: 0,
+    applied: 0,
+    failed: 0,
+    processed: [],
+  }
+
+  for (const planChange of candidates) {
+    try {
+      const applied = await applyPlanChange({
+        planChangeId: planChange.id,
+        now,
+      })
+      result.processedPlanChanges += 1
+      result.applied += 1
+      result.processed.push({
+        planChangeId: applied.planChange.id,
+        storeId: applied.planChange.storeId,
+        subscriptionId: applied.appliedSubscription.id,
+        status: 'applied',
+      })
+    } catch (error) {
+      result.processedPlanChanges += 1
+      result.failed += 1
+      result.processed.push({
+        planChangeId: planChange.id,
+        storeId: planChange.storeId,
+        status: 'failed',
+        reason: toFailureMessage(error),
+      })
+    }
+  }
+
+  return result
+}
+
 export async function applyDueStoreSubscriptionPlanChanges({
   now = new Date(),
   limit = 25,
 }: {
   now?: Date
   limit?: number
-} = {}) {
+} = {}): Promise<DueStoreSubscriptionPlanChangeCycleResult> {
   const duePlanChanges = await db
-    .select({ id: storeSubscriptionPlanChangesTable.id })
+    .select({
+      id: storeSubscriptionPlanChangesTable.id,
+      storeId: storeSubscriptionPlanChangesTable.storeId,
+    })
     .from(storeSubscriptionPlanChangesTable)
     .where(
       and(
@@ -5719,20 +5804,12 @@ export async function applyDueStoreSubscriptionPlanChanges({
       )
     )
     .orderBy(storeSubscriptionPlanChangesTable.effectiveAt)
-    .limit(Math.max(1, Math.min(100, limit)))
+    .limit(Math.max(1, Math.min(500, limit)))
 
-  const results = []
-
-  for (const planChange of duePlanChanges) {
-    results.push(
-      await applyScheduledStoreSubscriptionPlanChange({
-        planChangeId: planChange.id,
-        now,
-      })
-    )
-  }
-
-  return results
+  return applyDueStoreSubscriptionPlanChangeCandidates({
+    candidates: duePlanChanges,
+    now,
+  })
 }
 
 export async function applyScheduledStoreSubscriptionPlanChange({

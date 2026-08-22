@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  applyDueStoreSubscriptionPlanChangeCandidates,
   buildInternalStoreInitialInvoiceNumber,
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
@@ -257,5 +258,57 @@ describe('internal operation store policy', () => {
     expect(firstHash).toHaveLength(64)
     expect(secondHash).toBe(firstHash)
     expect(changedPayloadHash === firstHash).toBe(false)
+  })
+
+  test('records scheduled plan change batch evidence for partial failures', async () => {
+    const result = await applyDueStoreSubscriptionPlanChangeCandidates({
+      candidates: [
+        { id: 73_101, storeId: 73_001 },
+        { id: 73_102, storeId: 73_002 },
+        { id: 73_103, storeId: 73_003 },
+      ],
+      now: new Date('2026-08-21T12:00:00.000Z'),
+      applyPlanChange: async ({ planChangeId }) => {
+        if (planChangeId === 73_102) {
+          throw new Error('PLAN_CHANGE_REQUIRES_ACTIVE_SUBSCRIPTION')
+        }
+
+        return {
+          planChange: {
+            id: planChangeId,
+            storeId: planChangeId === 73_101 ? 73_001 : 73_003,
+          },
+          appliedSubscription: {
+            id: planChangeId === 73_101 ? 88_001 : 88_003,
+          },
+        }
+      },
+    })
+
+    expect(result).toEqual({
+      processedPlanChanges: 3,
+      applied: 2,
+      failed: 1,
+      processed: [
+        {
+          planChangeId: 73_101,
+          storeId: 73_001,
+          subscriptionId: 88_001,
+          status: 'applied',
+        },
+        {
+          planChangeId: 73_102,
+          storeId: 73_002,
+          status: 'failed',
+          reason: 'PLAN_CHANGE_REQUIRES_ACTIVE_SUBSCRIPTION',
+        },
+        {
+          planChangeId: 73_103,
+          storeId: 73_003,
+          subscriptionId: 88_003,
+          status: 'applied',
+        },
+      ],
+    })
   })
 })
