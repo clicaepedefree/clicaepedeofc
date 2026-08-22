@@ -12,7 +12,8 @@
     "lint": "next lint",
     "test": "bun test",
     "db": "drizzle-kit studio & open https://local.drizzle.studio",
-    "db:sync-prod": "bash scripts/sync-prod-data.sh"
+    "db:sync-prod": "bash scripts/sync-prod-data.sh",
+    "internal:migration-readiness": "bun scripts/kan75-data-migration-readiness.ts"
   },
   "dependencies": {
     "@clerk/localizations": "^3.12.0",
