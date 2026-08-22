@@ -90,6 +90,87 @@ export type InternalOperator = {
   role: InternalRole
 }
 
+export const internalOperationsRolloutModes = ['off', 'pilot', 'all'] as const
+
+export type InternalOperationsRolloutMode =
+  (typeof internalOperationsRolloutModes)[number]
+
+export type InternalOperationsRolloutConfig = {
+  mode: InternalOperationsRolloutMode
+  pilotEmails: ReadonlySet<string>
+  pilotRoles: ReadonlySet<InternalRole>
+}
+
+const splitRolloutList = (value: string | null | undefined) =>
+  (value ?? '')
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean)
+
+export function parseInternalOperationsRolloutMode(
+  value: unknown
+): InternalOperationsRolloutMode {
+  if (typeof value !== 'string') return 'all'
+
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return 'all'
+
+  return internalOperationsRolloutModes.includes(
+    normalized as InternalOperationsRolloutMode
+  )
+    ? (normalized as InternalOperationsRolloutMode)
+    : 'off'
+}
+
+export function resolveInternalOperationsRolloutConfig(
+  env: Record<string, string | undefined> = process.env
+): InternalOperationsRolloutConfig {
+  return {
+    mode: parseInternalOperationsRolloutMode(
+      env.INTERNAL_OPERATIONS_ROLLOUT_MODE
+    ),
+    pilotEmails: new Set(splitRolloutList(env.INTERNAL_OPERATIONS_PILOT_EMAILS)),
+    pilotRoles: new Set(
+      splitRolloutList(env.INTERNAL_OPERATIONS_PILOT_ROLES)
+        .map(parseInternalRole)
+        .filter((role): role is InternalRole => role !== null)
+    ),
+  }
+}
+
+export function isInternalOperationsRolloutAllowed({
+  operator,
+  config = resolveInternalOperationsRolloutConfig(),
+}: {
+  operator: Pick<InternalOperator, 'email' | 'role'> | null
+  config?: InternalOperationsRolloutConfig
+}) {
+  if (!operator) return false
+  if (config.mode === 'off') return false
+  if (config.mode === 'all') return true
+
+  return (
+    config.pilotEmails.has(operator.email.trim().toLowerCase()) ||
+    config.pilotRoles.has(operator.role)
+  )
+}
+
+export function canAccessInternalOperations({
+  operator,
+  config,
+}: {
+  operator: Pick<InternalOperator, 'email' | 'role'> | null
+  config?: InternalOperationsRolloutConfig
+}) {
+  return (
+    isInternalOperationsRolloutAllowed({ operator, config }) &&
+    canUseInternalPermission({
+      currentRole: operator?.role ?? null,
+      permission: 'view_internal_operations',
+    })
+  )
+}
+
 export function parseInternalRole(value: unknown): InternalRole | null {
   if (typeof value !== 'string') return null
 
@@ -198,6 +279,7 @@ export async function requireInternalPermission(
 
   if (
     !operator ||
+    !isInternalOperationsRolloutAllowed({ operator }) ||
     !canUseInternalPermission({ currentRole: operator.role, permission })
   ) {
     redirect('/unauthorized')
@@ -213,6 +295,7 @@ export async function requireInternalOperator(
 
   if (
     !operator ||
+    !isInternalOperationsRolloutAllowed({ operator }) ||
     !canUseInternalRole({ currentRole: operator.role, minimumRole })
   ) {
     redirect('/unauthorized')

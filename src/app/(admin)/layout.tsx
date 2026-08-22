@@ -1,6 +1,6 @@
 import { AdminHeader } from '@/features/admin/components/admin-header'
 import {
-  canUseInternalPermission,
+  canAccessInternalOperations,
   getInternalOperatorSafe,
 } from '@/features/internal-operations/access'
 import { validateAdminAccess } from '@/features/store/api'
@@ -110,9 +110,8 @@ export default async function AdminLayout({
   const internalOperator = await getInternalOperatorSafe()
   const internalOperationHref =
     internalOperator &&
-    canUseInternalPermission({
-      currentRole: internalOperator.role,
-      permission: 'view_internal_operations',
+    canAccessInternalOperations({
+      operator: internalOperator,
     })
       ? '/internal-operations'
       : undefined
