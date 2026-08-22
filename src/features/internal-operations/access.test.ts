@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  canAccessInternalOperations,
   canUseInternalPermission,
   canUseInternalRole,
   canExportInternalPersonalData,
   canViewInternalPersonalData,
   internalPermissions,
+  internalOperationsRolloutModes,
   internalRoles,
+  isInternalOperationsRolloutAllowed,
   parseInternalRole,
+  parseInternalOperationsRolloutMode,
   requireInternalPersonalDataExportPermission,
+  resolveInternalOperationsRolloutConfig,
   type InternalPermission,
   type InternalRole,
 } from './access'
@@ -302,5 +307,142 @@ describe('internal operation access policy', () => {
     expect(() =>
       requireInternalPersonalDataExportPermission({ role: 'superadmin' })
     ).not.toThrow()
+  })
+
+  test('defines rollout modes for controlled internal operations release', () => {
+    expect(internalOperationsRolloutModes).toEqual(['off', 'pilot', 'all'])
+    expect(parseInternalOperationsRolloutMode('off')).toBe('off')
+    expect(parseInternalOperationsRolloutMode('pilot')).toBe('pilot')
+    expect(parseInternalOperationsRolloutMode('all')).toBe('all')
+    expect(parseInternalOperationsRolloutMode('unknown')).toBe('off')
+    expect(parseInternalOperationsRolloutMode(' ')).toBe('all')
+    expect(parseInternalOperationsRolloutMode(undefined)).toBe('all')
+  })
+
+  test('resolves pilot rollout groups from roles and emails', () => {
+    const config = resolveInternalOperationsRolloutConfig({
+      INTERNAL_OPERATIONS_ROLLOUT_MODE: 'pilot',
+      INTERNAL_OPERATIONS_PILOT_EMAILS:
+        ' ops@example.com,FINANCEIRO@EXAMPLE.COM ',
+      INTERNAL_OPERATIONS_PILOT_ROLES:
+        'superadmin, implementation,ops_admin,invalid',
+    })
+
+    expect(config.mode).toBe('pilot')
+    expect([...config.pilotEmails]).toEqual([
+      'ops@example.com',
+      'financeiro@example.com',
+    ])
+    expect([...config.pilotRoles]).toEqual(['superadmin', 'implementation'])
+  })
+
+  test('allows internal operations by rollout mode before role permissions', () => {
+    const operator = {
+      email: 'ops@example.com',
+      role: 'viewer',
+    } satisfies { email: string; role: InternalRole }
+
+    expect(
+      isInternalOperationsRolloutAllowed({
+        operator,
+        config: {
+          mode: 'off',
+          pilotEmails: new Set(['ops@example.com']),
+          pilotRoles: new Set(['viewer']),
+        },
+      })
+    ).toBe(false)
+
+    expect(
+      isInternalOperationsRolloutAllowed({
+        operator,
+        config: {
+          mode: 'all',
+          pilotEmails: new Set(),
+          pilotRoles: new Set(),
+        },
+      })
+    ).toBe(true)
+
+    expect(
+      isInternalOperationsRolloutAllowed({
+        operator,
+        config: {
+          mode: 'pilot',
+          pilotEmails: new Set(['ops@example.com']),
+          pilotRoles: new Set(),
+        },
+      })
+    ).toBe(true)
+
+    expect(
+      isInternalOperationsRolloutAllowed({
+        operator,
+        config: {
+          mode: 'pilot',
+          pilotEmails: new Set(),
+          pilotRoles: new Set(['viewer']),
+        },
+      })
+    ).toBe(true)
+
+    expect(
+      isInternalOperationsRolloutAllowed({
+        operator,
+        config: {
+          mode: 'pilot',
+          pilotEmails: new Set(['other@example.com']),
+          pilotRoles: new Set(['support']),
+        },
+      })
+    ).toBe(false)
+  })
+
+  test('requires rollout and view permission to expose internal operations', () => {
+    const allConfig = {
+      mode: 'all',
+      pilotEmails: new Set<string>(),
+      pilotRoles: new Set<InternalRole>(),
+    } as const
+    const pilotConfig = {
+      mode: 'pilot',
+      pilotEmails: new Set(['ops@example.com']),
+      pilotRoles: new Set<InternalRole>(),
+    } as const
+
+    expect(
+      canAccessInternalOperations({
+        operator: { email: 'ops@example.com', role: 'viewer' },
+        config: allConfig,
+      })
+    ).toBe(true)
+    expect(
+      canAccessInternalOperations({
+        operator: { email: 'ops@example.com', role: 'viewer' },
+        config: pilotConfig,
+      })
+    ).toBe(true)
+    expect(
+      canAccessInternalOperations({
+        operator: { email: 'outside@example.com', role: 'viewer' },
+        config: pilotConfig,
+      })
+    ).toBe(false)
+    expect(
+      canAccessInternalOperations({
+        operator: { email: 'ops@example.com', role: 'sales' },
+        config: {
+          mode: 'off',
+          pilotEmails: new Set(['ops@example.com']),
+          pilotRoles: new Set(['sales']),
+        },
+      })
+    ).toBe(false)
+    expect(
+      canAccessInternalOperations({
+        operator: null,
+        config: allConfig,
+      })
+    ).toBe(false)
   })
 })
