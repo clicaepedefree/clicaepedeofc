@@ -31,7 +31,9 @@ import {
   storeAddressesTable,
   storeBillingAdjustmentsTable,
   storeBillingEventsTable,
+  storeBillingGatewayEventsTable,
   storeBillingInvoicesTable,
+  storeBillingReconciliationIssuesTable,
   storeBillingReminderDeliveriesTable,
   storeCompanyProfilesTable,
   storeImplementationChecklistItemsTable,
@@ -114,6 +116,18 @@ import {
   normalizeModuleAdditionalAmount,
   type StoreModuleManagementValues,
 } from './store-module-management-policy'
+import {
+  buildOperationalMonitoringSummary,
+  exhaustedRetryThreshold,
+  getOperationalAlertSeverity,
+  getOperationalRunbook,
+  redactOperationalCorrelationId,
+  sanitizeOperationalAlertDetail,
+  type OperationalAlertSeverity,
+  type OperationalMonitoringAlert,
+  type OperationalMonitoringSummary,
+  type OperationalQueueSnapshot,
+} from './operational-monitoring-policy'
 import {
   assertManualBillingActionAllowed,
   calculateManualInvoiceAdjustment,
@@ -1141,6 +1155,503 @@ export async function getInternalStoreDashboardIndicators({
     indicators.totalStores - storesWithActiveAdmin.size
 
   return indicators
+}
+
+type StoreReference = {
+  id: number | null
+  name: string | null
+  subdomain: string | null
+}
+
+export type OperationalMonitoringSnapshot = {
+  generatedAt: Date
+  summary: OperationalMonitoringSummary
+  queues: OperationalQueueSnapshot[]
+  alerts: OperationalMonitoringAlert[]
+}
+
+const getStoreReference = (
+  storesById: Map<number, StoreReference>,
+  storeId: number | null
+) =>
+  storeId ? storesById.get(storeId) ?? null : null
+
+const minutesSince = (date: Date | null, now: Date) => {
+  if (!date) return null
+
+  return Math.max(0, Math.floor((now.getTime() - date.getTime()) / 60_000))
+}
+
+const normalizeOperationalAlertSeverity = (
+  severity: string
+): OperationalAlertSeverity => {
+  if (severity === 'critical' || severity === 'warning') return severity
+  return 'info'
+}
+
+export async function getOperationalMonitoringSnapshot({
+  now = new Date(),
+  limit = 50,
+}: {
+  now?: Date
+  limit?: number
+} = {}): Promise<OperationalMonitoringSnapshot> {
+  const safeLimit = Math.max(10, Math.min(100, limit))
+
+  const [
+    gatewayRows,
+    reconciliationRows,
+    reminderRows,
+    accessBlockRows,
+    overdueInvoiceRows,
+    planChangeRows,
+    gatewayMetricsRows,
+    reminderMetricsRows,
+    reconciliationMetricsRows,
+    planChangeMetricsRows,
+  ] = await Promise.all([
+    db
+      .select({
+        id: storeBillingGatewayEventsTable.id,
+        provider: storeBillingGatewayEventsTable.provider,
+        providerEventId: storeBillingGatewayEventsTable.providerEventId,
+        eventType: storeBillingGatewayEventsTable.eventType,
+        status: storeBillingGatewayEventsTable.status,
+        storeId: storeBillingGatewayEventsTable.storeId,
+        invoiceId: storeBillingGatewayEventsTable.invoiceId,
+        invoiceNumber: storeBillingGatewayEventsTable.invoiceNumber,
+        attempts: storeBillingGatewayEventsTable.attempts,
+        nextAttemptAt: storeBillingGatewayEventsTable.nextAttemptAt,
+        lastError: storeBillingGatewayEventsTable.lastError,
+        createdAt: storeBillingGatewayEventsTable.createdAt,
+        updatedAt: storeBillingGatewayEventsTable.updatedAt,
+      })
+      .from(storeBillingGatewayEventsTable)
+      .where(
+        inArray(storeBillingGatewayEventsTable.status, ['queued', 'failed'])
+      )
+      .orderBy(
+        desc(storeBillingGatewayEventsTable.status),
+        desc(storeBillingGatewayEventsTable.updatedAt)
+      )
+      .limit(safeLimit),
+    db
+      .select({
+        id: storeBillingReconciliationIssuesTable.id,
+        storeId: storeBillingReconciliationIssuesTable.storeId,
+        invoiceId: storeBillingReconciliationIssuesTable.invoiceId,
+        gatewayEventId: storeBillingReconciliationIssuesTable.gatewayEventId,
+        provider: storeBillingReconciliationIssuesTable.provider,
+        providerEventId: storeBillingReconciliationIssuesTable.providerEventId,
+        issueType: storeBillingReconciliationIssuesTable.issueType,
+        severity: storeBillingReconciliationIssuesTable.severity,
+        reason: storeBillingReconciliationIssuesTable.reason,
+        createdAt: storeBillingReconciliationIssuesTable.createdAt,
+        updatedAt: storeBillingReconciliationIssuesTable.updatedAt,
+      })
+      .from(storeBillingReconciliationIssuesTable)
+      .where(eq(storeBillingReconciliationIssuesTable.status, 'open'))
+      .orderBy(desc(storeBillingReconciliationIssuesTable.createdAt))
+      .limit(safeLimit),
+    db
+      .select({
+        id: storeBillingReminderDeliveriesTable.id,
+        storeId: storeBillingReminderDeliveriesTable.storeId,
+        invoiceId: storeBillingReminderDeliveriesTable.invoiceId,
+        channel: storeBillingReminderDeliveriesTable.channel,
+        status: storeBillingReminderDeliveriesTable.status,
+        scheduledFor: storeBillingReminderDeliveriesTable.scheduledFor,
+        failureReason: storeBillingReminderDeliveriesTable.failureReason,
+        createdAt: storeBillingReminderDeliveriesTable.createdAt,
+        updatedAt: storeBillingReminderDeliveriesTable.updatedAt,
+      })
+      .from(storeBillingReminderDeliveriesTable)
+      .where(
+        inArray(storeBillingReminderDeliveriesTable.status, [
+          'queued',
+          'failed',
+        ])
+      )
+      .orderBy(desc(storeBillingReminderDeliveriesTable.updatedAt))
+      .limit(safeLimit),
+    db
+      .select({
+        id: storeAccessBlocksTable.id,
+        storeId: storeAccessBlocksTable.storeId,
+        source: storeAccessBlocksTable.source,
+        invoiceId: storeAccessBlocksTable.invoiceId,
+        reasonCode: storeAccessBlocksTable.reasonCode,
+        blockedAt: storeAccessBlocksTable.blockedAt,
+        scheduledUnblockAt: storeAccessBlocksTable.scheduledUnblockAt,
+      })
+      .from(storeAccessBlocksTable)
+      .where(
+        and(
+          sql`${storeAccessBlocksTable.unblockedAt} is null`,
+          or(
+            sql`${storeAccessBlocksTable.scheduledUnblockAt} is null`,
+            sql`${storeAccessBlocksTable.scheduledUnblockAt} > ${now}`
+          )
+        )
+      )
+      .orderBy(desc(storeAccessBlocksTable.blockedAt))
+      .limit(safeLimit),
+    db
+      .select({
+        id: storeBillingInvoicesTable.id,
+        storeId: storeBillingInvoicesTable.storeId,
+        invoiceNumber: storeBillingInvoicesTable.invoiceNumber,
+        status: storeBillingInvoicesTable.status,
+        dueAt: storeBillingInvoicesTable.dueAt,
+        totalAmount: storeBillingInvoicesTable.totalAmount,
+        amountPaid: storeBillingInvoicesTable.amountPaid,
+      })
+      .from(storeBillingInvoicesTable)
+      .where(
+        and(
+          inArray(storeBillingInvoicesTable.status, ['pending', 'overdue']),
+          lte(storeBillingInvoicesTable.dueAt, now)
+        )
+      )
+      .orderBy(storeBillingInvoicesTable.dueAt)
+      .limit(safeLimit),
+    db
+      .select({
+        id: storeSubscriptionPlanChangesTable.id,
+        storeId: storeSubscriptionPlanChangesTable.storeId,
+        subscriptionId: storeSubscriptionPlanChangesTable.subscriptionId,
+        status: storeSubscriptionPlanChangesTable.status,
+        effectiveAt: storeSubscriptionPlanChangesTable.effectiveAt,
+        updatedAt: storeSubscriptionPlanChangesTable.updatedAt,
+      })
+      .from(storeSubscriptionPlanChangesTable)
+      .where(
+        and(
+          eq(storeSubscriptionPlanChangesTable.status, 'scheduled'),
+          lte(storeSubscriptionPlanChangesTable.effectiveAt, now)
+        )
+      )
+      .orderBy(storeSubscriptionPlanChangesTable.effectiveAt)
+      .limit(safeLimit),
+    db
+      .select({
+        queued:
+          sql<number>`count(*) filter (where ${storeBillingGatewayEventsTable.status} = 'queued')::integer`,
+        failed:
+          sql<number>`count(*) filter (where ${storeBillingGatewayEventsTable.status} = 'failed')::integer`,
+        oldestQueuedAt:
+          sql<Date | null>`min(${storeBillingGatewayEventsTable.nextAttemptAt}) filter (where ${storeBillingGatewayEventsTable.status} = 'queued')`,
+        maxAttempts: sql<number>`coalesce(max(${storeBillingGatewayEventsTable.attempts}), 0)::integer`,
+      })
+      .from(storeBillingGatewayEventsTable)
+      .where(
+        inArray(storeBillingGatewayEventsTable.status, ['queued', 'failed'])
+      ),
+    db
+      .select({
+        queued:
+          sql<number>`count(*) filter (where ${storeBillingReminderDeliveriesTable.status} = 'queued')::integer`,
+        failed:
+          sql<number>`count(*) filter (where ${storeBillingReminderDeliveriesTable.status} = 'failed')::integer`,
+        oldestQueuedAt:
+          sql<Date | null>`min(${storeBillingReminderDeliveriesTable.scheduledFor}) filter (where ${storeBillingReminderDeliveriesTable.status} = 'queued')`,
+      })
+      .from(storeBillingReminderDeliveriesTable)
+      .where(
+        inArray(storeBillingReminderDeliveriesTable.status, [
+          'queued',
+          'failed',
+        ])
+      ),
+    db
+      .select({
+        queued: count(storeBillingReconciliationIssuesTable.id),
+        failed:
+          sql<number>`count(*) filter (where ${storeBillingReconciliationIssuesTable.severity} = 'critical')::integer`,
+        oldestQueuedAt:
+          sql<Date | null>`min(${storeBillingReconciliationIssuesTable.createdAt})`,
+      })
+      .from(storeBillingReconciliationIssuesTable)
+      .where(eq(storeBillingReconciliationIssuesTable.status, 'open')),
+    db
+      .select({
+        queued: count(storeSubscriptionPlanChangesTable.id),
+        oldestQueuedAt:
+          sql<Date | null>`min(${storeSubscriptionPlanChangesTable.effectiveAt})`,
+      })
+      .from(storeSubscriptionPlanChangesTable)
+      .where(
+        and(
+          eq(storeSubscriptionPlanChangesTable.status, 'scheduled'),
+          lte(storeSubscriptionPlanChangesTable.effectiveAt, now)
+        )
+      ),
+  ])
+
+  const gatewayMetrics = gatewayMetricsRows[0] ?? {
+    queued: 0,
+    failed: 0,
+    oldestQueuedAt: null,
+    maxAttempts: 0,
+  }
+  const reminderMetrics = reminderMetricsRows[0] ?? {
+    queued: 0,
+    failed: 0,
+    oldestQueuedAt: null,
+  }
+  const reconciliationMetrics = reconciliationMetricsRows[0] ?? {
+    queued: 0,
+    failed: 0,
+    oldestQueuedAt: null,
+  }
+  const planChangeMetrics = planChangeMetricsRows[0] ?? {
+    queued: 0,
+    oldestQueuedAt: null,
+  }
+
+  const storeIds = Array.from(
+    new Set(
+      [
+        ...gatewayRows.map(row => row.storeId),
+        ...reconciliationRows.map(row => row.storeId),
+        ...reminderRows.map(row => row.storeId),
+        ...accessBlockRows.map(row => row.storeId),
+        ...overdueInvoiceRows.map(row => row.storeId),
+        ...planChangeRows.map(row => row.storeId),
+      ].filter((storeId): storeId is number => typeof storeId === 'number')
+    )
+  )
+
+  const storeRows =
+    storeIds.length > 0
+      ? await db
+          .select({
+            id: storesTable.id,
+            name: storesTable.name,
+            subdomain: storesTable.subdomain,
+          })
+          .from(storesTable)
+          .where(inArray(storesTable.id, storeIds))
+      : []
+  const storesById = new Map<number, StoreReference>(
+    storeRows.map(store => [store.id, store])
+  )
+
+  const alerts: OperationalMonitoringAlert[] = []
+
+  for (const event of gatewayRows) {
+    const store = getStoreReference(storesById, event.storeId)
+    const severity = getOperationalAlertSeverity({
+      critical:
+        event.status === 'failed' && event.attempts >= exhaustedRetryThreshold,
+      warning: event.status === 'failed' || event.status === 'queued',
+    })
+    alerts.push({
+      id: `gateway:${event.id}`,
+      source: 'billing_gateway_webhook',
+      severity,
+      storeId: event.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: redactOperationalCorrelationId(
+        `${event.provider}:${event.providerEventId}`
+      ),
+      title:
+        event.status === 'failed'
+          ? 'Webhook de pagamento falhou'
+          : 'Webhook de pagamento aguardando processamento',
+      detail: sanitizeOperationalAlertDetail(
+        event.lastError ??
+          `Evento ${event.eventType} para fatura ${event.invoiceNumber ?? event.invoiceId ?? 'nao identificada'}.`
+      ),
+      runbook: getOperationalRunbook({
+        source: 'billing_gateway_webhook',
+        severity,
+      }),
+      createdAt: event.createdAt,
+      lastSeenAt: event.updatedAt,
+    })
+  }
+
+  for (const issue of reconciliationRows) {
+    const store = getStoreReference(storesById, issue.storeId)
+    const severity = normalizeOperationalAlertSeverity(issue.severity)
+    alerts.push({
+      id: `reconciliation:${issue.id}`,
+      source: 'billing_reconciliation',
+      severity,
+      storeId: issue.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: redactOperationalCorrelationId(
+        issue.providerEventId ??
+          `gateway-event:${issue.gatewayEventId ?? issue.id}`
+      ),
+      title: 'Divergencia de conciliacao aberta',
+      detail: sanitizeOperationalAlertDetail(issue.reason),
+      runbook: getOperationalRunbook({
+        source: 'billing_reconciliation',
+        severity,
+      }),
+      createdAt: issue.createdAt,
+      lastSeenAt: issue.updatedAt,
+    })
+  }
+
+  for (const reminder of reminderRows) {
+    const store = getStoreReference(storesById, reminder.storeId)
+    const severity = getOperationalAlertSeverity({
+      critical: reminder.status === 'failed',
+      warning: reminder.status === 'queued',
+    })
+    alerts.push({
+      id: `reminder:${reminder.id}`,
+      source: 'billing_reminder',
+      severity,
+      storeId: reminder.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: `invoice:${reminder.invoiceId}:${reminder.channel}`,
+      title:
+        reminder.status === 'failed'
+          ? 'Notificacao de cobranca falhou'
+          : 'Notificacao de cobranca em fila',
+      detail: sanitizeOperationalAlertDetail(
+        reminder.failureReason ??
+          `Canal ${reminder.channel} agendado para ${reminder.scheduledFor.toISOString()}.`
+      ),
+      runbook: getOperationalRunbook({
+        source: 'billing_reminder',
+        severity,
+      }),
+      createdAt: reminder.createdAt,
+      lastSeenAt: reminder.updatedAt,
+    })
+  }
+
+  for (const block of accessBlockRows) {
+    const store = getStoreReference(storesById, block.storeId)
+    alerts.push({
+      id: `access-block:${block.id}`,
+      source: 'billing_access_block',
+      severity: block.source === 'billing_delinquency' ? 'critical' : 'warning',
+      storeId: block.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: `store:${block.storeId}:block:${block.id}`,
+      title:
+        block.source === 'billing_delinquency'
+          ? 'Loja bloqueada por inadimplencia'
+          : 'Loja com bloqueio manual ativo',
+      detail:
+        sanitizeOperationalAlertDetail(
+          block.reasonCode ??
+            `Bloqueio ativo desde ${block.blockedAt.toISOString()}.`
+        ),
+      runbook: getOperationalRunbook({
+        source: 'billing_access_block',
+        severity:
+          block.source === 'billing_delinquency' ? 'critical' : 'warning',
+      }),
+      createdAt: block.blockedAt,
+      lastSeenAt: block.scheduledUnblockAt ?? block.blockedAt,
+    })
+  }
+
+  for (const invoice of overdueInvoiceRows) {
+    const store = getStoreReference(storesById, invoice.storeId)
+    const minutesOverdue = minutesSince(invoice.dueAt, now) ?? 0
+    const severity = getOperationalAlertSeverity({
+      critical: invoice.status === 'overdue',
+      warning: minutesOverdue >= 0,
+    })
+    alerts.push({
+      id: `billing-cron:invoice:${invoice.id}`,
+      source: 'billing_cron',
+      severity,
+      storeId: invoice.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: `invoice:${invoice.invoiceNumber}`,
+      title: 'Fatura vencida aguardando rotina de cobranca',
+      detail: `Status ${invoice.status}; vencimento ${invoice.dueAt.toISOString()}.`,
+      runbook: getOperationalRunbook({ source: 'billing_cron', severity }),
+      createdAt: invoice.dueAt,
+      lastSeenAt: now,
+    })
+  }
+
+  for (const planChange of planChangeRows) {
+    const store = getStoreReference(storesById, planChange.storeId)
+    alerts.push({
+      id: `plan-change:${planChange.id}`,
+      source: 'subscription_plan_change',
+      severity: 'warning',
+      storeId: planChange.storeId,
+      storeName: store?.name ?? null,
+      storeSubdomain: store?.subdomain ?? null,
+      correlationId: `subscription:${planChange.subscriptionId}:change:${planChange.id}`,
+      title: 'Mudanca de plano vencida aguardando aplicacao',
+      detail: `Vigencia ${planChange.effectiveAt.toISOString()} ainda esta agendada.`,
+      runbook: getOperationalRunbook({
+        source: 'subscription_plan_change',
+        severity: 'warning',
+      }),
+      createdAt: planChange.effectiveAt,
+      lastSeenAt: planChange.updatedAt,
+    })
+  }
+
+  const queues: OperationalQueueSnapshot[] = [
+    {
+      source: 'billing_gateway_webhook',
+      label: 'Webhooks de pagamento',
+      queued: gatewayMetrics.queued,
+      failed: gatewayMetrics.failed,
+      oldestQueuedMinutes: minutesSince(gatewayMetrics.oldestQueuedAt, now),
+      maxAttempts: gatewayMetrics.maxAttempts,
+    },
+    {
+      source: 'billing_reminder',
+      label: 'Notificacoes de cobranca',
+      queued: reminderMetrics.queued,
+      failed: reminderMetrics.failed,
+      oldestQueuedMinutes: minutesSince(reminderMetrics.oldestQueuedAt, now),
+      maxAttempts: 0,
+    },
+    {
+      source: 'billing_reconciliation',
+      label: 'Divergencias de conciliacao',
+      queued: reconciliationMetrics.queued,
+      failed: reconciliationMetrics.failed,
+      oldestQueuedMinutes: minutesSince(
+        reconciliationMetrics.oldestQueuedAt,
+        now
+      ),
+      maxAttempts: 0,
+    },
+    {
+      source: 'subscription_plan_change',
+      label: 'Mudancas de plano vencidas',
+      queued: planChangeMetrics.queued,
+      failed: 0,
+      oldestQueuedMinutes: minutesSince(planChangeMetrics.oldestQueuedAt, now),
+      maxAttempts: 0,
+    },
+  ]
+
+  return {
+    generatedAt: now,
+    summary: buildOperationalMonitoringSummary({ alerts, queues }),
+    queues,
+    alerts: alerts
+      .sort(
+        (a, b) =>
+          b.lastSeenAt.getTime() - a.lastSeenAt.getTime() ||
+          b.createdAt.getTime() - a.createdAt.getTime()
+      )
+      .slice(0, safeLimit),
+  }
 }
 
 export async function listInternalStores({
