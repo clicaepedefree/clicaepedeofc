@@ -5,7 +5,7 @@ import {
   finishUserOnboarding,
 } from '@/features/user/api'
 import { getRecoverableStoresForCurrentUserEmail } from '@/features/store/api'
-import { isUserAdminOfAnyStore } from '@/features/store/db'
+import { hasAnyActiveStoreAccess } from '@/features/store/db'
 import { AdminOnboardingForm } from '@/features/store/components/admin-onboarding-form'
 import { currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
@@ -19,9 +19,9 @@ export default async function Onboarding() {
 
   const user = await createOrUpdateUserFromLogin(clerkUser)
 
-  const hasAdminStore = await isUserAdminOfAnyStore(user.id)
+  const hasActiveStoreAccess = await hasAnyActiveStoreAccess(user.id)
 
-  if (hasAdminStore) {
+  if (hasActiveStoreAccess) {
     if (
       !clerkUser.publicMetadata.onboardingComplete ||
       clerkUser.publicMetadata.userId !== user.id
