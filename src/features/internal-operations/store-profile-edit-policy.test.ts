@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  buildInternalStoreProfileAuditReason,
   buildInternalStoreProfileChangeSummary,
   getInternalStoreProfileEditFieldErrors,
   hasSensitiveInternalStoreProfileChange,
@@ -136,5 +137,49 @@ describe('internal store profile edit policy', () => {
         after: { Loja: 'Loja QA' },
       })
     ).toBe('sem alteracoes cadastrais')
+  })
+
+  test('builds audit before and after text without forbidden personal values', () => {
+    const reason = buildInternalStoreProfileAuditReason({
+      records: [
+        {
+          label: 'Responsavel',
+          before: 'Maria Responsavel',
+          after: 'Joao Responsavel',
+        },
+        {
+          label: 'Endereco',
+          before: 'Rua Secreta',
+          after: 'Avenida Confidencial',
+        },
+        {
+          label: 'Observacoes internas',
+          before: 'Cliente pediu desconto por telefone pessoal.',
+          after: 'Contato sensivel removido.',
+        },
+        {
+          label: 'E-mail do responsavel',
+          before: 'ma***@cliente.com',
+          after: 'jo***@cliente.com',
+        },
+      ],
+      reason: 'Correcao validada pelo suporte.',
+    })
+
+    expect(reason).toContain('Antes/depois')
+    expect(reason).toContain(
+      'Campos alterados: Responsavel, Endereco, Observacoes internas, E-mail do responsavel'
+    )
+    expect(reason).toContain('Responsavel: responsavel informado')
+    expect(reason).toContain('Endereco: endereco informado')
+    expect(reason).toContain(
+      'Observacoes internas: observacao interna informada'
+    )
+    expect(reason).toContain(
+      'E-mail do responsavel: ma***@cliente.com -> jo***@cliente.com'
+    )
+    expect(reason).not.toContain('Maria Responsavel')
+    expect(reason).not.toContain('Rua Secreta')
+    expect(reason).not.toContain('telefone pessoal')
   })
 })

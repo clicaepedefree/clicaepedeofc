@@ -70,10 +70,11 @@ import {
   normalizeInternalPhone,
 } from './internal-store-creation-policy'
 import {
-  buildInternalStoreProfileChangeSummary,
+  buildInternalStoreProfileAuditReason,
   hasSensitiveInternalStoreProfileChange,
   normalizeInternalProfileNullableEmail,
   normalizeInternalProfileNullableText,
+  type InternalStoreProfileAuditRecord,
   type InternalStoreProfileEditValues,
 } from './store-profile-edit-policy'
 import {
@@ -4044,11 +4045,7 @@ const buildStoreProfileAuditRecords = ({
   before: StoreProfileAuditSnapshot
   after: StoreProfileAuditSnapshot
 }) => {
-  const records: {
-    label: string
-    before: string | null
-    after: string | null
-  }[] = [
+  const records: InternalStoreProfileAuditRecord[] = [
     { label: 'Loja', before: before.storeName, after: after.storeName },
     {
       label: 'Endereco publico',
@@ -4341,27 +4338,6 @@ export async function updateInternalStoreProfile({
         },
       })
 
-    const changedLabels = buildInternalStoreProfileChangeSummary({
-      before: Object.fromEntries(
-        changedRecords.map(record => [
-          record.label,
-          formatNullableAuditValue(record.before),
-        ])
-      ),
-      after: Object.fromEntries(
-        changedRecords.map(record => [
-          record.label,
-          formatNullableAuditValue(record.after),
-        ])
-      ),
-    })
-    const diff = changedRecords
-      .map(
-        record =>
-          `${record.label}: ${formatNullableAuditValue(record.before)} -> ${formatNullableAuditValue(record.after)}`
-      )
-      .join('; ')
-
     await tx.insert(internalOperationAuditLogsTable).values({
       action: 'update_store_profile',
       actorClerkId: operator.clerkId,
@@ -4371,7 +4347,10 @@ export async function updateInternalStoreProfile({
       targetUserEmail: after.responsibleEmail,
       previousStoreStatus: store.status,
       newStoreStatus: store.status,
-      reason: `Campos alterados: ${changedLabels}. Motivo: ${values.reason}. Antes/depois: ${diff}`,
+      reason: buildInternalStoreProfileAuditReason({
+        records: changedRecords,
+        reason: values.reason,
+      }),
     })
 
     return {

@@ -140,6 +140,12 @@ export type InternalStoreProfileEditValues = z.infer<
   typeof internalStoreProfileEditSchema
 >
 
+export type InternalStoreProfileAuditRecord = {
+  label: string
+  before: string | null
+  after: string | null
+}
+
 export type InternalStoreProfileSnapshot = {
   storeName: string
   subdomain: string
@@ -208,6 +214,66 @@ export const buildInternalStoreProfileChangeSummary = ({
   return changedLabels.length > 0
     ? changedLabels.join(', ')
     : 'sem alteracoes cadastrais'
+}
+
+const formatNullableAuditValue = (value: string | null | undefined) =>
+  normalizeInternalProfileNullableText(value) ?? 'nao informado'
+
+const protectedAuditValueLabels = new Set([
+  'Responsavel',
+  'CEP',
+  'Endereco',
+  'Numero',
+  'Bairro',
+  'Observacoes internas',
+])
+
+const formatStoreProfileProtectedAuditValue = (
+  record: Pick<InternalStoreProfileAuditRecord, 'label'> & {
+    value: string | null
+  }
+) => {
+  if (!protectedAuditValueLabels.has(record.label)) {
+    return formatNullableAuditValue(record.value)
+  }
+
+  if (!normalizeInternalProfileNullableText(record.value)) {
+    return 'nao informado'
+  }
+
+  if (record.label === 'Responsavel') return 'responsavel informado'
+  if (record.label === 'Observacoes internas') {
+    return 'observacao interna informada'
+  }
+
+  return 'endereco informado'
+}
+
+export const buildInternalStoreProfileAuditReason = ({
+  records,
+  reason,
+}: {
+  records: InternalStoreProfileAuditRecord[]
+  reason: string
+}) => {
+  const changedLabels =
+    records.length > 0
+      ? records.map(record => record.label).join(', ')
+      : 'sem alteracoes cadastrais'
+  const diff = records
+    .map(
+      record =>
+        `${record.label}: ${formatStoreProfileProtectedAuditValue({
+          label: record.label,
+          value: record.before,
+        })} -> ${formatStoreProfileProtectedAuditValue({
+          label: record.label,
+          value: record.after,
+        })}`
+    )
+    .join('; ')
+
+  return `Campos alterados: ${changedLabels}. Motivo: ${reason}. Antes/depois: ${diff}`
 }
 
 export const getInternalStoreProfileEditFieldErrors = (payload: unknown) => {

@@ -7,6 +7,7 @@ import {
   signBillingGatewayWebhookPayload,
   verifyBillingGatewayWebhookSignature,
 } from './gateway-webhooks-policy'
+import { buildPaymentConfirmationDedupeKey } from './payment-confirmation-policy'
 
 describe('billing gateway webhooks policy', () => {
   test('normalizes provider allowlist without accepting empty entries', () => {
@@ -83,13 +84,93 @@ describe('billing gateway webhooks policy', () => {
     }
   })
 
-  test('keeps invoice state consistent when events arrive out of order', () => {
-    const decision = resolveBillingGatewayEventProcessing({
-      invoiceStatus: 'paid',
-      eventType: 'payment_failed',
+  test('uses deterministic provider event ids for repeated webhook payloads', () => {
+    const rawBody = JSON.stringify({
+      type: 'payment_succeeded',
+      data: {
+        invoice_id: 10,
+        provider_payment_id: ' pay_duplicado ',
+        amount: '20.00',
+      },
     })
-    expect(decision.action).toBe('ignore')
-    expect(decision.issueType).toBe('out_of_order_event')
+
+    const firstEvent = normalizeBillingGatewayEvent({
+      rawBody,
+      providerFromHeader: 'ValidaPay',
+    })
+    const repeatedEvent = normalizeBillingGatewayEvent({
+      rawBody,
+      providerFromHeader: 'ValidaPay',
+    })
+
+    expect(firstEvent.providerEventId).toBe(repeatedEvent.providerEventId)
+    expect(firstEvent.providerEventId).toStartWith('validapay:')
+    expect(firstEvent.providerPaymentId).toBe('pay_duplicado')
+  })
+
+  test('keeps repeated payment dedupe stable when webhook payload shape changes', () => {
+    const firstEvent = normalizeBillingGatewayEvent({
+      rawBody: JSON.stringify({
+        id: 'evt_primeiro',
+        type: 'payment_succeeded',
+        data: {
+          invoice_id: 10,
+          provider_payment_id: 'pay_mesmo_pagamento',
+          amount: '20.00',
+          paidAt: '2026-08-21T12:00:00.000Z',
+        },
+      }),
+      providerFromHeader: 'ValidaPay',
+    })
+    const repeatedEvent = normalizeBillingGatewayEvent({
+      rawBody: JSON.stringify({
+        event_id: 'evt_repetido_com_payload_diferente',
+        status: 'paid',
+        provider: 'ValidaPay',
+        amount: 20,
+        invoice_id: 10,
+        providerPaymentId: ' pay_mesmo_pagamento ',
+        paidAt: '2026-08-21T12:05:00.000Z',
+      }),
+      providerFromHeader: null,
+    })
+
+    expect(firstEvent.providerEventId).not.toBe(repeatedEvent.providerEventId)
+    expect(
+      buildPaymentConfirmationDedupeKey({
+        invoiceId: firstEvent.invoiceId ?? 0,
+        provider: firstEvent.provider,
+        providerPaymentId: firstEvent.providerPaymentId,
+        amount: firstEvent.amount ?? '0',
+        paidAt: firstEvent.occurredAt,
+      })
+    ).toBe(
+      buildPaymentConfirmationDedupeKey({
+        invoiceId: repeatedEvent.invoiceId ?? 0,
+        provider: repeatedEvent.provider,
+        providerPaymentId: repeatedEvent.providerPaymentId,
+        amount: repeatedEvent.amount ?? '0',
+        paidAt: repeatedEvent.occurredAt,
+      })
+    )
+  })
+
+  test('keeps invoice state consistent when events arrive out of order', () => {
+    const outOfOrderCases = [
+      ['paid', 'payment_failed'],
+      ['paid', 'payment_cancelled'],
+      ['cancelled', 'payment_succeeded'],
+      ['refunded', 'payment_succeeded'],
+    ] as const
+
+    for (const [invoiceStatus, eventType] of outOfOrderCases) {
+      const decision = resolveBillingGatewayEventProcessing({
+        invoiceStatus,
+        eventType,
+      })
+      expect(decision.action).toBe('ignore')
+      expect(decision.issueType).toBe('out_of_order_event')
+    }
 
     expect(
       resolveBillingGatewayEventProcessing({
@@ -97,5 +178,15 @@ describe('billing gateway webhooks policy', () => {
         eventType: 'payment_succeeded',
       })
     ).toEqual({ action: 'process' })
+
+    expect(
+      resolveBillingGatewayEventProcessing({
+        invoiceStatus: 'pending',
+        eventType: 'unknown',
+      })
+    ).toMatchObject({
+      action: 'ignore',
+      issueType: 'unsupported_event',
+    })
   })
 })
