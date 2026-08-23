@@ -9,7 +9,7 @@ import {
   userStorePermissionsTable,
   usersTable,
 } from '@/services/db/schema'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { User as ClerkUser } from '@clerk/nextjs/server'
 import {
   getStoreAccessInviteSecret,
@@ -161,9 +161,9 @@ export async function acceptStoreAccessInvite({
         and(
           eq(storeAccessInvitesTable.id, invite.id),
           eq(storeAccessInvitesTable.status, 'pending'),
-          sql`${storeAccessInvitesTable.usedAt} is null`,
-          sql`${storeAccessInvitesTable.revokedAt} is null`,
-          sql`${storeAccessInvitesTable.expiresAt} > ${now}`
+          isNull(storeAccessInvitesTable.usedAt),
+          isNull(storeAccessInvitesTable.revokedAt),
+          gt(storeAccessInvitesTable.expiresAt, now)
         )
       )
       .returning()
