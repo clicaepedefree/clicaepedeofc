@@ -153,6 +153,20 @@ describe('internal store creation policy', () => {
     }
   })
 
+  test('normalizes manually corrected UF before review confirmation', () => {
+    const lowercaseUfFingerprint = getInternalStoreCreationReviewFingerprint({
+      ...validValues,
+      stateCode: 'sp',
+    })
+    const uppercaseUfFingerprint = getInternalStoreCreationReviewFingerprint({
+      ...validValues,
+      stateCode: 'SP',
+    })
+
+    expect(lowercaseUfFingerprint).toBe(uppercaseUfFingerprint)
+    expect(JSON.parse(lowercaseUfFingerprint).stateCode).toBe('SP')
+  })
+
   test('rejects invalid CEP before persistence', () => {
     const errors = getInternalStoreCreationFieldErrors({
       ...validValues,
