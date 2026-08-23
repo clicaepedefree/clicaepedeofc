@@ -44,6 +44,10 @@ export const normalizeInternalEmail = (value: string | null | undefined) =>
 export const normalizeInternalPostalCode = (value: string | null | undefined) =>
   normalizeInternalDigits(value)
 
+export const normalizeInternalStateCode = (
+  value: string | null | undefined
+) => (value ?? '').trim().toUpperCase().slice(0, 2)
+
 const normalizedRequiredText = (message: string) =>
   z
     .string()
@@ -352,7 +356,7 @@ export const getInternalStoreCreationReviewFingerprint = (
     number: normalizeReviewText(values.number),
     district: normalizeReviewText(values.district),
     city: normalizeReviewText(values.city),
-    stateCode: values.stateCode.trim().toUpperCase(),
+    stateCode: normalizeInternalStateCode(values.stateCode),
     planId: values.planId,
     contractedAmount: normalizeReviewAmount(values.contractedAmount),
     discountType: values.discountType,

@@ -20,6 +20,7 @@ import {
   isInternalStoreCreationReviewConfirmed,
   isInternalStoreCreationStepValid,
   normalizeInternalPostalCode,
+  normalizeInternalStateCode,
   type InternalStoreCreationField,
   type InternalStoreCreationStep,
   type InternalStoreCreationValues,
@@ -276,14 +277,21 @@ export function InternalStoreCreateWizard({
     field: TField,
     value: InternalStoreCreationValues[TField]
   ) => {
+    const nextValue =
+      field === 'stateCode'
+        ? (normalizeInternalStateCode(
+            String(value)
+          ) as InternalStoreCreationValues[TField])
+        : value
+
     if (field === 'postalCode') {
-      latestPostalCodeValueRef.current = String(value)
+      latestPostalCodeValueRef.current = String(nextValue)
     }
 
     setValues(current => {
       const nextValues = {
         ...current,
-        [field]: value,
+        [field]: nextValue,
         ...(field === 'duplicateOverrideConfirmed'
           ? {}
           : {
@@ -915,10 +923,7 @@ export function InternalStoreCreateWizard({
                   <Input
                     value={values.stateCode}
                     onChange={event =>
-                      updateValue(
-                        'stateCode',
-                        event.target.value.toUpperCase().slice(0, 2)
-                      )
+                      updateValue('stateCode', event.target.value)
                     }
                     error={errors.stateCode}
                     placeholder="SP"
