@@ -19,6 +19,7 @@ import {
 } from '@/features/store-access-invites/invite-policy'
 import { normalizeUserEmail } from '@/features/user/user-policy'
 import { db } from '@/services/db'
+import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 import {
   billingModulesTable,
   billingPlanModulesTable,
@@ -3975,23 +3976,6 @@ const addDays = (date: Date, days: number) => {
   return result
 }
 
-const getInternalInviteBaseUrl = () => {
-  const explicitUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-
-  if (explicitUrl) return explicitUrl
-
-  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? 'localhost:3000'
-  const protocol =
-    domain.includes('localhost') || domain.includes('127.0.0.1')
-      ? 'http'
-      : 'https'
-
-  return `${protocol}://${domain}`
-}
-
 async function createStoreAccessInvite({
   tx,
   storeId,
@@ -4069,7 +4053,7 @@ async function createStoreAccessInvite({
     inviteId: invite.id,
     inviteUrl: buildStoreAccessInviteUrl({
       token,
-      baseUrl: getInternalInviteBaseUrl(),
+      baseUrl: getPublicAppBaseUrl(),
     }),
     targetEmail: normalizedEmail,
     expiresAt,
