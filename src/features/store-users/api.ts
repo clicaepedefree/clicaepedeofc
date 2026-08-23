@@ -20,6 +20,7 @@ import {
   getStoreAccessInviteSecret,
   hashStoreAccessInviteToken,
 } from '@/features/store-access-invites/invite-policy'
+import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { and, asc, count, desc, eq, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
@@ -153,23 +154,6 @@ export type StorePendingInvite = {
   createdAt: Date
 }
 
-const getAppBaseUrl = () => {
-  const explicitUrl =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-
-  if (explicitUrl) return explicitUrl
-
-  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? 'localhost:3000'
-  const protocol =
-    domain.includes('localhost') || domain.includes('127.0.0.1')
-      ? 'http'
-      : 'https'
-
-  return `${protocol}://${domain}`
-}
-
 const STORE_USER_PASSWORD_RESET_TTL_SECONDS = 60 * 60
 
 const getActor = async () => {
@@ -194,7 +178,7 @@ const getPasswordResetExpiresAt = (now = new Date()) =>
   new Date(now.getTime() + STORE_USER_PASSWORD_RESET_TTL_SECONDS * 1000)
 
 const buildPasswordResetUrl = ({ requestId }: { requestId: string }) => {
-  const url = new URL('/acesso-temporario', getAppBaseUrl())
+  const url = new URL('/acesso-temporario', getPublicAppBaseUrl())
   url.searchParams.set('request', requestId)
   return url.toString()
 }
@@ -552,7 +536,7 @@ export async function inviteStoreUser(
       inviteId: invite.id,
       inviteUrl: buildStoreAccessInviteUrl({
         token,
-        baseUrl: getAppBaseUrl(),
+        baseUrl: getPublicAppBaseUrl(),
       }),
       targetEmail: normalizedEmail,
       expiresAt,
@@ -1213,7 +1197,7 @@ export async function resendStoreUserInvite(
       inviteId: invite.id,
       inviteUrl: buildStoreAccessInviteUrl({
         token,
-        baseUrl: getAppBaseUrl(),
+        baseUrl: getPublicAppBaseUrl(),
       }),
       targetEmail: invite.targetEmail,
       expiresAt,

@@ -55,6 +55,50 @@ export function getMainAppUrl(): string {
   return `${protocol}://${domain}`
 }
 
+function withProtocol(value: string): string {
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value
+  }
+
+  const protocol =
+    value.includes('localhost') || value.includes('127.0.0.1') ? 'http' : 'https'
+
+  return `${protocol}://${value}`
+}
+
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+/**
+ * Get a public app base URL for customer-facing links.
+ *
+ * Vercel exposes VERCEL_URL as the generated deployment URL, which can be a
+ * protected preview host. Links sent to customers must prefer the canonical
+ * production domain whenever it is available.
+ */
+export function getPublicAppBaseUrl(): string {
+  const explicitUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL
+
+  if (explicitUrl) return stripTrailingSlash(withProtocol(explicitUrl))
+
+  const configuredDomain = process.env.NEXT_PUBLIC_APP_DOMAIN
+
+  if (configuredDomain) return stripTrailingSlash(withProtocol(configuredDomain))
+
+  const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+
+  if (vercelProductionUrl) {
+    return stripTrailingSlash(withProtocol(vercelProductionUrl))
+  }
+
+  if (process.env.VERCEL_URL) {
+    return stripTrailingSlash(withProtocol(process.env.VERCEL_URL))
+  }
+
+  return 'http://localhost:3000'
+}
+
 /**
  * Check if a hostname matches the admin subdomain pattern.
  * This is used in middleware for subdomain detection.
