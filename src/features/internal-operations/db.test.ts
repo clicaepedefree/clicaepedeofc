@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   applyDueStoreSubscriptionPlanChangeCandidates,
+  buildActiveStoreAccessBlockWindowPredicate,
   buildInternalStoreWhere,
   buildInternalStoreInitialInvoiceNumber,
   getInvoiceReceivableAmount,
@@ -156,6 +157,19 @@ describe('internal operation store policy', () => {
     expect(migration).toContain(
       'GRANT SELECT, INSERT ON TABLE "internal_operation_audit_logs" TO service_role'
     )
+  })
+
+  test('uses database time for active store access block predicates', () => {
+    const dialect = new PgDialect()
+    const query = dialect.sqlToQuery(
+      buildActiveStoreAccessBlockWindowPredicate()!
+    )
+
+    expect(query.sql).toContain('"store_access_blocks"."unblocked_at" is null')
+    expect(query.sql).toContain(
+      '"store_access_blocks"."scheduled_unblock_at" > now()'
+    )
+    expect(query.params).toEqual([])
   })
 
   test('parses internal store date filters at day boundaries', () => {

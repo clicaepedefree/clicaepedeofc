@@ -104,7 +104,7 @@ const processDelinquencyInvoice = async ({
           isNull(storeAccessBlocksTable.unblockedAt),
           or(
             isNull(storeAccessBlocksTable.scheduledUnblockAt),
-            sql`${storeAccessBlocksTable.scheduledUnblockAt} > ${now}`
+            sql`${storeAccessBlocksTable.scheduledUnblockAt} > now()`
           )
         )
       )
