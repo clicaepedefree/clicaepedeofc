@@ -587,6 +587,13 @@ const revenueSubscriptionStatuses: readonly string[] = [
 
 const receivableInvoiceStatuses: readonly string[] = ['pending', 'overdue']
 
+export function buildActiveStoreAccessBlockWindowPredicate() {
+  return and(
+    sql`${storeAccessBlocksTable.unblockedAt} is null`,
+    sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > now())`
+  )
+}
+
 const intervalToMonths: Record<string, number> = {
   monthly: 1,
   quarterly: 3,
@@ -1333,11 +1340,7 @@ export async function getOperationalMonitoringSnapshot({
       .from(storeAccessBlocksTable)
       .where(
         and(
-          sql`${storeAccessBlocksTable.unblockedAt} is null`,
-          or(
-            sql`${storeAccessBlocksTable.scheduledUnblockAt} is null`,
-            sql`${storeAccessBlocksTable.scheduledUnblockAt} > ${now}`
-          )
+          buildActiveStoreAccessBlockWindowPredicate()
         )
       )
       .orderBy(desc(storeAccessBlocksTable.blockedAt))
@@ -3033,8 +3036,7 @@ export async function markManualBillingInvoicePayment({
           eq(storeAccessBlocksTable.storeId, values.storeId),
           eq(storeAccessBlocksTable.source, 'billing_delinquency'),
           eq(storeAccessBlocksTable.invoiceId, invoice.id),
-          sql`${storeAccessBlocksTable.unblockedAt} is null`,
-          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+          buildActiveStoreAccessBlockWindowPredicate()
         )
       )
       .orderBy(desc(storeAccessBlocksTable.blockedAt))
@@ -6788,8 +6790,7 @@ export async function blockStoreAccess({
       .where(
         and(
           eq(storeAccessBlocksTable.storeId, values.storeId),
-          sql`${storeAccessBlocksTable.unblockedAt} is null`,
-          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+          buildActiveStoreAccessBlockWindowPredicate()
         )
       )
       .limit(1)
@@ -6862,8 +6863,7 @@ export async function unblockStoreAccess({
       .where(
         and(
           eq(storeAccessBlocksTable.storeId, values.storeId),
-          sql`${storeAccessBlocksTable.unblockedAt} is null`,
-          sql`(${storeAccessBlocksTable.scheduledUnblockAt} is null or ${storeAccessBlocksTable.scheduledUnblockAt} > ${now})`
+          buildActiveStoreAccessBlockWindowPredicate()
         )
       )
       .orderBy(desc(storeAccessBlocksTable.blockedAt))
