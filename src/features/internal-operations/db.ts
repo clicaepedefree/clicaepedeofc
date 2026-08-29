@@ -2594,13 +2594,33 @@ export async function getInternalStoreOverview(
     commercial: {
       acquisitionSource: store.acquisitionSource,
       salesOwner: store.salesOwner,
-      internalNotes: store.internalNotes,
+      internalNotes: protectInternalPersonalText({
+        value: store.internalNotes,
+        fallback: 'observacao interna informada',
+        canViewPersonalData,
+      }),
     },
     address: {
-      postalCode: store.companyPostalCode ?? store.addressPostalCode,
-      street: store.companyStreet ?? store.addressStreet,
-      number: store.companyNumber ?? store.addressNumber,
-      district: store.companyDistrict ?? store.addressDistrict,
+      postalCode: protectInternalPersonalText({
+        value: store.companyPostalCode ?? store.addressPostalCode,
+        fallback: 'CEP informado',
+        canViewPersonalData,
+      }),
+      street: protectInternalPersonalText({
+        value: store.companyStreet ?? store.addressStreet,
+        fallback: 'endereco informado',
+        canViewPersonalData,
+      }),
+      number: protectInternalPersonalText({
+        value: store.companyNumber ?? store.addressNumber,
+        fallback: 'numero informado',
+        canViewPersonalData,
+      }),
+      district: protectInternalPersonalText({
+        value: store.companyDistrict ?? store.addressDistrict,
+        fallback: 'bairro informado',
+        canViewPersonalData,
+      }),
       city: store.companyCity ?? store.addressCity,
       stateCode: store.companyStateCode ?? store.addressStateCode,
     },
@@ -3635,6 +3655,21 @@ export const protectInternalPersonalDigits = ({
   if (canViewPersonalData) return value
 
   return maskInternalStoreSensitiveDigits(value, fallback)
+}
+
+export const protectInternalPersonalText = ({
+  value,
+  fallback,
+  canViewPersonalData,
+}: {
+  value: string | null
+  fallback: string
+  canViewPersonalData: boolean
+}) => {
+  if (!value) return null
+  if (canViewPersonalData) return value
+
+  return fallback
 }
 
 export const protectInternalPersonalRecipient = ({

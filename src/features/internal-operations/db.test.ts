@@ -20,6 +20,7 @@ import {
   protectInternalPersonalDigits,
   protectInternalPersonalEmail,
   protectInternalPersonalRecipient,
+  protectInternalPersonalText,
   protectInternalRequiredPersonalEmail,
   shouldCreateInternalStoreInitialInvoice,
 } from './db'
@@ -284,6 +285,37 @@ describe('internal operation store policy', () => {
         canViewPersonalData: true,
       })
     ).toBe('+55 (11) 98888-7777')
+  })
+
+  test('protects free-form internal profile text according to role visibility', () => {
+    expect(
+      protectInternalPersonalText({
+        value: 'Rua Cliente Secreto, 147',
+        fallback: 'endereco informado',
+        canViewPersonalData: false,
+      })
+    ).toBe('endereco informado')
+    expect(
+      protectInternalPersonalText({
+        value: 'Cliente pediu contato apenas com financeiro',
+        fallback: 'observacao interna informada',
+        canViewPersonalData: false,
+      })
+    ).toBe('observacao interna informada')
+    expect(
+      protectInternalPersonalText({
+        value: 'Rua Cliente Secreto, 147',
+        fallback: 'endereco informado',
+        canViewPersonalData: true,
+      })
+    ).toBe('Rua Cliente Secreto, 147')
+    expect(
+      protectInternalPersonalText({
+        value: null,
+        fallback: 'endereco informado',
+        canViewPersonalData: false,
+      })
+    ).toBeNull()
   })
 
   test('builds deterministic initial invoice numbers from provisioned ids', () => {
