@@ -722,7 +722,7 @@ export function parseInternalStoreDateFilter(
   return date
 }
 
-function buildInternalStoreWhere({
+export function buildInternalStoreWhere({
   status,
   search,
   planId,
@@ -738,6 +738,47 @@ function buildInternalStoreWhere({
   const searchDigits = trimmedSearch?.replace(/\D/g, '') ?? ''
   const searchDigitsPattern = searchDigits ? `%${searchDigits}%` : null
   const trimmedCity = city?.trim()
+  const textSearchWhere = searchPattern
+    ? sql`(
+        lower(${storesTable.name}) like ${searchPattern}
+        or lower(${storesTable.subdomain}) like ${searchPattern}
+        or lower(coalesce(${storeCompanyProfilesTable.companyName}, '')) like ${searchPattern}
+        or lower(coalesce(${storeCompanyProfilesTable.email}, '')) like ${searchPattern}
+        or lower(coalesce(${storeCompanyProfilesTable.responsibleName}, '')) like ${searchPattern}
+        or lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) like ${searchPattern}
+        or ${storesTable.id}::text = ${trimmedSearch}
+        or exists (
+          select 1
+          from ${userStorePermissionsTable}
+          join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
+          where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+            and (
+              lower(${usersTable.email}) like ${searchPattern}
+              or lower(coalesce(${usersTable.name}, '')) like ${searchPattern}
+            )
+        )
+      )`
+    : undefined
+  const digitSearchWhere = searchDigitsPattern
+    ? sql`(
+        regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        or regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        or regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        or regexp_replace(coalesce(${storeCompanyProfilesTable.phone2}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        or regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        or exists (
+          select 1
+          from ${userStorePermissionsTable}
+          join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
+          where ${userStorePermissionsTable.storeId} = ${storesTable.id}
+            and regexp_replace(coalesce(${usersTable.phone}, ''), '\\D', '', 'g') like ${searchDigitsPattern}
+        )
+      )`
+    : undefined
+  const searchWhere =
+    textSearchWhere && digitSearchWhere
+      ? or(textSearchWhere, digitSearchWhere)
+      : (textSearchWhere ?? digitSearchWhere)
 
   return and(
     status ? eq(storesTable.status, status) : undefined,
@@ -774,43 +815,7 @@ function buildInternalStoreWhere({
             and ${userStorePermissionsTable.revokedAt} is not null
         )`
       : undefined,
-    searchPattern
-      ? sql`(
-          lower(${storesTable.name}) like ${searchPattern}
-          or lower(${storesTable.subdomain}) like ${searchPattern}
-          or lower(coalesce(${storeCompanyProfilesTable.companyName}, '')) like ${searchPattern}
-          or lower(coalesce(${storeCompanyProfilesTable.email}, '')) like ${searchPattern}
-          or lower(coalesce(${storeCompanyProfilesTable.responsibleName}, '')) like ${searchPattern}
-          or lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) like ${searchPattern}
-          or ${storesTable.id}::text = ${trimmedSearch}
-          or exists (
-            select 1
-            from ${userStorePermissionsTable}
-            join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
-            where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-              and (
-                lower(${usersTable.email}) like ${searchPattern}
-                or lower(coalesce(${usersTable.name}, '')) like ${searchPattern}
-              )
-          )
-        )`
-      : undefined,
-    searchDigitsPattern
-      ? sql`(
-          regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          or regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          or regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          or regexp_replace(coalesce(${storeCompanyProfilesTable.phone2}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          or regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          or exists (
-            select 1
-            from ${userStorePermissionsTable}
-            join ${usersTable} on ${usersTable.id} = ${userStorePermissionsTable.userId}
-            where ${userStorePermissionsTable.storeId} = ${storesTable.id}
-              and regexp_replace(coalesce(${usersTable.phone}, ''), '\D', '', 'g') like ${searchDigitsPattern}
-          )
-        )`
-      : undefined
+    searchWhere
   )
 }
 
@@ -3683,10 +3688,10 @@ export async function findInternalStoreCreationDuplicates(
       ? eq(storesTable.subdomain, duplicateInputs.subdomain)
       : undefined,
     duplicateInputs.companyTaxNumber
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
       : undefined,
     duplicateInputs.responsibleTaxNumber
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
       : undefined,
     duplicateInputs.companyEmail
       ? sql`lower(coalesce(${storeCompanyProfilesTable.email}, '')) = ${duplicateInputs.companyEmail}`
@@ -3695,10 +3700,10 @@ export async function findInternalStoreCreationDuplicates(
       ? sql`lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) = ${duplicateInputs.responsibleEmail}`
       : undefined,
     duplicateInputs.phone1
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') = ${duplicateInputs.phone1}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\\D', '', 'g') = ${duplicateInputs.phone1}`
       : undefined,
     duplicateInputs.responsiblePhone
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
       : undefined,
   ].filter(Boolean)
 
@@ -3836,10 +3841,10 @@ export async function findInternalStoreProfileUpdateDuplicates(
       ? eq(storesTable.subdomain, duplicateInputs.subdomain)
       : undefined,
     duplicateInputs.companyTaxNumber
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.companyTaxNumber}, ''), '\\D', '', 'g') = ${duplicateInputs.companyTaxNumber}`
       : undefined,
     duplicateInputs.responsibleTaxNumber
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsibleTaxNumber}, ''), '\\D', '', 'g') = ${duplicateInputs.responsibleTaxNumber}`
       : undefined,
     duplicateInputs.companyEmail
       ? sql`lower(coalesce(${storeCompanyProfilesTable.email}, '')) = ${duplicateInputs.companyEmail}`
@@ -3848,10 +3853,10 @@ export async function findInternalStoreProfileUpdateDuplicates(
       ? sql`lower(coalesce(${storeCompanyProfilesTable.responsibleEmail}, '')) = ${duplicateInputs.responsibleEmail}`
       : undefined,
     duplicateInputs.phone1
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\D', '', 'g') = ${duplicateInputs.phone1}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.phone1}, ''), '\\D', '', 'g') = ${duplicateInputs.phone1}`
       : undefined,
     duplicateInputs.responsiblePhone
-      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
+      ? sql`regexp_replace(coalesce(${storeCompanyProfilesTable.responsiblePhone}, ''), '\\D', '', 'g') = ${duplicateInputs.responsiblePhone}`
       : undefined,
   ].filter(Boolean)
 

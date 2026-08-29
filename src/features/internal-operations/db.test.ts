@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   applyDueStoreSubscriptionPlanChangeCandidates,
+  buildInternalStoreWhere,
   buildInternalStoreInitialInvoiceNumber,
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
@@ -166,6 +168,39 @@ describe('internal operation store policy', () => {
       undefined
     )
     expect(parseInternalStoreDateFilter(undefined, 'start')).toBe(undefined)
+  })
+
+  test('combines textual and digit store search as alternatives', () => {
+    const dialect = new PgDialect()
+    const where = buildInternalStoreWhere({
+      search: 'kan42-accept-kan101111633',
+      status: 'active',
+      planId: 1,
+      access: undefined,
+      city: undefined,
+      createdFrom: undefined,
+      createdTo: undefined,
+    })
+
+    expect(where).toBeDefined()
+
+    const query = dialect.sqlToQuery(where!)
+
+    expect(query.params).toContain('%kan42-accept-kan101111633%')
+    expect(query.params).toContain('kan42-accept-kan101111633')
+    expect(query.params).toContain('%42101111633%')
+    expect(query.sql).toContain('"stores"."status" = $1')
+    expect(query.sql).toContain('"store_subscriptions"."plan_id" = $2')
+    expect(query.sql).toContain(
+      `lower(coalesce("store_company_profiles"."responsible_email", '')) like`
+    )
+    expect(query.sql).toContain(
+      `regexp_replace(coalesce("store_company_profiles"."company_tax_number", ''), '\\D', '', 'g') like`
+    )
+    expect(query.sql).toContain(') or (')
+    expect(query.sql).not.toContain(
+      `lower("store_company_profiles"."responsible_email") like $3) and (regexp_replace`
+    )
   })
 
   test('masks sensitive document and phone digits for internal listings', () => {
