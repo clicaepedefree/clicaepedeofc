@@ -21,6 +21,7 @@ export type InternalStoreDetailTabDefinition = {
   label: string
   description: string
   requiredPermissions: InternalPermission[]
+  anyOfPermissions?: InternalPermission[]
 }
 
 export const internalStoreDetailTabDefinitions: InternalStoreDetailTabDefinition[] =
@@ -41,7 +42,8 @@ export const internalStoreDetailTabDefinitions: InternalStoreDetailTabDefinition
       value: 'plano',
       label: 'Plano',
       description: 'Assinatura, valor contratado e periodo vigente.',
-      requiredPermissions: ['manage_billing_values'],
+      requiredPermissions: [],
+      anyOfPermissions: ['manage_billing_values', 'apply_billing_discounts'],
     },
     {
       value: 'modulos',
@@ -92,9 +94,16 @@ export function canViewInternalStoreDetailTab({
   )
   if (!definition) return false
 
-  return definition.requiredPermissions.every(permission =>
-    canUseInternalPermission({ currentRole: role, permission })
+  const hasRequiredPermissions = definition.requiredPermissions.every(
+    permission => canUseInternalPermission({ currentRole: role, permission })
   )
+  const hasAnyOfPermissions =
+    !definition.anyOfPermissions?.length ||
+    definition.anyOfPermissions.some(permission =>
+      canUseInternalPermission({ currentRole: role, permission })
+    )
+
+  return hasRequiredPermissions && hasAnyOfPermissions
 }
 
 export function getVisibleInternalStoreDetailTabs(role: InternalRole) {

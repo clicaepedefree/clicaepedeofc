@@ -18,12 +18,21 @@ describe('internal store detail tabs policy', () => {
     expect(
       canViewInternalStoreDetailTab({ role: 'finance', tab: 'faturas' })
     ).toBe(true)
+    expect(canViewInternalStoreDetailTab({ role: 'sales', tab: 'plano' })).toBe(
+      true
+    )
+    expect(
+      canViewInternalStoreDetailTab({ role: 'sales', tab: 'faturas' })
+    ).toBe(false)
     expect(
       canViewInternalStoreDetailTab({ role: 'viewer', tab: 'faturas' })
     ).toBe(false)
-    expect(canViewInternalStoreDetailTab({ role: 'viewer', tab: 'dados' })).toBe(
-      true
-    )
+    expect(
+      canViewInternalStoreDetailTab({ role: 'viewer', tab: 'plano' })
+    ).toBe(false)
+    expect(
+      canViewInternalStoreDetailTab({ role: 'viewer', tab: 'dados' })
+    ).toBe(true)
   })
 
   test('resolves unavailable or invalid tabs to the first visible tab', () => {
@@ -41,6 +50,12 @@ describe('internal store detail tabs policy', () => {
     ).toBe('faturas')
     expect(
       resolveInternalStoreDetailTab({
+        role: 'sales',
+        requestedTab: 'plano',
+      })
+    ).toBe('plano')
+    expect(
+      resolveInternalStoreDetailTab({
         role: 'support',
         requestedTab: 'nao-existe',
       })
@@ -51,6 +66,9 @@ describe('internal store detail tabs policy', () => {
     expect(
       getVisibleInternalStoreDetailTabs('viewer').map(tab => tab.value)
     ).toEqual(['dados', 'metricas', 'historico'])
+    expect(
+      getVisibleInternalStoreDetailTabs('sales').map(tab => tab.value)
+    ).toEqual(['dados', 'plano', 'modulos', 'metricas', 'historico'])
     expect(
       getVisibleInternalStoreDetailTabs('implementation').map(tab => tab.value)
     ).toEqual(['dados', 'modulos', 'metricas', 'usuarios', 'historico'])
