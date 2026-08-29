@@ -102,6 +102,7 @@ import {
   getExpectedSubscriptionBlockAt,
   type StoreSubscriptionTermsValues,
 } from './subscription-terms-policy'
+import { buildStoreModuleEntitlementExpirySql } from './store-module-entitlement-expiry-sql'
 import {
   calculatePlanChangeProration,
   getModuleTreatmentLabel,
@@ -5628,7 +5629,7 @@ export async function manageStoreModuleEntitlement({
       .set({
         status: 'revoked',
         revokedAt: now,
-        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        endsAt: buildStoreModuleEntitlementExpirySql(now),
         reason: values.reason,
         actorClerkId: operator.clerkId,
         metadata: sql`${storeModuleEntitlementsTable.metadata} || ${JSON.stringify(
@@ -5952,7 +5953,7 @@ export async function changeStoreSubscriptionPlan({
       .update(storeModuleEntitlementsTable)
       .set({
         status: 'expired',
-        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        endsAt: buildStoreModuleEntitlementExpirySql(now),
         reason: `Plano substituido por ${targetPlan.code}: ${values.reason}`,
         actorClerkId: operator.clerkId,
         updatedAt: now,
@@ -6560,7 +6561,7 @@ export async function applyScheduledStoreSubscriptionPlanChange({
       .update(storeModuleEntitlementsTable)
       .set({
         status: 'expired',
-        endsAt: sql`greatest(${now}, ${storeModuleEntitlementsTable.startsAt} + interval '1 millisecond')`,
+        endsAt: buildStoreModuleEntitlementExpirySql(now),
         reason: `Plano substituido por ${targetPlan.code}: ${planChange.reason}`,
         actorClerkId: planChange.actorClerkId,
         updatedAt: now,
