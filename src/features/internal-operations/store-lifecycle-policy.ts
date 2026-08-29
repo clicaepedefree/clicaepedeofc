@@ -53,7 +53,9 @@ export const storeLifecycleTransitionSchema = z.object({
   reason: z.string().trim().min(8).max(500),
   subscriptionEffect: z.enum(storeLifecycleSubscriptionEffects),
   accessEffect: z.enum(storeLifecycleAccessEffects),
-  confirmation: z.string().trim().max(120).optional().default(''),
+  confirmation: z
+    .preprocess(value => value ?? '', z.string().trim().max(120))
+    .default(''),
 })
 
 export type StoreLifecycleTransitionValues = z.infer<

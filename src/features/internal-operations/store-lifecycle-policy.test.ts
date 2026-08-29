@@ -129,4 +129,17 @@ describe('store commercial lifecycle policy', () => {
       'reactivate_store_commercial'
     )
   })
+
+  test('accepts missing confirmation from FormData on non-cancellation actions', () => {
+    const parsed = storeLifecycleTransitionSchema.parse({
+      storeId: '25',
+      targetStatus: 'inactive',
+      reason: 'Cliente solicitou pausa comercial temporaria.',
+      subscriptionEffect: 'pause_subscription',
+      accessEffect: 'keep_access',
+      confirmation: null,
+    })
+
+    expect(parsed.confirmation).toBe('')
+  })
 })
