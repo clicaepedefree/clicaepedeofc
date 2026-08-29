@@ -28,6 +28,24 @@ describe('internal subscription plan change policy', () => {
     expect(parsed.targetPlanId).toBe(30)
   })
 
+  test('accepts missing optional FormData fields as empty strings', () => {
+    const parsed = storeSubscriptionPlanChangeSchema.parse({
+      storeId: '10',
+      subscriptionId: '20',
+      targetPlanId: '30',
+      timing: 'next_renewal',
+      valueMode: 'keep_current',
+      customContractedAmount: null,
+      moduleTreatment: 'sync_to_new_plan',
+      prorationPolicy: 'record_only',
+      confirmation: null,
+      reason: 'Troca programada solicitada pela loja.',
+    })
+
+    expect(parsed.customContractedAmount).toBe('')
+    expect(parsed.confirmation).toBe('')
+  })
+
   test('requires a valid custom amount when custom value mode is selected', () => {
     const result = storeSubscriptionPlanChangeSchema.safeParse({
       storeId: 10,

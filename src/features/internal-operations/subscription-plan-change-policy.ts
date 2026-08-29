@@ -2,6 +2,10 @@ import { z } from 'zod'
 import Decimal from 'decimal.js'
 
 const moneyRegex = /^\d+(?:[,.]\d{1,4})?$/
+const optionalFormString = z.preprocess(
+  value => (value === null || value === undefined ? '' : value),
+  z.string().trim()
+)
 
 export const subscriptionPlanChangeTimings = [
   'immediate',
@@ -33,17 +37,12 @@ export const storeSubscriptionPlanChangeSchema = z
     targetPlanId: z.coerce.number().int().positive(),
     timing: z.enum(subscriptionPlanChangeTimings),
     valueMode: z.enum(subscriptionPlanChangeValueModes),
-    customContractedAmount: z
-      .string()
-      .trim()
-      .optional()
-      .or(z.literal(''))
-      .default(''),
+    customContractedAmount: optionalFormString,
     moduleTreatment: z.enum(subscriptionPlanChangeModuleTreatments),
     prorationPolicy: z
       .enum(subscriptionPlanChangeProrationPolicies)
       .default('create_adjustment'),
-    confirmation: z.string().trim().optional().or(z.literal('')).default(''),
+    confirmation: optionalFormString,
     reason: z
       .string()
       .trim()
