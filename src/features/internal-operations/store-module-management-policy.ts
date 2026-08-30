@@ -30,7 +30,10 @@ export const storeModuleManagementSchema = z
       .optional()
       .or(z.literal(''))
       .default(''),
-    confirmation: z.string().trim().optional().or(z.literal('')).default(''),
+    confirmation: z
+      .preprocess(value => value ?? '', z.string().trim())
+      .optional()
+      .default(''),
     reason: z
       .string()
       .trim()
