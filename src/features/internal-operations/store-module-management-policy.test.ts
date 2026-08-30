@@ -91,12 +91,16 @@ describe('internal store module management policy', () => {
       entitlementId: '9',
       action: 'deactivate',
       origin: null,
+      additionalAmount: null,
+      endsAt: null,
       confirmation: 'DESATIVAR',
       reason: 'Cliente pediu remocao do modulo.',
     })
 
     expect(parsed.entitlementId).toBe(9)
     expect(parsed.origin).toBe('manual')
+    expect(parsed.additionalAmount).toBe('')
+    expect(parsed.endsAt).toBe('')
   })
 
   test('still rejects deactivation when confirmation is missing from browser form data', () => {
