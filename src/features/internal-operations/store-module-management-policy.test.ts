@@ -41,6 +41,22 @@ describe('internal store module management policy', () => {
     expect(addon.origin).toBe('addon')
   })
 
+  test('accepts missing confirmation when activating a module from browser form data', () => {
+    const parsed = storeModuleManagementSchema.parse({
+      storeId: '1',
+      moduleId: '3',
+      action: 'activate',
+      origin: 'addon',
+      additionalAmount: '49,90',
+      endsAt: '',
+      confirmation: null,
+      reason: 'Cliente contratou modulo adicional.',
+    })
+
+    expect(parsed.confirmation).toBe('')
+    expect(parsed.origin).toBe('addon')
+  })
+
   test('requires an expiration date when activating a courtesy module', () => {
     const result = storeModuleManagementSchema.safeParse({
       storeId: '1',
@@ -79,6 +95,24 @@ describe('internal store module management policy', () => {
     })
 
     expect(parsed.entitlementId).toBe(9)
+  })
+
+  test('still rejects deactivation when confirmation is missing from browser form data', () => {
+    const result = storeModuleManagementSchema.safeParse({
+      storeId: '1',
+      moduleId: '2',
+      entitlementId: '9',
+      action: 'deactivate',
+      confirmation: null,
+      reason: 'Cliente pediu remocao do modulo.',
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'Digite DESATIVAR para confirmar o impacto.'
+      )
+    }
   })
 
   test('keeps paid values only for addon origin', () => {
