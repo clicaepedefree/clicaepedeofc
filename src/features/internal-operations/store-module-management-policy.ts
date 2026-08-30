@@ -17,7 +17,10 @@ export const storeModuleManagementSchema = z
     moduleId: z.coerce.number().int().positive(),
     entitlementId: z.coerce.number().int().positive().optional(),
     action: z.enum(internalStoreModuleActionTypes),
-    origin: z.enum(internalStoreModuleOrigins).default('manual'),
+    origin: z.preprocess(
+      value => value ?? undefined,
+      z.enum(internalStoreModuleOrigins).default('manual')
+    ),
     additionalAmount: z
       .string()
       .trim()
