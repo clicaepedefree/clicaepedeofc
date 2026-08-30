@@ -11,6 +11,11 @@ export type InternalStoreModuleOrigin = (typeof internalStoreModuleOrigins)[numb
 
 const moneyRegex = /^\d+(?:[,.]\d{1,4})?$/
 
+const optionalFormString = z.preprocess(
+  value => value ?? '',
+  z.string().trim()
+)
+
 export const storeModuleManagementSchema = z
   .object({
     storeId: z.coerce.number().int().positive(),
@@ -21,18 +26,8 @@ export const storeModuleManagementSchema = z
       value => value ?? undefined,
       z.enum(internalStoreModuleOrigins).default('manual')
     ),
-    additionalAmount: z
-      .string()
-      .trim()
-      .optional()
-      .or(z.literal(''))
-      .default(''),
-    endsAt: z
-      .string()
-      .trim()
-      .optional()
-      .or(z.literal(''))
-      .default(''),
+    additionalAmount: optionalFormString.default(''),
+    endsAt: optionalFormString.default(''),
     confirmation: z
       .preprocess(value => value ?? '', z.string().trim())
       .optional()
