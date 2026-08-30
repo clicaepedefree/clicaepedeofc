@@ -84,9 +84,19 @@ export const recurringBillingEligibleStatuses = [
   'past_due',
 ] as const satisfies SelectStoreSubscription['status'][]
 
+export const reusableRecurringBillingInvoiceStatuses = [
+  'pending',
+  'paid',
+  'overdue',
+] as const satisfies InsertStoreBillingInvoice['status'][]
+
 const recurringBillingEligibleStatusSet: ReadonlySet<
   SelectStoreSubscription['status']
 > = new Set(recurringBillingEligibleStatuses)
+
+const reusableRecurringBillingInvoiceStatusSet: ReadonlySet<
+  InsertStoreBillingInvoice['status']
+> = new Set(reusableRecurringBillingInvoiceStatuses)
 
 const intervalToMonths: Record<BillingInterval, number> = {
   monthly: 1,
@@ -183,6 +193,11 @@ export const shouldGenerateRecurringBillingInvoice = ({
     }).getTime()
   )
 }
+
+export const canReuseRecurringBillingInvoice = ({
+  status,
+}: Pick<InsertStoreBillingInvoice, 'status'>) =>
+  reusableRecurringBillingInvoiceStatusSet.has(status)
 
 const formatInvoicePeriodDate = (date: Date) =>
   [

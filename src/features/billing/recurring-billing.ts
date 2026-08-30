@@ -2,6 +2,7 @@ import {
   buildRecurringBillingInvoiceDraft,
   buildRecurringBillingInvoiceNumber,
   calculateRecurringBillingGenerationCutoff,
+  canReuseRecurringBillingInvoice,
   normalizeInvoiceLeadDays,
   recurringBillingEligibleStatuses,
   shouldGenerateRecurringBillingInvoice,
@@ -155,6 +156,17 @@ const processRecurringSubscription = async ({
 
     if (!invoice) {
       throw new Error('RECURRENT_INVOICE_NOT_CREATED')
+    }
+
+    if (!canReuseRecurringBillingInvoice(invoice)) {
+      return {
+        storeId: subscription.storeId,
+        subscriptionId: subscription.id,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        status: 'skipped' as const,
+        reason: 'closed_invoice_for_period',
+      }
     }
 
     const [updatedSubscription] = await tx

@@ -6,6 +6,7 @@ import {
   calculateBillingInvoiceAmounts,
   calculateNextBillingPeriod,
   calculateRecurringBillingGenerationCutoff,
+  canReuseRecurringBillingInvoice,
   normalizeInvoiceLeadDays,
   shouldGenerateRecurringBillingInvoice,
   supportedBillingInvoiceStatuses,
@@ -234,6 +235,14 @@ describe('billing policy', () => {
     expect(buildRecurringBillingInvoiceNumber(input)).toBe(
       buildRecurringBillingInvoiceNumber({ ...input })
     )
+  })
+
+  test('reutiliza somente faturas recorrentes que ainda representam cobranca valida', () => {
+    expect(canReuseRecurringBillingInvoice({ status: 'pending' })).toBe(true)
+    expect(canReuseRecurringBillingInvoice({ status: 'overdue' })).toBe(true)
+    expect(canReuseRecurringBillingInvoice({ status: 'paid' })).toBe(true)
+    expect(canReuseRecurringBillingInvoice({ status: 'cancelled' })).toBe(false)
+    expect(canReuseRecurringBillingInvoice({ status: 'refunded' })).toBe(false)
   })
 
   test('fatura recorrente usa a proxima competencia e nao a competencia atual ja faturada', () => {
