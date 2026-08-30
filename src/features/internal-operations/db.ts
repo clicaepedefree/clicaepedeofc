@@ -102,7 +102,10 @@ import {
   getExpectedSubscriptionBlockAt,
   type StoreSubscriptionTermsValues,
 } from './subscription-terms-policy'
-import { buildStoreModuleEntitlementExpirySql } from './store-module-entitlement-expiry-sql'
+import {
+  buildActiveStoreModuleEntitlementWindowSql,
+  buildStoreModuleEntitlementExpirySql,
+} from './store-module-entitlement-expiry-sql'
 import {
   calculatePlanChangeProration,
   getModuleTreatmentLabel,
@@ -5549,7 +5552,7 @@ export async function manageStoreModuleEntitlement({
             eq(storeModuleEntitlementsTable.moduleId, values.moduleId),
             eq(storeModuleEntitlementsTable.status, 'active'),
             sql`${storeModuleEntitlementsTable.revokedAt} is null`,
-            sql`(${storeModuleEntitlementsTable.endsAt} is null or ${storeModuleEntitlementsTable.endsAt} > ${now})`
+            buildActiveStoreModuleEntitlementWindowSql(now)
           )
         )
         .limit(1)
