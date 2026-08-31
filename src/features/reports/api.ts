@@ -51,7 +51,10 @@ export const getRevenueSummary = async (
     ? sql`(${endDate}::date + interval '1 day')::timestamp at time zone ${timeZone}`
     : undefined
 
-  const orderCreatedAtWithTimezone = sql<Date>`date(timezone(${timeZone}, ${ordersTable.createdAt}))`
+  const orderCreatedAtWithTimezone =
+    sql<Date>`date(timezone(${timeZone}, ${ordersTable.createdAt}))`.as(
+      'date'
+    )
   const eligibleOrderFilters = and(
     eq(ordersTable.storeId, storeId),
     eq(ordersTable.status, 'COMPLETED'),
@@ -80,7 +83,7 @@ export const getRevenueSummary = async (
   const dailyBreakdownsTempTable = db.$with('dailyBreakdownsTempTable').as(
     db
       .select({
-        date: orderCreatedAtWithTimezone.as('date'),
+        date: orderCreatedAtWithTimezone,
         dailyOrders: count(ordersTable.id).as('dailyOrders'),
         dailyRevenue: coalesce(
           sum(ordersTable.totalPrice),
@@ -89,8 +92,10 @@ export const getRevenueSummary = async (
       })
       .from(ordersTable)
       .where(dailyBreakdownFilters)
-      .groupBy(orderCreatedAtWithTimezone)
-      .orderBy(orderCreatedAtWithTimezone)
+      // Keep SELECT/GROUP BY tied to the same ordinal expression; repeating the
+      // parameterized timezone expression can fail Postgres equivalence checks.
+      .groupBy(sql`1`)
+      .orderBy(sql`1`)
   )
 
   const [revenueSummary] = await db
