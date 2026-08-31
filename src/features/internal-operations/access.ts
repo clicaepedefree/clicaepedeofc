@@ -192,6 +192,26 @@ export function canUseInternalPermission({
   return rolePermissionMap[currentRole].has(permission)
 }
 
+export function canUseAnyInternalPermission({
+  operator,
+  permissions,
+  config,
+}: {
+  operator: Pick<InternalOperator, 'email' | 'role'> | null
+  permissions: readonly InternalPermission[]
+  config?: InternalOperationsRolloutConfig
+}) {
+  return (
+    isInternalOperationsRolloutAllowed({ operator, config }) &&
+    permissions.some(permission =>
+      canUseInternalPermission({
+        currentRole: operator?.role ?? null,
+        permission,
+      })
+    )
+  )
+}
+
 export function canViewInternalPersonalData(
   operator: Pick<InternalOperator, 'role'> | null
 ) {
@@ -282,6 +302,18 @@ export async function requireInternalPermission(
     !isInternalOperationsRolloutAllowed({ operator }) ||
     !canUseInternalPermission({ currentRole: operator.role, permission })
   ) {
+    redirect('/unauthorized')
+  }
+
+  return operator
+}
+
+export async function requireAnyInternalPermission(
+  permissions: readonly InternalPermission[]
+): Promise<InternalOperator> {
+  const operator = await getInternalOperator()
+
+  if (!operator || !canUseAnyInternalPermission({ operator, permissions })) {
     redirect('/unauthorized')
   }
 

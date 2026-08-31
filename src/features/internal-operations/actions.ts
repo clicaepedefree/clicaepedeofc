@@ -25,8 +25,7 @@ import {
   type InternalStoreDuplicateMatch,
 } from '@/features/internal-operations/db'
 import {
-  canUseInternalPermission,
-  getInternalOperator,
+  requireAnyInternalPermission,
 } from '@/features/internal-operations/access'
 import { isStoreImplementationChecklistItemKey } from '@/features/internal-operations/implementation-checklist-policy'
 import {
@@ -116,21 +115,10 @@ const redirectWithResult = (returnPath: string, result: string): never => {
 }
 
 const requireSubscriptionTermsOperator = async () => {
-  const operator = await getInternalOperator()
-  const canManageBillingValues = canUseInternalPermission({
-    currentRole: operator?.role ?? null,
-    permission: 'manage_billing_values',
-  })
-  const canApplyBillingDiscounts = canUseInternalPermission({
-    currentRole: operator?.role ?? null,
-    permission: 'apply_billing_discounts',
-  })
-
-  if (!operator || (!canManageBillingValues && !canApplyBillingDiscounts)) {
-    redirect('/unauthorized')
-  }
-
-  return operator
+  return await requireAnyInternalPermission([
+    'manage_billing_values',
+    'apply_billing_discounts',
+  ])
 }
 
 type CreateInternalStoreActionResult =
