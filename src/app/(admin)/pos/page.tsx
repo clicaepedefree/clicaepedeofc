@@ -12,6 +12,7 @@ export default function Page() {
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const {
     counters,
+    currentUserId,
     refetch,
     isLoading: isLoadingCounters,
     openCounterPage: onOpenCounter,
@@ -36,6 +37,7 @@ export default function Page() {
           <CounterCard
             key={counter.id}
             counter={counter}
+            currentUserId={currentUserId}
             onCounterStateChange={refetch}
             onOpenCounter={() => onOpenCounter(counter.id)}
           />

@@ -2,7 +2,6 @@
 import { listCounters } from '@/features/pos/api'
 import { countersCacheKey } from '@/features/pos/cache-keys'
 import { selectedStoreIdAtom } from '@/features/store/state'
-import { useAuth } from '@clerk/nextjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAtom } from 'jotai'
 import { useParams, useRouter } from 'next/navigation'
@@ -10,7 +9,6 @@ import { useMemo } from 'react'
 
 export const useCounters = () => {
   const router = useRouter()
-  const { sessionClaims } = useAuth()
   const [selectedStoreId] = useAtom(selectedStoreIdAtom)
   const { counterId } = useParams<{ counterId?: string }>()
 
@@ -29,7 +27,8 @@ export const useCounters = () => {
     refetchOnReconnect: true,
   })
 
-  const counters = result.data
+  const counters = result.data?.counters
+  const currentUserId = result.data?.currentUserId ?? null
 
   const activeCounterId = counterId ? Number(counterId) : undefined
 
@@ -37,12 +36,13 @@ export const useCounters = () => {
     () => counters?.find(counter => counter.id === activeCounterId),
     [counters, activeCounterId]
   )
+  const activeCounterSession = activeCounter?.currentSession
 
   const canOperateActiveCounter =
-    activeCounter?.currentSession.status !== 'OPEN' ||
-    sessionClaims?.metadata.userId === activeCounter?.currentSession?.operatorId
+    activeCounterSession?.status !== 'OPEN' ||
+    currentUserId === activeCounterSession?.operatorId
 
-  const isCounterOpen = activeCounter?.currentSession.status === 'OPEN'
+  const isCounterOpen = activeCounterSession?.status === 'OPEN'
 
   const openCounterPage = (counterId: number, useReplace: boolean = false) => {
     queryClient.invalidateQueries({
@@ -61,6 +61,7 @@ export const useCounters = () => {
     activeCounter,
     activeCounterId: activeCounter?.id,
     activeCounterName: activeCounter?.name,
+    currentUserId,
     canOperateActiveCounter,
     isCounterOpen,
     openCounterPage,
