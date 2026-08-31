@@ -1,6 +1,7 @@
 'use client'
 
 import { updateIFoodPDVCodes } from '@/features/ifood/api'
+import { useIFoodConnection } from '@/features/ifood/hooks/use-ifood-connection'
 import { useIFoodMenu } from '@/features/ifood/hooks/use-ifood-menu'
 import type { ItemMatch, LocalMenuItem } from '@/features/ifood/types'
 import { autoMatchItems } from '@/features/ifood/utils'
@@ -8,6 +9,8 @@ import { selectedStoreIdAtom } from '@/features/store/state'
 import type { IFoodMenuItem } from '@/services/ifood/types'
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
 import { Button } from '@/shared/button'
+import { Body } from '@/shared/typography/body'
+import { Headline } from '@/shared/typography/headline'
 import {
   Table,
   TableBody,
@@ -17,6 +20,7 @@ import {
   TableRow,
 } from '@/shared/table'
 import { useAtomValue } from 'jotai'
+import { Link2Off } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -25,7 +29,17 @@ import { IFoodItemMappingRow } from './ifood-item-mapping-row'
 export function IFoodMenuMapper() {
   const storeId = useAtomValue(selectedStoreIdAtom)
   const router = useRouter()
-  const { ifoodMenu, localItems, isLoading, error } = useIFoodMenu(storeId!)
+  const {
+    connection,
+    isLoading: isLoadingConnection,
+    error: connectionError,
+  } = useIFoodConnection(storeId)
+  const canLoadIFoodMenu =
+    connection?.status === 'connected' && !!connection.catalogId
+  const { ifoodMenu, localItems, isLoading, error } = useIFoodMenu(
+    storeId,
+    canLoadIFoodMenu
+  )
 
   // State: mapping from ifoodItemId to localItemOfferingId
   const [mappings, setMappings] = useState<Record<string, number>>({})
@@ -163,7 +177,9 @@ export function IFoodMenuMapper() {
     )
   }
 
-  if (error) {
+  if (connectionError || error) {
+    const currentError = connectionError || error
+
     return (
       <div className="p-4">
         <PageHeaderBlock
@@ -171,13 +187,16 @@ export function IFoodMenuMapper() {
           subtitle="Erro ao carregar dados"
         />
         <p className="text-red-500">
-          Erro: {error instanceof Error ? error.message : 'Erro desconhecido'}
+          Erro:{' '}
+          {currentError instanceof Error
+            ? currentError.message
+            : 'Erro desconhecido'}
         </p>
       </div>
     )
   }
 
-  if (isLoading) {
+  if (isLoadingConnection || isLoading) {
     return (
       <div className="p-4">
         <PageHeaderBlock
@@ -185,6 +204,57 @@ export function IFoodMenuMapper() {
           subtitle="Carregando..."
         />
         <p className="text-muted-foreground">Carregando cardápios...</p>
+      </div>
+    )
+  }
+
+  if (!canLoadIFoodMenu) {
+    const hasConnection = connection?.status === 'connected'
+
+    return (
+      <div className="p-4 space-y-4">
+        <PageHeaderBlock
+          title="Sincronizar Cardápio iFood"
+          subtitle={
+            hasConnection
+              ? 'Selecione um catalogo iFood antes de mapear os itens do cardapio.'
+              : 'Conecte sua conta iFood antes de mapear os itens do cardapio.'
+          }
+        />
+
+        <div className="rounded-lg border bg-card text-card-foreground p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <Link2Off size={20} aria-hidden="true" />
+              </div>
+              <div className="space-y-2">
+                <Headline variant={300}>
+                  {hasConnection
+                    ? 'Catalogo iFood nao configurado'
+                    : 'iFood ainda nao conectado'}
+                </Headline>
+                <Body
+                  variant={200}
+                  fontWeight="regular"
+                  highlight="secondary"
+                  className="max-w-2xl"
+                >
+                  {hasConnection
+                    ? 'Esta loja possui uma integracao iFood, mas ainda nao tem catalogo selecionado. Volte para integracoes e refaca a conexao para escolher o catalogo antes de sincronizar codigos PDV.'
+                    : 'Esta loja ainda nao possui uma integracao iFood ativa. Volte para integracoes e inicie a conexao para selecionar o restaurante e o catalogo antes de sincronizar codigos PDV.'}
+                </Body>
+              </div>
+            </div>
+
+            <Button
+              variant="default"
+              onClick={() => router.push('/settings/integracoes')}
+            >
+              Configurar iFood
+            </Button>
+          </div>
+        </div>
       </div>
     )
   }
