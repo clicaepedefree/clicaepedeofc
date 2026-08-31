@@ -10,7 +10,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "bun test",
+    "test": "bun test --isolate",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-dir=coverage --reporter=dots",
+    "test:coverage:critical": "bun run test:coverage && bun scripts/check-critical-test-coverage.ts",
     "db": "drizzle-kit studio & open https://local.drizzle.studio",
     "db:sync-prod": "bash scripts/sync-prod-data.sh",
     "internal:migration-readiness": "bun scripts/kan75-data-migration-readiness.ts"
