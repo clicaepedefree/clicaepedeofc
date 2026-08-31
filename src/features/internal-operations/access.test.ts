@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   canAccessInternalOperations,
+  canUseAnyInternalPermission,
   canUseInternalPermission,
   canUseInternalRole,
   canExportInternalPersonalData,
@@ -442,6 +443,62 @@ describe('internal operation access policy', () => {
       canAccessInternalOperations({
         operator: null,
         config: allConfig,
+      })
+    ).toBe(false)
+  })
+
+  test('requires rollout before allowing composite backend permissions', () => {
+    const subscriptionTermsPermissions = [
+      'manage_billing_values',
+      'apply_billing_discounts',
+    ] as const
+    const allConfig = {
+      mode: 'all',
+      pilotEmails: new Set<string>(),
+      pilotRoles: new Set<InternalRole>(),
+    } as const
+
+    expect(
+      canUseAnyInternalPermission({
+        operator: { email: 'finance@example.com', role: 'finance' },
+        permissions: subscriptionTermsPermissions,
+        config: allConfig,
+      })
+    ).toBe(true)
+    expect(
+      canUseAnyInternalPermission({
+        operator: { email: 'sales@example.com', role: 'sales' },
+        permissions: subscriptionTermsPermissions,
+        config: allConfig,
+      })
+    ).toBe(true)
+    expect(
+      canUseAnyInternalPermission({
+        operator: { email: 'support@example.com', role: 'support' },
+        permissions: subscriptionTermsPermissions,
+        config: allConfig,
+      })
+    ).toBe(false)
+    expect(
+      canUseAnyInternalPermission({
+        operator: { email: 'finance@example.com', role: 'finance' },
+        permissions: subscriptionTermsPermissions,
+        config: {
+          mode: 'off',
+          pilotEmails: new Set(['finance@example.com']),
+          pilotRoles: new Set(['finance']),
+        },
+      })
+    ).toBe(false)
+    expect(
+      canUseAnyInternalPermission({
+        operator: { email: 'outside@example.com', role: 'finance' },
+        permissions: subscriptionTermsPermissions,
+        config: {
+          mode: 'pilot',
+          pilotEmails: new Set(['pilot@example.com']),
+          pilotRoles: new Set(['sales']),
+        },
       })
     ).toBe(false)
   })
