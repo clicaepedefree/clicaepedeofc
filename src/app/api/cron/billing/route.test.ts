@@ -21,6 +21,11 @@ const gatewayReconciliationCycle = mock(async () => ({
   checked: 1,
   divergences: 0,
 }))
+const recordInvalidGatewayWebhook = mock(async () => ({ accepted: false }))
+const enqueueGatewayWebhook = mock(async () => ({
+  accepted: true,
+  duplicate: false,
+}))
 
 mock.module('@/features/billing/recurring-billing', () => ({
   runRecurringBillingCycle: recurringCycle,
@@ -39,6 +44,8 @@ mock.module('@/features/billing/billing-delinquency-blocks', () => ({
 }))
 
 mock.module('@/features/billing/gateway-webhooks', () => ({
+  recordInvalidBillingGatewayWebhook: recordInvalidGatewayWebhook,
+  enqueueBillingGatewayWebhook: enqueueGatewayWebhook,
   processBillingGatewayWebhookQueue: gatewayQueueCycle,
   runBillingGatewayReconciliationCycle: gatewayReconciliationCycle,
 }))
@@ -67,6 +74,8 @@ describe('billing cron route', () => {
     delinquencyCycle.mockReset()
     gatewayQueueCycle.mockReset()
     gatewayReconciliationCycle.mockReset()
+    recordInvalidGatewayWebhook.mockReset()
+    enqueueGatewayWebhook.mockReset()
 
     recurringCycle.mockImplementation(async () => ({
       created: 1,
@@ -96,6 +105,13 @@ describe('billing cron route', () => {
     gatewayReconciliationCycle.mockImplementation(async () => ({
       checked: 1,
       divergences: 0,
+    }))
+    recordInvalidGatewayWebhook.mockImplementation(async () => ({
+      accepted: false,
+    }))
+    enqueueGatewayWebhook.mockImplementation(async () => ({
+      accepted: true,
+      duplicate: false,
     }))
   })
 
