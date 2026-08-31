@@ -232,9 +232,9 @@ const DetailField = ({
   label: string
   value: string | number | null | undefined
 }) => (
-  <div className="space-y-1 rounded-md border bg-background/70 p-3">
+  <div className="min-w-0 space-y-1 rounded-md border bg-background/70 p-3">
     <div className="text-xs font-medium text-muted-foreground">{label}</div>
-    <div className="text-sm font-medium text-foreground">
+    <div className="break-words text-sm font-medium text-foreground">
       {value || 'Nao informado'}
     </div>
   </div>
@@ -274,9 +274,9 @@ export function InternalStoreOverviewPanel({
   const personalDataMasked = !canViewInternalPersonalData(operator)
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-3">
+    <div className="min-w-0 space-y-6">
+      <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 space-y-3">
           <Button asChild variant="outline" size="sm" isClickable>
             <Link href="/internal/stores">
               <ArrowLeft className="size-4" />
@@ -300,7 +300,7 @@ export function InternalStoreOverviewPanel({
             </div>
           </div>
         </div>
-        <div className="rounded-lg border bg-card p-4 text-sm md:min-w-[280px]">
+        <div className="min-w-0 rounded-lg border bg-card p-4 text-sm md:min-w-[280px]">
           <div className="font-medium text-foreground">Ultimo acesso</div>
           <div className="mt-1 text-muted-foreground">
             {formatDateTime(store.metrics.lastAccessAt)}
@@ -311,7 +311,7 @@ export function InternalStoreOverviewPanel({
         </div>
       </div>
 
-      <section className="grid gap-3 lg:grid-cols-5">
+      <section className="grid min-w-0 gap-3 lg:grid-cols-5">
         <SummaryCard
           icon={CircleDollarSign}
           label="Plano"
@@ -344,7 +344,7 @@ export function InternalStoreOverviewPanel({
         />
       </section>
 
-      <nav className="flex gap-2 overflow-x-auto rounded-lg border bg-card p-2">
+      <nav className="flex max-w-full gap-2 overflow-x-auto rounded-lg border bg-card p-2">
         {visibleTabs.map(tab => {
           const Icon = tabIcons[tab.value]
           const isActive = tab.value === activeTab
@@ -465,14 +465,18 @@ function SummaryCard({
   detail: string
 }) {
   return (
-    <Card className="rounded-lg py-4 shadow-xs hover:shadow-xs">
+    <Card className="min-w-0 rounded-lg py-4 shadow-xs hover:shadow-xs">
       <CardHeader className="flex flex-row items-center gap-2 px-4">
         <Icon className="size-4 text-primary" />
         <CardTitle className="text-sm text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 px-4">
-        <div className="text-lg font-semibold text-foreground">{value}</div>
-        <div className="text-xs text-muted-foreground">{detail}</div>
+        <div className="break-words text-lg font-semibold text-foreground">
+          {value}
+        </div>
+        <div className="break-words text-xs text-muted-foreground">
+          {detail}
+        </div>
       </CardContent>
     </Card>
   )
@@ -783,7 +787,7 @@ function DadosTab({
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+        <Card className="min-w-0 rounded-lg py-5 shadow-xs hover:shadow-xs">
           <CardHeader>
             <CardTitle>Dados da empresa</CardTitle>
           </CardHeader>
@@ -805,7 +809,7 @@ function DadosTab({
             <DetailField label="Endereco" value={address || null} />
           </CardContent>
         </Card>
-        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs">
+        <Card className="min-w-0 rounded-lg py-5 shadow-xs hover:shadow-xs">
           <CardHeader>
             <CardTitle>Responsavel</CardTitle>
           </CardHeader>
@@ -838,7 +842,7 @@ function DadosTab({
             />
           </CardContent>
         </Card>
-        <Card className="rounded-lg py-5 shadow-xs hover:shadow-xs lg:col-span-2">
+        <Card className="min-w-0 rounded-lg py-5 shadow-xs hover:shadow-xs lg:col-span-2">
           <CardHeader>
             <CardTitle>Dados comerciais</CardTitle>
           </CardHeader>
@@ -3552,7 +3556,7 @@ function ModulosTab({
         />
       </div>
 
-      <div className="rounded-lg border bg-card">
+      <div className="max-w-full overflow-hidden rounded-lg border bg-card">
         <div className="border-b p-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -3894,7 +3898,7 @@ function UsuariosTab({ store }: { store: InternalStoreOverview }) {
   }
 
   return (
-    <div className="rounded-lg border bg-card">
+    <div className="max-w-full overflow-hidden rounded-lg border bg-card">
       <TableLike
         headers={['Usuario', 'Perfil', 'Status', 'Ultimo acesso', 'Acesso']}
         rows={store.users.map(user => [
@@ -3945,7 +3949,7 @@ function HistoricoTab({
   }
 
   return (
-    <div className="rounded-lg border bg-card">
+    <div className="max-w-full overflow-hidden rounded-lg border bg-card">
       <div className="flex flex-col gap-3 border-b px-5 py-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-base font-semibold">Historico da loja</h2>
@@ -4049,7 +4053,7 @@ function HistoricoTab({
 
 function TableLike({ headers, rows }: { headers: string[]; rows: string[][] }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="max-w-full overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">
         <thead>
           <tr className="border-b bg-muted/60 text-left">
