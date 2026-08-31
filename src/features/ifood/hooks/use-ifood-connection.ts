@@ -4,16 +4,18 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { getIFoodConnectionStatus } from '../api'
 
-export function useIFoodConnection(storeId: number) {
+export function useIFoodConnection(storeId: number | null) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['ifood-connection', storeId],
-    queryFn: () => getIFoodConnectionStatus(storeId),
+    queryFn: () => getIFoodConnectionStatus(storeId!),
+    enabled: !!storeId,
     retry: 1,
   })
 
   useEffect(() => {
+    if (!storeId) return
     refetch()
-  }, [refetch])
+  }, [refetch, storeId])
 
   return {
     connection: data,
