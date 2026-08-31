@@ -18,23 +18,23 @@ export default async function InternalLayout({
 
   return (
     <AuthProviders clerkProviderProps={{ afterSignOutUrl: '/login' }}>
-      <main className="min-h-screen bg-muted/40 text-foreground dark:bg-background">
+      <main className="min-h-screen overflow-x-hidden bg-muted/40 text-foreground dark:bg-background">
         <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-            <div className="flex flex-wrap items-center gap-3">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
               <Link
                 href="/internal/stores"
-                className="flex items-center gap-2 font-semibold"
+                className="flex min-w-0 items-center gap-2 font-semibold"
               >
-                <span className="flex size-9 items-center justify-center rounded-md bg-slate-950 text-white">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-slate-950 text-white">
                   <ShieldCheck className="size-4" />
                 </span>
-                Operacao Clica e Pede
+                <span className="min-w-0 truncate">Operacao Clica e Pede</span>
               </Link>
               <Badge variant="outline" className="bg-muted">
                 {internalRoleLabels[operator.role]}
               </Badge>
-              <nav className="flex items-center gap-1">
+              <nav className="flex min-w-0 flex-wrap items-center gap-1">
                 <Button asChild variant="ghost" size="sm">
                   <Link href="/internal/stores">
                     <Store className="size-4" />
@@ -49,13 +49,15 @@ export default async function InternalLayout({
                 </Button>
               </nav>
             </div>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{operator.email}</span>
+            <div className="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground md:justify-end">
+              <span className="min-w-0 truncate">{operator.email}</span>
               <UserButton afterSignOutUrl="/login" />
             </div>
           </div>
         </header>
-        <div className="mx-auto max-w-7xl px-6 py-8">{children}</div>
+        <div className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          {children}
+        </div>
       </main>
     </AuthProviders>
   )

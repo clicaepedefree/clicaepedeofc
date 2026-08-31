@@ -286,7 +286,7 @@ export async function InternalStoresPanel({
   })
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-sm font-medium text-muted-foreground">
@@ -324,7 +324,7 @@ export async function InternalStoresPanel({
         </div>
       )}
 
-      <section className="space-y-3 rounded-lg border bg-card p-4">
+      <section className="min-w-0 space-y-3 rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-base font-semibold">
@@ -341,8 +341,8 @@ export async function InternalStoresPanel({
           </Badge>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-3">
-          <Card className="rounded-lg border-sky-200 bg-sky-50 py-4 shadow-xs hover:shadow-xs dark:border-sky-900/70 dark:bg-sky-950/25">
+        <div className="grid min-w-0 gap-3 lg:grid-cols-3">
+          <Card className="min-w-0 rounded-lg border-sky-200 bg-sky-50 py-4 shadow-xs hover:shadow-xs dark:border-sky-900/70 dark:bg-sky-950/25">
             <CardHeader className="flex flex-row items-center gap-2 px-4">
               <Store className="size-4 text-sky-700 dark:text-sky-300" />
               <CardTitle className="text-sm text-sky-800 dark:text-sky-300">
@@ -382,7 +382,7 @@ export async function InternalStoresPanel({
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg border-emerald-200 bg-emerald-50 py-4 shadow-xs hover:shadow-xs dark:border-emerald-900/70 dark:bg-emerald-950/25">
+          <Card className="min-w-0 rounded-lg border-emerald-200 bg-emerald-50 py-4 shadow-xs hover:shadow-xs dark:border-emerald-900/70 dark:bg-emerald-950/25">
             <CardHeader className="flex flex-row items-center gap-2 px-4">
               <CircleDollarSign className="size-4 text-emerald-700 dark:text-emerald-300" />
               <CardTitle className="text-sm text-emerald-800 dark:text-emerald-300">
@@ -441,7 +441,7 @@ export async function InternalStoresPanel({
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg border-violet-200 bg-violet-50 py-4 shadow-xs hover:shadow-xs dark:border-violet-900/70 dark:bg-violet-950/25">
+          <Card className="min-w-0 rounded-lg border-violet-200 bg-violet-50 py-4 shadow-xs hover:shadow-xs dark:border-violet-900/70 dark:bg-violet-950/25">
             <CardHeader className="flex flex-row items-center gap-2 px-4">
               <KeyRound className="size-4 text-violet-700 dark:text-violet-300" />
               <CardTitle className="text-sm text-violet-800 dark:text-violet-300">
@@ -478,10 +478,10 @@ export async function InternalStoresPanel({
 
       <section className="space-y-4">
         <form
-          className="rounded-lg border bg-card p-4"
+          className="min-w-0 rounded-lg border bg-card p-4"
           action={basePath}
         >
-          <div className="grid gap-3 lg:grid-cols-[minmax(240px,1.4fr)_repeat(5,minmax(150px,1fr))]">
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(240px,1.4fr)_repeat(5,minmax(150px,1fr))]">
             <Input
               name="q"
               defaultValue={search}

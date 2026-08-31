@@ -201,14 +201,14 @@ export function InternalStoresTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="max-w-full overflow-hidden rounded-lg border bg-card">
       {personalDataMasked && (
         <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
           <LockKeyhole className="size-4 text-primary" />
           Dados pessoais aparecem mascarados conforme a permissao do seu perfil.
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div className="max-w-full overflow-x-auto">
         <Table className="min-w-[1180px]">
           <TableHeader>
             <TableRow className="bg-muted/60 hover:bg-muted/60">
