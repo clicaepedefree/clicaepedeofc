@@ -42,6 +42,27 @@ As telas administrativas chamam Server Actions. Elas nao sao uma API publica
 para terceiros. O operador deve usar a interface interna, e nao chamadas diretas
 por ferramenta externa.
 
+Filtros da lista interna de lojas:
+
+| Parametro | Uso |
+| --- | --- |
+| `status` | Filtrar por status comercial/operacional da loja. |
+| `q` | Buscar por nome, subdominio, responsavel ou identificador relevante. |
+| `planId` | Filtrar por plano contratado. |
+| `access` | Filtrar por situacao de acesso/bloqueio. |
+| `city` | Filtrar cidade. |
+| `createdFrom` | Inicio do periodo de criacao. |
+| `createdTo` | Fim do periodo de criacao. |
+| `page` | Paginacao da lista. |
+
+Parametros do detalhe da loja:
+
+| Parametro | Uso |
+| --- | --- |
+| `tab` | Abre uma aba especifica do detalhe: `dados`, `faturas`, `plano`, `modulos`, `metricas`, `usuarios` ou `historico`. |
+| `invoiceStatus` | Filtra faturas por status dentro da aba Faturas. |
+| `auditPage` | Pagina eventos de auditoria dentro da aba Historico. |
+
 ## Modelo De Permissao Interna
 
 O acesso interno e definido no Clerk, no campo privado:
@@ -87,6 +108,76 @@ Permissoes principais:
 
 Regra de seguranca: se o operador nao tiver a permissao da acao, a Server
 Action deve negar a operacao mesmo que a tela seja acessada manualmente.
+
+Matriz de roles e permissoes:
+
+| Permissao | `superadmin` | `finance` | `support` | `sales` | `implementation` | `viewer` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `view_internal_operations` | Sim | Sim | Sim | Sim | Sim | Sim |
+| `view_personal_data` | Sim | Nao | Nao | Sim | Sim | Nao |
+| `export_personal_data` | Sim | Nao | Nao | Nao | Nao | Nao |
+| `create_store` | Sim | Nao | Nao | Sim | Nao | Nao |
+| `manage_store_profile` | Sim | Nao | Nao | Sim | Sim | Nao |
+| `manage_implementation_checklist` | Sim | Nao | Nao | Sim | Sim | Nao |
+| `activate_implemented_store` | Sim | Nao | Nao | Nao | Sim | Nao |
+| `manage_store_lifecycle` | Sim | Nao | Nao | Sim | Sim | Nao |
+| `reactivate_store` | Sim | Nao | Sim | Nao | Sim | Nao |
+| `archive_store` | Sim | Nao | Nao | Nao | Nao | Nao |
+| `manage_billing_values` | Sim | Sim | Nao | Nao | Nao | Nao |
+| `manage_billing_invoices` | Sim | Sim | Nao | Nao | Nao | Nao |
+| `apply_billing_discounts` | Sim | Sim | Nao | Sim | Nao | Nao |
+| `cancel_billing` | Sim | Sim | Nao | Nao | Nao | Nao |
+| `manage_store_modules` | Sim | Sim | Nao | Sim | Sim | Nao |
+| `block_store` | Sim | Nao | Sim | Nao | Nao | Nao |
+
+Matriz de abas no detalhe da loja:
+
+| Aba | Caminho | Quem ve | Confirmacao operacional |
+| --- | --- | --- | --- |
+| Dados | `/internal/stores/[storeId]?tab=dados` | Todos os roles internos com acesso | Conferir cadastro, responsavel, endereco e observacoes comerciais. |
+| Faturas | `/internal/stores/[storeId]?tab=faturas` | `superadmin`, `finance` | Conferir status, vencimento, saldo, pagamentos e eventos antes de agir. |
+| Plano | `/internal/stores/[storeId]?tab=plano` | `superadmin`, `finance`, `sales` | Conferir plano, valor contratado, descontos, tolerancia e excecoes. |
+| Modulos | `/internal/stores/[storeId]?tab=modulos` | `superadmin`, `finance`, `sales`, `implementation` | Conferir origem do modulo, valor adicional, vigencia e motivo. |
+| Metricas | `/internal/stores/[storeId]?tab=metricas` | Todos os roles internos com acesso | Conferir indicadores operacionais da loja. |
+| Usuarios | `/internal/stores/[storeId]?tab=usuarios` | `superadmin`, `support`, `implementation` | Conferir owners ativos, convites, bloqueios e recuperacao de senha. |
+| Historico | `/internal/stores/[storeId]?tab=historico` | Todos os roles internos com acesso | Conferir auditoria interna e eventos financeiros recentes. |
+
+Matriz de acoes administrativas:
+
+| Acao | Permissao exigida | Roles que executam | Onde operar |
+| --- | --- | --- | --- |
+| `createInternalStoreAction` | `create_store` | `superadmin`, `sales` | `/internal/stores/new` |
+| `lookupInternalPostalCodeAction` | `create_store` | `superadmin`, `sales` | `/internal/stores/new` |
+| `resendStoreAccessInviteAction` | `create_store` | `superadmin`, `sales` | Cadastro interno ou detalhe da loja. |
+| `updateInternalStoreProfileAction` | `manage_store_profile` | `superadmin`, `sales`, `implementation` | Aba Dados. |
+| `reactivateStoreAction` | `reactivate_store` | `superadmin`, `support`, `implementation` | Aba Dados, para loja `pending_recovery`. |
+| `updateStoreImplementationChecklistItemAction` | `manage_implementation_checklist` | `superadmin`, `sales`, `implementation` | Aba Dados/implantacao. |
+| `activateStoreAfterImplementationAction` | `activate_implemented_store` | `superadmin`, `implementation` | Aba Dados/implantacao. |
+| `archiveStoreAction` | `archive_store` | `superadmin` | Aba Dados, apos conferencia de pendencias. |
+| `blockStoreAccessAction` | `block_store` | `superadmin`, `support` | Aba Dados ou painel de bloqueio. |
+| `unblockStoreAccessAction` | `block_store` | `superadmin`, `support` | Aba Dados ou painel de bloqueio. |
+| `updateStoreCommercialLifecycleAction` | `manage_store_lifecycle` | `superadmin`, `sales`, `implementation` | Aba Dados, ciclo comercial. |
+| `updateStoreSubscriptionTermsAction` | `manage_billing_values` ou `apply_billing_discounts` | `superadmin`, `finance`, `sales` | Aba Plano. |
+| `changeStoreSubscriptionPlanAction` | `manage_billing_values` | `superadmin`, `finance` | Aba Plano. |
+| `createManualBillingInvoiceAction` | `manage_billing_invoices` | `superadmin`, `finance` | Aba Faturas. |
+| `markManualBillingInvoicePaymentAction` | `manage_billing_invoices` | `superadmin`, `finance` | Aba Faturas. |
+| `rescheduleBillingInvoiceDueDateAction` | `manage_billing_invoices` | `superadmin`, `finance` | Aba Faturas. |
+| `adjustBillingInvoiceAmountAction` | `apply_billing_discounts` | `superadmin`, `finance`, `sales` | Aba Faturas. |
+| `cancelBillingInvoiceAction` | `cancel_billing` | `superadmin`, `finance` | Aba Faturas. |
+| `refundBillingInvoiceAction` | `cancel_billing` | `superadmin`, `finance` | Aba Faturas. |
+| `manageStoreModuleEntitlementAction` | `manage_store_modules` | `superadmin`, `finance`, `sales`, `implementation` | Aba Modulos. |
+
+Nuances importantes:
+
+- `sales` pode aplicar desconto, mas nao pode alterar valor contratado,
+  tolerancia de pagamento ou excecao de acesso quando isso exigir
+  `manage_billing_values`.
+- Modulo adicional pago exige permissao financeira (`manage_billing_values`),
+  mesmo quando o operador tem `manage_store_modules`.
+- `viewer` ve dados operacionais, metricas e historico, mas nao executa acoes
+  mutaveis.
+- `ops_admin` e aceito apenas como valor legado e e tratado como
+  `superadmin`.
 
 ## Estados Da Loja
 
@@ -174,6 +265,27 @@ Mudanca de plano:
 - Tratamento de modulos `keep_current`: mantem liberacoes atuais.
 - Tratamento de modulos `manual_review`: exige revisao manual.
 - Status `scheduled`, `applied` e `cancelled` controlam a mudanca agendada.
+
+Catalogo de planos e modulos:
+
+| Entidade | Estados/valores | Observacao |
+| --- | --- | --- |
+| Plano de cobranca | `active`, `archived` | Apenas planos ativos devem ser escolhidos em novos cadastros e mudancas. |
+| Modulo de cobranca | `active`, `archived` | Modulo arquivado nao deve ser liberado em novas operacoes. |
+| Modulo dentro de um plano | `active`, `inactive` | Controla se o modulo faz parte do plano base. |
+| Intervalo de cobranca | `monthly`, `quarterly`, `semiannual`, `annual` | Define periodicidade da assinatura/fatura. |
+| Ajuste de cobranca | `debit`, `credit`, `none` | `credit` reduz valor; `debit` acrescenta valor; `none` registra sem impacto financeiro. |
+| Status de ajuste | `open`, `invoiced`, `applied`, `recorded`, `waived`, `cancelled` | Usado para acompanhar se o ajuste virou fatura, foi aplicado, dispensado ou cancelado. |
+
+Bloqueios de acesso da loja:
+
+| Campo | Valores |
+| --- | --- |
+| Origem | `manual`, `billing_delinquency` |
+| Motivo tecnico de inadimplencia | `invoice_overdue_after_grace` |
+
+Um bloqueio de acesso nao e o mesmo que status da loja. A loja pode continuar
+`active` e ainda assim ficar impedida de operar por um bloqueio ativo.
 
 ## Usuarios Da Loja
 
@@ -278,6 +390,41 @@ O timestamp do webhook tem tolerancia curta. Eventos com assinatura invalida,
 provider nao permitido ou payload fora do formato sao registrados para
 auditoria/conciliacao.
 
+Variaveis de ambiente operacionais:
+
+| Variavel | Obrigatoriedade | Onde impacta | Valor operacional esperado |
+| --- | --- | --- | --- |
+| `CRON_SECRET` | Obrigatoria para cron de cobranca | `/api/cron/billing` | Segredo longo e aleatorio. A chamada deve enviar `Authorization: Bearer <valor>`. |
+| `INTERNAL_OPERATIONS_ROLLOUT_MODE` | Opcional | Acesso a `/internal/*` e `/internal-operations` | `off`, `pilot` ou `all`. Sem valor valido, o codigo assume regra segura conforme parser. |
+| `INTERNAL_OPERATIONS_PILOT_EMAILS` | Opcional | Rollout interno em modo `pilot` | Lista separada por virgula com e-mails internos autorizados. |
+| `INTERNAL_OPERATIONS_PILOT_ROLES` | Opcional | Rollout interno em modo `pilot` | Lista separada por virgula com roles internas autorizadas. |
+| `BILLING_INVOICE_LEAD_DAYS` | Opcional | Geracao recorrente de faturas | Quantos dias antes de `nextBillingAt` o cron pode gerar a fatura. Padrao do codigo: `7`; minimo `0`; maximo `60`. |
+| `BILLING_RECURRING_RUN_LIMIT` | Opcional | Cron de cobranca | Limite maximo de assinaturas recorrentes processadas por execucao. Padrao do codigo: `100`; minimo `1`; maximo `500`. |
+| `BILLING_GATEWAY_ALLOWED_PROVIDERS` | Opcional | `/api/webhooks/billing` | Lista separada por virgula de providers normalizados. Padrao do codigo: `validapay,generic_gateway`. String vazia bloqueia todos. |
+| `BILLING_GATEWAY_WEBHOOK_SECRET` | Obrigatoria quando webhook de gateway estiver ativo | `/api/webhooks/billing` | Segredo HMAC compartilhado com o gateway. Nunca registrar o valor em docs, Jira ou logs. |
+
+Regras de rollout interno:
+
+- `off`: nenhum operador acessa a area interna, mesmo com role configurada.
+- `pilot`: libera apenas e-mails em `INTERNAL_OPERATIONS_PILOT_EMAILS` ou
+  roles em `INTERNAL_OPERATIONS_PILOT_ROLES`.
+- `all`: libera todos os operadores que tenham `internalRole` valido.
+- Sem valor configurado, o codigo assume `all`.
+- Valor desconhecido e tratado como `off`.
+- E-mails de piloto sao normalizados para lowercase.
+- `ops_admin` continua aceito como legado e vira `superadmin`.
+
+Checklist de configuracao por ambiente:
+
+1. Confirmar variaveis no ambiente correto da Vercel antes do deploy.
+2. Conferir se o gateway envia o mesmo provider configurado em
+   `BILLING_GATEWAY_ALLOWED_PROVIDERS`.
+3. Conferir se o secret do gateway e o mesmo de
+   `BILLING_GATEWAY_WEBHOOK_SECRET`.
+4. Fazer chamada de saude em `/api/health` apos deploy.
+5. Se houver erro no cron ou webhook, olhar logs da Vercel antes de alterar
+   dados manualmente.
+
 ## Eventos E Auditoria
 
 Todas as operacoes administrativas relevantes devem gerar registro em
@@ -362,6 +509,60 @@ Tipos de evento do gateway:
 - `payment_cancelled`
 - `unknown`
 
+Status de assinatura:
+
+- `trialing`
+- `active`
+- `past_due`
+- `paused`
+- `canceled`
+
+Tipos de desconto da assinatura:
+
+- `fixed_amount`
+- `percentage`
+
+Excecoes de acesso por cobranca:
+
+- `courtesy`
+- `manual_exception`
+
+Status de lembretes de cobranca:
+
+| Status | Quando aparece | Acao operacional |
+| --- | --- | --- |
+| `queued` | Lembrete programado para envio. | Aguardar cron ou validar fila se ficar parado. |
+| `sent` | Lembrete registrado como enviado. | Conferir canal e destinatario se cliente questionar. |
+| `skipped` | Regra decidiu nao enviar. | Verificar motivo no registro e status da fatura. |
+| `failed` | Tentativa falhou. | Conferir `failureReason`, canal, destinatario e logs. |
+
+Canais de lembrete:
+
+- `email`
+- `whatsapp`
+- `system`
+
+Issues de conciliacao de cobranca:
+
+| Campo | Valores |
+| --- | --- |
+| Tipo | `invalid_signature`, `invalid_origin`, `unsupported_event`, `invoice_not_found`, `amount_mismatch`, `payment_exceeds_outstanding`, `refund_exceeds_paid`, `out_of_order_event`, `invoice_payment_total_mismatch`, `processing_error` |
+| Status | `open`, `resolved`, `ignored` |
+| Severidade | `info`, `warning`, `critical` |
+
+Motivos comuns de rejeicao de webhook:
+
+| Motivo | Significado | Acao operacional |
+| --- | --- | --- |
+| `secret_not_configured` | Secret HMAC ausente no ambiente. | Configurar `BILLING_GATEWAY_WEBHOOK_SECRET` e redeployar. |
+| `missing_timestamp` | Header `x-clica-timestamp` ausente. | Corrigir configuracao do gateway. |
+| `missing_signature` | Header `x-clica-signature` ausente. | Corrigir configuracao do gateway. |
+| `invalid_timestamp` | Timestamp nao pode ser lido como data. | Corrigir formato enviado pelo gateway. |
+| `timestamp_outside_tolerance` | Evento fora da janela aceita. | Reenviar evento recente pelo gateway. |
+| `signature_mismatch` | Assinatura nao bate com payload/secret. | Conferir secret, body bruto e algoritmo HMAC. |
+| Provider nao permitido | `x-billing-provider` nao esta na allowlist. | Ajustar provider ou `BILLING_GATEWAY_ALLOWED_PROVIDERS`. |
+| Evento `unknown` | Tipo de evento nao mapeado. | Registrar para analise e mapear somente se for evento suportado. |
+
 ## Guia Operacional
 
 ### Cadastrar Uma Loja Internamente
@@ -400,23 +601,32 @@ confirmacao de duplicidade apenas quando o cadastro for intencional.
 ### Ativar Uma Loja Apos Implantacao
 
 1. Abra `/internal/stores/[storeId]`.
-2. Revise dados de perfil, responsavel, endereco, plano e modulos.
-3. Complete o checklist de implantacao.
-4. Confirme que a loja tem condicoes comerciais e operacionais minimas.
-5. Clique para ativar apos implantacao.
-6. Informe motivo claro.
+2. Na aba Dados, revise perfil, responsavel, endereco e status atual.
+3. Na aba Plano, revise plano, valor contratado, desconto e proxima cobranca.
+4. Na aba Modulos, revise modulos incluidos, adicionais ou cortesias.
+5. Na area de implantacao, complete todos os itens obrigatorios do checklist.
+6. Confirme que a loja tem condicoes comerciais e operacionais minimas.
+7. Clique para ativar apos implantacao.
+8. Informe motivo claro.
 
 Resultado esperado:
 
 - Status muda de `implementing` para `active`.
 - A auditoria registra `activate_store_after_implementation`.
+- A aba Historico mostra a operacao com operador, data e motivo.
 
 ### Atualizar Dados Da Loja
 
-1. Abra a loja na area interna.
+1. Abra `/internal/stores/[storeId]?tab=dados`.
 2. Edite perfil, empresa, contato ou endereco.
 3. Informe motivo quando a tela solicitar.
 4. Salve.
+
+Resultado esperado:
+
+- A tela retorna para o detalhe da loja com confirmacao de dados atualizados.
+- A aba Historico registra `update_store_profile`.
+- Se houver duplicidade cadastral, a operacao deve ser barrada para revisao.
 
 Cuidados:
 
@@ -426,9 +636,10 @@ Cuidados:
 
 ### Reativar Loja Pendente De Recuperacao
 
-1. Abra a loja com status `pending_recovery`.
+1. Abra `/internal/stores/[storeId]?tab=dados` em uma loja com status
+   `pending_recovery`.
 2. Confirme com o suporte quem e o novo responsavel.
-3. Vincule ou convide o novo usuario responsavel.
+3. Confirme que o e-mail informado ja possui uma conta ativa no app.
 4. Reative a loja somente depois de validar identidade e autorizacao.
 5. Informe o motivo da recuperacao.
 
@@ -437,10 +648,11 @@ Resultado esperado:
 - A loja volta para um status operacional permitido.
 - A associacao nao acontece apenas por e-mail.
 - A auditoria registra o operador e o motivo.
+- A aba Usuarios deve mostrar o responsavel ativo apos a recuperacao.
 
 ### Inativar, Cancelar Ou Reativar Comercialmente
 
-1. Abra o detalhe da loja.
+1. Abra `/internal/stores/[storeId]?tab=dados`.
 2. Escolha a acao comercial correta:
    - ativar;
    - reativar;
@@ -453,21 +665,32 @@ Use `inactive` para pausas operacionais/comerciais. Use cancelamento quando a
 relacao comercial foi encerrada. Use arquivamento apenas quando a loja nao deve
 mais aparecer no fluxo comum de suporte.
 
+Resultado esperado:
+
+- O status comercial muda conforme a acao escolhida.
+- Se a acao afetar cobranca ou acesso, confira a aba Faturas e a area de
+  bloqueio antes de encerrar o atendimento.
+- A aba Historico registra a transicao e seus efeitos.
+
 ### Arquivar Loja
 
-1. Confirme que a loja nao esta em atendimento ativo.
-2. Verifique pendencias de cobranca, suporte e acesso.
-3. Use a acao de arquivamento.
-4. Informe motivo.
+1. Abra `/internal/stores/[storeId]?tab=dados`.
+2. Confirme que a loja nao esta em atendimento ativo.
+3. Verifique pendencias nas abas Faturas, Usuarios e Historico.
+4. Use a acao de arquivamento.
+5. Informe motivo.
+6. Digite a confirmacao exigida pela tela, normalmente o subdominio.
 
 Resultado esperado:
 
 - Status muda para `archived`.
 - A operacao fica registrada em auditoria.
+- A loja arquivada nao deve permitir alteracoes comuns de cadastro, cobranca
+  ou modulos.
 
 ### Bloquear Acesso Manualmente
 
-1. Abra a loja.
+1. Abra `/internal/stores/[storeId]?tab=dados`.
 2. Use a acao de bloqueio de acesso.
 3. Escolha origem `manual`.
 4. Informe motivo e se o responsavel deve ser notificado.
@@ -478,10 +701,11 @@ Resultado esperado:
 - A loja fica impedida de operar normalmente.
 - A auditoria registra `block_store_access`.
 - O registro de bloqueio fica com operador, motivo e data.
+- A aba Historico deve exibir o bloqueio e a origem da decisao.
 
 ### Desbloquear Acesso
 
-1. Abra a loja bloqueada.
+1. Abra `/internal/stores/[storeId]?tab=dados`.
 2. Confirme que o motivo do bloqueio foi resolvido.
 3. Use a acao de desbloqueio.
 4. Informe motivo.
@@ -495,7 +719,7 @@ Resultado esperado:
 
 ### Alterar Valor, Desconto Ou Condicoes Da Assinatura
 
-1. Abra a aba de cobranca/assinatura da loja.
+1. Abra `/internal/stores/[storeId]?tab=plano`.
 2. Edite valor contratado, intervalo, desconto, tolerancia ou excecao de acesso.
 3. Informe validade de desconto quando aplicavel.
 4. Informe motivo comercial.
@@ -507,10 +731,18 @@ Cuidados:
 - Excecoes de acesso por cobranca precisam ter prazo ou motivo claro.
 - Alteracoes financeiras devem ser feitas por `finance`, `sales` ou
   `superadmin`, conforme permissao.
+- `sales` pode editar descontos, mas valor contratado, tolerancia e excecao de
+  acesso exigem `finance` ou `superadmin`.
+
+Resultado esperado:
+
+- A aba Plano mostra os novos termos.
+- A aba Historico registra `update_store_subscription_terms`.
+- Eventos de cobranca refletem a mudanca quando houver impacto financeiro.
 
 ### Mudar Plano
 
-1. Abra a area de plano da loja.
+1. Abra `/internal/stores/[storeId]?tab=plano`.
 2. Escolha o novo plano.
 3. Defina se a mudanca sera:
    - imediata; ou
@@ -527,10 +759,11 @@ Resultado esperado:
 - Mudanca para proxima renovacao cria agendamento.
 - O cron de cobranca aplica mudancas agendadas vencidas.
 - A auditoria registra `change_store_subscription_plan`.
+- Se a mudanca for agendada, registre a data e confira novamente apos o cron.
 
 ### Gerenciar Modulos
 
-1. Abra a area de modulos da loja.
+1. Abra `/internal/stores/[storeId]?tab=modulos`.
 2. Ative ou desative o modulo desejado.
 3. Escolha origem adequada:
    - adicional;
@@ -544,10 +777,16 @@ Cuidados:
 - Modulos vindos do plano devem ser tratados junto com plano.
 - Cortesias precisam de motivo e, preferencialmente, data final.
 - Nao use liberacao manual para burlar regra comercial sem aprovacao.
+- Adicional pago exige operador com `manage_billing_values`.
+
+Resultado esperado:
+
+- A aba Modulos mostra origem, status, valor adicional e vigencia.
+- A aba Historico registra `manage_store_module_entitlement`.
 
 ### Criar Fatura Manual
 
-1. Abra a area de faturas da loja.
+1. Abra `/internal/stores/[storeId]?tab=faturas`.
 2. Confirme que existe uma assinatura aberta para a loja.
 3. Informe periodo, vencimento, valor e motivo.
 4. Confirme.
@@ -557,10 +796,12 @@ Resultado esperado:
 - O sistema usa a assinatura aberta da loja como referencia.
 - Fatura nasce como `pending`.
 - Evento `invoice_created` e auditoria sao registrados.
+- A fatura deve aparecer na lista da aba Faturas com valor e vencimento.
 
 ### Baixar Pagamento Manual
 
-1. Abra a fatura `pending` ou `overdue`.
+1. Abra `/internal/stores/[storeId]?tab=faturas`.
+2. Selecione uma fatura `pending` ou `overdue`.
 2. Confirme comprovante/conciliacao fora do sistema.
 3. Registre pagamento manual.
 4. Informe metodo, valor, data e motivo.
@@ -571,8 +812,14 @@ Resultado esperado:
 - Fatura pode mudar para `paid` se o valor quitar a pendencia.
 - Bloqueio por inadimplencia pode ser removido automaticamente quando a regra
   permitir.
+- A aba Historico deve mostrar pagamento e eventual desbloqueio automatico.
 
 ### Remarcar Vencimento, Ajustar, Cancelar Ou Reembolsar Fatura
+
+1. Abra `/internal/stores/[storeId]?tab=faturas`.
+2. Localize a fatura correta por numero, status, valor e vencimento.
+3. Escolha a acao compativel com o status atual.
+4. Informe motivo claro e, quando pedido, confirmacao textual.
 
 Use estas acoes apenas com motivo claro:
 
@@ -604,6 +851,21 @@ Se o cron falhar:
 4. Consulte eventos `failed` ou issues de reconciliacao.
 5. Reexecute depois de corrigir a causa, evitando duplicar operacoes manuais.
 
+O resultado operacional do cron so deve ser considerado saudavel quando todos
+os ciclos retornarem sem falhas e a conciliacao nao apontar divergencias:
+
+- recorrencia de faturas sem `failed`;
+- mudancas de plano sem `failed`;
+- lembretes sem `failed`;
+- bloqueios por inadimplencia sem `failed`;
+- fila de webhooks sem `failed`;
+- conciliacao de gateway com `divergences` igual a `0`.
+
+Se o endpoint responder erro por falta de `CRON_SECRET`, e seguro configurar o
+segredo e reexecutar. Se ele responder com falhas parciais depois de processar
+itens, primeiro leia logs/eventos para evitar duplicar faturas, pagamentos ou
+bloqueios manuais.
+
 ### Webhook De Pagamento
 
 O endpoint `/api/webhooks/billing`:
@@ -619,6 +881,16 @@ duplicidade operacional.
 
 Eventos desconhecidos ou fora de ordem podem ser ignorados e registrados para
 conciliacao, sem quebrar o fluxo principal.
+
+Assinatura do webhook:
+
+- A assinatura HMAC e calculada sobre o payload bruto no formato
+  `<timestamp>.<rawBody>`.
+- O header `x-clica-signature` pode vir com ou sem prefixo `sha256=`.
+- A tolerancia de tempo e de 300 segundos.
+- Se a assinatura falhar, o evento nao deve ser assumido como pagamento valido.
+- Para reenviar um evento, gere um novo timestamp e assine novamente o mesmo
+  body que sera enviado.
 
 ### Webhook De Exclusao De Usuario Clerk
 
