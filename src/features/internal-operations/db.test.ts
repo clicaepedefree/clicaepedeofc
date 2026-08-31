@@ -10,6 +10,7 @@ import {
   getInvoiceReceivableAmount,
   getInternalStoreProvisioningPayloadHash,
   getMonthlyContractedRevenue,
+  minutesSince,
   normalizeInternalAuditLogPagination,
   maskInternalStoreEmail,
   maskInternalStoreSensitiveDigits,
@@ -183,6 +184,16 @@ describe('internal operation store policy', () => {
       undefined
     )
     expect(parseInternalStoreDateFilter(undefined, 'start')).toBe(undefined)
+  })
+
+  test('calculates operational queue age from database date values', () => {
+    const now = new Date('2026-08-31T18:00:00.000Z')
+
+    expect(minutesSince(new Date('2026-08-31T17:30:00.000Z'), now)).toBe(30)
+    expect(minutesSince('2026-08-31T17:15:00.000Z', now)).toBe(45)
+    expect(minutesSince('valor-invalido', now)).toBeNull()
+    expect(minutesSince(null, now)).toBeNull()
+    expect(minutesSince('2026-08-31T18:30:00.000Z', now)).toBe(0)
   })
 
   test('combines textual and digit store search as alternatives', () => {

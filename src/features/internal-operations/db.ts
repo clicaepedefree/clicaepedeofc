@@ -1233,10 +1233,15 @@ const getStoreReference = (
 ) =>
   storeId ? storesById.get(storeId) ?? null : null
 
-const minutesSince = (date: Date | null, now: Date) => {
-  if (!date) return null
+export const minutesSince = (value: Date | string | null, now: Date) => {
+  if (!value) return null
 
-  return Math.max(0, Math.floor((now.getTime() - date.getTime()) / 60_000))
+  const date = value instanceof Date ? value : new Date(value)
+  const timestamp = date.getTime()
+
+  if (Number.isNaN(timestamp)) return null
+
+  return Math.max(0, Math.floor((now.getTime() - timestamp) / 60_000))
 }
 
 const normalizeOperationalAlertSeverity = (
