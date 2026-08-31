@@ -5,22 +5,21 @@ import { Button } from '@/shared/button'
 import { cn } from '@/shared/lib/utils'
 import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
-import { useAuth } from '@clerk/nextjs'
 import { Check, Monitor, User } from 'lucide-react'
 import { CounterActionsDropdownMenu } from './counter-actions-dropdown-menu'
 import { OpenCounterAction } from './open-close-counter/open-counter-action'
 
 export const CounterCard = ({
   counter,
+  currentUserId,
   onCounterStateChange,
   onOpenCounter,
 }: {
   counter: Counter
+  currentUserId: string | null
   onCounterStateChange(): void
   onOpenCounter(): void
 }) => {
-  const { sessionClaims } = useAuth()
-
   if (!counter.isInService)
     return (
       <OpenCounterAction
@@ -37,7 +36,7 @@ export const CounterCard = ({
       onOpenPos={onOpenCounter}
       onClosed={onCounterStateChange}
       canUsePos={
-        counter.currentSession?.operatorId === sessionClaims?.metadata.userId
+        !!currentUserId && counter.currentSession?.operatorId === currentUserId
       }
     />
   )
