@@ -1,10 +1,22 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 const recurringCycle = mock(async () => ({ created: 1, skipped: 0, failed: 0 }))
-const planChangeCycle = mock(async () => ({ applied: 1, skipped: 0, failed: 0 }))
+const planChangeCycle = mock(async () => ({
+  applied: 1,
+  skipped: 0,
+  failed: 0,
+}))
 const reminderCycle = mock(async () => ({ sent: 1, skipped: 0, failed: 0 }))
-const delinquencyCycle = mock(async () => ({ blocked: 1, skipped: 0, failed: 0 }))
-const gatewayQueueCycle = mock(async () => ({ processed: 1, skipped: 0, failed: 0 }))
+const delinquencyCycle = mock(async () => ({
+  blocked: 1,
+  skipped: 0,
+  failed: 0,
+}))
+const gatewayQueueCycle = mock(async () => ({
+  processed: 1,
+  skipped: 0,
+  failed: 0,
+}))
 const gatewayReconciliationCycle = mock(async () => ({
   checked: 1,
   divergences: 0,
@@ -141,6 +153,53 @@ describe('billing cron route', () => {
     expect(response.status).toBe(200)
     expect(body.ok).toBe(false)
     expect(body.reminders).toEqual({ sent: 0, skipped: 0, failed: 1 })
+  })
+
+  test('reports ok false when scheduled plan changes fail', async () => {
+    planChangeCycle.mockImplementation(async () => ({
+      processedPlanChanges: 2,
+      applied: 1,
+      failed: 1,
+      processed: [
+        {
+          planChangeId: 73_101,
+          storeId: 73_001,
+          subscriptionId: 88_001,
+          status: 'applied',
+        },
+        {
+          planChangeId: 73_102,
+          storeId: 73_002,
+          status: 'failed',
+          reason: 'PLAN_CHANGE_REQUIRES_ACTIVE_SUBSCRIPTION',
+        },
+      ],
+    }))
+
+    const response = await route.GET(buildRequest())
+    const body = await readJson(response)
+
+    expect(response.status).toBe(200)
+    expect(body.ok).toBe(false)
+    expect(body.planChanges).toEqual({
+      processedPlanChanges: 2,
+      applied: 1,
+      failed: 1,
+      processed: [
+        {
+          planChangeId: 73_101,
+          storeId: 73_001,
+          subscriptionId: 88_001,
+          status: 'applied',
+        },
+        {
+          planChangeId: 73_102,
+          storeId: 73_002,
+          status: 'failed',
+          reason: 'PLAN_CHANGE_REQUIRES_ACTIVE_SUBSCRIPTION',
+        },
+      ],
+    })
   })
 
   test('reports ok false when gateway reconciliation finds divergences', async () => {
