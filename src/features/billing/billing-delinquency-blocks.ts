@@ -167,6 +167,7 @@ const processDelinquencyInvoice = async ({
       })
       .onConflictDoNothing({
         target: storeAccessBlocksTable.dedupeKey,
+        where: sql`${storeAccessBlocksTable.dedupeKey} is not null`,
       })
       .returning({ id: storeAccessBlocksTable.id })
 
