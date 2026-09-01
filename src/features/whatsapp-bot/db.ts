@@ -1,0 +1,617 @@
+import { decrypt, encrypt } from '@/lib/encryption'
+import { db } from '@/services/db'
+import {
+  whatsappBotNumbersTable,
+  whatsappBotSessionsTable,
+  type SelectWhatsappBotSession,
+} from '@/services/db/schema'
+import { and, desc, eq, inArray } from 'drizzle-orm'
+
+import {
+  buildEvolutionInstanceName,
+  buildEvolutionWebhookUrl,
+  buildWhatsappSessionNonce,
+  normalizeEvolutionConnectionDecision,
+  resolveReconnectPlan,
+  resolveQrCodeExpiresAt,
+  shouldApplyEvolutionSessionEvent,
+  whatsappBotProvider,
+  type WhatsappBotSessionStatus,
+} from './session-policy'
+import {
+  createEvolutionClient,
+  type EvolutionClient,
+  type EvolutionInstanceResult,
+  type EvolutionQrCode,
+} from './evolution-client'
+
+type SessionMetadata = Record<string, unknown> & {
+  provider?: 'evolution'
+  instanceTokenCiphertext?: string
+  qrCode?: {
+    base64: string | null
+    count: number | null
+    expiresAt: string
+  } | null
+  webhookUrl?: string
+  reconnectRequestedAt?: string
+  reconnectAttemptCount?: number
+  lastReconnectAttemptAt?: string
+  reconnectSkippedReason?: string
+  connectionNonce?: string
+  lastProviderState?: string | null
+  lastProviderPayload?: unknown
+}
+
+type WhatsappSessionSnapshot = {
+  id: number
+  storeId: number
+  numberId: number
+  providerSessionId: string
+  status: WhatsappBotSessionStatus
+  qrCodeBase64: string | null
+  qrCodeExpiresAt: Date | null
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  connectedAt: Date | null
+  disconnectedAt: Date | null
+  lastHeartbeatAt: Date | null
+}
+
+const toMetadata = (metadata: unknown): SessionMetadata =>
+  metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as SessionMetadata)
+    : {}
+
+const redactProviderPayload = (payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return payload
+
+  const value = payload as Record<string, unknown>
+  return {
+    instance: value.instance,
+    event: value.event,
+    state: value.state,
+    connectionStatus: value.connectionStatus,
+    qrcode: value.qrcode ? '[redacted]' : undefined,
+    qrCode: value.qrCode ? '[redacted]' : undefined,
+  }
+}
+
+const getSessionToken = (session: SelectWhatsappBotSession) => {
+  const metadata = toMetadata(session.metadata)
+  const encryptedToken = metadata.instanceTokenCiphertext
+
+  if (typeof encryptedToken !== 'string' || !encryptedToken) return null
+
+  return decrypt(encryptedToken)
+}
+
+const buildSessionMetadata = ({
+  currentMetadata,
+  evolutionResult,
+  webhookUrl,
+  qrCodeExpiresAt,
+}: {
+  currentMetadata?: unknown
+  evolutionResult: EvolutionInstanceResult
+  webhookUrl?: string
+  qrCodeExpiresAt?: Date | null
+}): SessionMetadata => {
+  const metadata = toMetadata(currentMetadata)
+  const tokenMetadata = evolutionResult.token
+    ? { instanceTokenCiphertext: encrypt(evolutionResult.token) }
+    : {}
+
+  return {
+    ...metadata,
+    ...tokenMetadata,
+    provider: whatsappBotProvider,
+    webhookUrl: webhookUrl ?? metadata.webhookUrl,
+    connectionNonce: buildWhatsappSessionNonce(),
+    lastProviderState: evolutionResult.state,
+    lastProviderPayload: redactProviderPayload(evolutionResult.raw),
+    qrCode: evolutionResult.qrCode
+      ? {
+          base64: evolutionResult.qrCode.base64,
+          count: evolutionResult.qrCode.count,
+          expiresAt: (
+            qrCodeExpiresAt ?? resolveQrCodeExpiresAt()
+          ).toISOString(),
+        }
+      : null,
+  }
+}
+
+const toSessionSnapshot = (
+  session: SelectWhatsappBotSession
+): WhatsappSessionSnapshot => {
+  const metadata = toMetadata(session.metadata)
+  const qrCode = metadata.qrCode
+
+  return {
+    id: session.id,
+    storeId: session.storeId,
+    numberId: session.numberId,
+    providerSessionId: session.providerSessionId,
+    status: session.status,
+    qrCodeBase64:
+      qrCode && typeof qrCode === 'object'
+        ? ((qrCode as { base64?: string | null }).base64 ?? null)
+        : null,
+    qrCodeExpiresAt: session.qrCodeExpiresAt,
+    lastErrorCode: session.lastErrorCode,
+    lastErrorMessage: session.lastErrorMessage,
+    connectedAt: session.connectedAt,
+    disconnectedAt: session.disconnectedAt,
+    lastHeartbeatAt: session.lastHeartbeatAt,
+  }
+}
+
+export async function getWhatsappBotSessionForStore(storeId: number) {
+  const [session] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(eq(whatsappBotSessionsTable.storeId, storeId))
+    .orderBy(desc(whatsappBotSessionsTable.updatedAt))
+    .limit(1)
+
+  return session ? toSessionSnapshot(session) : null
+}
+
+export async function startWhatsappBotConnection({
+  storeId,
+  phoneNumber,
+  displayName,
+  client = createEvolutionClient(),
+}: {
+  storeId: number
+  phoneNumber: string
+  displayName?: string | null
+  client?: EvolutionClient
+}) {
+  const now = new Date()
+  const [activeSession] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.storeId, storeId),
+        inArray(whatsappBotSessionsTable.status, [
+          'pending_qr',
+          'connecting',
+          'connected',
+        ])
+      )
+    )
+    .orderBy(desc(whatsappBotSessionsTable.updatedAt))
+    .limit(1)
+
+  if (activeSession) return toSessionSnapshot(activeSession)
+
+  const [number] = await db
+    .insert(whatsappBotNumbersTable)
+    .values({
+      storeId,
+      phoneNumber,
+      displayName: displayName ?? null,
+      provider: whatsappBotProvider,
+      status: 'inactive',
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        whatsappBotNumbersTable.storeId,
+        whatsappBotNumbersTable.phoneNumber,
+      ],
+      set: {
+        displayName: displayName ?? null,
+        status: 'inactive',
+        updatedAt: now,
+      },
+    })
+    .returning()
+
+  const providerSessionId = buildEvolutionInstanceName({
+    storeId,
+    numberId: number.id,
+  })
+
+  const [existingSession] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.storeId, storeId),
+        eq(whatsappBotSessionsTable.numberId, number.id),
+        eq(whatsappBotSessionsTable.provider, whatsappBotProvider)
+      )
+    )
+    .orderBy(desc(whatsappBotSessionsTable.updatedAt))
+    .limit(1)
+
+  const webhookUrl = buildEvolutionWebhookUrl()
+  const webhookSecret = process.env.WHATSAPP_EVOLUTION_WEBHOOK_SECRET
+  const evolutionResult = existingSession
+    ? await client.connectInstance({
+        instanceName: existingSession.providerSessionId,
+        token: getSessionToken(existingSession),
+      })
+    : await client.createInstance({
+        instanceName: providerSessionId,
+        webhookUrl,
+        webhookSecret,
+      })
+
+  const qrCodeExpiresAt = evolutionResult.qrCode
+    ? resolveQrCodeExpiresAt()
+    : null
+
+  if (existingSession) {
+    const [session] = await db
+      .update(whatsappBotSessionsTable)
+      .set({
+        status: 'pending_qr',
+        qrCodeExpiresAt,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        metadata: buildSessionMetadata({
+          currentMetadata: existingSession.metadata,
+          evolutionResult,
+          webhookUrl,
+          qrCodeExpiresAt,
+        }),
+        updatedAt: now,
+      })
+      .where(eq(whatsappBotSessionsTable.id, existingSession.id))
+      .returning()
+
+    return toSessionSnapshot(session)
+  }
+
+  const [session] = await db
+    .insert(whatsappBotSessionsTable)
+    .values({
+      storeId,
+      numberId: number.id,
+      provider: whatsappBotProvider,
+      providerSessionId,
+      status: 'pending_qr',
+      qrCodeExpiresAt,
+      metadata: buildSessionMetadata({
+        evolutionResult,
+        webhookUrl,
+        qrCodeExpiresAt,
+      }),
+      updatedAt: now,
+    })
+    .returning()
+
+  return toSessionSnapshot(session)
+}
+
+export async function renewWhatsappBotQrCode({
+  storeId,
+  sessionId,
+  client = createEvolutionClient(),
+}: {
+  storeId: number
+  sessionId: number
+  client?: EvolutionClient
+}) {
+  const [session] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, sessionId),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!session) throw new Error('WHATSAPP_BOT_SESSION_NOT_FOUND')
+
+  const evolutionResult = await client.connectInstance({
+    instanceName: session.providerSessionId,
+    token: getSessionToken(session),
+  })
+  const qrCodeExpiresAt = evolutionResult.qrCode
+    ? resolveQrCodeExpiresAt()
+    : null
+
+  const [updatedSession] = await db
+    .update(whatsappBotSessionsTable)
+    .set({
+      status: 'pending_qr',
+      qrCodeExpiresAt,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      metadata: buildSessionMetadata({
+        currentMetadata: session.metadata,
+        evolutionResult,
+        qrCodeExpiresAt,
+      }),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, session.id),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .returning()
+
+  return toSessionSnapshot(updatedSession)
+}
+
+export async function pauseWhatsappBotSession({
+  storeId,
+  sessionId,
+}: {
+  storeId: number
+  sessionId: number
+}) {
+  const [existingSession] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, sessionId),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!existingSession) throw new Error('WHATSAPP_BOT_SESSION_NOT_FOUND')
+
+  const [session] = await db
+    .update(whatsappBotSessionsTable)
+    .set({
+      status: 'paused',
+      qrCodeExpiresAt: null,
+      metadata: {
+        ...toMetadata(existingSession.metadata),
+        qrCode: null,
+      },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, sessionId),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .returning()
+
+  return toSessionSnapshot(session)
+}
+
+export async function disconnectWhatsappBotSession({
+  storeId,
+  sessionId,
+  client = createEvolutionClient(),
+}: {
+  storeId: number
+  sessionId: number
+  client?: EvolutionClient
+}) {
+  const [session] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, sessionId),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!session) throw new Error('WHATSAPP_BOT_SESSION_NOT_FOUND')
+
+  await client.logoutInstance({
+    instanceName: session.providerSessionId,
+    token: getSessionToken(session),
+  })
+
+  const now = new Date()
+  await db
+    .update(whatsappBotNumbersTable)
+    .set({ status: 'disconnected', updatedAt: now })
+    .where(
+      and(
+        eq(whatsappBotNumbersTable.id, session.numberId),
+        eq(whatsappBotNumbersTable.storeId, storeId)
+      )
+    )
+
+  const [updatedSession] = await db
+    .update(whatsappBotSessionsTable)
+    .set({
+      status: 'disconnected',
+      qrCodeExpiresAt: null,
+      disconnectedAt: now,
+      metadata: {
+        ...toMetadata(session.metadata),
+        qrCode: null,
+      },
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, session.id),
+        eq(whatsappBotSessionsTable.storeId, storeId)
+      )
+    )
+    .returning()
+
+  return toSessionSnapshot(updatedSession)
+}
+
+export async function applyEvolutionSessionEvent({
+  instanceName,
+  state,
+  reason,
+  qrCode,
+  rawPayload,
+  client,
+}: {
+  instanceName: string
+  state: string | null | undefined
+  reason?: unknown
+  qrCode?: EvolutionQrCode | null
+  rawPayload?: unknown
+  client?: EvolutionClient
+}) {
+  const [session] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(eq(whatsappBotSessionsTable.providerSessionId, instanceName))
+    .limit(1)
+
+  if (!session) throw new Error('WHATSAPP_BOT_SESSION_NOT_FOUND')
+
+  const now = new Date()
+  const decision = normalizeEvolutionConnectionDecision({
+    state,
+    reason,
+    hasQrCode: Boolean(qrCode),
+  })
+  const qrCodeExpiresAt = qrCode ? resolveQrCodeExpiresAt({ now }) : null
+  const currentMetadata = toMetadata(session.metadata)
+
+  if (
+    !shouldApplyEvolutionSessionEvent({
+      currentStatus: session.status,
+      hasQrCode: Boolean(qrCode),
+      nextStatus: decision.status,
+    })
+  ) {
+    return toSessionSnapshot(session)
+  }
+
+  const nextMetadata: SessionMetadata = {
+    ...currentMetadata,
+    provider: whatsappBotProvider,
+    lastProviderState: state ?? null,
+    lastProviderPayload: redactProviderPayload(rawPayload),
+    reconnectRequestedAt:
+      decision.action === 'schedule_reconnect'
+        ? now.toISOString()
+        : currentMetadata.reconnectRequestedAt,
+    qrCode:
+      decision.status === 'pending_qr' && qrCode
+        ? {
+            base64: qrCode.base64,
+            count: qrCode.count,
+            expiresAt: (
+              qrCodeExpiresAt ?? resolveQrCodeExpiresAt({ now })
+            ).toISOString(),
+          }
+        : null,
+  }
+
+  if (decision.action === 'schedule_reconnect') {
+    const lastReconnectAttemptAt =
+      typeof currentMetadata.lastReconnectAttemptAt === 'string'
+        ? new Date(currentMetadata.lastReconnectAttemptAt)
+        : null
+    const reconnectPlan = resolveReconnectPlan({
+      now,
+      lastAttemptAt: lastReconnectAttemptAt,
+      attemptCount:
+        typeof currentMetadata.reconnectAttemptCount === 'number'
+          ? currentMetadata.reconnectAttemptCount
+          : 0,
+    })
+
+    if (reconnectPlan.shouldAttempt) {
+      nextMetadata.reconnectAttemptCount = reconnectPlan.nextAttemptCount
+      nextMetadata.lastReconnectAttemptAt = now.toISOString()
+
+      await db
+        .update(whatsappBotSessionsTable)
+        .set({
+          metadata: nextMetadata,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(whatsappBotSessionsTable.id, session.id),
+            eq(whatsappBotSessionsTable.storeId, session.storeId)
+          )
+        )
+
+      const evolutionClient = client ?? createEvolutionClient()
+      await evolutionClient.restartInstance({
+        instanceName: session.providerSessionId,
+        token: getSessionToken(session),
+      })
+    } else {
+      nextMetadata.reconnectSkippedReason = reconnectPlan.reason
+    }
+  }
+
+  if (decision.action === 'request_new_qr') {
+    const evolutionClient = client ?? createEvolutionClient()
+    const evolutionResult = await evolutionClient.connectInstance({
+      instanceName: session.providerSessionId,
+      token: getSessionToken(session),
+    })
+    const nextQrExpiresAt = evolutionResult.qrCode
+      ? resolveQrCodeExpiresAt({ now })
+      : qrCodeExpiresAt
+
+    nextMetadata.qrCode = evolutionResult.qrCode
+      ? {
+          base64: evolutionResult.qrCode.base64,
+          count: evolutionResult.qrCode.count,
+          expiresAt: (
+            nextQrExpiresAt ?? resolveQrCodeExpiresAt({ now })
+          ).toISOString(),
+        }
+      : nextMetadata.qrCode
+  }
+
+  await db
+    .update(whatsappBotNumbersTable)
+    .set({
+      status: decision.numberStatus,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(whatsappBotNumbersTable.id, session.numberId),
+        eq(whatsappBotNumbersTable.storeId, session.storeId)
+      )
+    )
+
+  const [updatedSession] = await db
+    .update(whatsappBotSessionsTable)
+    .set({
+      status: decision.status,
+      qrCodeExpiresAt:
+        nextMetadata.qrCode && typeof nextMetadata.qrCode === 'object'
+          ? new Date(nextMetadata.qrCode.expiresAt)
+          : qrCodeExpiresAt,
+      connectedAt: decision.status === 'connected' ? now : session.connectedAt,
+      disconnectedAt:
+        decision.status === 'disconnected' || decision.status === 'pending_qr'
+          ? now
+          : session.disconnectedAt,
+      lastHeartbeatAt:
+        decision.status === 'connected' ? now : session.lastHeartbeatAt,
+      lastErrorCode: decision.errorCode,
+      lastErrorMessage: decision.errorMessage,
+      metadata: nextMetadata,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(whatsappBotSessionsTable.id, session.id),
+        eq(whatsappBotSessionsTable.storeId, session.storeId)
+      )
+    )
+    .returning()
+
+  return toSessionSnapshot(updatedSession)
+}
