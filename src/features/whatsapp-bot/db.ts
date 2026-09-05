@@ -1,8 +1,11 @@
 import { decrypt, encrypt } from '@/lib/encryption'
 import { db } from '@/services/db'
 import {
+  storesTable,
+  whatsappBotAssistantConfigsTable,
   whatsappBotNumbersTable,
   whatsappBotSessionsTable,
+  type SelectWhatsappBotAssistantConfig,
   type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
 } from '@/services/db/schema'
@@ -25,6 +28,12 @@ import {
   type EvolutionInstanceResult,
   type EvolutionQrCode,
 } from './evolution-client'
+import {
+  buildDefaultWhatsappAssistantConfig,
+  buildWhatsappAssistantTestReply,
+  type WhatsappAssistantConfigInput,
+  type WhatsappAssistantConfigSnapshot,
+} from './assistant-config-policy'
 
 type SessionMetadata = Record<string, unknown> & {
   provider?: 'evolution'
@@ -168,6 +177,124 @@ const getNumberForSession = async (session: SelectWhatsappBotSession) => {
     .limit(1)
 
   return number ?? null
+}
+
+const toAssistantConfigSnapshot = (
+  config: SelectWhatsappBotAssistantConfig,
+  storeName: string
+): WhatsappAssistantConfigSnapshot => ({
+  id: config.id,
+  storeId: config.storeId,
+  storeName,
+  numberId: config.numberId,
+  assistantName: config.assistantName,
+  greetingMessage: config.greetingMessage,
+  fallbackMessage: config.fallbackMessage,
+  tone: config.tone,
+  responseLength: config.responseLength,
+  emojiUsage: config.emojiUsage,
+  additionalInstructions: config.additionalInstructions,
+  testModeEnabled: config.testModeEnabled,
+  status: config.status,
+  updatedAt: config.updatedAt,
+})
+
+const getStoreOrThrow = async (storeId: number) => {
+  const [store] = await db
+    .select()
+    .from(storesTable)
+    .where(eq(storesTable.id, storeId))
+    .limit(1)
+
+  if (!store) throw new Error('STORE_NOT_FOUND')
+
+  return store
+}
+
+export async function getWhatsappAssistantConfigForStore(storeId: number) {
+  const store = await getStoreOrThrow(storeId)
+  const [config] = await db
+    .select()
+    .from(whatsappBotAssistantConfigsTable)
+    .where(eq(whatsappBotAssistantConfigsTable.storeId, storeId))
+    .limit(1)
+
+  if (config) return toAssistantConfigSnapshot(config, store.name)
+
+  const defaultConfig = buildDefaultWhatsappAssistantConfig(store.name)
+  const [createdConfig] = await db
+    .insert(whatsappBotAssistantConfigsTable)
+    .values({
+      storeId,
+      ...defaultConfig,
+      status: 'draft',
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [whatsappBotAssistantConfigsTable.storeId],
+      set: {
+        ...defaultConfig,
+        status: 'draft',
+        updatedAt: new Date(),
+      },
+    })
+    .returning()
+
+  return toAssistantConfigSnapshot(createdConfig, store.name)
+}
+
+export async function saveWhatsappAssistantConfigForStore({
+  storeId,
+  values,
+  updatedByUserId,
+}: {
+  storeId: number
+  values: WhatsappAssistantConfigInput
+  updatedByUserId: string
+}) {
+  const store = await getStoreOrThrow(storeId)
+
+  const [config] = await db
+    .insert(whatsappBotAssistantConfigsTable)
+    .values({
+      storeId,
+      ...values,
+      status: values.testModeEnabled ? 'draft' : 'active',
+      updatedByUserId,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [whatsappBotAssistantConfigsTable.storeId],
+      set: {
+        ...values,
+        status: values.testModeEnabled ? 'draft' : 'active',
+        updatedByUserId,
+        updatedAt: new Date(),
+      },
+    })
+    .returning()
+
+  return toAssistantConfigSnapshot(config, store.name)
+}
+
+export async function testWhatsappAssistantConfigForStore({
+  storeId,
+  message,
+}: {
+  storeId: number
+  message: string
+}) {
+  const store = await getStoreOrThrow(storeId)
+  const config = await getWhatsappAssistantConfigForStore(storeId)
+
+  return {
+    reply: buildWhatsappAssistantTestReply({
+      config,
+      storeName: store.name,
+      customerMessage: message,
+    }),
+    sentToCustomer: false,
+  }
 }
 
 export async function getWhatsappBotSessionForStore(storeId: number) {
