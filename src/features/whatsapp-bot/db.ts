@@ -3,6 +3,7 @@ import { db } from '@/services/db'
 import {
   whatsappBotNumbersTable,
   whatsappBotSessionsTable,
+  type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
 } from '@/services/db/schema'
 import { and, desc, eq, inArray } from 'drizzle-orm'
@@ -56,6 +57,9 @@ type WhatsappSessionSnapshot = {
   connectedAt: Date | null
   disconnectedAt: Date | null
   lastHeartbeatAt: Date | null
+  updatedAt: Date | null
+  phoneNumber: string | null
+  displayName: string | null
 }
 
 const toMetadata = (metadata: unknown): SessionMetadata =>
@@ -123,7 +127,8 @@ const buildSessionMetadata = ({
 }
 
 const toSessionSnapshot = (
-  session: SelectWhatsappBotSession
+  session: SelectWhatsappBotSession,
+  number?: Pick<SelectWhatsappBotNumber, 'phoneNumber' | 'displayName'> | null
 ): WhatsappSessionSnapshot => {
   const metadata = toMetadata(session.metadata)
   const qrCode = metadata.qrCode
@@ -144,18 +149,46 @@ const toSessionSnapshot = (
     connectedAt: session.connectedAt,
     disconnectedAt: session.disconnectedAt,
     lastHeartbeatAt: session.lastHeartbeatAt,
+    updatedAt: session.updatedAt,
+    phoneNumber: number?.phoneNumber ?? null,
+    displayName: number?.displayName ?? null,
   }
 }
 
-export async function getWhatsappBotSessionForStore(storeId: number) {
-  const [session] = await db
+const getNumberForSession = async (session: SelectWhatsappBotSession) => {
+  const [number] = await db
     .select()
+    .from(whatsappBotNumbersTable)
+    .where(
+      and(
+        eq(whatsappBotNumbersTable.id, session.numberId),
+        eq(whatsappBotNumbersTable.storeId, session.storeId)
+      )
+    )
+    .limit(1)
+
+  return number ?? null
+}
+
+export async function getWhatsappBotSessionForStore(storeId: number) {
+  const [row] = await db
+    .select({
+      session: whatsappBotSessionsTable,
+      number: whatsappBotNumbersTable,
+    })
     .from(whatsappBotSessionsTable)
+    .innerJoin(
+      whatsappBotNumbersTable,
+      and(
+        eq(whatsappBotNumbersTable.id, whatsappBotSessionsTable.numberId),
+        eq(whatsappBotNumbersTable.storeId, whatsappBotSessionsTable.storeId)
+      )
+    )
     .where(eq(whatsappBotSessionsTable.storeId, storeId))
     .orderBy(desc(whatsappBotSessionsTable.updatedAt))
     .limit(1)
 
-  return session ? toSessionSnapshot(session) : null
+  return row ? toSessionSnapshot(row.session, row.number) : null
 }
 
 export async function startWhatsappBotConnection({
@@ -186,7 +219,12 @@ export async function startWhatsappBotConnection({
     .orderBy(desc(whatsappBotSessionsTable.updatedAt))
     .limit(1)
 
-  if (activeSession) return toSessionSnapshot(activeSession)
+  if (activeSession) {
+    return toSessionSnapshot(
+      activeSession,
+      await getNumberForSession(activeSession)
+    )
+  }
 
   const [number] = await db
     .insert(whatsappBotNumbersTable)
@@ -265,7 +303,7 @@ export async function startWhatsappBotConnection({
       .where(eq(whatsappBotSessionsTable.id, existingSession.id))
       .returning()
 
-    return toSessionSnapshot(session)
+    return toSessionSnapshot(session, number)
   }
 
   const [session] = await db
@@ -286,7 +324,7 @@ export async function startWhatsappBotConnection({
     })
     .returning()
 
-  return toSessionSnapshot(session)
+  return toSessionSnapshot(session, number)
 }
 
 export async function renewWhatsappBotQrCode({
@@ -341,7 +379,10 @@ export async function renewWhatsappBotQrCode({
     )
     .returning()
 
-  return toSessionSnapshot(updatedSession)
+  return toSessionSnapshot(
+    updatedSession,
+    await getNumberForSession(updatedSession)
+  )
 }
 
 export async function pauseWhatsappBotSession({
@@ -383,7 +424,7 @@ export async function pauseWhatsappBotSession({
     )
     .returning()
 
-  return toSessionSnapshot(session)
+  return toSessionSnapshot(session, await getNumberForSession(session))
 }
 
 export async function disconnectWhatsappBotSession({
@@ -444,7 +485,10 @@ export async function disconnectWhatsappBotSession({
     )
     .returning()
 
-  return toSessionSnapshot(updatedSession)
+  return toSessionSnapshot(
+    updatedSession,
+    await getNumberForSession(updatedSession)
+  )
 }
 
 export async function applyEvolutionSessionEvent({
@@ -486,7 +530,7 @@ export async function applyEvolutionSessionEvent({
       nextStatus: decision.status,
     })
   ) {
-    return toSessionSnapshot(session)
+    return toSessionSnapshot(session, await getNumberForSession(session))
   }
 
   const nextMetadata: SessionMetadata = {
@@ -613,5 +657,8 @@ export async function applyEvolutionSessionEvent({
     )
     .returning()
 
-  return toSessionSnapshot(updatedSession)
+  return toSessionSnapshot(
+    updatedSession,
+    await getNumberForSession(updatedSession)
+  )
 }
