@@ -1,6 +1,6 @@
 import { IFoodConnectionCard } from '@/features/ifood/components/ifood-connection-card'
 import { QzTrayConnectionCard } from '@/features/qz-tray/components/qz-tray-connection-card'
-import { WhatsappConnectionCard } from '@/features/whatsapp-bot/components/whatsapp-connection-card'
+import { WhatsappAutomationSettings } from '@/features/whatsapp-bot/components/whatsapp-automation-settings'
 import { SettingsCategoryBlock } from '@/shared/blocks/settings-category-block'
 
 export const IntegrationsSettings = () => {
@@ -14,7 +14,7 @@ export const IntegrationsSettings = () => {
         title="Atendimento automatizado"
         contentClassName="grid-cols-1"
       >
-        <WhatsappConnectionCard />
+        <WhatsappAutomationSettings />
       </SettingsCategoryBlock>
 
       <SettingsCategoryBlock title="Impressao">
