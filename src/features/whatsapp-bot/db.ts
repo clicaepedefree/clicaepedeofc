@@ -3,13 +3,19 @@ import { db } from '@/services/db'
 import {
   storesTable,
   whatsappBotAssistantConfigsTable,
+  whatsappBotContactsTable,
+  whatsappBotConversationsTable,
+  whatsappBotMessagesTable,
   whatsappBotNumbersTable,
   whatsappBotSessionsTable,
   type SelectWhatsappBotAssistantConfig,
+  type SelectWhatsappBotContact,
+  type SelectWhatsappBotConversation,
+  type SelectWhatsappBotMessage,
   type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
 } from '@/services/db/schema'
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import {
   buildEvolutionInstanceName,
@@ -34,6 +40,12 @@ import {
   type WhatsappAssistantConfigInput,
   type WhatsappAssistantConfigSnapshot,
 } from './assistant-config-policy'
+import {
+  buildContactIngestionMetadata,
+  detectPromotionalOptOut,
+  normalizeWhatsappPhoneNumber,
+  type WhatsappBotInboundMessageType,
+} from './contact-ingestion-policy'
 
 type SessionMetadata = Record<string, unknown> & {
   provider?: 'evolution'
@@ -69,6 +81,13 @@ type WhatsappSessionSnapshot = {
   updatedAt: Date | null
   phoneNumber: string | null
   displayName: string | null
+}
+
+type WhatsappInboundMessageProcessingResult = {
+  contact: SelectWhatsappBotContact
+  conversation: SelectWhatsappBotConversation
+  message: SelectWhatsappBotMessage | null
+  messageCreated: boolean
 }
 
 const toMetadata = (metadata: unknown): SessionMetadata =>
@@ -616,6 +635,193 @@ export async function disconnectWhatsappBotSession({
     updatedSession,
     await getNumberForSession(updatedSession)
   )
+}
+
+export async function processWhatsappInboundMessage({
+  instanceName,
+  senderPhone,
+  displayName,
+  body,
+  providerMessageId,
+  messageType,
+  occurredAt = new Date(),
+  additionalDataAllowed = false,
+  rawPayload,
+}: {
+  instanceName: string
+  senderPhone: string
+  displayName?: string | null
+  body?: string | null
+  providerMessageId?: string | null
+  messageType?: WhatsappBotInboundMessageType
+  occurredAt?: Date
+  additionalDataAllowed?: boolean
+  rawPayload?: unknown
+}): Promise<WhatsappInboundMessageProcessingResult> {
+  const phoneNumber = normalizeWhatsappPhoneNumber(senderPhone)
+  if (!phoneNumber) throw new Error('WHATSAPP_BOT_INVALID_CONTACT_PHONE')
+
+  const normalizedMessageType = messageType ?? 'text'
+  const now = new Date()
+  const normalizedOccurredAt = Number.isNaN(occurredAt.getTime())
+    ? now
+    : occurredAt
+  const normalizedDisplayName = displayName?.trim() || null
+  const normalizedBody = body?.trim() || null
+  const optOutRequested = detectPromotionalOptOut(normalizedBody)
+
+  return db.transaction(async tx => {
+    const conversationMetadataPatch = JSON.stringify({
+      lastInboundProviderMessageId: providerMessageId ?? null,
+    })
+
+    const [session] = await tx
+      .select()
+      .from(whatsappBotSessionsTable)
+      .where(eq(whatsappBotSessionsTable.providerSessionId, instanceName))
+      .limit(1)
+
+    if (!session) throw new Error('WHATSAPP_BOT_SESSION_NOT_FOUND')
+
+    const [existingContact] = await tx
+      .select()
+      .from(whatsappBotContactsTable)
+      .where(
+        and(
+          eq(whatsappBotContactsTable.storeId, session.storeId),
+          eq(whatsappBotContactsTable.phoneNumber, phoneNumber)
+        )
+      )
+      .limit(1)
+
+    const contactMetadata = buildContactIngestionMetadata({
+      body: normalizedBody,
+      displayName: normalizedDisplayName,
+      providerMessageId,
+      messageType: normalizedMessageType,
+      occurredAt: normalizedOccurredAt,
+      additionalDataAllowed,
+      isFirstContact: !existingContact,
+    })
+
+    const [contact] = await tx
+      .insert(whatsappBotContactsTable)
+      .values({
+        storeId: session.storeId,
+        phoneNumber,
+        displayName: normalizedDisplayName,
+        source: 'whatsapp',
+        firstContactAt: normalizedOccurredAt,
+        lastContactAt: normalizedOccurredAt,
+        promotionalOptOutAt: optOutRequested ? normalizedOccurredAt : null,
+        metadata: contactMetadata,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          whatsappBotContactsTable.storeId,
+          whatsappBotContactsTable.phoneNumber,
+        ],
+        set: {
+          displayName: normalizedDisplayName
+            ? normalizedDisplayName
+            : sql`${whatsappBotContactsTable.displayName}`,
+          source: 'whatsapp',
+          lastContactAt: normalizedOccurredAt,
+          promotionalOptOutAt: optOutRequested
+            ? normalizedOccurredAt
+            : sql`${whatsappBotContactsTable.promotionalOptOutAt}`,
+          metadata: sql`${whatsappBotContactsTable.metadata} || excluded.metadata`,
+          updatedAt: now,
+        },
+      })
+      .returning()
+
+    const [existingConversation] = await tx
+      .select()
+      .from(whatsappBotConversationsTable)
+      .where(
+        and(
+          eq(whatsappBotConversationsTable.storeId, session.storeId),
+          eq(whatsappBotConversationsTable.contactId, contact.id),
+          inArray(whatsappBotConversationsTable.status, [
+            'open',
+            'pending_human',
+          ])
+        )
+      )
+      .orderBy(desc(whatsappBotConversationsTable.lastMessageAt))
+      .limit(1)
+
+    const [conversation] = existingConversation
+      ? await tx
+          .update(whatsappBotConversationsTable)
+          .set({
+            numberId: session.numberId,
+            sessionId: session.id,
+            lastMessageAt: normalizedOccurredAt,
+            metadata: sql`${whatsappBotConversationsTable.metadata} || ${conversationMetadataPatch}::jsonb`,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(whatsappBotConversationsTable.id, existingConversation.id),
+              eq(whatsappBotConversationsTable.storeId, session.storeId)
+            )
+          )
+          .returning()
+      : await tx
+          .insert(whatsappBotConversationsTable)
+          .values({
+            storeId: session.storeId,
+            contactId: contact.id,
+            numberId: session.numberId,
+            sessionId: session.id,
+            mode: 'automatic',
+            status: 'open',
+            lastMessageAt: normalizedOccurredAt,
+            metadata: {
+              provider: whatsappBotProvider,
+              source: 'whatsapp_inbound',
+              lastInboundProviderMessageId: providerMessageId ?? null,
+            },
+            updatedAt: now,
+          })
+          .returning()
+
+    const [message] = await tx
+      .insert(whatsappBotMessagesTable)
+      .values({
+        storeId: session.storeId,
+        conversationId: conversation.id,
+        contactId: contact.id,
+        numberId: session.numberId,
+        sessionId: session.id,
+        providerMessageId: providerMessageId ?? null,
+        direction: 'inbound',
+        senderType: 'customer',
+        messageType: normalizedMessageType,
+        body: normalizedBody,
+        status: 'received',
+        occurredAt: normalizedOccurredAt,
+        metadata: {
+          provider: whatsappBotProvider,
+          source: 'whatsapp_inbound',
+          rawPayload: redactProviderPayload(rawPayload),
+          optOutRequested,
+        },
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning()
+
+    return {
+      contact,
+      conversation,
+      message: message ?? null,
+      messageCreated: Boolean(message),
+    }
+  })
 }
 
 export async function applyEvolutionSessionEvent({

@@ -1,5 +1,9 @@
 import { type EvolutionQrCode } from '@/features/whatsapp-bot/evolution-client'
-import { applyEvolutionSessionEvent } from '@/features/whatsapp-bot/db'
+import { parseEvolutionInboundMessagePayload } from '@/features/whatsapp-bot/contact-ingestion-policy'
+import {
+  applyEvolutionSessionEvent,
+  processWhatsappInboundMessage,
+} from '@/features/whatsapp-bot/db'
 import { assertWhatsappWebhookAuthorized } from '@/features/whatsapp-bot/session-policy'
 import { NextResponse } from 'next/server'
 
@@ -88,6 +92,34 @@ export async function POST(request: Request) {
   }
 
   try {
+    const inboundMessage = parseEvolutionInboundMessagePayload(payload)
+
+    if (inboundMessage) {
+      const result = await processWhatsappInboundMessage({
+        instanceName,
+        ...inboundMessage,
+        rawPayload: payload,
+      })
+
+      return NextResponse.json(
+        {
+          accepted: true,
+          contact: {
+            id: result.contact.id,
+            storeId: result.contact.storeId,
+            phoneNumber: result.contact.phoneNumber,
+            promotionalOptOutAt: result.contact.promotionalOptOutAt,
+          },
+          conversation: {
+            id: result.conversation.id,
+            status: result.conversation.status,
+          },
+          messageCreated: result.messageCreated,
+        },
+        { status: result.messageCreated ? 202 : 200 }
+      )
+    }
+
     const session = await applyEvolutionSessionEvent({
       instanceName,
       state: readState(payload),
