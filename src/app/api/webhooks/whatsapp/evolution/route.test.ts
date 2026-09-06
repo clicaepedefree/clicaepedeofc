@@ -23,14 +23,25 @@ const processWhatsappInboundMessage = mock(async () => ({
   messageCreated: true,
 }))
 
+const runWhatsappAssistantOrchestrator = mock(async () => ({
+  action: 'responded',
+  reason: null,
+  intent: 'menu',
+  outboundMessageId: 'outbound-1',
+  latencyMs: 350,
+  deliveryStatus: 'sent',
+}))
+
 mock.module('@/features/whatsapp-bot/db', () => ({
   applyEvolutionSessionEvent,
   processWhatsappInboundMessage,
+  runWhatsappAssistantOrchestrator,
 }))
 
 mock.module('@/features/whatsapp-bot/db.ts', () => ({
   applyEvolutionSessionEvent,
   processWhatsappInboundMessage,
+  runWhatsappAssistantOrchestrator,
 }))
 
 const route = await import('./route')
@@ -57,6 +68,7 @@ describe('Evolution webhook route', () => {
     process.env.WHATSAPP_EVOLUTION_WEBHOOK_SECRET = 'wa-secret'
     applyEvolutionSessionEvent.mockClear()
     processWhatsappInboundMessage.mockClear()
+    runWhatsappAssistantOrchestrator.mockClear()
   })
 
   test('processes inbound customer messages as contact ingestion', async () => {
@@ -93,6 +105,14 @@ describe('Evolution webhook route', () => {
         status: 'open',
       },
       messageCreated: true,
+      assistant: {
+        action: 'responded',
+        reason: null,
+        intent: 'menu',
+        outboundMessageId: 'outbound-1',
+        latencyMs: 350,
+        deliveryStatus: 'sent',
+      },
     })
     expect(processWhatsappInboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -104,6 +124,11 @@ describe('Evolution webhook route', () => {
         messageType: 'text',
       })
     )
+    expect(runWhatsappAssistantOrchestrator).toHaveBeenCalledWith({
+      storeId: 9,
+      conversationId: 'conversation-1',
+      inboundMessageId: 'message-1',
+    })
     expect(applyEvolutionSessionEvent).not.toHaveBeenCalled()
   })
 
@@ -142,6 +167,7 @@ describe('Evolution webhook route', () => {
 
     expect(response.status).toBe(200)
     expect((await readJson(response)).messageCreated).toBe(false)
+    expect(runWhatsappAssistantOrchestrator).not.toHaveBeenCalled()
     expect(applyEvolutionSessionEvent).not.toHaveBeenCalled()
   })
 
@@ -172,6 +198,7 @@ describe('Evolution webhook route', () => {
       })
     )
     expect(processWhatsappInboundMessage).not.toHaveBeenCalled()
+    expect(runWhatsappAssistantOrchestrator).not.toHaveBeenCalled()
   })
 
   test('rejects inbound payloads without the configured webhook secret', async () => {
@@ -198,5 +225,6 @@ describe('Evolution webhook route', () => {
       reason: 'invalid_signature',
     })
     expect(processWhatsappInboundMessage).not.toHaveBeenCalled()
+    expect(runWhatsappAssistantOrchestrator).not.toHaveBeenCalled()
   })
 })

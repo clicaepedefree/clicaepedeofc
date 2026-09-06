@@ -64,7 +64,7 @@ describe('Evolution client', () => {
         url: 'https://app.example.com/api/webhooks/whatsapp/evolution',
         byEvents: true,
         base64: true,
-        events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+        events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED', 'MESSAGES_UPSERT'],
         headers: {
           Authorization: 'Bearer webhook-secret',
         },
@@ -103,6 +103,45 @@ describe('Evolution client', () => {
       RequestInit & { headers: Record<string, string> },
     ]
     expect(init.headers.apikey).toBe('instance-token')
+    globalThis.fetch = originalFetch
+  })
+
+  test('sends text messages through the instance-scoped Evolution endpoint', async () => {
+    configureEvolutionEnv()
+    const fetchCalls: unknown[][] = []
+    const fetchMock = async (...args: unknown[]) => {
+      fetchCalls.push(args)
+      return Response.json({
+        key: {
+          id: 'WA-OUT-1',
+        },
+        status: 'PENDING',
+      })
+    }
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    const client = createEvolutionClient()
+    const result = await client.sendTextMessage({
+      instanceName: 'clica-store-9-wa-1',
+      token: 'instance-token',
+      number: '+55 (13) 99184-0862',
+      text: 'Oi! Posso ajudar?',
+    })
+
+    expect(result.providerMessageId).toBe('WA-OUT-1')
+    expect(result.status).toBe('PENDING')
+    const [url, init] = fetchCalls[0] as [
+      string,
+      RequestInit & { headers: Record<string, string>; body: string },
+    ]
+    expect(url).toBe(
+      'https://evolution.example.com/message/sendText/clica-store-9-wa-1'
+    )
+    expect(init.headers.apikey).toBe('instance-token')
+    expect(JSON.parse(init.body)).toEqual({
+      number: '5513991840862',
+      text: 'Oi! Posso ajudar?',
+    })
     globalThis.fetch = originalFetch
   })
 
