@@ -1,4 +1,5 @@
 import { decrypt, encrypt } from '@/lib/encryption'
+import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import { db } from '@/services/db'
 import {
   categoriesTable,
@@ -65,6 +66,13 @@ import {
   estimateWhatsappAssistantTokens,
   trimWhatsappAssistantHistory,
 } from './orchestrator-policy'
+import {
+  createWhatsappAssistantStoreTools,
+  resolveWhatsappAssistantModalities,
+  resolveWhatsappAssistantProductAvailability,
+  type WhatsappAssistantStoreToolProduct,
+} from './store-tools-policy'
+import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 
 type SessionMetadata = Record<string, unknown> & {
   provider?: 'evolution'
@@ -854,14 +862,18 @@ export async function processWhatsappInboundMessage({
 
 async function getWhatsappAssistantBusinessContext(storeId: number) {
   const [store] = await db
-    .select({ id: storesTable.id, name: storesTable.name })
+    .select({
+      id: storesTable.id,
+      name: storesTable.name,
+      subdomain: storesTable.subdomain,
+    })
     .from(storesTable)
     .where(eq(storesTable.id, storeId))
     .limit(1)
 
   if (!store) throw new Error('STORE_NOT_FOUND')
 
-  const [digitalMenu, businessHours, paymentMethods, menuItems] =
+  const [digitalMenu, businessHours, paymentMethods, menuRows] =
     await Promise.all([
       db
         .select()
@@ -904,11 +916,17 @@ async function getWhatsappAssistantBusinessContext(storeId: number) {
         .limit(12),
       db
         .select({
+          itemOfferingId: itemOfferingsTable.id,
+          itemId: itemsTable.id,
           name: itemsTable.name,
           categoryName: categoriesTable.name,
           description: itemsTable.description,
           price: itemOfferingsTable.price,
+          originalPrice: itemOfferingsTable.originalPrice,
           isAvailable: itemOfferingsTable.isAvailable,
+          categoryIsAvailable: categoriesTable.isAvailable,
+          inventory: itemsTable.inventory,
+          externalCode: itemOfferingsTable.externalCode,
         })
         .from(itemOfferingsTable)
         .innerJoin(itemsTable, eq(itemsTable.id, itemOfferingsTable.itemId))
@@ -923,15 +941,102 @@ async function getWhatsappAssistantBusinessContext(storeId: number) {
           )
         )
         .orderBy(asc(categoriesTable.index), asc(itemOfferingsTable.index))
-        .limit(20),
+        .limit(80),
     ])
+
+  const optionGroupsByOffering = menuRows.length
+    ? await getOptionGroupsByItemOfferingIds({
+        itemOfferingIds: menuRows.map(item => item.itemOfferingId),
+        storeId,
+      })
+    : {}
+
+  const allProducts: WhatsappAssistantStoreToolProduct[] = menuRows.map(
+    item => {
+      const availability = resolveWhatsappAssistantProductAvailability({
+        categoryIsAvailable: item.categoryIsAvailable,
+        offeringIsAvailable: item.isAvailable,
+        inventory: item.inventory,
+      })
+
+      return {
+        itemOfferingId: item.itemOfferingId,
+        itemId: item.itemId,
+        categoryName: item.categoryName,
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        originalPrice: item.originalPrice,
+        inventory: item.inventory,
+        externalCode: item.externalCode,
+        optionGroups: (optionGroupsByOffering[item.itemOfferingId] ?? [])
+          .filter(group => group.storeId === storeId)
+          .map(group => ({
+            id: group.id,
+            name: group.name,
+            minQuantity: group.minQuantity,
+            maxQuantity: group.maxQuantity,
+            options: group.options.map(option => ({
+              id: option.id,
+              name: option.item.name,
+              price: option.price,
+              minQuantity: option.minQuantity,
+              maxQuantity: option.maxQuantity,
+            })),
+          })),
+        ...availability,
+      }
+    }
+  )
+
+  const availableProducts = allProducts.filter(
+    item => item.availabilityStatus === 'available'
+  )
+  const unavailableProducts = allProducts
+    .filter(item => item.availabilityStatus === 'unavailable')
+    .slice(0, 20)
+  const activePayments = paymentMethods.filter(
+    method => method.allowDelivery || method.allowTakeout
+  )
+  const modalities = resolveWhatsappAssistantModalities({
+    digitalMenu: digitalMenu[0] ?? null,
+    paymentMethods: activePayments,
+  })
 
   return {
     storeName: store.name,
     digitalMenu: digitalMenu[0] ?? null,
     businessHours,
-    paymentMethods,
-    menuItems,
+    paymentMethods: activePayments,
+    menuItems: availableProducts.slice(0, 20).map(item => ({
+      name: item.name,
+      categoryName: item.categoryName,
+      description: item.description,
+      price: item.price,
+      isAvailable: true,
+    })),
+    storeTools: {
+      scope: 'conversation_store' as const,
+      store: {
+        name: store.name,
+        subdomain: store.subdomain,
+        digitalMenuUrl: `${getPublicAppBaseUrl()}/cardapio/${encodeURIComponent(store.subdomain)}`,
+      },
+      menu: {
+        status: allProducts.length ? ('known' as const) : ('missing' as const),
+        products: availableProducts,
+        unavailableProducts,
+        emptyReason: allProducts.length
+          ? null
+          : 'Nenhum produto foi encontrado para esta loja.',
+      },
+      operations: {
+        digitalMenu: digitalMenu[0] ?? null,
+        businessHours,
+        modalities,
+      },
+      payments: activePayments,
+    },
   }
 }
 
@@ -1277,6 +1382,9 @@ export async function runWhatsappAssistantOrchestrator({
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      tools: businessContext.storeTools
+        ? createWhatsappAssistantStoreTools(businessContext.storeTools)
+        : undefined,
       timeoutMs: 12_000,
     })
 
@@ -1287,6 +1395,7 @@ export async function runWhatsappAssistantOrchestrator({
       usage: llmResponse.usage,
       latencyMs: llmResponse.latencyMs,
       finishReason: llmResponse.finishReason,
+      toolCalls: llmResponse.toolCalls,
       estimatedInputTokens,
     }
   } catch (error) {
