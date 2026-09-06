@@ -5,6 +5,7 @@ import {
   processWhatsappInboundMessage,
   runWhatsappAssistantOrchestrator,
 } from '@/features/whatsapp-bot/db'
+import { sanitizeWhatsappBotLogError } from '@/features/whatsapp-bot/orchestrator-policy'
 import { assertWhatsappWebhookAuthorized } from '@/features/whatsapp-bot/session-policy'
 import { NextResponse } from 'next/server'
 
@@ -140,7 +141,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ accepted: true, session }, { status: 202 })
   } catch (error) {
-    console.error('[whatsapp-bot] Failed to process Evolution webhook', error)
+    console.error(
+      '[whatsapp-bot] Failed to process Evolution webhook',
+      sanitizeWhatsappBotLogError(error)
+    )
 
     return NextResponse.json(
       { accepted: false, reason: 'processing_error' },
