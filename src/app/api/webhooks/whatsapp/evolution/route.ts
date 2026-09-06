@@ -3,6 +3,7 @@ import { parseEvolutionInboundMessagePayload } from '@/features/whatsapp-bot/con
 import {
   applyEvolutionSessionEvent,
   processWhatsappInboundMessage,
+  runWhatsappAssistantOrchestrator,
 } from '@/features/whatsapp-bot/db'
 import { assertWhatsappWebhookAuthorized } from '@/features/whatsapp-bot/session-policy'
 import { NextResponse } from 'next/server'
@@ -100,6 +101,14 @@ export async function POST(request: Request) {
         ...inboundMessage,
         rawPayload: payload,
       })
+      const assistant =
+        result.messageCreated && result.message
+          ? await runWhatsappAssistantOrchestrator({
+              storeId: result.contact.storeId,
+              conversationId: result.conversation.id,
+              inboundMessageId: result.message.id,
+            })
+          : null
 
       return NextResponse.json(
         {
@@ -115,6 +124,7 @@ export async function POST(request: Request) {
             status: result.conversation.status,
           },
           messageCreated: result.messageCreated,
+          assistant,
         },
         { status: result.messageCreated ? 202 : 200 }
       )

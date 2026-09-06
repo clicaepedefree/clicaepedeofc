@@ -24,6 +24,12 @@ export type EvolutionConnectionStateResult = {
   raw: unknown
 }
 
+export type EvolutionSendTextResult = {
+  providerMessageId: string | null
+  status: string | null
+  raw: unknown
+}
+
 export type EvolutionClient = {
   createInstance(input: {
     instanceName: string
@@ -46,6 +52,12 @@ export type EvolutionClient = {
     instanceName: string
     token?: string | null
   }): Promise<EvolutionConnectionStateResult>
+  sendTextMessage(input: {
+    instanceName: string
+    token?: string | null
+    number: string
+    text: string
+  }): Promise<EvolutionSendTextResult>
 }
 
 export class EvolutionApiError extends Error {
@@ -154,6 +166,20 @@ function normalizeConnectionStateResult(
   }
 }
 
+function normalizeSendTextResult(payload: unknown): EvolutionSendTextResult {
+  const raw = payload as any
+
+  return {
+    providerMessageId: raw?.key?.id ?? raw?.messageId ?? raw?.id ?? null,
+    status: raw?.status ?? raw?.message?.status ?? null,
+    raw: payload,
+  }
+}
+
+function normalizeMessageRecipient(number: string) {
+  return number.replace(/\D/g, '')
+}
+
 export function createEvolutionClient(): EvolutionClient {
   const { baseUrl, apiKey } = resolveEvolutionConfig()
 
@@ -197,7 +223,7 @@ export function createEvolutionClient(): EvolutionClient {
             url: webhookUrl,
             byEvents: true,
             base64: true,
-            events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+            events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED', 'MESSAGES_UPSERT'],
             headers: webhookSecret
               ? {
                   Authorization: `Bearer ${webhookSecret}`,
@@ -258,6 +284,22 @@ export function createEvolutionClient(): EvolutionClient {
       )
 
       return normalizeConnectionStateResult(payload)
+    },
+
+    async sendTextMessage({ instanceName, token, number, text }) {
+      const payload = await request<unknown>(
+        `/message/sendText/${instanceName}`,
+        {
+          method: 'POST',
+          token,
+          body: {
+            number: normalizeMessageRecipient(number),
+            text,
+          },
+        }
+      )
+
+      return normalizeSendTextResult(payload)
     },
   }
 }

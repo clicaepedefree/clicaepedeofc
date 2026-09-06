@@ -1,6 +1,12 @@
 import { decrypt, encrypt } from '@/lib/encryption'
 import { db } from '@/services/db'
 import {
+  categoriesTable,
+  itemOfferingsTable,
+  itemsTable,
+  storeBusinessHoursTable,
+  storeDigitalMenuSettingsTable,
+  storePaymentMethodsTable,
   storesTable,
   whatsappBotAssistantConfigsTable,
   whatsappBotContactsTable,
@@ -15,7 +21,7 @@ import {
   type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
 } from '@/services/db/schema'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import {
   buildEvolutionInstanceName,
@@ -46,6 +52,19 @@ import {
   normalizeWhatsappPhoneNumber,
   type WhatsappBotInboundMessageType,
 } from './contact-ingestion-policy'
+import {
+  createOpenAiCompatibleWhatsappLlmProvider,
+  type WhatsappAssistantLlmProvider,
+} from './llm-provider'
+import {
+  buildWhatsappAssistantSystemPrompt,
+  buildWhatsappAssistantUserPrompt,
+  buildWhatsappHumanHandoffReply,
+  canWhatsappAssistantRespond,
+  classifyWhatsappAssistantIntent,
+  estimateWhatsappAssistantTokens,
+  trimWhatsappAssistantHistory,
+} from './orchestrator-policy'
 
 type SessionMetadata = Record<string, unknown> & {
   provider?: 'evolution'
@@ -88,6 +107,15 @@ type WhatsappInboundMessageProcessingResult = {
   conversation: SelectWhatsappBotConversation
   message: SelectWhatsappBotMessage | null
   messageCreated: boolean
+}
+
+type WhatsappAssistantOrchestrationResult = {
+  action: 'responded' | 'fallback' | 'skipped' | 'handoff'
+  reason: string | null
+  intent: ReturnType<typeof classifyWhatsappAssistantIntent>
+  outboundMessageId: string | null
+  latencyMs: number | null
+  deliveryStatus: 'not_sent' | 'sent' | 'failed'
 }
 
 const toMetadata = (metadata: unknown): SessionMetadata =>
@@ -822,6 +850,534 @@ export async function processWhatsappInboundMessage({
       messageCreated: Boolean(message),
     }
   })
+}
+
+async function getWhatsappAssistantBusinessContext(storeId: number) {
+  const [store] = await db
+    .select({ id: storesTable.id, name: storesTable.name })
+    .from(storesTable)
+    .where(eq(storesTable.id, storeId))
+    .limit(1)
+
+  if (!store) throw new Error('STORE_NOT_FOUND')
+
+  const [digitalMenu, businessHours, paymentMethods, menuItems] =
+    await Promise.all([
+      db
+        .select()
+        .from(storeDigitalMenuSettingsTable)
+        .where(eq(storeDigitalMenuSettingsTable.storeId, storeId))
+        .limit(1),
+      db
+        .select({
+          weekday: storeBusinessHoursTable.weekday,
+          opensAt: storeBusinessHoursTable.opensAt,
+          closesAt: storeBusinessHoursTable.closesAt,
+          serviceType: storeBusinessHoursTable.serviceType,
+          isActive: storeBusinessHoursTable.isActive,
+        })
+        .from(storeBusinessHoursTable)
+        .where(eq(storeBusinessHoursTable.storeId, storeId))
+        .orderBy(
+          asc(storeBusinessHoursTable.weekday),
+          asc(storeBusinessHoursTable.opensAt)
+        )
+        .limit(21),
+      db
+        .select({
+          method: storePaymentMethodsTable.method,
+          cardBrand: storePaymentMethodsTable.cardBrand,
+          instructions: storePaymentMethodsTable.instructions,
+          proofInstructions: storePaymentMethodsTable.proofInstructions,
+          pixKey: storePaymentMethodsTable.pixKey,
+          allowDelivery: storePaymentMethodsTable.allowDelivery,
+          allowTakeout: storePaymentMethodsTable.allowTakeout,
+        })
+        .from(storePaymentMethodsTable)
+        .where(
+          and(
+            eq(storePaymentMethodsTable.storeId, storeId),
+            eq(storePaymentMethodsTable.isActive, true)
+          )
+        )
+        .orderBy(asc(storePaymentMethodsTable.method))
+        .limit(12),
+      db
+        .select({
+          name: itemsTable.name,
+          categoryName: categoriesTable.name,
+          description: itemsTable.description,
+          price: itemOfferingsTable.price,
+          isAvailable: itemOfferingsTable.isAvailable,
+        })
+        .from(itemOfferingsTable)
+        .innerJoin(itemsTable, eq(itemsTable.id, itemOfferingsTable.itemId))
+        .innerJoin(
+          categoriesTable,
+          eq(categoriesTable.id, itemOfferingsTable.categoryId)
+        )
+        .where(
+          and(
+            eq(itemsTable.storeId, storeId),
+            eq(categoriesTable.storeId, storeId)
+          )
+        )
+        .orderBy(asc(categoriesTable.index), asc(itemOfferingsTable.index))
+        .limit(20),
+    ])
+
+  return {
+    storeName: store.name,
+    digitalMenu: digitalMenu[0] ?? null,
+    businessHours,
+    paymentMethods,
+    menuItems,
+  }
+}
+
+async function sendQueuedWhatsappAssistantMessage({
+  messageId,
+  storeId,
+  instanceName,
+  token,
+  recipientPhoneNumber,
+  text,
+  evolutionClient,
+}: {
+  messageId: string
+  storeId: number
+  instanceName: string
+  token: string | null
+  recipientPhoneNumber: string
+  text: string
+  evolutionClient?: EvolutionClient
+}): Promise<WhatsappAssistantOrchestrationResult['deliveryStatus']> {
+  const startedAt = Date.now()
+
+  try {
+    const client = evolutionClient ?? createEvolutionClient()
+    const delivery = await client.sendTextMessage({
+      instanceName,
+      token,
+      number: recipientPhoneNumber,
+      text,
+    })
+
+    await db
+      .update(whatsappBotMessagesTable)
+      .set({
+        status: 'sent',
+        metadata: sql`${whatsappBotMessagesTable.metadata} || ${JSON.stringify({
+          delivery: {
+            provider: whatsappBotProvider,
+            providerMessageId: delivery.providerMessageId,
+            status: delivery.status,
+            latencyMs: Date.now() - startedAt,
+          },
+        })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(whatsappBotMessagesTable.id, messageId),
+          eq(whatsappBotMessagesTable.storeId, storeId)
+        )
+      )
+
+    return 'sent'
+  } catch (error) {
+    await db
+      .update(whatsappBotMessagesTable)
+      .set({
+        status: 'failed',
+        metadata: sql`${whatsappBotMessagesTable.metadata} || ${JSON.stringify({
+          delivery: {
+            provider: whatsappBotProvider,
+            status: 'failed',
+            latencyMs: Date.now() - startedAt,
+            failure: {
+              name: error instanceof Error ? error.name : 'UnknownError',
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to send WhatsApp assistant message.',
+            },
+          },
+        })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(whatsappBotMessagesTable.id, messageId),
+          eq(whatsappBotMessagesTable.storeId, storeId)
+        )
+      )
+
+    return 'failed'
+  }
+}
+
+export async function runWhatsappAssistantOrchestrator({
+  storeId,
+  conversationId,
+  inboundMessageId,
+  provider,
+  evolutionClient,
+}: {
+  storeId: number
+  conversationId: string
+  inboundMessageId: string
+  provider?: WhatsappAssistantLlmProvider
+  evolutionClient?: EvolutionClient
+}): Promise<WhatsappAssistantOrchestrationResult> {
+  const [row] = await db
+    .select({
+      conversation: whatsappBotConversationsTable,
+      contact: whatsappBotContactsTable,
+      inboundMessage: whatsappBotMessagesTable,
+      assistantConfig: whatsappBotAssistantConfigsTable,
+      session: whatsappBotSessionsTable,
+    })
+    .from(whatsappBotConversationsTable)
+    .innerJoin(
+      whatsappBotContactsTable,
+      and(
+        eq(
+          whatsappBotContactsTable.id,
+          whatsappBotConversationsTable.contactId
+        ),
+        eq(
+          whatsappBotContactsTable.storeId,
+          whatsappBotConversationsTable.storeId
+        )
+      )
+    )
+    .innerJoin(
+      whatsappBotMessagesTable,
+      and(
+        eq(whatsappBotMessagesTable.id, inboundMessageId),
+        eq(
+          whatsappBotMessagesTable.storeId,
+          whatsappBotConversationsTable.storeId
+        ),
+        eq(
+          whatsappBotMessagesTable.conversationId,
+          whatsappBotConversationsTable.id
+        )
+      )
+    )
+    .innerJoin(
+      whatsappBotAssistantConfigsTable,
+      eq(
+        whatsappBotAssistantConfigsTable.storeId,
+        whatsappBotConversationsTable.storeId
+      )
+    )
+    .innerJoin(
+      whatsappBotSessionsTable,
+      and(
+        eq(
+          whatsappBotSessionsTable.id,
+          whatsappBotConversationsTable.sessionId
+        ),
+        eq(
+          whatsappBotSessionsTable.storeId,
+          whatsappBotConversationsTable.storeId
+        )
+      )
+    )
+    .where(
+      and(
+        eq(whatsappBotConversationsTable.id, conversationId),
+        eq(whatsappBotConversationsTable.storeId, storeId)
+      )
+    )
+    .limit(1)
+
+  if (!row) throw new Error('WHATSAPP_ASSISTANT_CONTEXT_NOT_FOUND')
+
+  const currentMessage = row.inboundMessage.body?.trim() ?? ''
+  const intent = classifyWhatsappAssistantIntent(currentMessage)
+  const assistantProviderMessageId = `assistant:${inboundMessageId}`
+
+  const [existingAssistantReply] = await db
+    .select({
+      id: whatsappBotMessagesTable.id,
+      status: whatsappBotMessagesTable.status,
+    })
+    .from(whatsappBotMessagesTable)
+    .where(
+      and(
+        eq(whatsappBotMessagesTable.storeId, storeId),
+        eq(
+          whatsappBotMessagesTable.providerMessageId,
+          assistantProviderMessageId
+        )
+      )
+    )
+    .limit(1)
+
+  if (existingAssistantReply) {
+    return {
+      action: 'skipped',
+      reason: 'assistant_reply_already_created',
+      intent,
+      outboundMessageId: existingAssistantReply.id,
+      latencyMs: null,
+      deliveryStatus:
+        existingAssistantReply.status === 'sent' ? 'sent' : 'not_sent',
+    }
+  }
+
+  const eligibility = canWhatsappAssistantRespond({
+    conversation: row.conversation,
+    inboundMessage: row.inboundMessage,
+    assistantConfig: row.assistantConfig,
+  })
+
+  if (!eligibility.allowed) {
+    return {
+      action: 'skipped',
+      reason: eligibility.reason,
+      intent,
+      outboundMessageId: null,
+      latencyMs: null,
+      deliveryStatus: 'not_sent',
+    }
+  }
+
+  const recentMessages = await db
+    .select({
+      direction: whatsappBotMessagesTable.direction,
+      senderType: whatsappBotMessagesTable.senderType,
+      messageType: whatsappBotMessagesTable.messageType,
+      body: whatsappBotMessagesTable.body,
+      occurredAt: whatsappBotMessagesTable.occurredAt,
+    })
+    .from(whatsappBotMessagesTable)
+    .where(
+      and(
+        eq(whatsappBotMessagesTable.storeId, storeId),
+        eq(whatsappBotMessagesTable.conversationId, conversationId)
+      )
+    )
+    .orderBy(desc(whatsappBotMessagesTable.occurredAt))
+    .limit(20)
+
+  const history = trimWhatsappAssistantHistory({
+    messages: recentMessages.reverse(),
+  })
+
+  if (intent === 'human_support') {
+    const reply = buildWhatsappHumanHandoffReply(row.assistantConfig)
+    const [message] = await db.transaction(async tx => {
+      const [createdMessage] = await tx
+        .insert(whatsappBotMessagesTable)
+        .values({
+          storeId,
+          conversationId,
+          contactId: row.contact.id,
+          numberId: row.conversation.numberId,
+          sessionId: row.conversation.sessionId,
+          providerMessageId: assistantProviderMessageId,
+          direction: 'outbound',
+          senderType: 'bot',
+          messageType: 'text',
+          body: reply,
+          status: 'queued',
+          occurredAt: new Date(),
+          metadata: {
+            provider: 'internal',
+            source: 'whatsapp_assistant_orchestrator',
+            intent,
+            fallback: true,
+            fallbackReason: 'human_handoff_requested',
+          },
+        })
+        .onConflictDoNothing()
+        .returning()
+
+      await tx
+        .update(whatsappBotConversationsTable)
+        .set({
+          status: 'pending_human',
+          mode: 'human',
+          humanPausedAt: new Date(),
+          contextSummary: `Cliente solicitou atendimento humano. Ultima intencao: ${intent}.`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(whatsappBotConversationsTable.id, conversationId),
+            eq(whatsappBotConversationsTable.storeId, storeId)
+          )
+        )
+
+      return [createdMessage]
+    })
+
+    if (!message) {
+      return {
+        action: 'skipped',
+        reason: 'assistant_reply_already_created',
+        intent,
+        outboundMessageId: null,
+        latencyMs: 0,
+        deliveryStatus: 'not_sent',
+      }
+    }
+
+    const deliveryStatus = await sendQueuedWhatsappAssistantMessage({
+      messageId: message.id,
+      storeId,
+      instanceName: row.session.providerSessionId,
+      token: getSessionToken(row.session),
+      recipientPhoneNumber: row.contact.phoneNumber,
+      text: reply,
+      evolutionClient,
+    })
+
+    return {
+      action: 'handoff',
+      reason: 'human_handoff_requested',
+      intent,
+      outboundMessageId: message.id,
+      latencyMs: 0,
+      deliveryStatus,
+    }
+  }
+
+  const businessContext = await getWhatsappAssistantBusinessContext(storeId)
+  const systemPrompt = buildWhatsappAssistantSystemPrompt({
+    assistantConfig: row.assistantConfig,
+    contact: row.contact,
+    conversation: row.conversation,
+    businessContext,
+    intent,
+  })
+  const userPrompt = buildWhatsappAssistantUserPrompt({
+    history,
+    currentMessage,
+  })
+  const estimatedInputTokens = estimateWhatsappAssistantTokens(
+    `${systemPrompt}\n\n${userPrompt}`
+  )
+  const startedAt = Date.now()
+
+  let action: WhatsappAssistantOrchestrationResult['action'] = 'responded'
+  let reason: string | null = null
+  let reply = ''
+  let llmMetadata: Record<string, unknown>
+  let resolvedProvider = provider
+
+  try {
+    resolvedProvider ??= createOpenAiCompatibleWhatsappLlmProvider()
+    const llmResponse = await resolvedProvider.generateReply({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      timeoutMs: 12_000,
+    })
+
+    reply = llmResponse.text
+    llmMetadata = {
+      provider: llmResponse.provider,
+      model: llmResponse.model,
+      usage: llmResponse.usage,
+      latencyMs: llmResponse.latencyMs,
+      finishReason: llmResponse.finishReason,
+      estimatedInputTokens,
+    }
+  } catch (error) {
+    action = 'fallback'
+    reason = error instanceof Error ? error.message : 'provider_failed'
+    reply = row.assistantConfig.fallbackMessage
+    llmMetadata = {
+      provider: resolvedProvider?.name ?? 'unconfigured',
+      model: resolvedProvider?.model ?? 'unconfigured',
+      usage: null,
+      latencyMs: Date.now() - startedAt,
+      failure: {
+        name: error instanceof Error ? error.name : 'UnknownError',
+        message: reason,
+      },
+      estimatedInputTokens,
+    }
+  }
+
+  const [outboundMessage] = await db
+    .insert(whatsappBotMessagesTable)
+    .values({
+      storeId,
+      conversationId,
+      contactId: row.contact.id,
+      numberId: row.conversation.numberId,
+      sessionId: row.conversation.sessionId,
+      providerMessageId: assistantProviderMessageId,
+      direction: 'outbound',
+      senderType: 'bot',
+      messageType: 'text',
+      body: reply,
+      status: 'queued',
+      occurredAt: new Date(),
+      metadata: {
+        source: 'whatsapp_assistant_orchestrator',
+        intent,
+        fallback: action === 'fallback',
+        ...llmMetadata,
+      },
+    })
+    .onConflictDoNothing()
+    .returning()
+
+  if (!outboundMessage) {
+    return {
+      action: 'skipped',
+      reason: 'assistant_reply_already_created',
+      intent,
+      outboundMessageId: null,
+      latencyMs:
+        typeof llmMetadata.latencyMs === 'number'
+          ? llmMetadata.latencyMs
+          : null,
+      deliveryStatus: 'not_sent',
+    }
+  }
+
+  const deliveryStatus = await sendQueuedWhatsappAssistantMessage({
+    messageId: outboundMessage.id,
+    storeId,
+    instanceName: row.session.providerSessionId,
+    token: getSessionToken(row.session),
+    recipientPhoneNumber: row.contact.phoneNumber,
+    text: reply,
+    evolutionClient,
+  })
+
+  await db
+    .update(whatsappBotConversationsTable)
+    .set({
+      contextSummary: `Ultima intencao: ${intent}. Ultima resposta automatica ${action === 'fallback' ? 'usou fallback' : 'gerada com sucesso'}.`,
+      lastMessageAt: outboundMessage.occurredAt,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(whatsappBotConversationsTable.id, conversationId),
+        eq(whatsappBotConversationsTable.storeId, storeId)
+      )
+    )
+
+  return {
+    action,
+    reason,
+    intent,
+    outboundMessageId: outboundMessage.id,
+    latencyMs:
+      typeof llmMetadata.latencyMs === 'number' ? llmMetadata.latencyMs : null,
+    deliveryStatus,
+  }
 }
 
 export async function applyEvolutionSessionEvent({
