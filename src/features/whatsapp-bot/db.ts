@@ -61,9 +61,12 @@ import {
   buildWhatsappAssistantSystemPrompt,
   buildWhatsappAssistantUserPrompt,
   buildWhatsappHumanHandoffReply,
+  assessWhatsappAssistantInboundGuardrails,
+  assessWhatsappAssistantReplyGuardrails,
   canWhatsappAssistantRespond,
   classifyWhatsappAssistantIntent,
   estimateWhatsappAssistantTokens,
+  sanitizeWhatsappBotLogError,
   trimWhatsappAssistantHistory,
 } from './orchestrator-policy'
 import {
@@ -1101,11 +1104,7 @@ async function sendQueuedWhatsappAssistantMessage({
             status: 'failed',
             latencyMs: Date.now() - startedAt,
             failure: {
-              name: error instanceof Error ? error.name : 'UnknownError',
-              message:
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to send WhatsApp assistant message.',
+              ...sanitizeWhatsappBotLogError(error),
             },
           },
         })}::jsonb`,
@@ -1353,6 +1352,104 @@ export async function runWhatsappAssistantOrchestrator({
   }
 
   const businessContext = await getWhatsappAssistantBusinessContext(storeId)
+  const inboundGuardrail = assessWhatsappAssistantInboundGuardrails({
+    currentMessage,
+    intent,
+    history,
+    businessContext,
+  })
+
+  if (inboundGuardrail.blocked) {
+    const [message] = await db.transaction(async tx => {
+      const [createdMessage] = await tx
+        .insert(whatsappBotMessagesTable)
+        .values({
+          storeId,
+          conversationId,
+          contactId: row.contact.id,
+          numberId: row.conversation.numberId,
+          sessionId: row.conversation.sessionId,
+          providerMessageId: assistantProviderMessageId,
+          direction: 'outbound',
+          senderType: 'bot',
+          messageType: 'text',
+          body: inboundGuardrail.fallbackMessage,
+          status: 'queued',
+          occurredAt: new Date(),
+          metadata: {
+            source: 'whatsapp_assistant_orchestrator',
+            intent,
+            fallback: true,
+            guardrails: {
+              blocked: true,
+              stage: 'inbound',
+              reasons: inboundGuardrail.reasons,
+              confidence: inboundGuardrail.confidence,
+              threshold: inboundGuardrail.threshold,
+              consecutiveUnderstandingFailures:
+                inboundGuardrail.consecutiveUnderstandingFailures,
+            },
+          },
+        })
+        .onConflictDoNothing()
+        .returning()
+
+      await tx
+        .update(whatsappBotConversationsTable)
+        .set({
+          status: inboundGuardrail.shouldPauseForHuman
+            ? 'pending_human'
+            : row.conversation.status,
+          mode: inboundGuardrail.shouldPauseForHuman
+            ? 'human'
+            : row.conversation.mode,
+          humanPausedAt: inboundGuardrail.shouldPauseForHuman
+            ? new Date()
+            : row.conversation.humanPausedAt,
+          contextSummary: `Guardrail acionado: ${inboundGuardrail.reasons.join(', ')}.`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(whatsappBotConversationsTable.id, conversationId),
+            eq(whatsappBotConversationsTable.storeId, storeId)
+          )
+        )
+
+      return [createdMessage]
+    })
+
+    if (!message) {
+      return {
+        action: 'skipped',
+        reason: 'assistant_reply_already_created',
+        intent,
+        outboundMessageId: null,
+        latencyMs: 0,
+        deliveryStatus: 'not_sent',
+      }
+    }
+
+    const deliveryStatus = await sendQueuedWhatsappAssistantMessage({
+      messageId: message.id,
+      storeId,
+      instanceName: row.session.providerSessionId,
+      token: getSessionToken(row.session),
+      recipientPhoneNumber: row.contact.phoneNumber,
+      text: inboundGuardrail.fallbackMessage,
+      evolutionClient,
+    })
+
+    return {
+      action: inboundGuardrail.shouldPauseForHuman ? 'handoff' : 'fallback',
+      reason: inboundGuardrail.reason,
+      intent,
+      outboundMessageId: message.id,
+      latencyMs: 0,
+      deliveryStatus,
+    }
+  }
+
   const systemPrompt = buildWhatsappAssistantSystemPrompt({
     assistantConfig: row.assistantConfig,
     contact: row.contact,
@@ -1389,6 +1486,18 @@ export async function runWhatsappAssistantOrchestrator({
     })
 
     reply = llmResponse.text
+    const replyGuardrail = assessWhatsappAssistantReplyGuardrails({
+      reply,
+      intent,
+      toolCalls: llmResponse.toolCalls,
+      businessContext,
+    })
+    if (!replyGuardrail.allowed) {
+      action = 'fallback'
+      reason = replyGuardrail.reasons[0] ?? 'unsafe_reply_blocked'
+      reply = row.assistantConfig.fallbackMessage
+    }
+
     llmMetadata = {
       provider: llmResponse.provider,
       model: llmResponse.model,
@@ -1396,6 +1505,13 @@ export async function runWhatsappAssistantOrchestrator({
       latencyMs: llmResponse.latencyMs,
       finishReason: llmResponse.finishReason,
       toolCalls: llmResponse.toolCalls,
+      guardrails: {
+        blocked: !replyGuardrail.allowed,
+        stage: 'reply',
+        reasons: replyGuardrail.reasons,
+        confidence: replyGuardrail.confidence,
+        threshold: replyGuardrail.threshold,
+      },
       estimatedInputTokens,
     }
   } catch (error) {
@@ -1408,8 +1524,7 @@ export async function runWhatsappAssistantOrchestrator({
       usage: null,
       latencyMs: Date.now() - startedAt,
       failure: {
-        name: error instanceof Error ? error.name : 'UnknownError',
-        message: reason,
+        ...sanitizeWhatsappBotLogError(error),
       },
       estimatedInputTokens,
     }

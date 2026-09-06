@@ -79,6 +79,24 @@ export type WhatsappAssistantPromptContext = {
   intent: WhatsappAssistantIntent
 }
 
+export type WhatsappAssistantGuardrailDecision = {
+  blocked: boolean
+  reason: string | null
+  reasons: string[]
+  fallbackMessage: string
+  shouldPauseForHuman: boolean
+  consecutiveUnderstandingFailures: number
+  confidence: number
+  threshold: number
+}
+
+export type WhatsappAssistantReplyGuardrailDecision = {
+  allowed: boolean
+  reasons: string[]
+  confidence: number
+  threshold: number
+}
+
 const intentPatterns: Record<WhatsappAssistantIntent, RegExp[]> = {
   menu: [/card[aá]pio/i, /menu/i, /tem .*?/i, /produto/i, /op[cç][aã]o/i],
   price: [/pre[cç]o/i, /valor/i, /quanto custa/i, /\br\$/i],
@@ -108,6 +126,64 @@ const roleBySender: Record<string, 'assistant' | 'user' | 'system'> = {
   human: 'assistant',
   system: 'system',
 }
+
+const commercialIntents = new Set<WhatsappAssistantIntent>([
+  'menu',
+  'price',
+  'business_hours',
+  'payment',
+  'order',
+])
+
+const requiredToolsByIntent: Partial<Record<WhatsappAssistantIntent, string[]>> =
+  {
+    menu: ['search_menu_items', 'get_digital_menu_link'],
+    price: ['search_menu_items'],
+    business_hours: ['get_store_hours'],
+    payment: ['get_store_payments_and_modalities'],
+    order: ['search_menu_items', 'get_store_payments_and_modalities'],
+  }
+
+const promptInjectionPatterns = [
+  /ignore (as )?(instru[cç][oõ]es|regras|mensagens) anteriores/i,
+  /ignore previous/i,
+  /system prompt/i,
+  /prompt do sistema/i,
+  /regras internas/i,
+  /instru[cç][oõ]es internas/i,
+  /developer message/i,
+  /mostre.*prompt/i,
+  /revele.*(prompt|segredo|token|chave|credencial)/i,
+  /api[_ -]?key/i,
+  /service[_ -]?role/i,
+  /store[_ -]?id/i,
+  /troque.*loja/i,
+  /outra loja/i,
+]
+
+const unsafeReplyPatterns = [
+  /system prompt/i,
+  /prompt do sistema/i,
+  /regras internas/i,
+  /developer message/i,
+  /api[_ -]?key/i,
+  /service[_ -]?role/i,
+  /bearer\s+[a-z0-9._-]+/i,
+  /sk-[a-z0-9]/i,
+  /token secreto/i,
+  /credenciais?/i,
+]
+
+const discountPromisePatterns = [
+  /desconto de \d+/i,
+  /\d+% de desconto/i,
+  /cupom/i,
+  /promo[cç][aã]o/i,
+  /taxa gr[aá]tis/i,
+  /frete gr[aá]tis/i,
+]
+
+const guardrailConfidenceThreshold = 0.75
 
 export function classifyWhatsappAssistantIntent(
   message?: string | null
@@ -194,6 +270,386 @@ export function trimWhatsappAssistantHistory({
 
 export function estimateWhatsappAssistantTokens(text: string) {
   return Math.ceil(text.length / 4)
+}
+
+export function assessWhatsappAssistantInboundGuardrails({
+  currentMessage,
+  intent,
+  history,
+  businessContext,
+}: {
+  currentMessage: string
+  intent: WhatsappAssistantIntent
+  history: WhatsappAssistantHistoryMessage[]
+  businessContext: WhatsappAssistantBusinessContext
+}): WhatsappAssistantGuardrailDecision {
+  const reasons: string[] = []
+  const normalizedMessage = currentMessage.trim()
+  const untrustedTexts = [
+    normalizedMessage,
+    ...history
+      .slice(-6)
+      .filter(message => message.senderType === 'customer')
+      .map(message => message.body?.trim() ?? ''),
+  ].filter(Boolean)
+  const consecutiveUnderstandingFailures = countRecentUnderstandingFailures(
+    history
+  )
+
+  if (
+    untrustedTexts.some(text =>
+      promptInjectionPatterns.some(pattern => pattern.test(text))
+    )
+  ) {
+    reasons.push('prompt_injection_detected')
+  }
+
+  if (
+    intent === 'unknown' &&
+    normalizedMessage.includes('?')
+  ) {
+    reasons.push('question_without_reliable_source')
+  }
+
+  if (intent === 'unknown' && consecutiveUnderstandingFailures >= 2) {
+    reasons.push('consecutive_understanding_failures')
+  }
+
+  const shouldPauseForHuman =
+    reasons.includes('consecutive_understanding_failures') ||
+    reasons.includes('prompt_injection_detected')
+  const confidence = reasons.length ? 0.35 : 0.95
+
+  return {
+    blocked: reasons.length > 0,
+    reason: reasons[0] ?? null,
+    reasons,
+    fallbackMessage: buildWhatsappAssistantGuardrailFallback({
+      businessContext,
+      shouldPauseForHuman,
+    }),
+    shouldPauseForHuman,
+    consecutiveUnderstandingFailures,
+    confidence,
+    threshold: guardrailConfidenceThreshold,
+  }
+}
+
+export function assessWhatsappAssistantReplyGuardrails({
+  reply,
+  intent,
+  toolCalls,
+  businessContext,
+}: {
+  reply: string
+  intent: WhatsappAssistantIntent
+  toolCalls: { name: string; ok: boolean }[]
+  businessContext?: WhatsappAssistantBusinessContext
+}): WhatsappAssistantReplyGuardrailDecision {
+  const reasons: string[] = []
+  const requiredTools = requiredToolsByIntent[intent] ?? []
+  const hasRequiredToolSource = requiredTools.length
+    ? toolCalls.some(toolCall => requiredTools.includes(toolCall.name) && toolCall.ok)
+    : toolCalls.some(toolCall => toolCall.ok)
+
+  if (unsafeReplyPatterns.some(pattern => pattern.test(reply))) {
+    reasons.push('unsafe_internal_data_disclosure')
+  }
+
+  if (
+    commercialIntents.has(intent) &&
+    !hasRequiredToolSource
+  ) {
+    reasons.push('commercial_answer_without_tool_source')
+  }
+
+  if (
+    discountPromisePatterns.some(pattern => pattern.test(reply)) &&
+    !toolCalls.some(
+      toolCall => toolCall.name === 'search_menu_items' && toolCall.ok
+    )
+  ) {
+    reasons.push('commercial_condition_without_catalog_source')
+  }
+
+  if (businessContext && hasUnknownCommercialPrice(reply, businessContext)) {
+    reasons.push('answer_contains_unverified_price')
+  }
+
+  if (businessContext && hasMismatchedProductPrice(reply, businessContext)) {
+    reasons.push('product_price_mismatch')
+  }
+
+  if (businessContext && hasUnverifiedDeliveryFee(reply, businessContext)) {
+    reasons.push('delivery_fee_without_source')
+  }
+
+  if (businessContext && hasUnverifiedPreparationTime(reply, businessContext)) {
+    reasons.push('preparation_time_without_source')
+  }
+
+  if (
+    businessContext &&
+    presentsUnavailableProductAsAvailable(reply, businessContext)
+  ) {
+    reasons.push('unavailable_product_presented_as_available')
+  }
+
+  const confidence = reasons.length ? 0.35 : 0.95
+
+  return {
+    allowed: reasons.length === 0 && confidence >= guardrailConfidenceThreshold,
+    reasons,
+    confidence,
+    threshold: guardrailConfidenceThreshold,
+  }
+}
+
+export function buildWhatsappAssistantGuardrailFallback({
+  businessContext,
+  shouldPauseForHuman = false,
+}: {
+  businessContext: WhatsappAssistantBusinessContext
+  shouldPauseForHuman?: boolean
+}) {
+  const digitalMenuUrl = businessContext.storeTools?.store.digitalMenuUrl
+  const menuSentence = digitalMenuUrl
+    ? `Voce pode conferir as informacoes confirmadas no cardapio: ${digitalMenuUrl}`
+    : 'Posso te enviar o cardapio quando ele estiver configurado.'
+  const humanSentence = shouldPauseForHuman
+    ? 'Vou chamar uma pessoa da equipe para continuar com seguranca.'
+    : 'Se preferir, posso chamar uma pessoa da equipe para confirmar isso.'
+
+  return [
+    'Nao tenho uma informacao confiavel para responder isso automaticamente.',
+    menuSentence,
+    humanSentence,
+  ].join('\n')
+}
+
+function countRecentUnderstandingFailures(
+  history: WhatsappAssistantHistoryMessage[]
+) {
+  let total = 0
+
+  for (const message of history.slice().reverse()) {
+    if (message.senderType !== 'bot') continue
+
+    const body = message.body?.toLowerCase() ?? ''
+    if (
+      body.includes('nao tenho uma informacao confiavel') ||
+      body.includes('não tenho uma informação confiável') ||
+      body.includes('nao consegui entender') ||
+      body.includes('não consegui entender')
+    ) {
+      total += 1
+      continue
+    }
+
+    break
+  }
+
+  return total
+}
+
+export function sanitizeWhatsappBotLogError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return { name: 'UnknownError', message: 'unknown_error' }
+  }
+
+  const value = error as {
+    name?: unknown
+    message?: unknown
+    code?: unknown
+    status?: unknown
+  }
+
+  return {
+    name: typeof value.name === 'string' ? value.name : 'UnknownError',
+    message: sanitizeErrorMessage(value.message),
+    code: typeof value.code === 'string' ? value.code : undefined,
+    status: typeof value.status === 'number' ? value.status : undefined,
+  }
+}
+
+function sanitizeErrorMessage(message: unknown) {
+  if (typeof message !== 'string') return 'unexpected_error'
+
+  return message
+    .replace(
+      /(api[_-]?key|apikey|authorization|token|secret)\s*=\s*(bearer\s+)?[^\s,}]+/gi,
+      '$1=[redacted]'
+    )
+    .replace(/bearer\s+[a-z0-9._-]+/gi, 'bearer [redacted]')
+    .replace(/sk-[a-z0-9_-]+/gi, 'sk-[redacted]')
+    .slice(0, 180)
+}
+
+function normalizeMoney(value: string) {
+  const normalized = value
+    .replace(/[^\d,.]/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.')
+  const numeric = Number(normalized)
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : null
+}
+
+function knownCommercialPrices(
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const products = businessContext.storeTools
+    ? [
+        ...businessContext.storeTools.menu.products,
+        ...businessContext.storeTools.menu.unavailableProducts,
+      ]
+    : []
+  const prices = new Set<string>()
+
+  for (const product of products) {
+    const price = normalizeMoney(product.price)
+    if (price) prices.add(price)
+
+    for (const group of product.optionGroups) {
+      for (const option of group.options) {
+        const optionPrice = normalizeMoney(option.price)
+        if (optionPrice) prices.add(optionPrice)
+      }
+    }
+  }
+
+  for (const item of businessContext.menuItems) {
+    const price = normalizeMoney(item.price)
+    if (price) prices.add(price)
+  }
+
+  const minimumOrderAmount = businessContext.digitalMenu?.minimumOrderAmount
+  if (minimumOrderAmount) {
+    const minimum = normalizeMoney(minimumOrderAmount)
+    if (minimum) prices.add(minimum)
+  }
+
+  return prices
+}
+
+function hasUnknownCommercialPrice(
+  reply: string,
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const replyPrices = reply.match(/R\$\s?\d+(?:[.,]\d{2})?/gi) ?? []
+  if (!replyPrices.length) return false
+
+  const knownPrices = knownCommercialPrices(businessContext)
+  return replyPrices.some(price => {
+    const normalized = normalizeMoney(price)
+    return normalized ? !knownPrices.has(normalized) : false
+  })
+}
+
+function knownProducts(businessContext: WhatsappAssistantBusinessContext) {
+  return businessContext.storeTools
+    ? [
+        ...businessContext.storeTools.menu.products,
+        ...businessContext.storeTools.menu.unavailableProducts,
+      ]
+    : businessContext.menuItems.map(item => ({
+        ...item,
+        optionGroups: [],
+      }))
+}
+
+function normalizeGuardrailText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function hasMismatchedProductPrice(
+  reply: string,
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const replyPrices = reply.match(/R\$\s?\d+(?:[.,]\d{2})?/gi) ?? []
+  if (!replyPrices.length) return false
+
+  const normalizedReply = normalizeGuardrailText(reply)
+
+  return knownProducts(businessContext).some(product => {
+    const normalizedProductName = normalizeGuardrailText(product.name)
+    if (!normalizedReply.includes(normalizedProductName)) return false
+
+    const productPrices = new Set<string>()
+    const productPrice = normalizeMoney(product.price)
+    if (productPrice) productPrices.add(productPrice)
+
+    for (const group of product.optionGroups) {
+      for (const option of group.options) {
+        const optionPrice = normalizeMoney(option.price)
+        if (optionPrice) productPrices.add(optionPrice)
+      }
+    }
+
+    return replyPrices.some(price => {
+      const normalized = normalizeMoney(price)
+      return normalized ? !productPrices.has(normalized) : false
+    })
+  })
+}
+
+function hasUnverifiedDeliveryFee(
+  reply: string,
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const normalizedReply = normalizeGuardrailText(reply)
+  if (!/\b(taxa|frete|entrega)\b/.test(normalizedReply)) return false
+
+  const deliveryFeePrices = reply.match(/R\$\s?\d+(?:[.,]\d{2})?/gi) ?? []
+  if (!deliveryFeePrices.length) return false
+
+  const knownPrices = knownCommercialPrices(businessContext)
+  return deliveryFeePrices.some(price => {
+    const normalized = normalizeMoney(price)
+    return normalized ? !knownPrices.has(normalized) : false
+  })
+}
+
+function hasUnverifiedPreparationTime(
+  reply: string,
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const configuredMinutes =
+    businessContext.digitalMenu?.averagePreparationMinutes ??
+    businessContext.storeTools?.operations.digitalMenu?.averagePreparationMinutes
+  if (!configuredMinutes) return false
+
+  const normalizedReply = normalizeGuardrailText(reply)
+  if (!/\b(preparo|preparacao|pronto|entrega|retirada|prazo|min)\b/.test(normalizedReply)) {
+    return false
+  }
+
+  const minuteMatches = [...reply.matchAll(/(\d{1,3})\s*(?:min|minutos?)/gi)]
+  return minuteMatches.some(match => {
+    const minutes = Number(match[1])
+    return Number.isFinite(minutes) && minutes !== configuredMinutes
+  })
+}
+
+function presentsUnavailableProductAsAvailable(
+  reply: string,
+  businessContext: WhatsappAssistantBusinessContext
+) {
+  const unavailableProducts =
+    businessContext.storeTools?.menu.unavailableProducts ?? []
+  const normalizedReply = normalizeGuardrailText(reply)
+  const hasUnavailableQualifier =
+    /indisponivel|sem estoque|nao temos|nao esta disponivel|nao temos disponivel/.test(
+      normalizedReply
+    )
+
+  return unavailableProducts.some(product => {
+    const productName = normalizeGuardrailText(product.name)
+
+    return normalizedReply.includes(productName) && !hasUnavailableQualifier
+  })
 }
 
 const formatBusinessHours = (
