@@ -51,6 +51,7 @@ describe('whatsapp assistant LLM provider', () => {
     expect(response.provider).toBe('openai-compatible')
     expect(response.model).toBe('test-model')
     expect(response.usage.totalTokens).toBe(112)
+    expect(response.toolCalls).toEqual([])
     expect(response).not.toHaveProperty('apiKey')
     expect(fetchMock).toHaveBeenCalledWith(
       'https://llm.example.com/respond',
@@ -61,6 +62,64 @@ describe('whatsapp assistant LLM provider', () => {
         }),
       })
     )
+  })
+
+  test('executes provider tool calls and asks for a final answer with tool output', async () => {
+    const fetchMock = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.tools) {
+        return new Response(
+          JSON.stringify({
+            output: [
+              {
+                type: 'function_call',
+                call_id: 'call_1',
+                name: 'search_menu_items',
+                arguments: '{"query":"pizza"}',
+              },
+            ],
+            usage: { input_tokens: 80, output_tokens: 8, total_tokens: 88 },
+            status: 'requires_action',
+          }),
+          { status: 200 }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({
+          output_text: 'Temos Pizza QA por R$ 39,90.',
+          usage: { input_tokens: 120, output_tokens: 14, total_tokens: 134 },
+          status: 'completed',
+        }),
+        { status: 200 }
+      )
+    })
+    globalThis.fetch = fetchMock as typeof fetch
+
+    const provider = createOpenAiCompatibleWhatsappLlmProvider()
+    const response = await provider.generateReply({
+      messages: [{ role: 'user', content: 'Tem pizza?' }],
+      tools: [
+        {
+          name: 'search_menu_items',
+          description: 'Busca produtos da loja da conversa.',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { query: { type: 'string' } },
+          },
+          execute: argumentsValue => ({
+            query: argumentsValue.query,
+            products: [{ name: 'Pizza QA', price: '39.9000' }],
+          }),
+        },
+      ],
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(response.text).toBe('Temos Pizza QA por R$ 39,90.')
+    expect(response.toolCalls).toEqual([{ name: 'search_menu_items', ok: true }])
+    expect(response.usage.totalTokens).toBe(222)
   })
 
   test('raises a typed error when the provider is not configured', () => {
