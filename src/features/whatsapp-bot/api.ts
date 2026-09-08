@@ -4,8 +4,10 @@ import {
   disconnectWhatsappBotSession,
   getWhatsappAssistantConfigForStore,
   getWhatsappBotSessionForStore,
+  getWhatsappHumanHandoffQueueForStore,
   pauseWhatsappBotSession,
   renewWhatsappBotQrCode,
+  returnWhatsappConversationToBotForStore,
   saveWhatsappAssistantConfigForStore,
   startWhatsappBotConnection,
   testWhatsappAssistantConfigForStore,
@@ -58,6 +60,27 @@ export async function disconnectWhatsappConnection(input: {
 export async function getWhatsappAssistantConfig(storeId: number) {
   await validateUserPermissionsForStore(storeId, 'integrations.manage')
   return await getWhatsappAssistantConfigForStore(storeId)
+}
+
+export async function getWhatsappHumanHandoffQueue(storeId: number) {
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
+  return await getWhatsappHumanHandoffQueueForStore(storeId)
+}
+
+export async function returnWhatsappConversationToBot(input: {
+  storeId: number
+  conversationId: string
+}) {
+  const { user } = await validateUserPermissionsForStore(
+    input.storeId,
+    'integrations.manage'
+  )
+
+  return await returnWhatsappConversationToBotForStore({
+    storeId: input.storeId,
+    conversationId: input.conversationId,
+    returnedByUserId: user.id,
+  })
 }
 
 export async function saveWhatsappAssistantConfig(input: {

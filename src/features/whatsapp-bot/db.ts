@@ -15,6 +15,8 @@ import {
   whatsappBotMessagesTable,
   whatsappBotNumbersTable,
   whatsappBotSessionsTable,
+  userStorePermissionsTable,
+  usersTable,
   type SelectWhatsappBotAssistantConfig,
   type SelectWhatsappBotContact,
   type SelectWhatsappBotConversation,
@@ -22,7 +24,7 @@ import {
   type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
 } from '@/services/db/schema'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 
 import {
   buildEvolutionInstanceName,
@@ -71,12 +73,20 @@ import {
   trimWhatsappAssistantHistory,
 } from './orchestrator-policy'
 import {
+  buildWhatsappHumanHandoffContextSummary,
+  buildWhatsappHumanHandoffInternalNote,
+  detectWhatsappHumanHandoff,
+  getWhatsappHumanHandoffReasonLabel,
+  type WhatsappHumanHandoffDecision,
+} from './human-handoff-policy'
+import {
   createWhatsappAssistantStoreTools,
   resolveWhatsappAssistantModalities,
   resolveWhatsappAssistantProductAvailability,
   type WhatsappAssistantStoreToolProduct,
 } from './store-tools-policy'
 import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
+import { randomUUID } from 'node:crypto'
 
 type SessionMetadata = Record<string, unknown> & {
   provider?: 'evolution'
@@ -130,6 +140,45 @@ type WhatsappAssistantOrchestrationResult = {
   deliveryStatus: 'not_sent' | 'sent' | 'failed'
 }
 
+export type WhatsappHumanHandoffConversation = {
+  id: string
+  status: SelectWhatsappBotConversation['status']
+  mode: SelectWhatsappBotConversation['mode']
+  contextSummary: string | null
+  humanPausedAt: Date | null
+  returnedToBotAt: Date | null
+  lastMessageAt: Date | null
+  updatedAt: Date | null
+  contact: {
+    id: number
+    displayName: string | null
+    phoneNumber: string
+    firstContactAt: Date
+    lastContactAt: Date
+  }
+  handoff: {
+    reason: string | null
+    reasonLabel: string
+    confidence: string | null
+    notifiedAt: string | null
+    responsible: {
+      userId: string | null
+      name: string | null
+      email: string | null
+      phone: string | null
+    } | null
+  }
+  messages: {
+    id: string
+    direction: SelectWhatsappBotMessage['direction']
+    senderType: SelectWhatsappBotMessage['senderType']
+    messageType: SelectWhatsappBotMessage['messageType']
+    body: string | null
+    status: SelectWhatsappBotMessage['status']
+    occurredAt: Date
+  }[]
+}
+
 const toMetadata = (metadata: unknown): SessionMetadata =>
   metadata && typeof metadata === 'object' && !Array.isArray(metadata)
     ? (metadata as SessionMetadata)
@@ -156,6 +205,83 @@ const getSessionToken = (session: SelectWhatsappBotSession) => {
   if (typeof encryptedToken !== 'string' || !encryptedToken) return null
 
   return decrypt(encryptedToken)
+}
+
+const getWhatsappHumanHandoffResponsible = async (storeId: number) => {
+  const [responsible] = await db
+    .select({
+      userId: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      phone: usersTable.phone,
+    })
+    .from(userStorePermissionsTable)
+    .innerJoin(usersTable, eq(usersTable.id, userStorePermissionsTable.userId))
+    .where(
+      and(
+        eq(userStorePermissionsTable.storeId, storeId),
+        eq(userStorePermissionsTable.role, 'owner'),
+        eq(userStorePermissionsTable.isPrimaryResponsible, true),
+        sql`${userStorePermissionsTable.revokedAt} is null`,
+        eq(usersTable.status, 'active')
+      )
+    )
+    .limit(1)
+
+  return responsible ?? null
+}
+
+const getHumanHandoffMetadata = (
+  metadata: unknown
+): {
+  reason?: string
+  reasonLabel?: string
+  confidence?: string
+  notifiedAt?: string
+  responsible?: {
+    userId?: string | null
+    name?: string | null
+    email?: string | null
+    phone?: string | null
+  } | null
+} => {
+  const value =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as { humanHandoff?: unknown })
+      : {}
+  const handoff =
+    value.humanHandoff &&
+    typeof value.humanHandoff === 'object' &&
+    !Array.isArray(value.humanHandoff)
+      ? (value.humanHandoff as Record<string, unknown>)
+      : {}
+  const responsible =
+    handoff.responsible &&
+    typeof handoff.responsible === 'object' &&
+    !Array.isArray(handoff.responsible)
+      ? (handoff.responsible as Record<string, unknown>)
+      : null
+
+  return {
+    reason: typeof handoff.reason === 'string' ? handoff.reason : undefined,
+    reasonLabel:
+      typeof handoff.reasonLabel === 'string' ? handoff.reasonLabel : undefined,
+    confidence:
+      typeof handoff.confidence === 'string' ? handoff.confidence : undefined,
+    notifiedAt:
+      typeof handoff.notifiedAt === 'string' ? handoff.notifiedAt : undefined,
+    responsible: responsible
+      ? {
+          userId:
+            typeof responsible.userId === 'string' ? responsible.userId : null,
+          name: typeof responsible.name === 'string' ? responsible.name : null,
+          email:
+            typeof responsible.email === 'string' ? responsible.email : null,
+          phone:
+            typeof responsible.phone === 'string' ? responsible.phone : null,
+        }
+      : null,
+  }
 }
 
 const buildSessionMetadata = ({
@@ -354,6 +480,184 @@ export async function testWhatsappAssistantConfigForStore({
     }),
     sentToCustomer: false,
   }
+}
+
+export async function getWhatsappHumanHandoffQueueForStore(storeId: number) {
+  const conversations = await db
+    .select({
+      id: whatsappBotConversationsTable.id,
+      status: whatsappBotConversationsTable.status,
+      mode: whatsappBotConversationsTable.mode,
+      contextSummary: whatsappBotConversationsTable.contextSummary,
+      humanPausedAt: whatsappBotConversationsTable.humanPausedAt,
+      returnedToBotAt: whatsappBotConversationsTable.returnedToBotAt,
+      lastMessageAt: whatsappBotConversationsTable.lastMessageAt,
+      metadata: whatsappBotConversationsTable.metadata,
+      updatedAt: whatsappBotConversationsTable.updatedAt,
+      contactId: whatsappBotContactsTable.id,
+      contactDisplayName: whatsappBotContactsTable.displayName,
+      contactPhoneNumber: whatsappBotContactsTable.phoneNumber,
+      firstContactAt: whatsappBotContactsTable.firstContactAt,
+      lastContactAt: whatsappBotContactsTable.lastContactAt,
+    })
+    .from(whatsappBotConversationsTable)
+    .innerJoin(
+      whatsappBotContactsTable,
+      and(
+        eq(
+          whatsappBotContactsTable.id,
+          whatsappBotConversationsTable.contactId
+        ),
+        eq(
+          whatsappBotContactsTable.storeId,
+          whatsappBotConversationsTable.storeId
+        )
+      )
+    )
+    .where(
+      and(
+        eq(whatsappBotConversationsTable.storeId, storeId),
+        or(
+          eq(whatsappBotConversationsTable.status, 'pending_human'),
+          eq(whatsappBotConversationsTable.mode, 'human')
+        )
+      )
+    )
+    .orderBy(desc(whatsappBotConversationsTable.lastMessageAt))
+    .limit(30)
+
+  return await Promise.all(
+    conversations.map(async conversation => {
+      const messages = await db
+        .select({
+          id: whatsappBotMessagesTable.id,
+          direction: whatsappBotMessagesTable.direction,
+          senderType: whatsappBotMessagesTable.senderType,
+          messageType: whatsappBotMessagesTable.messageType,
+          body: whatsappBotMessagesTable.body,
+          status: whatsappBotMessagesTable.status,
+          occurredAt: whatsappBotMessagesTable.occurredAt,
+        })
+        .from(whatsappBotMessagesTable)
+        .where(
+          and(
+            eq(whatsappBotMessagesTable.storeId, storeId),
+            eq(whatsappBotMessagesTable.conversationId, conversation.id)
+          )
+        )
+        .orderBy(desc(whatsappBotMessagesTable.occurredAt))
+        .limit(12)
+
+      const handoff = getHumanHandoffMetadata(conversation.metadata)
+
+      return {
+        id: conversation.id,
+        status: conversation.status,
+        mode: conversation.mode,
+        contextSummary: conversation.contextSummary,
+        humanPausedAt: conversation.humanPausedAt,
+        returnedToBotAt: conversation.returnedToBotAt,
+        lastMessageAt: conversation.lastMessageAt,
+        updatedAt: conversation.updatedAt,
+        contact: {
+          id: conversation.contactId,
+          displayName: conversation.contactDisplayName,
+          phoneNumber: conversation.contactPhoneNumber,
+          firstContactAt: conversation.firstContactAt,
+          lastContactAt: conversation.lastContactAt,
+        },
+        handoff: {
+          reason: handoff.reason ?? null,
+          reasonLabel: getWhatsappHumanHandoffReasonLabel(handoff.reason),
+          confidence: handoff.confidence ?? null,
+          notifiedAt: handoff.notifiedAt ?? null,
+          responsible: handoff.responsible
+            ? {
+                userId: handoff.responsible.userId ?? null,
+                name: handoff.responsible.name ?? null,
+                email: handoff.responsible.email ?? null,
+                phone: handoff.responsible.phone ?? null,
+              }
+            : null,
+        },
+        messages: messages.reverse(),
+      } satisfies WhatsappHumanHandoffConversation
+    })
+  )
+}
+
+export async function returnWhatsappConversationToBotForStore({
+  storeId,
+  conversationId,
+  returnedByUserId,
+}: {
+  storeId: number
+  conversationId: string
+  returnedByUserId: string
+}) {
+  const now = new Date()
+  const [conversation] = await db.transaction(async tx => {
+    const [updatedConversation] = await tx
+      .update(whatsappBotConversationsTable)
+      .set({
+        mode: 'automatic',
+        status: 'open',
+        returnedToBotAt: now,
+        contextSummary:
+          'Conversa devolvida ao robo. Proximas mensagens voltam ao atendimento automatico.',
+        metadata: sql`${whatsappBotConversationsTable.metadata} || ${JSON.stringify(
+          {
+            returnedToBot: {
+              at: now.toISOString(),
+              byUserId: returnedByUserId,
+              source: 'store_dashboard',
+            },
+          }
+        )}::jsonb`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(whatsappBotConversationsTable.id, conversationId),
+          eq(whatsappBotConversationsTable.storeId, storeId),
+          or(
+            eq(whatsappBotConversationsTable.status, 'pending_human'),
+            eq(whatsappBotConversationsTable.mode, 'human')
+          )
+        )
+      )
+      .returning()
+
+    if (!updatedConversation) return [null]
+
+    await tx.insert(whatsappBotMessagesTable).values({
+      storeId,
+      conversationId,
+      contactId: updatedConversation.contactId,
+      numberId: updatedConversation.numberId,
+      sessionId: updatedConversation.sessionId,
+      providerMessageId: `internal:return-to-bot:${randomUUID()}`,
+      direction: 'internal',
+      senderType: 'system',
+      messageType: 'text',
+      body: 'Conversa devolvida ao robo pelo painel da loja.',
+      status: 'received',
+      occurredAt: now,
+      metadata: {
+        source: 'store_dashboard',
+        action: 'return_to_bot',
+        returnedByUserId,
+      },
+    })
+
+    return [updatedConversation]
+  })
+
+  if (!conversation) {
+    throw new Error('Conversa nao encontrada ou ja esta em modo automatico.')
+  }
+
+  return conversation
 }
 
 export async function getWhatsappBotSessionForStore(storeId: number) {
@@ -1275,11 +1579,27 @@ export async function runWhatsappAssistantOrchestrator({
     .limit(20)
 
   const history = trimWhatsappAssistantHistory({
-    messages: recentMessages.reverse(),
+    messages: [...recentMessages].reverse(),
   })
   const businessContext = await getWhatsappAssistantBusinessContext(storeId)
+  const handoffDecision = detectWhatsappHumanHandoff({
+    intent,
+    message: currentMessage,
+    history: recentMessages,
+  })
 
-  if (intent === 'human_support') {
+  if (handoffDecision.shouldHandoff && handoffDecision.reason) {
+    const handoffReason = handoffDecision.reason
+    const now = new Date()
+    const responsible = await getWhatsappHumanHandoffResponsible(storeId)
+    const handoffMetadata = {
+      reason: handoffReason,
+      reasonLabel: getWhatsappHumanHandoffReasonLabel(handoffReason),
+      confidence: handoffDecision.confidence,
+      notifiedAt: now.toISOString(),
+      notificationChannel: 'internal_queue',
+      responsible,
+    }
     const ctaDecision = decideWhatsappDigitalMenuCta({
       intent,
       conversationId,
@@ -1315,7 +1635,8 @@ export async function runWhatsappAssistantOrchestrator({
             source: 'whatsapp_assistant_orchestrator',
             intent,
             fallback: true,
-            fallbackReason: 'human_handoff_requested',
+            fallbackReason: handoffReason,
+            humanHandoff: handoffMetadata,
             digitalMenuCta: {
               sent: ctaDecision.shouldSend,
               reason: ctaDecision.reason,
@@ -1332,9 +1653,14 @@ export async function runWhatsappAssistantOrchestrator({
         .set({
           status: 'pending_human',
           mode: 'human',
-          humanPausedAt: new Date(),
-          contextSummary: `Cliente solicitou atendimento humano. Ultima intencao: ${intent}.`,
-          updatedAt: new Date(),
+          humanPausedAt: now,
+          contextSummary: buildWhatsappHumanHandoffContextSummary({
+            reason: handoffReason,
+            intent,
+            currentMessage,
+          }),
+          metadata: sql`${whatsappBotConversationsTable.metadata} || ${JSON.stringify({ humanHandoff: handoffMetadata })}::jsonb`,
+          updatedAt: now,
         })
         .where(
           and(
@@ -1342,6 +1668,29 @@ export async function runWhatsappAssistantOrchestrator({
             eq(whatsappBotConversationsTable.storeId, storeId)
           )
         )
+
+      await tx.insert(whatsappBotMessagesTable).values({
+        storeId,
+        conversationId,
+        contactId: row.contact.id,
+        numberId: row.conversation.numberId,
+        sessionId: row.conversation.sessionId,
+        providerMessageId: `internal:handoff:${inboundMessageId}`,
+        direction: 'internal',
+        senderType: 'system',
+        messageType: 'text',
+        body: buildWhatsappHumanHandoffInternalNote({
+          reason: handoffReason,
+          contactName: row.contact.displayName,
+          currentMessage,
+        }),
+        status: 'received',
+        occurredAt: now,
+        metadata: {
+          source: 'whatsapp_human_handoff',
+          notification: handoffMetadata,
+        },
+      })
 
       return [createdMessage]
     })
@@ -1369,7 +1718,7 @@ export async function runWhatsappAssistantOrchestrator({
 
     return {
       action: 'handoff',
-      reason: 'human_handoff_requested',
+      reason: handoffReason,
       intent,
       outboundMessageId: message.id,
       latencyMs: 0,
@@ -1398,6 +1747,7 @@ export async function runWhatsappAssistantOrchestrator({
   let reply = ''
   let llmMetadata: Record<string, unknown>
   let resolvedProvider = provider
+  let fallbackHandoffDecision: WhatsappHumanHandoffDecision | null = null
 
   try {
     resolvedProvider ??= createOpenAiCompatibleWhatsappLlmProvider()
@@ -1444,9 +1794,21 @@ export async function runWhatsappAssistantOrchestrator({
       estimatedInputTokens,
     }
   } catch (error) {
-    action = 'fallback'
     reason = error instanceof Error ? error.message : 'provider_failed'
-    reply = row.assistantConfig.fallbackMessage
+    fallbackHandoffDecision = detectWhatsappHumanHandoff({
+      intent,
+      message: currentMessage,
+      history: recentMessages,
+      providerFailed: true,
+    })
+    action =
+      fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
+        ? 'handoff'
+        : 'fallback'
+    reply =
+      fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
+        ? buildWhatsappHumanHandoffReply(row.assistantConfig)
+        : row.assistantConfig.fallbackMessage
     const ctaDecision = decideWhatsappDigitalMenuCta({
       intent,
       conversationId,
@@ -1466,6 +1828,16 @@ export async function runWhatsappAssistantOrchestrator({
       model: resolvedProvider?.model ?? 'unconfigured',
       usage: null,
       latencyMs: Date.now() - startedAt,
+      humanHandoff:
+        fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
+          ? {
+              reason: fallbackHandoffDecision.reason,
+              reasonLabel: getWhatsappHumanHandoffReasonLabel(
+                fallbackHandoffDecision.reason
+              ),
+              confidence: fallbackHandoffDecision.confidence,
+            }
+          : null,
       failure: {
         name: error instanceof Error ? error.name : 'UnknownError',
         message: reason,
@@ -1528,6 +1900,82 @@ export async function runWhatsappAssistantOrchestrator({
     text: reply,
     evolutionClient,
   })
+
+  if (
+    fallbackHandoffDecision?.shouldHandoff &&
+    fallbackHandoffDecision.reason
+  ) {
+    const now = new Date()
+    const responsible = await getWhatsappHumanHandoffResponsible(storeId)
+    const handoffMetadata = {
+      reason: fallbackHandoffDecision.reason,
+      reasonLabel: getWhatsappHumanHandoffReasonLabel(
+        fallbackHandoffDecision.reason
+      ),
+      confidence: fallbackHandoffDecision.confidence,
+      notifiedAt: now.toISOString(),
+      notificationChannel: 'internal_queue',
+      responsible,
+    }
+
+    await db.transaction(async tx => {
+      await tx
+        .update(whatsappBotConversationsTable)
+        .set({
+          status: 'pending_human',
+          mode: 'human',
+          humanPausedAt: now,
+          contextSummary: buildWhatsappHumanHandoffContextSummary({
+            reason: fallbackHandoffDecision.reason!,
+            intent,
+            currentMessage,
+          }),
+          metadata: sql`${whatsappBotConversationsTable.metadata} || ${JSON.stringify({ humanHandoff: handoffMetadata })}::jsonb`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(whatsappBotConversationsTable.id, conversationId),
+            eq(whatsappBotConversationsTable.storeId, storeId)
+          )
+        )
+
+      await tx.insert(whatsappBotMessagesTable).values({
+        storeId,
+        conversationId,
+        contactId: row.contact.id,
+        numberId: row.conversation.numberId,
+        sessionId: row.conversation.sessionId,
+        providerMessageId: `internal:handoff:${inboundMessageId}`,
+        direction: 'internal',
+        senderType: 'system',
+        messageType: 'text',
+        body: buildWhatsappHumanHandoffInternalNote({
+          reason: fallbackHandoffDecision.reason!,
+          contactName: row.contact.displayName,
+          currentMessage,
+        }),
+        status: 'received',
+        occurredAt: now,
+        metadata: {
+          source: 'whatsapp_human_handoff',
+          notification: handoffMetadata,
+        },
+      })
+    })
+
+    return {
+      action,
+      reason: fallbackHandoffDecision.reason,
+      intent,
+      outboundMessageId: outboundMessage.id,
+      latencyMs:
+        typeof llmMetadata.latencyMs === 'number'
+          ? llmMetadata.latencyMs
+          : null,
+      deliveryStatus,
+    }
+  }
 
   await db
     .update(whatsappBotConversationsTable)
