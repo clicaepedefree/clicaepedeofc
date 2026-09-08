@@ -185,6 +185,14 @@ export type DigitalMenuSubmitInput = {
   deviceId?: string
   captchaToken?: string
   trackingToken?: string
+  attribution?: {
+    source?: string
+    medium?: string
+    campaign?: string
+    conversationId?: string
+    messageId?: string
+    entryUrl?: string
+  }
   customerName: string
   customerPhone: string
   customerDocument?: string
