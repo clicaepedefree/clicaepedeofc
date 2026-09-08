@@ -12,9 +12,11 @@ import {
   whatsappBotAssistantConfigsTable,
   whatsappBotContactsTable,
   whatsappBotConversationsTable,
+  whatsappBotDeliveryAttemptsTable,
   whatsappBotMessagesTable,
   whatsappBotNumbersTable,
   whatsappBotSessionsTable,
+  whatsappBotTransactionalEventsTable,
   userStorePermissionsTable,
   usersTable,
   type SelectWhatsappBotAssistantConfig,
@@ -23,8 +25,9 @@ import {
   type SelectWhatsappBotMessage,
   type SelectWhatsappBotNumber,
   type SelectWhatsappBotSession,
+  type SelectWhatsappBotTransactionalEvent,
 } from '@/services/db/schema'
-import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, lt, lte, or, sql } from 'drizzle-orm'
 
 import {
   buildEvolutionInstanceName,
@@ -85,6 +88,15 @@ import {
   resolveWhatsappAssistantProductAvailability,
   type WhatsappAssistantStoreToolProduct,
 } from './store-tools-policy'
+import {
+  buildWhatsappTransactionalIdempotencyKey,
+  normalizeWhatsappTransactionalMaxAttempts,
+  normalizeWhatsappTransactionalQueueLimit,
+  normalizeWhatsappTransactionalRecipient,
+  readWhatsappTransactionalTextPayload,
+  resolveWhatsappTransactionalDeliveryDecision,
+  type WhatsappTransactionalQueueEventType,
+} from './transactional-queue-policy'
 import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 import { randomUUID } from 'node:crypto'
 
@@ -138,6 +150,35 @@ type WhatsappAssistantOrchestrationResult = {
   outboundMessageId: string | null
   latencyMs: number | null
   deliveryStatus: 'not_sent' | 'sent' | 'failed'
+}
+
+export type WhatsappTransactionalQueueEnqueueInput = {
+  storeId: number
+  eventType: WhatsappTransactionalQueueEventType
+  eventId: string | number
+  recipientPhone: string
+  text: string
+  conversationId?: string | null
+  contactId?: number | null
+  numberId?: number | null
+  sessionId?: number | null
+  orderId?: number | null
+  payload?: Record<string, unknown>
+  maxAttempts?: number
+}
+
+export type WhatsappTransactionalQueueEnqueueResult = {
+  accepted: boolean
+  duplicate: boolean
+  eventId: string | null
+  idempotencyKey: string
+}
+
+export type WhatsappTransactionalQueueResult = {
+  processed: number
+  sent: number
+  failed: number
+  discarded: number
 }
 
 export type WhatsappHumanHandoffConversation = {
@@ -658,6 +699,343 @@ export async function returnWhatsappConversationToBotForStore({
   }
 
   return conversation
+}
+
+export async function enqueueWhatsappTransactionalMessage({
+  storeId,
+  eventType,
+  eventId,
+  recipientPhone,
+  text,
+  conversationId,
+  contactId,
+  numberId,
+  sessionId,
+  orderId,
+  payload,
+  maxAttempts,
+}: WhatsappTransactionalQueueEnqueueInput): Promise<WhatsappTransactionalQueueEnqueueResult> {
+  const now = new Date()
+  const normalizedRecipient =
+    normalizeWhatsappTransactionalRecipient(recipientPhone)
+  const normalizedMaxAttempts =
+    normalizeWhatsappTransactionalMaxAttempts(maxAttempts)
+  const normalizedText = readWhatsappTransactionalTextPayload({ text })
+  const idempotencyKey = buildWhatsappTransactionalIdempotencyKey({
+    eventType,
+    eventId,
+    recipientPhone: normalizedRecipient,
+  })
+
+  const [event] = await db
+    .insert(whatsappBotTransactionalEventsTable)
+    .values({
+      storeId,
+      eventType,
+      status: 'queued',
+      idempotencyKey,
+      recipientPhone: normalizedRecipient,
+      conversationId: conversationId ?? null,
+      contactId: contactId ?? null,
+      numberId: numberId ?? null,
+      sessionId: sessionId ?? null,
+      orderId: orderId ?? null,
+      payload: {
+        ...(payload ?? {}),
+        text: normalizedText,
+        sourceEventId: String(eventId),
+      },
+      attempts: 0,
+      maxAttempts: normalizedMaxAttempts,
+      nextAttemptAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({
+      target: [
+        whatsappBotTransactionalEventsTable.storeId,
+        whatsappBotTransactionalEventsTable.idempotencyKey,
+      ],
+    })
+    .returning({ id: whatsappBotTransactionalEventsTable.id })
+
+  return {
+    accepted: Boolean(event),
+    duplicate: !event,
+    eventId: event?.id ?? null,
+    idempotencyKey,
+  }
+}
+
+async function getWhatsappTransactionalSessionForEvent(
+  event: SelectWhatsappBotTransactionalEvent
+) {
+  const baseWhere = [
+    eq(whatsappBotSessionsTable.storeId, event.storeId),
+    eq(whatsappBotSessionsTable.status, 'connected' as const),
+  ]
+
+  const [session] = await db
+    .select()
+    .from(whatsappBotSessionsTable)
+    .where(
+      and(
+        ...baseWhere,
+        event.sessionId
+          ? eq(whatsappBotSessionsTable.id, event.sessionId)
+          : event.numberId
+            ? eq(whatsappBotSessionsTable.numberId, event.numberId)
+            : sql`true`
+      )
+    )
+    .orderBy(desc(whatsappBotSessionsTable.updatedAt))
+    .limit(1)
+
+  if (!session) {
+    throw new Error('WHATSAPP_TRANSACTIONAL_SESSION_DISCONNECTED')
+  }
+
+  return session
+}
+
+async function markWhatsappTransactionalEvent({
+  event,
+  status,
+  attemptStatus,
+  providerMessageId,
+  errorCode,
+  errorMessage,
+  nextAttemptAt,
+  now,
+}: {
+  event: SelectWhatsappBotTransactionalEvent
+  status: 'sent' | 'failed' | 'discarded'
+  attemptStatus: 'succeeded' | 'failed' | 'skipped'
+  providerMessageId?: string | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  nextAttemptAt?: Date | null
+  now: Date
+}) {
+  await db.transaction(async tx => {
+    await tx.insert(whatsappBotDeliveryAttemptsTable).values({
+      storeId: event.storeId,
+      eventId: event.id,
+      numberId: event.numberId,
+      sessionId: event.sessionId,
+      attemptNumber: event.attempts,
+      status: attemptStatus,
+      providerMessageId: providerMessageId ?? null,
+      errorCode: errorCode ?? null,
+      errorMessage: errorMessage ?? null,
+      attemptedAt: now,
+      nextAttemptAt: nextAttemptAt ?? null,
+      metadata: {
+        eventType: event.eventType,
+        idempotencyKey: event.idempotencyKey,
+      },
+    })
+
+    await tx
+      .update(whatsappBotTransactionalEventsTable)
+      .set({
+        status,
+        nextAttemptAt: nextAttemptAt ?? now,
+        lastError: errorMessage ?? null,
+        processedAt: status === 'sent' || status === 'discarded' ? now : null,
+        sentAt: status === 'sent' ? now : null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(whatsappBotTransactionalEventsTable.id, event.id),
+          eq(whatsappBotTransactionalEventsTable.storeId, event.storeId)
+        )
+      )
+
+    if (status === 'sent' && event.conversationId) {
+      await tx.insert(whatsappBotMessagesTable).values({
+        storeId: event.storeId,
+        conversationId: event.conversationId,
+        contactId: event.contactId,
+        numberId: event.numberId,
+        sessionId: event.sessionId,
+        providerMessageId: `transactional:${event.id}`,
+        direction: 'outbound',
+        senderType: 'system',
+        messageType: 'text',
+        body: readWhatsappTransactionalTextPayload(
+          event.payload as Record<string, unknown>
+        ),
+        status: 'sent',
+        occurredAt: now,
+        metadata: {
+          source: 'whatsapp_transactional_queue',
+          eventId: event.id,
+          eventType: event.eventType,
+          providerMessageId,
+        },
+      })
+    }
+  })
+}
+
+async function processWhatsappTransactionalEvent({
+  event,
+  evolutionClient,
+}: {
+  event: SelectWhatsappBotTransactionalEvent
+  evolutionClient?: EvolutionClient
+}): Promise<'sent' | 'failed' | 'discarded'> {
+  const now = new Date()
+  let text: string
+  let session: SelectWhatsappBotSession
+
+  try {
+    text = readWhatsappTransactionalTextPayload(
+      event.payload as Record<string, unknown>
+    )
+    session = await getWhatsappTransactionalSessionForEvent(event)
+  } catch (error) {
+    const decision = resolveWhatsappTransactionalDeliveryDecision({
+      now,
+      attempts: event.attempts,
+      maxAttempts: event.maxAttempts,
+      error,
+    })
+
+    await markWhatsappTransactionalEvent({
+      event,
+      status: decision.status,
+      attemptStatus: decision.attemptStatus,
+      errorCode: decision.errorCode,
+      errorMessage: decision.errorMessage,
+      nextAttemptAt: decision.nextAttemptAt,
+      now,
+    })
+
+    return decision.status
+  }
+
+  const client = evolutionClient ?? createEvolutionClient()
+  let providerMessageId: string | null = null
+
+  try {
+    const delivery = await client.sendTextMessage({
+      instanceName: session.providerSessionId,
+      token: getSessionToken(session),
+      number: event.recipientPhone,
+      text,
+    })
+    providerMessageId = delivery.providerMessageId
+  } catch (error) {
+    const decision = resolveWhatsappTransactionalDeliveryDecision({
+      now,
+      attempts: event.attempts,
+      maxAttempts: event.maxAttempts,
+      error,
+    })
+
+    await markWhatsappTransactionalEvent({
+      event,
+      status: decision.status,
+      attemptStatus: decision.attemptStatus,
+      errorCode: decision.errorCode,
+      errorMessage: decision.errorMessage,
+      nextAttemptAt: decision.nextAttemptAt,
+      now,
+    })
+
+    return decision.status
+  }
+
+  await markWhatsappTransactionalEvent({
+    event: {
+      ...event,
+      sessionId: session.id,
+      numberId: session.numberId,
+    },
+    status: 'sent',
+    attemptStatus: 'succeeded',
+    providerMessageId,
+    now,
+  })
+
+  return 'sent'
+}
+
+export async function processWhatsappTransactionalQueue({
+  limit,
+  evolutionClient,
+}: {
+  limit?: number
+  evolutionClient?: EvolutionClient
+} = {}): Promise<WhatsappTransactionalQueueResult> {
+  const now = new Date()
+  const events = await db
+    .select()
+    .from(whatsappBotTransactionalEventsTable)
+    .where(
+      and(
+        inArray(whatsappBotTransactionalEventsTable.status, [
+          'queued',
+          'failed',
+        ]),
+        lt(
+          whatsappBotTransactionalEventsTable.attempts,
+          whatsappBotTransactionalEventsTable.maxAttempts
+        ),
+        lte(whatsappBotTransactionalEventsTable.nextAttemptAt, now)
+      )
+    )
+    .orderBy(
+      asc(whatsappBotTransactionalEventsTable.nextAttemptAt),
+      asc(whatsappBotTransactionalEventsTable.createdAt)
+    )
+    .limit(normalizeWhatsappTransactionalQueueLimit(limit))
+
+  const result: WhatsappTransactionalQueueResult = {
+    processed: 0,
+    sent: 0,
+    failed: 0,
+    discarded: 0,
+  }
+
+  for (const event of events) {
+    const [claimedEvent] = await db
+      .update(whatsappBotTransactionalEventsTable)
+      .set({
+        status: 'processing',
+        attempts: event.attempts + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(whatsappBotTransactionalEventsTable.id, event.id),
+          eq(whatsappBotTransactionalEventsTable.storeId, event.storeId),
+          eq(whatsappBotTransactionalEventsTable.status, event.status),
+          event.updatedAt
+            ? eq(whatsappBotTransactionalEventsTable.updatedAt, event.updatedAt)
+            : sql`${whatsappBotTransactionalEventsTable.updatedAt} is null`,
+          lt(
+            whatsappBotTransactionalEventsTable.attempts,
+            whatsappBotTransactionalEventsTable.maxAttempts
+          )
+        )
+      )
+      .returning()
+
+    if (!claimedEvent) continue
+
+    const status = await processWhatsappTransactionalEvent({
+      event: claimedEvent,
+      evolutionClient,
+    })
+
+    result.processed += 1
+    result[status] += 1
+  }
+
+  return result
 }
 
 export async function getWhatsappBotSessionForStore(storeId: number) {
