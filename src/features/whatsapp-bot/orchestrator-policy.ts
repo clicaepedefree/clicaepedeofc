@@ -27,7 +27,12 @@ export type WhatsappAssistantIntent = (typeof whatsappAssistantIntents)[number]
 
 export type WhatsappAssistantHistoryMessage = Pick<
   SelectWhatsappBotMessage,
-  'direction' | 'senderType' | 'messageType' | 'body' | 'occurredAt'
+  | 'direction'
+  | 'senderType'
+  | 'messageType'
+  | 'body'
+  | 'metadata'
+  | 'occurredAt'
 >
 
 export type WhatsappAssistantBusinessContext = {
@@ -80,8 +85,22 @@ export type WhatsappAssistantPromptContext = {
 }
 
 const intentPatterns: Record<WhatsappAssistantIntent, RegExp[]> = {
-  menu: [/card[aá]pio/i, /menu/i, /tem .*?/i, /produto/i, /op[cç][aã]o/i],
-  price: [/pre[cç]o/i, /valor/i, /quanto custa/i, /\br\$/i],
+  menu: [
+    /card[aá]pio/i,
+    /menu/i,
+    /tem (produto|op[cç][aã]o|pizza|lanche|combo|bebida|sobremesa)/i,
+    /produto/i,
+    /op[cç][aã]o/i,
+  ],
+  price: [
+    /pre[cç]o/i,
+    /valor/i,
+    /quanto custa/i,
+    /\br\$/i,
+    /promo[cç][aã]o/i,
+    /cupom/i,
+    /desconto/i,
+  ],
   business_hours: [
     /hor[aá]rio/i,
     /abre/i,

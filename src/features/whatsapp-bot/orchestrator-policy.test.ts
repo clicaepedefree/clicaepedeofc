@@ -33,6 +33,10 @@ describe('whatsapp assistant orchestrator policy', () => {
     expect(classifyWhatsappAssistantIntent('Quanto custa o combo?')).toBe(
       'price'
     )
+    expect(classifyWhatsappAssistantIntent('Tem alguma promocao?')).toBe(
+      'price'
+    )
+    expect(classifyWhatsappAssistantIntent('Posso usar cupom?')).toBe('price')
     expect(classifyWhatsappAssistantIntent('Que horas abre?')).toBe(
       'business_hours'
     )
@@ -85,6 +89,7 @@ describe('whatsapp assistant orchestrator policy', () => {
       senderType: 'customer',
       messageType: 'text',
       body: `mensagem-${index}-${'x'.repeat(40)}`,
+      metadata: null,
       occurredAt: new Date(
         `2026-09-05T10:${String(index).padStart(2, '0')}:00.000Z`
       ),
@@ -161,6 +166,7 @@ describe('whatsapp assistant orchestrator policy', () => {
           senderType: 'customer',
           messageType: 'text',
           body: 'Oi',
+          metadata: null,
           occurredAt: new Date('2026-09-05T10:00:00.000Z'),
         },
       ],

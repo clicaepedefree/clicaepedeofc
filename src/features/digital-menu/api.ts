@@ -32,6 +32,7 @@ import {
   storePaymentMethodsTable,
   storeSpecialHoursTable,
   storesTable,
+  whatsappBotConversationsTable,
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
@@ -83,6 +84,10 @@ import {
   DigitalMenuOrderDomainError,
   getDigitalMenuOrderDomainFailure,
 } from './submission-errors'
+import {
+  normalizeDigitalMenuAttribution,
+  type DigitalMenuAttribution,
+} from './attribution'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
   logoImageUrl: null,
@@ -228,6 +233,30 @@ const createRequestHash = (value: unknown) => {
 
 const toJsonSnapshot = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T
+
+const resolveDigitalMenuAttribution = async ({
+  storeId,
+  attribution,
+}: {
+  storeId: number
+  attribution?: DigitalMenuSubmitInput['attribution'] | null
+}): Promise<DigitalMenuAttribution | null> => {
+  const normalizedAttribution = normalizeDigitalMenuAttribution(attribution)
+  if (!normalizedAttribution) return null
+
+  const conversation = await db.query.whatsappBotConversationsTable.findFirst({
+    where: and(
+      eq(
+        whatsappBotConversationsTable.id,
+        normalizedAttribution.conversationId
+      ),
+      eq(whatsappBotConversationsTable.storeId, storeId)
+    ),
+    columns: { id: true },
+  })
+
+  return conversation ? normalizedAttribution : null
+}
 
 const normalizeOptionalMoney = (value: string | undefined) => {
   const sanitized = sanitizePublicText(value, 40)
@@ -998,6 +1027,15 @@ export const submitDigitalMenuOrder = async (
     return { ok: false, message: 'Loja nao encontrada.' }
   }
 
+  const orderAttribution = await resolveDigitalMenuAttribution({
+    storeId: menu.store.id,
+    attribution: payload.attribution,
+  })
+  const publicOrderSource = orderAttribution?.source ?? 'public_digital_menu'
+  const orderOrigin = orderAttribution
+    ? 'whatsapp-bot-digital-menu-cta'
+    : 'cardapio-digital'
+
   const phoneHash = hashPublicIdentifier(payload.customerPhone, securitySecret)
   const securityContext: PublicSecurityContext = {
     ...baseSecurityContext,
@@ -1293,6 +1331,7 @@ export const submitDigitalMenuOrder = async (
     payment: payload.payment,
     couponCode: normalizedCouponCode,
     items: cartItemsForValidation,
+    attribution: orderAttribution,
   })
   const addressSnapshot =
     payload.orderType === 'DELIVERY'
@@ -1346,12 +1385,12 @@ export const submitDigitalMenuOrder = async (
             now: submittedAt,
           }) ??
           (existing.trackingExpiresAt &&
-            existing.trackingExpiresAt > submittedAt &&
-            publicTrackingTokenMatches(
-              presentedTrackingToken,
-              existing.trackingTokenHash,
-              securitySecret
-            )
+          existing.trackingExpiresAt > submittedAt &&
+          publicTrackingTokenMatches(
+            presentedTrackingToken,
+            existing.trackingTokenHash,
+            securitySecret
+          )
             ? presentedTrackingToken
             : null)
         return {
@@ -1454,6 +1493,7 @@ export const submitDigitalMenuOrder = async (
           status: 'RECEIVED',
           technicalStatus: 'ACKED',
           salesChannel: 'DIGITAL_MENU',
+          source: publicOrderSource,
           orderType: payload.orderType,
           cartSnapshot: toJsonSnapshot(validatedCart.items),
           totalsSnapshot: toJsonSnapshot({
@@ -1479,6 +1519,7 @@ export const submitDigitalMenuOrder = async (
             phoneLast4: payload.customerPhone.slice(-4),
             document: payload.customerDocument || null,
             orderNotes: payload.orderNotes || null,
+            attribution: orderAttribution,
           }),
           addressSnapshot: addressSnapshot
             ? toJsonSnapshot(addressSnapshot)
@@ -1570,7 +1611,7 @@ export const submitDigitalMenuOrder = async (
               )
             : null,
           scheduledFor,
-          origin: 'cardapio-digital',
+          origin: orderOrigin,
           idempotencyKey: payload.idempotencyKey,
           requestId,
           publicTrackingTokenHash: trackingTokenHash,
@@ -1598,6 +1639,7 @@ export const submitDigitalMenuOrder = async (
               orderNotes: payload.orderNotes || null,
               termsAcceptedAt: submittedAt.toISOString(),
             },
+            attribution: orderAttribution,
           }),
           technicalAckAt: submittedAt,
         },
@@ -1621,6 +1663,8 @@ export const submitDigitalMenuOrder = async (
             orderType: createdOrder.type,
             publicOrderId: created.id,
             displayId: createdOrder.displayId,
+            source: publicOrderSource,
+            attribution: orderAttribution,
           },
           ipHash,
           userAgentHash,
@@ -1760,6 +1804,8 @@ export const submitDigitalMenuOrder = async (
             promotionName: validatedCart.appliedPromotion.name,
             promotionType: validatedCart.appliedPromotion.type,
             requestId,
+            source: publicOrderSource,
+            attribution: orderAttribution,
           },
         })
       }
@@ -1779,10 +1825,12 @@ export const submitDigitalMenuOrder = async (
         requestId,
         payload: {
           salesChannel: 'DIGITAL_MENU',
+          source: publicOrderSource,
           orderType: payload.orderType,
           total: validatedCart.total,
           orderId: createdOrder.id,
           displayId: createdOrder.displayId,
+          attribution: orderAttribution,
         },
       })
 
@@ -1840,12 +1888,12 @@ export const submitDigitalMenuOrder = async (
             now,
           }) ??
           (existing.trackingExpiresAt &&
-            existing.trackingExpiresAt > now &&
-            publicTrackingTokenMatches(
-              presentedTrackingToken,
-              existing.trackingTokenHash,
-              securitySecret
-            )
+          existing.trackingExpiresAt > now &&
+          publicTrackingTokenMatches(
+            presentedTrackingToken,
+            existing.trackingTokenHash,
+            securitySecret
+          )
             ? presentedTrackingToken
             : null)
         return {

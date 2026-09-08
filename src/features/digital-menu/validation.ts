@@ -74,6 +74,17 @@ export const submitDigitalMenuOrderSchema = z
     idempotencyKey: z.string().min(12).max(120),
     deviceId: z.string().trim().min(16).max(120).optional(),
     captchaToken: z.string().trim().min(10).max(2048).optional(),
+    trackingToken: z.string().trim().max(240).optional(),
+    attribution: z
+      .object({
+        source: z.literal('whatsapp_bot').optional(),
+        medium: z.literal('assistant').optional(),
+        campaign: z.literal('digital_menu_cta').optional(),
+        conversationId: z.string().uuid().optional(),
+        messageId: z.string().trim().max(160).optional(),
+        entryUrl: z.string().trim().url().max(500).optional(),
+      })
+      .optional(),
     customerName: z
       .string()
       .max(120)

@@ -58,6 +58,10 @@ import {
   type WhatsappAssistantLlmProvider,
 } from './llm-provider'
 import {
+  appendWhatsappDigitalMenuCta,
+  decideWhatsappDigitalMenuCta,
+} from './digital-menu-cta-policy'
+import {
   buildWhatsappAssistantSystemPrompt,
   buildWhatsappAssistantUserPrompt,
   buildWhatsappHumanHandoffReply,
@@ -1257,6 +1261,7 @@ export async function runWhatsappAssistantOrchestrator({
       senderType: whatsappBotMessagesTable.senderType,
       messageType: whatsappBotMessagesTable.messageType,
       body: whatsappBotMessagesTable.body,
+      metadata: whatsappBotMessagesTable.metadata,
       occurredAt: whatsappBotMessagesTable.occurredAt,
     })
     .from(whatsappBotMessagesTable)
@@ -1272,9 +1277,23 @@ export async function runWhatsappAssistantOrchestrator({
   const history = trimWhatsappAssistantHistory({
     messages: recentMessages.reverse(),
   })
+  const businessContext = await getWhatsappAssistantBusinessContext(storeId)
 
   if (intent === 'human_support') {
-    const reply = buildWhatsappHumanHandoffReply(row.assistantConfig)
+    const ctaDecision = decideWhatsappDigitalMenuCta({
+      intent,
+      conversationId,
+      messageId: assistantProviderMessageId,
+      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
+      tone: row.assistantConfig.tone,
+      history: recentMessages,
+    })
+    const reply = ctaDecision.text
+      ? appendWhatsappDigitalMenuCta({
+          reply: buildWhatsappHumanHandoffReply(row.assistantConfig),
+          ctaText: ctaDecision.text,
+        })
+      : buildWhatsappHumanHandoffReply(row.assistantConfig)
     const [message] = await db.transaction(async tx => {
       const [createdMessage] = await tx
         .insert(whatsappBotMessagesTable)
@@ -1297,6 +1316,12 @@ export async function runWhatsappAssistantOrchestrator({
             intent,
             fallback: true,
             fallbackReason: 'human_handoff_requested',
+            digitalMenuCta: {
+              sent: ctaDecision.shouldSend,
+              reason: ctaDecision.reason,
+              url: ctaDecision.url,
+              attribution: ctaDecision.attribution,
+            },
           },
         })
         .onConflictDoNothing()
@@ -1352,7 +1377,6 @@ export async function runWhatsappAssistantOrchestrator({
     }
   }
 
-  const businessContext = await getWhatsappAssistantBusinessContext(storeId)
   const systemPrompt = buildWhatsappAssistantSystemPrompt({
     assistantConfig: row.assistantConfig,
     contact: row.contact,
@@ -1389,6 +1413,21 @@ export async function runWhatsappAssistantOrchestrator({
     })
 
     reply = llmResponse.text
+    const ctaDecision = decideWhatsappDigitalMenuCta({
+      intent,
+      conversationId,
+      messageId: assistantProviderMessageId,
+      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
+      tone: row.assistantConfig.tone,
+      history: recentMessages,
+    })
+    if (ctaDecision.text) {
+      reply = appendWhatsappDigitalMenuCta({
+        reply,
+        ctaText: ctaDecision.text,
+      })
+    }
+
     llmMetadata = {
       provider: llmResponse.provider,
       model: llmResponse.model,
@@ -1396,12 +1435,32 @@ export async function runWhatsappAssistantOrchestrator({
       latencyMs: llmResponse.latencyMs,
       finishReason: llmResponse.finishReason,
       toolCalls: llmResponse.toolCalls,
+      digitalMenuCta: {
+        sent: ctaDecision.shouldSend,
+        reason: ctaDecision.reason,
+        url: ctaDecision.url,
+        attribution: ctaDecision.attribution,
+      },
       estimatedInputTokens,
     }
   } catch (error) {
     action = 'fallback'
     reason = error instanceof Error ? error.message : 'provider_failed'
     reply = row.assistantConfig.fallbackMessage
+    const ctaDecision = decideWhatsappDigitalMenuCta({
+      intent,
+      conversationId,
+      messageId: assistantProviderMessageId,
+      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
+      tone: row.assistantConfig.tone,
+      history: recentMessages,
+    })
+    if (ctaDecision.text) {
+      reply = appendWhatsappDigitalMenuCta({
+        reply,
+        ctaText: ctaDecision.text,
+      })
+    }
     llmMetadata = {
       provider: resolvedProvider?.name ?? 'unconfigured',
       model: resolvedProvider?.model ?? 'unconfigured',
@@ -1410,6 +1469,12 @@ export async function runWhatsappAssistantOrchestrator({
       failure: {
         name: error instanceof Error ? error.name : 'UnknownError',
         message: reason,
+      },
+      digitalMenuCta: {
+        sent: ctaDecision.shouldSend,
+        reason: ctaDecision.reason,
+        url: ctaDecision.url,
+        attribution: ctaDecision.attribution,
       },
       estimatedInputTokens,
     }

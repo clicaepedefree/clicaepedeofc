@@ -174,4 +174,35 @@ describe('submitDigitalMenuOrderSchema', () => {
 
     expect(result.success).toBe(false)
   })
+
+  test('aceita atribuicao do CTA do robo de WhatsApp', () => {
+    const result = submitDigitalMenuOrderSchema.safeParse({
+      ...basePayload,
+      attribution: {
+        source: 'whatsapp_bot',
+        medium: 'assistant',
+        campaign: 'digital_menu_cta',
+        conversationId: '6b9d2c6c-bda3-4b90-aab3-2081d80a23d9',
+        messageId: 'assistant:inbound-message-id',
+        entryUrl:
+          'https://clicaepedeofc.vercel.app/cardapio/ccocobongo?utm_source=whatsapp_bot',
+      },
+    })
+
+    expect(result.success).toBe(true)
+  })
+
+  test('rejeita atribuicao adulterada no checkout publico', () => {
+    const result = submitDigitalMenuOrderSchema.safeParse({
+      ...basePayload,
+      attribution: {
+        source: 'newsletter',
+        medium: 'assistant',
+        campaign: 'digital_menu_cta',
+        conversationId: '6b9d2c6c-bda3-4b90-aab3-2081d80a23d9',
+      },
+    })
+
+    expect(result.success).toBe(false)
+  })
 })

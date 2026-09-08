@@ -26,6 +26,11 @@ import {
   canSubmitDigitalMenuCheckout,
   canValidateDigitalMenuCheckout,
 } from '@/features/digital-menu/checkout-readiness'
+import {
+  normalizeDigitalMenuAttribution,
+  parseDigitalMenuAttributionSearchParams,
+  type DigitalMenuAttribution,
+} from '@/features/digital-menu/attribution'
 import { isValidCpf } from '@/features/digital-menu/validation'
 import {
   DigitalMenuCategory,
@@ -325,11 +330,17 @@ export const DigitalMenuClient = ({
   const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(
     null
   )
+  const [digitalMenuAttribution, setDigitalMenuAttribution] =
+    useState<DigitalMenuAttribution | null>(null)
   const [isPending, startTransition] = useTransition()
   const [isApplyingCoupon, startCouponTransition] = useTransition()
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
   const draftStorageKey = useMemo(
     () => buildDigitalMenuDraftStorageKey(menu.store.subdomain),
+    [menu.store.subdomain]
+  )
+  const attributionStorageKey = useMemo(
+    () => `clica-digital-menu-attribution:${menu.store.subdomain}`,
     [menu.store.subdomain]
   )
 
@@ -340,6 +351,33 @@ export const DigitalMenuClient = ({
     if (!stored) window.localStorage.setItem(storageKey, value)
     setDeviceId(value)
   }, [])
+
+  useEffect(() => {
+    try {
+      const urlAttribution = parseDigitalMenuAttributionSearchParams(
+        new URLSearchParams(window.location.search),
+        window.location.href
+      )
+
+      if (urlAttribution) {
+        window.sessionStorage.setItem(
+          attributionStorageKey,
+          JSON.stringify(urlAttribution)
+        )
+        setDigitalMenuAttribution(urlAttribution)
+        return
+      }
+
+      const storedAttribution = normalizeDigitalMenuAttribution(
+        JSON.parse(
+          window.sessionStorage.getItem(attributionStorageKey) ?? 'null'
+        )
+      )
+      setDigitalMenuAttribution(storedAttribution)
+    } catch {
+      setDigitalMenuAttribution(null)
+    }
+  }, [attributionStorageKey])
 
   useEffect(() => {
     let draft = null
@@ -875,6 +913,7 @@ export const DigitalMenuClient = ({
       idempotencyKey,
       deviceId: deviceId || undefined,
       captchaToken: captchaToken || undefined,
+      attribution: digitalMenuAttribution ?? undefined,
       customerName,
       customerPhone,
       customerDocument: customerDocument || undefined,
@@ -959,6 +998,7 @@ export const DigitalMenuClient = ({
       setCart([])
       try {
         window.sessionStorage.removeItem(draftStorageKey)
+        window.sessionStorage.removeItem(attributionStorageKey)
       } catch {
         // Ignore unavailable storage after successful order submission.
       }
