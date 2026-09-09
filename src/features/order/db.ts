@@ -27,6 +27,7 @@ import { publicOrderEventsTable } from '@/services/db/schema/public-order-events
 import { storesTable } from '@/services/db/schema/stores'
 import { whatsappBotAssistantConfigsTable } from '@/services/db/schema/whatsapp-bot-assistant-configs'
 import { enqueueWhatsappTransactionalMessage } from '@/features/whatsapp-bot/db'
+import { buildOrderBenefitWhatsappNotifications } from './benefit-notifications'
 import {
   OrderTransitionAction,
   requireAuditReason,
@@ -181,6 +182,55 @@ export const enqueueOrderStatusWhatsappNotificationOnDb = async ({
   }
 }
 
+export const enqueueOrderBenefitWhatsappNotificationsOnDb = async ({
+  order,
+  dbSession,
+}: {
+  order: Pick<
+    SelectOrder,
+    'id' | 'displayId' | 'storeId' | 'status' | 'customerPhone' | 'snapshot'
+  >
+  dbSession: DbSession
+}) => {
+  if (!order.customerPhone || order.status !== 'COMPLETED') return []
+
+  const [store] = await dbSession
+    .select({ name: storesTable.name, subdomain: storesTable.subdomain })
+    .from(storesTable)
+    .where(eq(storesTable.id, order.storeId))
+    .limit(1)
+
+  if (!store) return []
+
+  const notifications = buildOrderBenefitWhatsappNotifications({
+    storeName: store.name,
+    storeSubdomain: store.subdomain,
+    orderId: order.id,
+    orderDisplayId: order.displayId,
+    customerPhone: order.customerPhone,
+    orderStatus: order.status,
+    snapshot: order.snapshot,
+  })
+
+  const results = []
+  for (const notification of notifications) {
+    results.push(
+      await enqueueWhatsappTransactionalMessage({
+        dbSession,
+        storeId: order.storeId,
+        eventType: notification.eventType,
+        eventId: notification.eventId,
+        recipientPhone: order.customerPhone,
+        text: notification.text,
+        orderId: order.id,
+        payload: notification.payload,
+      })
+    )
+  }
+
+  return results
+}
+
 export const transitionOrderOnDb = async ({
   orderId,
   storeId,
@@ -286,6 +336,13 @@ export const transitionOrderOnDb = async ({
     reason: transition.reason,
     dbSession,
   })
+
+  if (transition.toStatus === 'COMPLETED') {
+    await enqueueOrderBenefitWhatsappNotificationsOnDb({
+      order: updatedOrder,
+      dbSession,
+    })
+  }
 
   return updatedOrder
 }
