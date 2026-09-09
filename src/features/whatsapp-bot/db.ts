@@ -4,6 +4,7 @@ import { db } from '@/services/db'
 import type { DbSession } from '@/services/db/types'
 import {
   categoriesTable,
+  internalOperationAuditLogsTable,
   itemOfferingsTable,
   itemsTable,
   storeBusinessHoursTable,
@@ -99,6 +100,13 @@ import {
   type WhatsappTransactionalQueueEventType,
 } from './transactional-queue-policy'
 import {
+  canSendWhatsappNotificationToContact,
+  classifyWhatsappNotificationCategory,
+  getWhatsappRetentionCutoffs,
+  maskWhatsappAuditPhone,
+  redactWhatsappSensitiveMetadata,
+} from './security-lgpd-policy'
+import {
   buildWhatsappOperationalDiagnostics,
   type WhatsappOperationalDiagnostics,
 } from './diagnostics-policy'
@@ -163,6 +171,13 @@ type WhatsappAssistantOrchestrationResult = {
   deliveryStatus: 'not_sent' | 'sent' | 'failed'
 }
 
+type WhatsappBotAuditActor = {
+  id: string
+  clerkId: string | null
+  email: string
+  name: string | null
+}
+
 export type WhatsappTransactionalQueueEnqueueInput = {
   dbSession?: DbSession
   storeId: number
@@ -182,6 +197,7 @@ export type WhatsappTransactionalQueueEnqueueInput = {
 export type WhatsappTransactionalQueueEnqueueResult = {
   accepted: boolean
   duplicate: boolean
+  blockedByOptOut?: boolean
   eventId: string | null
   idempotencyKey: string
 }
@@ -241,14 +257,14 @@ const redactProviderPayload = (payload: unknown) => {
   if (!payload || typeof payload !== 'object') return payload
 
   const value = payload as Record<string, unknown>
-  return {
+  return redactWhatsappSensitiveMetadata({
     instance: value.instance,
     event: value.event,
     state: value.state,
     connectionStatus: value.connectionStatus,
     qrcode: value.qrcode ? '[redacted]' : undefined,
     qrCode: value.qrCode ? '[redacted]' : undefined,
-  }
+  })
 }
 
 const getSessionToken = (session: SelectWhatsappBotSession) => {
@@ -449,6 +465,41 @@ const getStoreOrThrow = async (storeId: number) => {
   return store
 }
 
+const getAuditActorClerkId = (actor: WhatsappBotAuditActor) =>
+  actor.clerkId ?? `user:${actor.id}`
+
+async function recordWhatsappBotAuditLog({
+  tx,
+  action,
+  actor,
+  store,
+  previousState,
+  newState,
+  reason,
+}: {
+  tx: DbSession
+  action: (typeof internalOperationAuditLogsTable.$inferInsert)['action']
+  actor?: WhatsappBotAuditActor | null
+  store: Pick<typeof storesTable.$inferSelect, 'id' | 'status'>
+  previousState: string
+  newState: string
+  reason: string
+}) {
+  if (!actor) return
+
+  await tx.insert(internalOperationAuditLogsTable).values({
+    action,
+    actorClerkId: getAuditActorClerkId(actor),
+    actorEmail: actor.email,
+    actorName: actor.name,
+    storeId: store.id,
+    targetUserEmail: null,
+    previousStoreStatus: previousState,
+    newStoreStatus: newState,
+    reason,
+  })
+}
+
 export async function getWhatsappAssistantConfigForStore(storeId: number) {
   const store = await getStoreOrThrow(storeId)
   const [config] = await db
@@ -485,32 +536,53 @@ export async function saveWhatsappAssistantConfigForStore({
   storeId,
   values,
   updatedByUserId,
+  actor,
 }: {
   storeId: number
   values: WhatsappAssistantConfigInput
   updatedByUserId: string
+  actor?: WhatsappBotAuditActor | null
 }) {
   const store = await getStoreOrThrow(storeId)
+  const [existingConfig] = await db
+    .select({ status: whatsappBotAssistantConfigsTable.status })
+    .from(whatsappBotAssistantConfigsTable)
+    .where(eq(whatsappBotAssistantConfigsTable.storeId, storeId))
+    .limit(1)
 
-  const [config] = await db
-    .insert(whatsappBotAssistantConfigsTable)
-    .values({
-      storeId,
-      ...values,
-      status: values.testModeEnabled ? 'draft' : 'active',
-      updatedByUserId,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: [whatsappBotAssistantConfigsTable.storeId],
-      set: {
+  const [config] = await db.transaction(async tx => {
+    const [savedConfig] = await tx
+      .insert(whatsappBotAssistantConfigsTable)
+      .values({
+        storeId,
         ...values,
         status: values.testModeEnabled ? 'draft' : 'active',
         updatedByUserId,
         updatedAt: new Date(),
-      },
+      })
+      .onConflictDoUpdate({
+        target: [whatsappBotAssistantConfigsTable.storeId],
+        set: {
+          ...values,
+          status: values.testModeEnabled ? 'draft' : 'active',
+          updatedByUserId,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+
+    await recordWhatsappBotAuditLog({
+      tx,
+      action: 'update_whatsapp_assistant_config',
+      actor,
+      store,
+      previousState: `assistant_config:${existingConfig?.status ?? 'none'}`,
+      newState: `assistant_config:${savedConfig.status}`,
+      reason: `Configuracao do robo WhatsApp atualizada. modo_teste=${values.testModeEnabled}.`,
     })
-    .returning()
+
+    return [savedConfig]
+  })
 
   return toAssistantConfigSnapshot(config, store.name)
 }
@@ -643,13 +715,30 @@ export async function returnWhatsappConversationToBotForStore({
   storeId,
   conversationId,
   returnedByUserId,
+  actor,
 }: {
   storeId: number
   conversationId: string
   returnedByUserId: string
+  actor?: WhatsappBotAuditActor | null
 }) {
   const now = new Date()
+  const store = await getStoreOrThrow(storeId)
   const [conversation] = await db.transaction(async tx => {
+    const [previousConversation] = await tx
+      .select({
+        status: whatsappBotConversationsTable.status,
+        mode: whatsappBotConversationsTable.mode,
+      })
+      .from(whatsappBotConversationsTable)
+      .where(
+        and(
+          eq(whatsappBotConversationsTable.id, conversationId),
+          eq(whatsappBotConversationsTable.storeId, storeId)
+        )
+      )
+      .limit(1)
+
     const [updatedConversation] = await tx
       .update(whatsappBotConversationsTable)
       .set({
@@ -703,6 +792,18 @@ export async function returnWhatsappConversationToBotForStore({
       },
     })
 
+    await recordWhatsappBotAuditLog({
+      tx,
+      action: 'return_whatsapp_conversation_to_bot',
+      actor,
+      store,
+      previousState: previousConversation
+        ? `conversation:${previousConversation.mode}:${previousConversation.status}`
+        : 'conversation:not_found',
+      newState: `conversation:${updatedConversation.mode}:${updatedConversation.status}`,
+      reason: `Conversa WhatsApp ${updatedConversation.id.slice(0, 8)} devolvida ao robo.`,
+    })
+
     return [updatedConversation]
   })
 
@@ -739,6 +840,40 @@ export async function enqueueWhatsappTransactionalMessage({
     eventId,
     recipientPhone: normalizedRecipient,
   })
+  const notificationCategory = classifyWhatsappNotificationCategory({
+    eventType,
+    payload,
+  })
+
+  if (notificationCategory === 'promotional') {
+    const [contact] = await dbSession
+      .select({
+        promotionalOptOutAt: whatsappBotContactsTable.promotionalOptOutAt,
+      })
+      .from(whatsappBotContactsTable)
+      .where(
+        and(
+          eq(whatsappBotContactsTable.storeId, storeId),
+          eq(whatsappBotContactsTable.phoneNumber, `+${normalizedRecipient}`)
+        )
+      )
+      .limit(1)
+
+    if (
+      !canSendWhatsappNotificationToContact({
+        category: notificationCategory,
+        promotionalOptOutAt: contact?.promotionalOptOutAt ?? null,
+      })
+    ) {
+      return {
+        accepted: false,
+        duplicate: false,
+        blockedByOptOut: true,
+        eventId: null,
+        idempotencyKey,
+      }
+    }
+  }
 
   const [event] = await dbSession
     .insert(whatsappBotTransactionalEventsTable)
@@ -755,6 +890,7 @@ export async function enqueueWhatsappTransactionalMessage({
       orderId: orderId ?? null,
       payload: {
         ...(payload ?? {}),
+        notificationCategory,
         text: normalizedText,
         sourceEventId: String(eventId),
       },
@@ -984,6 +1120,7 @@ export async function processWhatsappTransactionalQueue({
   evolutionClient?: EvolutionClient
 } = {}): Promise<WhatsappTransactionalQueueResult> {
   const now = new Date()
+  await pruneWhatsappBotRetainedHistory({ now })
   const events = await db
     .select()
     .from(whatsappBotTransactionalEventsTable)
@@ -1049,6 +1186,110 @@ export async function processWhatsappTransactionalQueue({
   }
 
   return result
+}
+
+export async function pruneWhatsappBotRetainedHistory({
+  now = new Date(),
+}: {
+  now?: Date
+} = {}) {
+  const cutoffs = getWhatsappRetentionCutoffs(now)
+
+  const expiredQrSessions = await db
+    .update(whatsappBotSessionsTable)
+    .set({
+      qrCodeExpiresAt: null,
+      metadata: sql`${whatsappBotSessionsTable.metadata} - 'qrCode'`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        lt(
+          whatsappBotSessionsTable.qrCodeExpiresAt,
+          cutoffs.expiredQrCodeBefore
+        ),
+        sql`${whatsappBotSessionsTable.status} <> 'connected'`
+      )
+    )
+    .returning({ id: whatsappBotSessionsTable.id })
+
+  const deletedDeliveryAttempts = await db
+    .delete(whatsappBotDeliveryAttemptsTable)
+    .where(
+      lt(
+        whatsappBotDeliveryAttemptsTable.attemptedAt,
+        cutoffs.deliveryAttemptBefore
+      )
+    )
+    .returning({ id: whatsappBotDeliveryAttemptsTable.id })
+
+  const deletedTransactionalEvents = await db
+    .delete(whatsappBotTransactionalEventsTable)
+    .where(
+      and(
+        inArray(whatsappBotTransactionalEventsTable.status, [
+          'sent',
+          'discarded',
+        ]),
+        lt(
+          whatsappBotTransactionalEventsTable.updatedAt,
+          cutoffs.transactionalEventBefore
+        )
+      )
+    )
+    .returning({ id: whatsappBotTransactionalEventsTable.id })
+
+  const deletedMessages = await db
+    .delete(whatsappBotMessagesTable)
+    .where(
+      lt(whatsappBotMessagesTable.occurredAt, cutoffs.openConversationBefore)
+    )
+    .returning({ id: whatsappBotMessagesTable.id })
+
+  const deletedConversations = await db
+    .delete(whatsappBotConversationsTable)
+    .where(
+      and(
+        inArray(whatsappBotConversationsTable.status, ['closed', 'blocked']),
+        lt(
+          whatsappBotConversationsTable.updatedAt,
+          cutoffs.closedConversationBefore
+        )
+      )
+    )
+    .returning({ id: whatsappBotConversationsTable.id })
+
+  const deletedContacts = await db
+    .delete(whatsappBotContactsTable)
+    .where(
+      and(
+        lt(
+          whatsappBotContactsTable.lastContactAt,
+          cutoffs.inactiveContactBefore
+        ),
+        sql`${whatsappBotContactsTable.promotionalOptOutAt} is null`,
+        sql`not exists (
+          select 1 from ${whatsappBotConversationsTable}
+          where ${whatsappBotConversationsTable.storeId} = ${whatsappBotContactsTable.storeId}
+            and ${whatsappBotConversationsTable.contactId} = ${whatsappBotContactsTable.id}
+        )`,
+        sql`not exists (
+          select 1 from ${whatsappBotTransactionalEventsTable}
+          where ${whatsappBotTransactionalEventsTable.storeId} = ${whatsappBotContactsTable.storeId}
+            and ${whatsappBotTransactionalEventsTable.contactId} = ${whatsappBotContactsTable.id}
+        )`
+      )
+    )
+    .returning({ id: whatsappBotContactsTable.id })
+
+  return {
+    expiredQrSessions: expiredQrSessions.length,
+    deletedDeliveryAttempts: deletedDeliveryAttempts.length,
+    deletedTransactionalEvents: deletedTransactionalEvents.length,
+    deletedMessages: deletedMessages.length,
+    deletedConversations: deletedConversations.length,
+    deletedContacts: deletedContacts.length,
+  }
 }
 
 export async function getWhatsappBotSessionForStore(storeId: number) {
@@ -1162,13 +1403,16 @@ export async function startWhatsappBotConnection({
   phoneNumber,
   displayName,
   client = createEvolutionClient(),
+  actor,
 }: {
   storeId: number
   phoneNumber: string
   displayName?: string | null
   client?: EvolutionClient
+  actor?: WhatsappBotAuditActor | null
 }) {
   const now = new Date()
+  const store = await getStoreOrThrow(storeId)
   const [activeSession] = await db
     .select()
     .from(whatsappBotSessionsTable)
@@ -1269,6 +1513,16 @@ export async function startWhatsappBotConnection({
       .where(eq(whatsappBotSessionsTable.id, existingSession.id))
       .returning()
 
+    await recordWhatsappBotAuditLog({
+      tx: db,
+      action: 'connect_whatsapp_bot',
+      actor,
+      store,
+      previousState: `session:${existingSession.status}`,
+      newState: `session:${session.status}`,
+      reason: `Conexao WhatsApp solicitada para numero ${maskWhatsappAuditPhone(phoneNumber)}.`,
+    })
+
     return toSessionSnapshot(session, number)
   }
 
@@ -1290,6 +1544,16 @@ export async function startWhatsappBotConnection({
     })
     .returning()
 
+  await recordWhatsappBotAuditLog({
+    tx: db,
+    action: 'connect_whatsapp_bot',
+    actor,
+    store,
+    previousState: 'session:none',
+    newState: `session:${session.status}`,
+    reason: `Conexao WhatsApp solicitada para numero ${maskWhatsappAuditPhone(phoneNumber)}.`,
+  })
+
   return toSessionSnapshot(session, number)
 }
 
@@ -1297,11 +1561,14 @@ export async function renewWhatsappBotQrCode({
   storeId,
   sessionId,
   client = createEvolutionClient(),
+  actor,
 }: {
   storeId: number
   sessionId: number
   client?: EvolutionClient
+  actor?: WhatsappBotAuditActor | null
 }) {
+  const store = await getStoreOrThrow(storeId)
   const [session] = await db
     .select()
     .from(whatsappBotSessionsTable)
@@ -1345,6 +1612,16 @@ export async function renewWhatsappBotQrCode({
     )
     .returning()
 
+  await recordWhatsappBotAuditLog({
+    tx: db,
+    action: 'renew_whatsapp_bot_qr',
+    actor,
+    store,
+    previousState: `session:${session.status}`,
+    newState: `session:${updatedSession.status}`,
+    reason: `QR Code WhatsApp renovado para sessao ${session.id}.`,
+  })
+
   return toSessionSnapshot(
     updatedSession,
     await getNumberForSession(updatedSession)
@@ -1354,10 +1631,13 @@ export async function renewWhatsappBotQrCode({
 export async function pauseWhatsappBotSession({
   storeId,
   sessionId,
+  actor,
 }: {
   storeId: number
   sessionId: number
+  actor?: WhatsappBotAuditActor | null
 }) {
+  const store = await getStoreOrThrow(storeId)
   const [existingSession] = await db
     .select()
     .from(whatsappBotSessionsTable)
@@ -1390,6 +1670,16 @@ export async function pauseWhatsappBotSession({
     )
     .returning()
 
+  await recordWhatsappBotAuditLog({
+    tx: db,
+    action: 'pause_whatsapp_bot',
+    actor,
+    store,
+    previousState: `session:${existingSession.status}`,
+    newState: `session:${session.status}`,
+    reason: `Respostas automaticas do WhatsApp pausadas para sessao ${session.id}.`,
+  })
+
   return toSessionSnapshot(session, await getNumberForSession(session))
 }
 
@@ -1397,11 +1687,14 @@ export async function disconnectWhatsappBotSession({
   storeId,
   sessionId,
   client = createEvolutionClient(),
+  actor,
 }: {
   storeId: number
   sessionId: number
   client?: EvolutionClient
+  actor?: WhatsappBotAuditActor | null
 }) {
+  const store = await getStoreOrThrow(storeId)
   const [session] = await db
     .select()
     .from(whatsappBotSessionsTable)
@@ -1450,6 +1743,16 @@ export async function disconnectWhatsappBotSession({
       )
     )
     .returning()
+
+  await recordWhatsappBotAuditLog({
+    tx: db,
+    action: 'disconnect_whatsapp_bot',
+    actor,
+    store,
+    previousState: `session:${session.status}`,
+    newState: `session:${updatedSession.status}`,
+    reason: `WhatsApp desconectado para sessao ${session.id}.`,
+  })
 
   return toSessionSnapshot(
     updatedSession,
