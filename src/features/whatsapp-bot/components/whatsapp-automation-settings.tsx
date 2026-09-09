@@ -3,8 +3,9 @@
 import { WhatsappConnectionCard } from '@/features/whatsapp-bot/components/whatsapp-connection-card'
 import { WhatsappAssistantConfigCard } from '@/features/whatsapp-bot/components/whatsapp-assistant-config-card'
 import { WhatsappHumanHandoffCard } from '@/features/whatsapp-bot/components/whatsapp-human-handoff-card'
+import { WhatsappOperationalDiagnosticsCard } from '@/features/whatsapp-bot/components/whatsapp-operational-diagnostics-card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/tabs'
-import { Inbox, MessageCircle, SlidersHorizontal } from 'lucide-react'
+import { Activity, Inbox, MessageCircle, SlidersHorizontal } from 'lucide-react'
 
 export function WhatsappAutomationSettings() {
   return (
@@ -22,6 +23,10 @@ export function WhatsappAutomationSettings() {
           <Inbox className="h-4 w-4" />
           Atendimentos
         </TabsTrigger>
+        <TabsTrigger value="diagnostics" className="gap-2">
+          <Activity className="h-4 w-4" />
+          Diagnostico
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="connection">
@@ -34,6 +39,10 @@ export function WhatsappAutomationSettings() {
 
       <TabsContent value="handoff">
         <WhatsappHumanHandoffCard />
+      </TabsContent>
+
+      <TabsContent value="diagnostics">
+        <WhatsappOperationalDiagnosticsCard />
       </TabsContent>
     </Tabs>
   )

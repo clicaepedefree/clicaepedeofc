@@ -5,6 +5,7 @@ import {
   getWhatsappAssistantConfigForStore,
   getWhatsappBotSessionForStore,
   getWhatsappHumanHandoffQueueForStore,
+  getWhatsappOperationalDiagnosticsForStore,
   pauseWhatsappBotSession,
   renewWhatsappBotQrCode,
   returnWhatsappConversationToBotForStore,
@@ -65,6 +66,11 @@ export async function getWhatsappAssistantConfig(storeId: number) {
 export async function getWhatsappHumanHandoffQueue(storeId: number) {
   await validateUserPermissionsForStore(storeId, 'integrations.manage')
   return await getWhatsappHumanHandoffQueueForStore(storeId)
+}
+
+export async function getWhatsappOperationalDiagnostics(storeId: number) {
+  await validateUserPermissionsForStore(storeId, 'integrations.manage')
+  return await getWhatsappOperationalDiagnosticsForStore(storeId)
 }
 
 export async function returnWhatsappConversationToBot(input: {
