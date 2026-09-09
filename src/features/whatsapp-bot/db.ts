@@ -98,6 +98,16 @@ import {
   resolveWhatsappTransactionalDeliveryDecision,
   type WhatsappTransactionalQueueEventType,
 } from './transactional-queue-policy'
+import {
+  buildWhatsappOperationalDiagnostics,
+  type WhatsappOperationalDiagnostics,
+} from './diagnostics-policy'
+import type {
+  WhatsappDiagnosticConversation,
+  WhatsappDiagnosticMessage,
+  WhatsappDiagnosticSession,
+  WhatsappDiagnosticTransactionalEvent,
+} from './diagnostics-policy'
 import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 import { randomUUID } from 'node:crypto'
 
@@ -1060,6 +1070,91 @@ export async function getWhatsappBotSessionForStore(storeId: number) {
     .limit(1)
 
   return row ? toSessionSnapshot(row.session, row.number) : null
+}
+
+export async function getWhatsappOperationalDiagnosticsForStore(
+  storeId: number
+): Promise<WhatsappOperationalDiagnostics> {
+  const [session] = await db
+    .select({
+      status: whatsappBotSessionsTable.status,
+      provider: whatsappBotSessionsTable.provider,
+      providerSessionId: whatsappBotSessionsTable.providerSessionId,
+      lastHeartbeatAt: whatsappBotSessionsTable.lastHeartbeatAt,
+      connectedAt: whatsappBotSessionsTable.connectedAt,
+      disconnectedAt: whatsappBotSessionsTable.disconnectedAt,
+      updatedAt: whatsappBotSessionsTable.updatedAt,
+      lastErrorCode: whatsappBotSessionsTable.lastErrorCode,
+      lastErrorMessage: whatsappBotSessionsTable.lastErrorMessage,
+    })
+    .from(whatsappBotSessionsTable)
+    .where(eq(whatsappBotSessionsTable.storeId, storeId))
+    .orderBy(desc(whatsappBotSessionsTable.updatedAt))
+    .limit(1)
+
+  const [messages, conversations, transactionalEvents] = await Promise.all([
+    db
+      .select({
+        id: whatsappBotMessagesTable.id,
+        conversationId: whatsappBotMessagesTable.conversationId,
+        direction: whatsappBotMessagesTable.direction,
+        senderType: whatsappBotMessagesTable.senderType,
+        messageType: whatsappBotMessagesTable.messageType,
+        status: whatsappBotMessagesTable.status,
+        body: whatsappBotMessagesTable.body,
+        metadata: whatsappBotMessagesTable.metadata,
+        occurredAt: whatsappBotMessagesTable.occurredAt,
+        createdAt: whatsappBotMessagesTable.createdAt,
+        updatedAt: whatsappBotMessagesTable.updatedAt,
+      })
+      .from(whatsappBotMessagesTable)
+      .where(eq(whatsappBotMessagesTable.storeId, storeId))
+      .orderBy(desc(whatsappBotMessagesTable.occurredAt))
+      .limit(80),
+    db
+      .select({
+        id: whatsappBotConversationsTable.id,
+        status: whatsappBotConversationsTable.status,
+        mode: whatsappBotConversationsTable.mode,
+        contextSummary: whatsappBotConversationsTable.contextSummary,
+        humanPausedAt: whatsappBotConversationsTable.humanPausedAt,
+        lastMessageAt: whatsappBotConversationsTable.lastMessageAt,
+        updatedAt: whatsappBotConversationsTable.updatedAt,
+        metadata: whatsappBotConversationsTable.metadata,
+      })
+      .from(whatsappBotConversationsTable)
+      .where(eq(whatsappBotConversationsTable.storeId, storeId))
+      .orderBy(desc(whatsappBotConversationsTable.lastMessageAt))
+      .limit(60),
+    db
+      .select({
+        id: whatsappBotTransactionalEventsTable.id,
+        eventType: whatsappBotTransactionalEventsTable.eventType,
+        status: whatsappBotTransactionalEventsTable.status,
+        conversationId: whatsappBotTransactionalEventsTable.conversationId,
+        orderId: whatsappBotTransactionalEventsTable.orderId,
+        attempts: whatsappBotTransactionalEventsTable.attempts,
+        maxAttempts: whatsappBotTransactionalEventsTable.maxAttempts,
+        lastError: whatsappBotTransactionalEventsTable.lastError,
+        nextAttemptAt: whatsappBotTransactionalEventsTable.nextAttemptAt,
+        processedAt: whatsappBotTransactionalEventsTable.processedAt,
+        sentAt: whatsappBotTransactionalEventsTable.sentAt,
+        createdAt: whatsappBotTransactionalEventsTable.createdAt,
+        updatedAt: whatsappBotTransactionalEventsTable.updatedAt,
+      })
+      .from(whatsappBotTransactionalEventsTable)
+      .where(eq(whatsappBotTransactionalEventsTable.storeId, storeId))
+      .orderBy(desc(whatsappBotTransactionalEventsTable.updatedAt))
+      .limit(80),
+  ])
+
+  return buildWhatsappOperationalDiagnostics({
+    session: (session ?? null) as WhatsappDiagnosticSession | null,
+    messages: messages as WhatsappDiagnosticMessage[],
+    conversations: conversations as WhatsappDiagnosticConversation[],
+    transactionalEvents:
+      transactionalEvents as WhatsappDiagnosticTransactionalEvent[],
+  })
 }
 
 export async function startWhatsappBotConnection({
