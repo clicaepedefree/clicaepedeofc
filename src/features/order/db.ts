@@ -13,19 +13,32 @@ import {
   InsertOrderPayment,
   orderPaymentsTable,
 } from '@/services/db/schema/order-payments'
-import { InsertOrder, ordersTable } from '@/services/db/schema/orders'
+import {
+  InsertOrder,
+  ordersTable,
+  type SelectOrder,
+} from '@/services/db/schema/orders'
 import {
   InsertOrderAuditEvent,
   orderAuditEventsTable,
 } from '@/services/db/schema/order-audit-events'
 import { publicOrderSubmissionsTable } from '@/services/db/schema/public-order-submissions'
 import { publicOrderEventsTable } from '@/services/db/schema/public-order-events'
+import { storesTable } from '@/services/db/schema/stores'
+import { whatsappBotAssistantConfigsTable } from '@/services/db/schema/whatsapp-bot-assistant-configs'
+import { enqueueWhatsappTransactionalMessage } from '@/features/whatsapp-bot/db'
 import {
   OrderTransitionAction,
   requireAuditReason,
   resolveOrderTransition,
   sanitizeOrderAuditMetadata,
 } from './audit-policy'
+import {
+  buildOrderStatusNotificationEventId,
+  buildOrderStatusWhatsappNotification,
+  parseOrderStatusNotificationTemplateOverrides,
+  type OrderStatusNotificationStatus,
+} from './status-notifications'
 import { buildOrderTransitionPersistenceFields } from './transition-fields'
 import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
 import { DbSession } from '@/services/db/types'
@@ -83,6 +96,89 @@ export const createOrderAuditEventOnDb = async ({
     .values({ ...event, metadata: sanitizeOrderAuditMetadata(event.metadata) })
     .returning()
   return createdEvent
+}
+
+export const enqueueOrderStatusWhatsappNotificationOnDb = async ({
+  order,
+  fromStatus,
+  toStatus,
+  reason,
+  dbSession,
+}: {
+  order: Pick<
+    SelectOrder,
+    'id' | 'displayId' | 'storeId' | 'type' | 'salesChannel' | 'customerPhone'
+  >
+  fromStatus?: OrderStatusNotificationStatus | null
+  toStatus: OrderStatusNotificationStatus
+  reason?: string | null
+  dbSession: DbSession
+}) => {
+  if (
+    order.salesChannel !== 'DIGITAL_MENU' ||
+    !order.customerPhone ||
+    (order.type !== 'DELIVERY' && order.type !== 'TAKEOUT')
+  ) {
+    return null
+  }
+
+  const [store] = await dbSession
+    .select({ name: storesTable.name })
+    .from(storesTable)
+    .where(eq(storesTable.id, order.storeId))
+    .limit(1)
+  const [assistantConfig] = await dbSession
+    .select({ metadata: whatsappBotAssistantConfigsTable.metadata })
+    .from(whatsappBotAssistantConfigsTable)
+    .where(eq(whatsappBotAssistantConfigsTable.storeId, order.storeId))
+    .limit(1)
+
+  const notification = buildOrderStatusWhatsappNotification({
+    storeName: store?.name ?? 'a loja',
+    orderDisplayId: order.displayId,
+    orderType: order.type,
+    fromStatus,
+    toStatus,
+    reason,
+    templateOverrides: parseOrderStatusNotificationTemplateOverrides(
+      assistantConfig?.metadata
+    ),
+  })
+
+  if (!notification.shouldNotify) return null
+
+  try {
+    return await enqueueWhatsappTransactionalMessage({
+      dbSession,
+      storeId: order.storeId,
+      eventType: 'order_status',
+      eventId: buildOrderStatusNotificationEventId({
+        orderId: order.id,
+        status: notification.eventStatus,
+      }),
+      recipientPhone: order.customerPhone,
+      text: notification.text,
+      orderId: order.id,
+      payload: {
+        source: 'order_status_transition',
+        orderDisplayId: order.displayId,
+        orderType: order.type,
+        fromStatus: fromStatus ?? null,
+        toStatus: notification.eventStatus,
+        statusTitle: notification.title,
+        statusMessage: notification.message,
+        reason: reason ?? null,
+      },
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'WHATSAPP_TRANSACTIONAL_INVALID_RECIPIENT'
+    ) {
+      return null
+    }
+    throw error
+  }
 }
 
 export const transitionOrderOnDb = async ({
@@ -183,6 +279,14 @@ export const transitionOrderOnDb = async ({
     },
   })
 
+  await enqueueOrderStatusWhatsappNotificationOnDb({
+    order: updatedOrder,
+    fromStatus: transition.fromStatus,
+    toStatus: transition.toStatus,
+    reason: transition.reason,
+    dbSession,
+  })
+
   return updatedOrder
 }
 
@@ -202,7 +306,10 @@ export const addOrderAuditNoteOnDb = async ({
   dbSession: DbSession
 }) => {
   const [order] = await dbSession
-    .select({ salesChannel: ordersTable.salesChannel, displayId: ordersTable.displayId })
+    .select({
+      salesChannel: ordersTable.salesChannel,
+      displayId: ordersTable.displayId,
+    })
     .from(ordersTable)
     .where(and(eq(ordersTable.id, orderId), eq(ordersTable.storeId, storeId)))
     .limit(1)
@@ -220,7 +327,10 @@ export const addOrderAuditNoteOnDb = async ({
       origin: 'MANUAL',
       reason: requireAuditReason(reason),
       requestId,
-      metadata: { salesChannel: order.salesChannel, displayId: order.displayId },
+      metadata: {
+        salesChannel: order.salesChannel,
+        displayId: order.displayId,
+      },
     },
   })
 }
@@ -331,12 +441,15 @@ export const checkStockAvailability = async ({
       inventory: itemsTable.inventory,
     })
     .from(itemsTable)
-    .where(and(eq(itemsTable.storeId, storeId), inArray(itemsTable.id, itemIds)))
+    .where(
+      and(eq(itemsTable.storeId, storeId), inArray(itemsTable.id, itemIds))
+    )
 
   // Create a map for quick lookups
-  const itemMap = new Map<number, Pick<SelectItem, 'id' | 'name' | 'inventory'>>(
-    dbItems.map(item => [item.id, item])
-  )
+  const itemMap = new Map<
+    number,
+    Pick<SelectItem, 'id' | 'name' | 'inventory'>
+  >(dbItems.map(item => [item.id, item]))
 
   // Aggregate requested quantities by item ID
   const requestedQuantities = new Map<number, number>()

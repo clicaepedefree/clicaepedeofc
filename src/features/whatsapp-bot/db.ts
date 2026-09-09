@@ -1,6 +1,7 @@
 import { decrypt, encrypt } from '@/lib/encryption'
 import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import { db } from '@/services/db'
+import type { DbSession } from '@/services/db/types'
 import {
   categoriesTable,
   itemOfferingsTable,
@@ -153,6 +154,7 @@ type WhatsappAssistantOrchestrationResult = {
 }
 
 export type WhatsappTransactionalQueueEnqueueInput = {
+  dbSession?: DbSession
   storeId: number
   eventType: WhatsappTransactionalQueueEventType
   eventId: string | number
@@ -702,6 +704,7 @@ export async function returnWhatsappConversationToBotForStore({
 }
 
 export async function enqueueWhatsappTransactionalMessage({
+  dbSession = db,
   storeId,
   eventType,
   eventId,
@@ -727,7 +730,7 @@ export async function enqueueWhatsappTransactionalMessage({
     recipientPhone: normalizedRecipient,
   })
 
-  const [event] = await db
+  const [event] = await dbSession
     .insert(whatsappBotTransactionalEventsTable)
     .values({
       storeId,
