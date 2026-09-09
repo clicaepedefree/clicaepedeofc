@@ -97,7 +97,7 @@ describe('Evolution webhook route', () => {
       contact: {
         id: 20,
         storeId: 9,
-        phoneNumber: '+5513991840862',
+        phoneNumberMasked: '***0862',
         promotionalOptOutAt: null,
       },
       conversation: {

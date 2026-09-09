@@ -36,6 +36,13 @@ export const internalOperationActions = [
   'consume_store_user_password_reset',
   'complete_store_user_password_reset',
   'transfer_store_primary_responsible',
+  'connect_whatsapp_bot',
+  'renew_whatsapp_bot_qr',
+  'pause_whatsapp_bot',
+  'disconnect_whatsapp_bot',
+  'update_whatsapp_assistant_config',
+  'return_whatsapp_conversation_to_bot',
+  'prune_whatsapp_bot_history',
   'reactivate_store',
   'archive_store',
 ] as const

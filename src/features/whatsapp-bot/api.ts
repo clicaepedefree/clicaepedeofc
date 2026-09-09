@@ -30,32 +30,48 @@ export async function startWhatsappConnection(input: {
   phoneNumber: string
   displayName?: string | null
 }) {
-  await validateUserPermissionsForStore(input.storeId, 'integrations.manage')
-  return await startWhatsappBotConnection(input)
+  const { user } = await validateUserPermissionsForStore(
+    input.storeId,
+    'integrations.manage'
+  )
+
+  return await startWhatsappBotConnection({ ...input, actor: user })
 }
 
 export async function renewWhatsappConnectionQrCode(input: {
   storeId: number
   sessionId: number
 }) {
-  await validateUserPermissionsForStore(input.storeId, 'integrations.manage')
-  return await renewWhatsappBotQrCode(input)
+  const { user } = await validateUserPermissionsForStore(
+    input.storeId,
+    'integrations.manage'
+  )
+
+  return await renewWhatsappBotQrCode({ ...input, actor: user })
 }
 
 export async function pauseWhatsappConnection(input: {
   storeId: number
   sessionId: number
 }) {
-  await validateUserPermissionsForStore(input.storeId, 'integrations.manage')
-  return await pauseWhatsappBotSession(input)
+  const { user } = await validateUserPermissionsForStore(
+    input.storeId,
+    'integrations.manage'
+  )
+
+  return await pauseWhatsappBotSession({ ...input, actor: user })
 }
 
 export async function disconnectWhatsappConnection(input: {
   storeId: number
   sessionId: number
 }) {
-  await validateUserPermissionsForStore(input.storeId, 'integrations.manage')
-  return await disconnectWhatsappBotSession(input)
+  const { user } = await validateUserPermissionsForStore(
+    input.storeId,
+    'integrations.manage'
+  )
+
+  return await disconnectWhatsappBotSession({ ...input, actor: user })
 }
 
 export async function getWhatsappAssistantConfig(storeId: number) {
@@ -86,6 +102,7 @@ export async function returnWhatsappConversationToBot(input: {
     storeId: input.storeId,
     conversationId: input.conversationId,
     returnedByUserId: user.id,
+    actor: user,
   })
 }
 
@@ -105,6 +122,7 @@ export async function saveWhatsappAssistantConfig(input: {
     storeId: input.storeId,
     values: parsed.data,
     updatedByUserId: user.id,
+    actor: user,
   })
 }
 

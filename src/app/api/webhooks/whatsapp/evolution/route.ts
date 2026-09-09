@@ -5,7 +5,9 @@ import {
   processWhatsappInboundMessage,
   runWhatsappAssistantOrchestrator,
 } from '@/features/whatsapp-bot/db'
+import { sanitizeWhatsappDiagnosticText } from '@/features/whatsapp-bot/diagnostics-policy'
 import { assertWhatsappWebhookAuthorized } from '@/features/whatsapp-bot/session-policy'
+import { maskWhatsappAuditPhone } from '@/features/whatsapp-bot/security-lgpd-policy'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
@@ -116,7 +118,9 @@ export async function POST(request: Request) {
           contact: {
             id: result.contact.id,
             storeId: result.contact.storeId,
-            phoneNumber: result.contact.phoneNumber,
+            phoneNumberMasked: maskWhatsappAuditPhone(
+              result.contact.phoneNumber
+            ),
             promotionalOptOutAt: result.contact.promotionalOptOutAt,
           },
           conversation: {
@@ -140,7 +144,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ accepted: true, session }, { status: 202 })
   } catch (error) {
-    console.error('[whatsapp-bot] Failed to process Evolution webhook', error)
+    console.error(
+      '[whatsapp-bot] Failed to process Evolution webhook',
+      sanitizeWhatsappDiagnosticText(
+        error instanceof Error ? error.message : 'unknown_error'
+      )
+    )
 
     return NextResponse.json(
       { accepted: false, reason: 'processing_error' },
