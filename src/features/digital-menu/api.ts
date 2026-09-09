@@ -8,6 +8,7 @@ import {
   createOrderAuditEventOnDb,
   createOrderOnDb,
   createOrderPaymentOnDb,
+  enqueueOrderStatusWhatsappNotificationOnDb,
   getNextOrderDisplayIdForStore,
   updateOrderItemInventoryOnDb,
 } from '@/features/order/db'
@@ -1832,6 +1833,13 @@ export const submitDigitalMenuOrder = async (
           displayId: createdOrder.displayId,
           attribution: orderAttribution,
         },
+      })
+
+      await enqueueOrderStatusWhatsappNotificationOnDb({
+        order: createdOrder,
+        fromStatus: null,
+        toStatus: 'RECEIVED',
+        dbSession: tx,
       })
 
       await tx.insert(publicOrderDeliveryAttemptsTable).values({
