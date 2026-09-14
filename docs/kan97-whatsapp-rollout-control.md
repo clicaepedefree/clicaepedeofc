@@ -76,8 +76,10 @@ Antes de ativar uma loja piloto:
 - [ ] Confirmar resposta automatica enviada.
 - [ ] Confirmar contato, conversa e mensagem gravados com `store_id` correto.
 - [ ] Confirmar que uma loja fora do piloto registra inbound, mas nao responde.
-- [ ] Confirmar que `/api/cron/whatsapp/transactional` esta agendado e
-      autenticado por `CRON_SECRET`.
+- [ ] Confirmar como `/api/cron/whatsapp/transactional` sera acionado no
+      ambiente atual. Em conta Vercel Hobby, crons com recorrencia menor que
+      diaria nao sao permitidos; usar acionamento manual/externo autenticado
+      por `CRON_SECRET` ou migrar para Pro antes de agendar a fila curta.
 
 ## Monitoramento minimo
 
@@ -109,7 +111,8 @@ Limites operacionais durante piloto:
 - ate 80 itens resumidos no contexto do cardapio;
 - ate 20 mensagens recentes por conversa para contexto interno;
 - timeout de 12 segundos para chamada de LLM;
-- processamento da fila transacional a cada 5 minutos;
+- processamento da fila transacional por acionamento autenticado; para
+  recorrencia automatica curta na Vercel, usar plano Pro ou scheduler externo;
 - fallback seguro quando provedor LLM ou WhatsApp falhar.
 
 Se qualquer limite for insuficiente, abrir nova tarefa antes de expandir.
