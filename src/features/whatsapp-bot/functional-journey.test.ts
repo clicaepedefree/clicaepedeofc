@@ -41,6 +41,7 @@ import {
   classifyWhatsappNotificationCategory,
 } from './security-lgpd-policy'
 import { detectWhatsappHumanHandoff } from './human-handoff-policy'
+import { canStoreReceiveWhatsappBotReplies } from './rollout-policy'
 
 const assistantConfig = {
   id: 1,
@@ -224,6 +225,22 @@ describe('KAN-96 whatsapp bot functional journey', () => {
         assistantConfig,
       })
     ).toEqual({ allowed: true, reason: null })
+    expect(
+      canStoreReceiveWhatsappBotReplies({
+        storeId: 9,
+        session: { status: 'connected' },
+        assistantConfig,
+        rolloutConfig: { mode: 'pilot', pilotStoreIds: new Set([9]) },
+      })
+    ).toEqual({ allowed: true, reason: null })
+    expect(
+      canStoreReceiveWhatsappBotReplies({
+        storeId: 10,
+        session: { status: 'connected' },
+        assistantConfig,
+        rolloutConfig: { mode: 'pilot', pilotStoreIds: new Set([9]) },
+      })
+    ).toEqual({ allowed: false, reason: 'store_not_in_pilot' })
 
     const systemPrompt = buildWhatsappAssistantSystemPrompt({
       assistantConfig,

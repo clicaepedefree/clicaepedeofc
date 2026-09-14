@@ -78,6 +78,10 @@ import {
   trimWhatsappAssistantHistory,
 } from './orchestrator-policy'
 import {
+  canStoreReceiveWhatsappBotReplies,
+  canStoreUseWhatsappBotRollout,
+} from './rollout-policy'
+import {
   buildWhatsappHumanHandoffContextSummary,
   buildWhatsappHumanHandoffInternalNote,
   detectWhatsappHumanHandoff,
@@ -92,6 +96,7 @@ import {
 } from './store-tools-policy'
 import {
   buildWhatsappTransactionalIdempotencyKey,
+  getWhatsappTransactionalRetryDate,
   normalizeWhatsappTransactionalMaxAttempts,
   normalizeWhatsappTransactionalQueueLimit,
   normalizeWhatsappTransactionalRecipient,
@@ -198,6 +203,8 @@ export type WhatsappTransactionalQueueEnqueueResult = {
   accepted: boolean
   duplicate: boolean
   blockedByOptOut?: boolean
+  blockedByRollout?: boolean
+  blockedReason?: string
   eventId: string | null
   idempotencyKey: string
 }
@@ -844,6 +851,18 @@ export async function enqueueWhatsappTransactionalMessage({
     eventType,
     payload,
   })
+  const rolloutDecision = canStoreUseWhatsappBotRollout({ storeId })
+
+  if (!rolloutDecision.allowed) {
+    return {
+      accepted: false,
+      duplicate: false,
+      blockedByRollout: true,
+      blockedReason: rolloutDecision.reason,
+      eventId: null,
+      idempotencyKey,
+    }
+  }
 
   if (notificationCategory === 'promotional') {
     const [contact] = await dbSession
@@ -971,7 +990,7 @@ async function markWhatsappTransactionalEvent({
       eventId: event.id,
       numberId: event.numberId,
       sessionId: event.sessionId,
-      attemptNumber: event.attempts,
+      attemptNumber: Math.max(1, event.attempts),
       status: attemptStatus,
       providerMessageId: providerMessageId ?? null,
       errorCode: errorCode ?? null,
@@ -1028,6 +1047,34 @@ async function markWhatsappTransactionalEvent({
   })
 }
 
+async function postponeWhatsappTransactionalEventForRollout({
+  event,
+  reason,
+  now,
+}: {
+  event: SelectWhatsappBotTransactionalEvent
+  reason: string
+  now: Date
+}) {
+  await db
+    .update(whatsappBotTransactionalEventsTable)
+    .set({
+      status: 'failed',
+      nextAttemptAt: getWhatsappTransactionalRetryDate({
+        now,
+        attempts: Math.max(1, event.attempts + 1),
+      }),
+      lastError: `WhatsApp bot rollout blocked transactional delivery: ${reason}.`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(whatsappBotTransactionalEventsTable.id, event.id),
+        eq(whatsappBotTransactionalEventsTable.storeId, event.storeId)
+      )
+    )
+}
+
 async function processWhatsappTransactionalEvent({
   event,
   evolutionClient,
@@ -1038,6 +1085,19 @@ async function processWhatsappTransactionalEvent({
   const now = new Date()
   let text: string
   let session: SelectWhatsappBotSession
+  const rolloutDecision = canStoreUseWhatsappBotRollout({
+    storeId: event.storeId,
+  })
+
+  if (!rolloutDecision.allowed) {
+    await postponeWhatsappTransactionalEventForRollout({
+      event,
+      reason: rolloutDecision.reason,
+      now,
+    })
+
+    return 'failed'
+  }
 
   try {
     text = readWhatsappTransactionalTextPayload(
@@ -1151,6 +1211,22 @@ export async function processWhatsappTransactionalQueue({
   }
 
   for (const event of events) {
+    const rolloutDecision = canStoreUseWhatsappBotRollout({
+      storeId: event.storeId,
+    })
+
+    if (!rolloutDecision.allowed) {
+      await postponeWhatsappTransactionalEventForRollout({
+        event,
+        reason: rolloutDecision.reason,
+        now,
+      })
+
+      result.processed += 1
+      result.failed += 1
+      continue
+    }
+
     const [claimedEvent] = await db
       .update(whatsappBotTransactionalEventsTable)
       .set({
@@ -2318,6 +2394,23 @@ export async function runWhatsappAssistantOrchestrator({
       latencyMs: null,
       deliveryStatus:
         existingAssistantReply.status === 'sent' ? 'sent' : 'not_sent',
+    }
+  }
+
+  const rolloutDecision = canStoreReceiveWhatsappBotReplies({
+    storeId,
+    session: row.session,
+    assistantConfig: row.assistantConfig,
+  })
+
+  if (!rolloutDecision.allowed) {
+    return {
+      action: 'skipped',
+      reason: rolloutDecision.reason,
+      intent,
+      outboundMessageId: null,
+      latencyMs: null,
+      deliveryStatus: 'not_sent',
     }
   }
 
