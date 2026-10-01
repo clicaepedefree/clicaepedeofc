@@ -18,6 +18,11 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.p12
+*.pfx
+/credentials/
+/.secrets/
 
 # debug
 npm-debug.log*
@@ -25,8 +30,10 @@ yarn-debug.log*
 yarn-error.log*
 .codex-dev-*.log
 
-# local env files
-.env*.local
+# local env files and secret overrides
+.env
+.env.*
+!.env.example
 
 # vercel
 .vercel

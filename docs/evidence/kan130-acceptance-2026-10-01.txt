@@ -1,0 +1,84 @@
+KAN-130 - Evidencia de aceite sanitizada
+Data: 2026-10-01
+Ambiente: QA/staging Hostinger
+
+ACESSO ADMINISTRATIVO
+- Usuario nominal brunoops criado: APROVADO
+- Login com chave Ed25519 exclusiva: APROVADO
+- sudo nao interativo: APROVADO
+- Login SSH remoto como root: BLOQUEADO
+- Login SSH por senha: BLOQUEADO
+- Keyboard-interactive: BLOQUEADO
+- Usuario SSH permitido: somente brunoops
+- MaxAuthTries: 3
+
+PROTECOES DO HOST
+- ssh.service: ATIVO
+- fail2ban.service: ATIVO
+- jail sshd: ATIVA, maxretry=3, findtime=10m, bantime=1h
+- origem administrativa do firewall em ignoreip: VALIDADA
+- unattended-upgrades.service: ATIVO
+- docker.service e EasyPanel: PRESERVADOS
+- unidades systemd com falha: ZERO
+- configuracao sshd: VALIDA
+- configuracao Fail2ban: VALIDA
+
+REDE
+- Firewall Hostinger: ATIVO E SINCRONIZADO
+- 22/tcp: aberta somente para origem administrativa autorizada
+- 80/tcp: aberta
+- 443/tcp: aberta
+- 3000/tcp: bloqueada externamente
+- 5432/tcp: bloqueada externamente
+- 6379/tcp: bloqueada externamente
+- 8080/tcp: bloqueada externamente
+- Varredura TCP 1-65535: nenhuma porta publica adicional detectada
+
+SAIDAS SANITIZADAS
+sshd -T:
+  maxauthtries 3
+  permitrootlogin no
+  pubkeyauthentication yes
+  passwordauthentication no
+  kbdinteractiveauthentication no
+  allowusers brunoops
+
+systemctl is-active:
+  ssh: active
+  fail2ban: active
+  unattended-upgrades: active
+  docker: active
+
+fail2ban-client status sshd:
+  jail: sshd
+  active: yes
+  currently banned: 0
+  ignoreip administrativo presente: yes
+
+hashes SHA-256 das configuracoes aplicadas:
+  sshd drop-in: df7e15f9be62d21094678274d6dc1d0b7b4dfc40c04582bada5eee117a11bda3
+  fail2ban: hash omitido porque o arquivo contem a origem administrativa;
+    parametros sanitizados foram registrados acima
+
+firewall Hostinger:
+  nome: clicaepede-qa-staging
+  sincronizado: yes
+  regras: SSH restrito, HTTP publico, HTTPS publico
+
+scan TCP externo:
+  faixa: 1-65535
+  portas permitidas confirmadas: 22, 80, 443
+  portas adicionais detectadas: nenhuma
+
+SEGREDOS
+- Chave privada criada fora do repositorio e com ACL local restrita
+- Arquivos .env, chaves e credenciais locais ignorados pelo Git
+- Scanner de segredos integrado ao script do projeto e a CI
+- Scanner executado sobre arquivos versionados: APROVADO
+- Segredos de staging e producao: separacao documentada como obrigatoria
+- Rotacao e acesso emergencial: DOCUMENTADOS
+
+OBSERVACOES
+- Nenhum IP, token, senha ou chave foi registrado nesta evidencia.
+- O bloqueio de root ocorreu somente depois do login nominal e sudo aprovados.
+- Nao houve reboot nem alteracao funcional no EasyPanel.

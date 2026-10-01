@@ -16,7 +16,8 @@
     "qa:global-regression": "node scripts/qa/functional-global-regression.js",
     "db": "drizzle-kit studio & open https://local.drizzle.studio",
     "db:sync-prod": "bash scripts/sync-prod-data.sh",
-    "internal:migration-readiness": "bun scripts/kan75-data-migration-readiness.ts"
+    "internal:migration-readiness": "bun scripts/kan75-data-migration-readiness.ts",
+    "security:secrets": "node scripts/security/check-secrets.mjs"
   },
   "dependencies": {
     "@clerk/localizations": "^3.12.0",
