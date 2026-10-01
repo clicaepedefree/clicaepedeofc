@@ -43,6 +43,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar segredos versionados
+        run: |
+          node scripts/security/check-secrets.mjs --self-test
+          node scripts/security/check-secrets.mjs
+        env:
+          SECRET_SCAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
