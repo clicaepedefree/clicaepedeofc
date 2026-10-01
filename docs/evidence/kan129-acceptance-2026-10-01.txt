@@ -1,0 +1,70 @@
+KAN-129 ACCEPTANCE EVIDENCE
+Executed: 2026-10-01T01:36:00-03:00
+Environment: Hostinger QA/staging VPS
+Sensitive identifiers: intentionally omitted
+
+HOSTINGER CONTROL PLANE
+template=Ubuntu 24.04 with Easypanel
+state=running
+firewall=active,synchronized
+snapshot=created
+recreate=success
+restart_after_install=success
+restart_after_hardening=success
+
+HOST VALIDATION OVER SSH KEY
+$ hostname
+ops-staging
+
+$ timedatectl show -p Timezone --value
+America/Sao_Paulo
+
+$ source /etc/os-release && echo "$PRETTY_NAME"
+Ubuntu 24.04.5 LTS
+
+$ nproc
+1
+
+$ awk '/MemTotal/ {print $2}' /proc/meminfo
+4009208
+
+$ lsblk -bndo SIZE /dev/sda | head -1
+53687091200
+
+$ docker info --format '{{.Swarm.LocalNodeState}}'
+active
+
+$ docker service ls --filter name=easypanel --format '{{.Name}}={{.Replicas}}'
+easypanel=1/1
+easypanel-traefik=1/1
+
+$ systemctl --failed
+0 failed units
+
+$ apt list --upgradable
+0 upgradable packages
+
+$ sshd -T
+passwordauthentication no
+permitrootlogin without-password
+
+$ passwd -S root
+root L
+
+EXTERNAL PORT VALIDATION
+22/tcp=open from authorized administrative IP
+80/tcp=open
+443/tcp=open
+3000/tcp=blocked
+5432/tcp=blocked
+6379/tcp=blocked
+8080/tcp=blocked
+
+ADMINISTRATIVE ACCESS VALIDATION
+ssh_key_auth=passed
+ssh_password_auth=blocked
+ssh_tunnel_to_127.0.0.1:3000=passed
+easypanel_over_tunnel=HTTP 200
+
+FINAL RESULT
+PASS - all KAN-129 acceptance checks completed.
