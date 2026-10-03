@@ -17,7 +17,7 @@ As consultas iniciais retornaram NXDOMAIN para `evolution.clicaepede.com.br` e
 `staging.clicaepede.com.br`. Nao existem evidencias de TLS valido, renovacao ou
 staging isolado nesses nomes. Nao marcar esses criterios como completos.
 
-## Mapa e decisao pendente
+## Mapa aprovado
 
 Preservar o mapa da KAN-127, salvo decisao explicita registrada no Jira:
 
@@ -27,16 +27,15 @@ Preservar o mapa da KAN-127, salvo decisao explicita registrada no Jira:
 | `admin.clicaepede.com.br` | Host administrativo do app futuro | Reservar; nao alterar DNS |
 | `staging.clicaepede.com.br` | App de QA isolado | Publicar apenas apos definir deployment e dados de QA |
 | `admin.staging.clicaepede.com.br` | Mesmo app de QA | Publicar junto com o app de QA |
-| `evolution-staging.clicaepede.com.br` | VPS atual, exclusiva de QA | A candidato, condicionado a aprovacao do mapa |
-| `evolution.clicaepede.com.br` | Evolution de producao futura | Reservar; criterio da KAN-131 ainda pendente |
+| `evolution-staging.clicaepede.com.br` | VPS atual, exclusiva de QA | Criar A no Registro.br |
+| `evolution.clicaepede.com.br` | Evolution de producao futura | Reservar; nao apontar para QA |
 | `ops-staging.clicaepede.com.br` | Administracao da VPS QA | Nao publicar sem protecao adicional validada |
 | `ops.clicaepede.com.br` | Administracao de producao futura | Reservar; nao publicar |
 
-A KAN-131 pede `evolution.clicaepede.com.br` ativo agora, mas a KAN-127 reserva
-esse nome para producao. Confirmar uma das opcoes antes de escrever registros:
-manter o mapa e ajustar explicitamente o aceite para `evolution-staging`, ou
-autorizar uso temporario de `evolution` em QA, com plano de migracao e avisos
-claros. Nao alterar o criterio ou criar um alias silenciosamente.
+Em 2026-10-03, Bruno aprovou explicitamente usar `evolution-staging` para QA e
+manter `evolution` reservado para producao. Registrar essa decisao no Jira e
+ajustar o hostname no criterio de aceite, sem marcar o registro como criado
+antes de sua publicacao e validacao.
 
 O nome `staging` nao garante isolamento. Nao aponta-lo para a producao Vercel
 nem considerar uma pagina provisoria como app de QA funcionando. Separar
