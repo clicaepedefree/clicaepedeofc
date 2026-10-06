@@ -1,0 +1,18 @@
+{
+  "entryPoints": { "http": { "address": ":80" }, "https": { "address": ":443" } },
+  "providers": { "file": { "filename": "/lab/routes.yaml" } },
+  "log": { "level": "INFO" },
+  "certificatesResolvers": {
+    "lab": {
+      "acme": {
+        "email": "qa@example.test",
+        "caServer": "https://pebble:14000/dir",
+        "caCertificates": ["/lab/pebble.minica.pem"],
+        "storage": "/state/acme.json",
+        "certificatesDuration": 1,
+        "keyType": "EC256",
+        "httpChallenge": { "entryPoint": "http" }
+      }
+    }
+  }
+}

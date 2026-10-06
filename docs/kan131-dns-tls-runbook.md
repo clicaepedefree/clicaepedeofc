@@ -10,7 +10,7 @@ validado nos dois autoritativos e em Google/Cloudflare, TTL 300 segundos.
 
 HTTPS aplicado no proxy da VPS, com certificado Let's Encrypt YR1, SAN exato e
 validade ate 2027-01-04. Node TLS confirmou `authorized=true` e curl validou a
-cadeia sem ignorar erros. HTTP retorna 308 para HTTPS, preservando caminho e
+cadeia sem ignorar erros. HTTP retorna 301 em GET e 308 em POST para HTTPS, preservando caminho e
 query. Nao houve alteracao no app, variaveis ou dominios Vercel.
 
 **Endpoint provisorio, nao Evolution:** o hostname responde HTTP 418 do
@@ -44,9 +44,37 @@ na pagina de login, sem abrir uma porta publica. A VPS tem IPv6 global mesmo
 sem AAAA publicado; o teste por IP direto foi necessario. Login do app Vercel
 retornou 200 antes e depois; isso e um smoke test, nao regressao funcional.
 
-Persistem pendentes: deployment/dados isolados do app staging, teste efetivo de
-renovacao automatica e ensaio de rollback DNS. A tarefa nao esta pronta para
-Teste. O mapa reserva o app de producao, sem publicar ou migrar esses nomes.
+Revisao de escopo: esta etapa prepara a infraestrutura Evolution de QA,
+conforme KAN-127 e hostname aprovado por Bruno. Nao exige criar um novo app
+staging, banco Supabase ou instancia Clerk. A exigencia anterior desses
+recursos e de um ensaio DNS destrutivo foi excessiva e foi corrigida. O
+rollback deve estar documentado; nao foi executado contra a zona ativa.
+
+Renovacao automatica efetivamente testada em laboratorio isolado: Traefik
+3.6.7, ACME Pebble 2.8.0, HTTP-01 real e certificados de cinco minutos.
+O timer renovou o certificado sem reinicio ou alteracao de relogio/storage,
+mantendo a conta ACME. O proxy passou a servir o novo certificado com cadeia
+confiavel do laboratorio. Com a CA desligada, o certificado renovado e a
+conta persistiram apos reinicio. Nenhuma CA foi instalada no trust store,
+nenhuma porta foi publicada e nenhum estado ACME de producao foi utilizado.
+O prazo reduzido do laboratorio exercita o timer de um minuto; nao comprova
+que o certificado publico ja passou pela sua janela natural de renovacao.
+
+Scripts reproduziveis: `scripts/infra/kan131-test-acme-renewal.sh` e
+`scripts/infra/acme-lab/`. Executar com root em host Docker, com curl, openssl,
+timeout e python3 disponiveis. Recursos temporarios sao removidos pelo trap;
+logs ficam em `/var/log/clicaepede/kan131-acme-*`, sem chaves privadas.
+Proteger esses logs operacionais; nao publicar tokens de challenges ACME.
+
+Smoke Chromium na Vercel aprovado: login carregou e aceitou o email QA;
+cardapio Ccocobongo carregou sem Application error. Foram gerados screenshots,
+video, trace, resultados JSON e relatorio HTML em D:. Nao houve login completo,
+pedido ou mutacao de dados; loja fechada por horarios e estado de negocio
+existente, nao falha de TLS. Esse teste valida disponibilidade das telas,
+nao substitui regressao de pedidos ou a futura integracao do bot.
+
+Checklist DNS/TLS concluido dentro desse escopo e pronto para Teste. O mapa
+reserva o app de producao, sem publicar ou migrar esses nomes.
 
 Ao instalar Evolution em tarefa propria, configurar seu servico e dominios no
 EasyPanel, verificar credenciais e webhook e retirar **somente** os dois
@@ -79,9 +107,9 @@ Preservar o mapa da KAN-127, salvo decisao explicita registrada no Jira:
 | --- | --- | --- |
 | `clicaepede.com.br` | App de producao futuro | Reservar no mapa; nao alterar DNS |
 | `admin.clicaepede.com.br` | Host administrativo do app futuro | Reservar; nao alterar DNS |
-| `staging.clicaepede.com.br` | App de QA isolado | Publicar apenas apos definir deployment e dados de QA |
-| `admin.staging.clicaepede.com.br` | Mesmo app de QA | Publicar junto com o app de QA |
-| `evolution-staging.clicaepede.com.br` | VPS atual, exclusiva de QA | Criar A no Registro.br |
+| `staging.clicaepede.com.br` | App de QA isolado futuro | Fora desta publicacao; depende de tarefa/deployment/dados proprios |
+| `admin.staging.clicaepede.com.br` | Mesmo app de QA futuro | Fora desta publicacao |
+| `evolution-staging.clicaepede.com.br` | VPS atual, exclusiva de QA | A publicado e validado na HostGator |
 | `evolution.clicaepede.com.br` | Evolution de producao futura | Reservar; nao apontar para QA |
 | `ops-staging.clicaepede.com.br` | Administracao da VPS QA | Nao publicar sem protecao adicional validada |
 | `ops.clicaepede.com.br` | Administracao de producao futura | Reservar; nao publicar |
@@ -91,7 +119,7 @@ manter `evolution` reservado para producao. Registrar essa decisao no Jira e
 ajustar o hostname no criterio de aceite, sem marcar o registro como criado
 antes de sua publicacao e validacao.
 
-O nome `staging` nao garante isolamento. Nao aponta-lo para a producao Vercel
+Para uma futura implantacao do app, o nome `staging` nao garante isolamento. Nao aponta-lo para a producao Vercel
 nem considerar uma pagina provisoria como app de QA funcionando. Separar
 deployment, banco/dados, Clerk, Turnstile, Redis, banco Evolution, credenciais,
 numero WhatsApp, webhooks e rotinas agendadas antes de habilitar fluxos.
@@ -173,12 +201,12 @@ do operador. Armazenar detalhes operacionais na pasta protegida em D:.
 | --- | --- | --- |
 | Autoridade DNS | NS/SOA e administrador identificados | Identificado |
 | Evolution publicado | Registro aprovado em autoridade e resolvedores publicos | Pendente |
-| Staging isolado | DNS, deployment e dados/credenciais separados | Pendente |
+| Staging isolado | Host Evolution QA separado do nome futuro de producao; sem servico produtivo na VPS | Pendente |
 | App futuro reservado | Mapa acima, sem cutover | Documentado; nao publicado |
 | TLS e renovacao | Cadeia/SAN/validade e ensaio de renovacao | Pendente |
 | HTTP para HTTPS | Respostas por hostname, caminho e query | Pendente |
 | Painel protegido | Testes autorizado/nao autorizado e bypass | Pendente; exposicao diagnosticada |
-| TTL e rollback | TTL aplicado, backup e ensaio | Procedimento preparado; ensaio pendente |
+| TTL e rollback | TTL aplicado e procedimento documentado | Procedimento preparado |
 | App atual preservado | Fluxos Vercel antes/depois da publicacao | Sem mutacoes; reteste pos-publicacao pendente |
 
 ## Rollback
@@ -195,7 +223,8 @@ nome era inexistente, remover somente o novo registro; caches podem manter o
 destino ou NXDOMAIN pelo TTL. Manter o destino anterior operacional durante a
 propagacao. Reverter junto a URL Evolution e seus callbacks quando alterados.
 Revalidar HTTPS, webhook e app Vercel. DNS nao reverte dados, credenciais ou
-sessao WhatsApp. Ensaiar em hostname QA descartavel antes de aceitar a tarefa.
+sessao WhatsApp. Um ensaio em hostname QA descartavel e recomendado para um
+futuro cutover, nao requisito adicional desta publicacao de infraestrutura.
 
 ## Referencias
 
