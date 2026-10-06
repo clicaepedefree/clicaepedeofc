@@ -1,6 +1,60 @@
 # KAN-131 - DNS, subdominios e TLS
 
-## Estado e limites
+## Estado em 2026-10-06
+
+DNS agora delegado a HostGator (`nspro86.hostgator.com.br` e
+`nspro87.hostgator.com.br`), nao aos servidores Registro.br anteriores. O
+registrador continua sendo o local da delegacao, mas a zona ativa deve ser
+administrada na HostGator. O A de `evolution-staging.clicaepede.com.br` foi
+validado nos dois autoritativos e em Google/Cloudflare, TTL 300 segundos.
+
+HTTPS aplicado no proxy da VPS, com certificado Let's Encrypt YR1, SAN exato e
+validade ate 2027-01-04. Node TLS confirmou `authorized=true` e curl validou a
+cadeia sem ignorar erros. HTTP retorna 308 para HTTPS, preservando caminho e
+query. Nao houve alteracao no app, variaveis ou dominios Vercel.
+
+**Endpoint provisorio, nao Evolution:** o hostname responde HTTP 418 do
+`noop@internal`. Nenhuma instancia Evolution foi instalada nesta etapa. Esse
+endpoint comprova TLS e roteamento, nao envio de mensagens nem saude do bot.
+
+A configuracao reproduzivel fica em
+`scripts/infra/kan131-traefik-qa.yaml` (JSON, subconjunto de YAML). Deve ser
+publicada como `.yaml`, nao `.json`, no diretorio persistente
+`/etc/easypanel/traefik/config/kan131-qa.yaml`, observado pelo file provider.
+Publicar primeiro em arquivo temporario com extensao ignorada e renomear
+atomicamente. O arquivo gerado `main.yaml` nao foi editado.
+
+Os catchalls de prioridade 3 substituem os fallbacks/IP do painel (1/2) por
+`noop@internal`; hostname QA tem prioridade 100. Essa contencao depende da
+configuracao carregada: nunca remover o arquivo inteiro no rollback. Novos
+routers de maior prioridade podem superar o bloqueio; rever todos os providers
+e testar bypass apos atualizacoes do EasyPanel ou adicao de servicos.
+
+No proxy, contato ACME foi alterado para o email administrativo e
+`TRAEFIK_ENTRYPOINTS_{HTTP,HTTPS}_FORWARDEDHEADERS_INSECURE=false`. Houve reinicio
+do proxy, com persistencia da configuracao e certificado comprovada depois.
+Esses overrides de Docker devem ser preservados ou incorporados a configuracao
+suportada do EasyPanel antes de atualizacoes que recriem o servico.
+
+Testes externos apos reinicio: painel por IP IPv4/IPv6 em HTTPS retorna 418;
+IP IPv4 em HTTP retorna 418; hostname desconhecido, divergencia Host/SNI e
+headers encaminhados falsificados nao retornam interface EasyPanel. Porta 3000
+em IPv4/IPv6 teve timeout externo. Tunel SSH nominal em loopback retornou 200
+na pagina de login, sem abrir uma porta publica. A VPS tem IPv6 global mesmo
+sem AAAA publicado; o teste por IP direto foi necessario. Login do app Vercel
+retornou 200 antes e depois; isso e um smoke test, nao regressao funcional.
+
+Persistem pendentes: deployment/dados isolados do app staging, teste efetivo de
+renovacao automatica e ensaio de rollback DNS. A tarefa nao esta pronta para
+Teste. O mapa reserva o app de producao, sem publicar ou migrar esses nomes.
+
+Ao instalar Evolution em tarefa propria, configurar seu servico e dominios no
+EasyPanel, verificar credenciais e webhook e retirar **somente** os dois
+routers provisorios `kan131-evolution-qa-*` quando a rota gerenciada estiver
+pronta. Enquanto eles tiverem prioridade 100, podem superar a rota nova.
+Preservar os dois bloqueios `kan131-block-panel-*` e testar painel novamente.
+
+## Historico da preparacao (2026-10-03)
 
 Preparacao, nao publicacao concluida. Em 2026-10-03, a autoridade DNS de
 `clicaepede.com.br` foi identificada no Registro.br: `d.sec.dns.br` e
@@ -42,7 +96,7 @@ nem considerar uma pagina provisoria como app de QA funcionando. Separar
 deployment, banco/dados, Clerk, Turnstile, Redis, banco Evolution, credenciais,
 numero WhatsApp, webhooks e rotinas agendadas antes de habilitar fluxos.
 
-## Handoff para Gustavo no Registro.br
+## Handoff original (antes da mudanca de autoridade DNS)
 
 1. Exportar ou registrar a zona atual completa em armazenamento protegido.
 2. Manter os nameservers atuais. Preservar A/AAAA, CNAME, MX, TXT, CAA e
@@ -111,7 +165,8 @@ atualizacoes do EasyPanel, pois ele gera a configuracao do proxy.
 
 ## Evidencias e aceite
 
-Registrar data, ambiente e resultado por criterio, sem segredos ou IPs privados
+O quadro abaixo registra a preparacao inicial; os resultados atuais estao na
+secao de 2026-10-06. Registrar data, ambiente e resultado por criterio, sem segredos ou IPs privados
 do operador. Armazenar detalhes operacionais na pasta protegida em D:.
 
 | Criterio | Evidencia necessaria | Estado inicial |
