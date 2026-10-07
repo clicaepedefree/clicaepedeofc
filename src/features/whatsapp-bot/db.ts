@@ -901,7 +901,7 @@ export async function enqueueWhatsappTransactionalMessage({
       eventType,
       status: 'queued',
       idempotencyKey,
-      recipientPhone: normalizedRecipient,
+      recipientPhone: `+${normalizedRecipient}`,
       conversationId: conversationId ?? null,
       contactId: contactId ?? null,
       numberId: numberId ?? null,

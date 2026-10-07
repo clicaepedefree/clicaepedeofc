@@ -54,7 +54,7 @@ function readQrCode(payload: any): EvolutionQrCode | null {
       ? candidate
       : (candidate?.base64 ?? candidate?.code ?? null)
 
-  if (!base64) return null
+  if (typeof base64 !== 'string' || !base64.trim()) return null
 
   return {
     base64,
@@ -85,6 +85,17 @@ export async function POST(request: Request) {
       { status: 400 }
     )
   }
+  const event = (payload as { event?: unknown } | null)?.event
+  if (
+    event !== 'messages.upsert' &&
+    event !== 'connection.update' &&
+    event !== 'qrcode.updated'
+  ) {
+    return NextResponse.json(
+      { accepted: true, ignored: true, reason: 'unsupported_event' },
+      { status: 200 }
+    )
+  }
   const instanceName = readInstanceName(payload)
 
   if (typeof instanceName !== 'string' || !instanceName) {
@@ -95,9 +106,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const inboundMessage = parseEvolutionInboundMessagePayload(payload)
-
-    if (inboundMessage) {
+    if (event === 'messages.upsert') {
+      const inboundMessage = parseEvolutionInboundMessagePayload(payload)
+      if (
+        !inboundMessage ||
+        /@(g\.us|broadcast|newsletter)$/i.test(inboundMessage.senderPhone)
+      ) {
+        return NextResponse.json(
+          { accepted: true, ignored: true, reason: 'ignored_message' },
+          { status: 200 }
+        )
+      }
       const result = await processWhatsappInboundMessage({
         instanceName,
         ...inboundMessage,
@@ -134,11 +153,24 @@ export async function POST(request: Request) {
       )
     }
 
+    const state = event === 'connection.update' ? readState(payload) : null
+    const qrCode = event === 'qrcode.updated' ? readQrCode(payload) : null
+    if (
+      (event === 'connection.update' &&
+        (typeof state !== 'string' || !state.trim())) ||
+      (event === 'qrcode.updated' && !qrCode)
+    ) {
+      return NextResponse.json(
+        { accepted: false, reason: 'malformed_payload' },
+        { status: 400 }
+      )
+    }
+
     const session = await applyEvolutionSessionEvent({
       instanceName,
-      state: readState(payload),
+      state,
       reason: readReason(payload),
-      qrCode: readQrCode(payload),
+      qrCode,
       rawPayload: payload,
     })
 

@@ -212,6 +212,10 @@ export function createEvolutionClient(): EvolutionClient {
 
   return {
     async createInstance({ instanceName, webhookUrl, webhookSecret }) {
+      if (!webhookSecret?.trim()) {
+        throw new Error('WHATSAPP_EVOLUTION_WEBHOOK_SECRET is not configured')
+      }
+
       const payload = await request<unknown>('/instance/create', {
         method: 'POST',
         body: {
@@ -221,14 +225,12 @@ export function createEvolutionClient(): EvolutionClient {
           webhook: {
             enabled: true,
             url: webhookUrl,
-            byEvents: true,
-            base64: true,
+            byEvents: false,
+            base64: false,
             events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED', 'MESSAGES_UPSERT'],
-            headers: webhookSecret
-              ? {
-                  Authorization: `Bearer ${webhookSecret}`,
-                }
-              : undefined,
+            headers: {
+              Authorization: `Bearer ${webhookSecret}`,
+            },
           },
           rejectCall: true,
           msgCall:
@@ -266,7 +268,7 @@ export function createEvolutionClient(): EvolutionClient {
       const payload = await request<unknown>(
         `/instance/restart/${instanceName}`,
         {
-          method: 'PUT',
+          method: 'POST',
           token,
         }
       )

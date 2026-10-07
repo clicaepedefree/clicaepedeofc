@@ -8,7 +8,7 @@ import {
 describe('whatsapp bot diagnostics policy', () => {
   test('redacts sensitive customer and credential data from previews', () => {
     const text = sanitizeWhatsappDiagnosticText(
-      'Cliente bruno@email.com telefone +55 (13) 99184-0862 CPF 123.456.789-10 token=abc123'
+      'Cliente bruno@email.com telefone +55 (11) 90000-0001 CPF 123.456.789-10 token=abc123'
     )
 
     expect(text).toContain('[email]')
@@ -51,7 +51,7 @@ describe('whatsapp bot diagnostics policy', () => {
           senderType: 'customer',
           messageType: 'text',
           status: 'received',
-          body: 'Meu telefone e 13991840862',
+          body: 'Meu telefone e 11900000001',
           occurredAt: new Date('2026-09-09T11:55:00.000Z'),
           metadata: { source: 'whatsapp_inbound' },
         },
@@ -84,7 +84,7 @@ describe('whatsapp bot diagnostics policy', () => {
             fallback: true,
             delivery: {
               failure: {
-                message: 'provider timeout for +5513991840862',
+                message: 'provider timeout for +5511900000001',
               },
             },
           },

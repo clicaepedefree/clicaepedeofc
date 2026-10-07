@@ -11,7 +11,7 @@ const baseInput = {
   storeSubdomain: 'ccocobongo',
   orderId: 123,
   orderDisplayId: '42',
-  customerPhone: '5513991840862',
+  customerPhone: '5511900000001',
   orderStatus: 'COMPLETED',
 }
 

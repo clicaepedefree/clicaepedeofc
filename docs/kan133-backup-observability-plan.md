@@ -98,6 +98,14 @@ aplicadas. Auditoria global encontrou drift PREEXISTENTE: remoto 20260822020934
 listadas no historico remoto. Nao aplicar/repair essas migrations do app nesta
 tarefa, nem afirmar sincronismo global; reconciliar em trabalho especifico.
 
+## Deploy da Edge Function
+
+`kan133-watchdog` esta declarada em `supabase/config.toml`, com `enabled = true`,
+entrypoint explicito e `verify_jwt = true`, para deploy automatico por branches.
+A autorizacao adicional por RPC permanece obrigatoria. Publicar a funcao nao
+configura o Vault, ativa cron nem copia credenciais Telegram para previews.
+Nao executar o bootstrap de producao em uma branch para testar o deploy.
+
 ## Operacao
 Codigo root-owned: /opt/clicaepede/kan133; secrets: /etc/clicaepede/kan133;
 estado: /var/lib/clicaepede/kan133. Helpers de bootstrap ficam em

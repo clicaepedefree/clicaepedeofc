@@ -276,6 +276,11 @@ enabled = false
 # Obtain from https://clerk.com/setup/supabase
 # domain = "example.clerk.accounts.dev"
 
+[functions.kan133-watchdog]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/kan133-watchdog/index.ts"
+
 [edge_runtime]
 enabled = true
 # Configure one of the supported request policies: `oneshot`, `per_worker`.
