@@ -69,6 +69,22 @@ Automated policy and route tests complement, but do not replace, real WhatsApp
 acceptance. Do not check real transport cases until they are observed. Sending a
 message from the paired account to itself does not prove inbound customer ingestion.
 
+### Real-device checkpoint: 2026-10-07
+
+- The owner completed pairing. Evolution reported `open`; the deployed callback
+  persisted `connected` with no session error in the application database.
+- A fixed message was enqueued and processed through the application's existing
+  queue, using the local QA harness and the real provider, not an LLM or a direct
+  provider-only send. The owner confirmed receipt on WhatsApp.
+- The first enqueue exposed a format mismatch: the application normalized the
+  recipient to digits, while the database requires E.164 with a leading `+`.
+  Queue inserts now persist the leading `+`; idempotency normalization is unchanged.
+  The subsequent real event persisted as `sent`, with one attempt and valid E.164.
+- Nine queue-policy and functional-journey tests passed. This does not replace
+  the pending real inbound, replay and reconnection acceptance cases.
+- The queue fix was exercised locally against QA. It must also be deployed and
+  rechecked before claiming the deployed application contains the fix.
+
 ## Operations
 
 1. Verify the eight tables and restrictive grants before enabling the pilot.
