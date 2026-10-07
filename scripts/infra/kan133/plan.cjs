@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const policy = require('./qa-policy.json');
 const requiredGates = ['deployment-approval','storage-plan-quota-and-cost-confirmation',
-  'private-bucket-and-credential-scope','restic-supabase-compatibility-test',
+  'private-bucket-and-credential-scope','age-storage-roundtrip-test',
   'encryption-key-offsite-recovery','alert-channel-recipient-and-delivery',
   'off-vps-watchdog-heartbeat','isolated-full-restore-and-rpo-rto-evidence'];
 const requiredSignals = ['cpu','ram','disk','evolution-https','container-restarts',
@@ -19,8 +19,10 @@ function includesAll(actual, required) {
 function validatePlan(plan) {
   assert.equal(plan.schemaVersion, 1);
   assert.equal(plan.environment, 'qa');
-  assert.equal(plan.deploymentAuthorized, false, 'This delivery must remain preparation-only');
-  assert.equal(plan.status, 'prepared-not-deployed');
+  assert.equal(plan.deploymentAuthorized, true);
+  assert.ok(['deployed-validation-in-progress','deployed-qa-verified'].includes(plan.status));
+  assert.ok(Array.isArray(plan.pendingGates));
+  if(plan.status==='deployed-qa-verified') assert.equal(plan.pendingGates.length,0);
   assert.equal(plan.backup.rpoHours, 24);
   assert.equal(plan.backup.rtoHours, 8);
   positiveInteger(plan.backup.intervalHours);
@@ -28,10 +30,15 @@ function validatePlan(plan) {
   assert.ok(plan.backup.intervalHours > 0 && plan.backup.intervalHours < plan.backup.rpoHours);
   assert.ok(plan.backup.retentionDays >= 7);
   assert.equal(plan.backup.privateBucketRequired, true);
-  assert.equal(plan.backup.clientEncryption, 'restic');
+  assert.equal(plan.backup.clientEncryption, 'age-1.1.1');
   assert.equal(plan.backup.credentialsRecoveryOffsiteRequired, true);
   assert.equal(plan.backup.restoreTarget, 'isolated-no-egress-no-published-ports');
-  assert.equal(plan.backup.automaticPruneEnabled, false);
+  assert.equal(typeof plan.backup.automaticPruneEnabled, 'boolean');
+  if (plan.backup.automaticPruneEnabled) {
+    assert.equal(plan.backup.restoreGatePassed, true);
+    positiveInteger(plan.backup.minimumCopies);
+    assert.ok(plan.backup.minimumCopies >= 2);
+  }
   includesAll(plan.backup.sources, ['postgres-logical-dump','redis-consistent-export','evolution-session-volume','infra-config-and-secrets']);
   assert.equal(plan.monitoring.externalWatchdogRequired, true);
   includesAll(plan.monitoring.requiredSignals, requiredSignals);
@@ -45,18 +52,19 @@ function validatePlan(plan) {
   assert.equal(plan.logging.includeMessageBodies, false);
   assert.equal(plan.logging.includeQrOrCredentials, false);
   for (const name of ['containerMaxSizeMiB','containerMaxFiles','operationalRetentionDays']) positiveInteger(plan.logging[name]);
-  includesAll(plan.pendingGates, requiredGates);
-  return {status:plan.status, deploymentAuthorized:false, pendingGates:[...plan.pendingGates]};
+  includesAll(plan.acceptanceGates, requiredGates);
+  return {status:plan.status, deploymentAuthorized:plan.deploymentAuthorized, pendingGates:[...plan.pendingGates]};
 }
 
 // Pure policy calculation only: it does not collect metrics or send notifications.
-function backupFreshness(lastVerifiedOffsiteEpochMs, nowEpochMs, plan = policy) {
+function backupFreshness(lastVerifiedSnapshot, nowEpochMs, plan = policy) {
   if (!Number.isFinite(nowEpochMs)) throw new Error('Invalid clock');
-  if (lastVerifiedOffsiteEpochMs === null) return {severity:'critical', code:'no-verified-offsite-backup'};
-  if (!Number.isFinite(lastVerifiedOffsiteEpochMs) || lastVerifiedOffsiteEpochMs > nowEpochMs) {
+  if (lastVerifiedSnapshot === null) return {severity:'critical', code:'no-verified-offsite-backup'};
+  const captured=lastVerifiedSnapshot?.capturedAt, verified=lastVerifiedSnapshot?.verifiedAt;
+  if (!Number.isFinite(captured) || !Number.isFinite(verified) || captured>verified || verified>nowEpochMs) {
     return {severity:'critical', code:'invalid-backup-timestamp'};
   }
-  const ageHours = (nowEpochMs - lastVerifiedOffsiteEpochMs) / 3600000;
+  const ageHours = (nowEpochMs - captured) / 3600000;
   if (ageHours >= plan.monitoring.backupCriticalHours) return {severity:'critical', code:'backup-rpo-exceeded'};
   if (ageHours >= plan.monitoring.backupWarningHours) return {severity:'warning', code:'backup-aging'};
   return {severity:'ok', code:'verified-offsite-backup-fresh'};
