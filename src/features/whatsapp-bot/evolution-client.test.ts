@@ -1,8 +1,24 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 
 import { createEvolutionClient, EvolutionApiError } from './evolution-client'
 
 const originalFetch = globalThis.fetch
+const originalBaseUrl = process.env.WHATSAPP_EVOLUTION_API_BASE_URL
+const originalApiKey = process.env.WHATSAPP_EVOLUTION_API_KEY
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  if (originalBaseUrl === undefined) {
+    delete process.env.WHATSAPP_EVOLUTION_API_BASE_URL
+  } else {
+    process.env.WHATSAPP_EVOLUTION_API_BASE_URL = originalBaseUrl
+  }
+  if (originalApiKey === undefined) {
+    delete process.env.WHATSAPP_EVOLUTION_API_KEY
+  } else {
+    process.env.WHATSAPP_EVOLUTION_API_KEY = originalApiKey
+  }
+})
 
 function configureEvolutionEnv() {
   process.env.WHATSAPP_EVOLUTION_API_BASE_URL = 'https://evolution.example.com/'
@@ -10,7 +26,7 @@ function configureEvolutionEnv() {
 }
 
 describe('Evolution client', () => {
-  test('creates a Baileys instance with webhook configuration and normalized QR response', async () => {
+  test('creates a Baileys instance with one authenticated webhook URL, exactly three events and QR preserved without media base64', async () => {
     configureEvolutionEnv()
     const fetchCalls: unknown[][] = []
     const fetchMock = async (...args: unknown[]) => {
@@ -54,6 +70,7 @@ describe('Evolution client', () => {
       RequestInit & { headers: Record<string, string>; body: string },
     ]
     expect(url).toBe('https://evolution.example.com/instance/create')
+    expect(init.method).toBe('POST')
     expect(init.headers.apikey).toBe('global-key')
     expect(JSON.parse(init.body)).toEqual({
       instanceName: 'clica-store-9-wa-1',
@@ -62,8 +79,8 @@ describe('Evolution client', () => {
       webhook: {
         enabled: true,
         url: 'https://app.example.com/api/webhooks/whatsapp/evolution',
-        byEvents: true,
-        base64: true,
+        byEvents: false,
+        base64: false,
         events: ['CONNECTION_UPDATE', 'QRCODE_UPDATED', 'MESSAGES_UPSERT'],
         headers: {
           Authorization: 'Bearer webhook-secret',
@@ -78,6 +95,28 @@ describe('Evolution client', () => {
     })
     globalThis.fetch = originalFetch
   })
+
+  test.each([undefined, '', ' ', '\t\n'])(
+    'rejects creation without a nonblank webhook secret (case %#) before fetching',
+    async webhookSecret => {
+      configureEvolutionEnv()
+      const fetchCalls: unknown[][] = []
+      globalThis.fetch = (async (...args: unknown[]) => {
+        fetchCalls.push(args)
+        return Response.json({})
+      }) as unknown as typeof fetch
+
+      const client = createEvolutionClient()
+      await expect(
+        client.createInstance({
+          instanceName: 'clica-store-9-wa-1',
+          webhookUrl: 'https://app.example.com/api/webhooks/whatsapp/evolution',
+          webhookSecret,
+        })
+      ).rejects.toThrow('WHATSAPP_EVOLUTION_WEBHOOK_SECRET is not configured')
+      expect(fetchCalls).toHaveLength(0)
+    }
+  )
 
   test('uses the instance token for scoped connection status requests', async () => {
     configureEvolutionEnv()
