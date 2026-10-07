@@ -72,7 +72,7 @@ describe('whatsapp contact ingestion policy', () => {
       instance: 'clica-store-9-wa-2',
       data: {
         key: {
-          remoteJid: '5513991840862@s.whatsapp.net',
+          remoteJid: '5511900000001@s.whatsapp.net',
           id: 'MSG-1',
           fromMe: false,
         },
@@ -88,7 +88,7 @@ describe('whatsapp contact ingestion policy', () => {
     })
 
     expect(parsed).toEqual({
-      senderPhone: '5513991840862@s.whatsapp.net',
+      senderPhone: '5511900000001@s.whatsapp.net',
       displayName: 'Bruno',
       providerMessageId: 'MSG-1',
       body: 'Oi, tem cupom?',
@@ -104,7 +104,7 @@ describe('whatsapp contact ingestion policy', () => {
         event: 'messages.upsert',
         data: {
           key: {
-            remoteJid: '5513991840862@s.whatsapp.net',
+            remoteJid: '5511900000001@s.whatsapp.net',
             fromMe: true,
           },
           message: { conversation: 'Mensagem enviada pela loja' },

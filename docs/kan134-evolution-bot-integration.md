@@ -85,6 +85,37 @@ message from the paired account to itself does not prove inbound customer ingest
 - The queue fix was exercised locally against QA. It must also be deployed and
   rechecked before claiming the deployed application contains the fix.
 
+### Final integration checks
+
+- The distinct-sender QA message was received through the real provider and
+  persisted once. Authenticated HTTP replay of its provider identifier returned
+  `messageCreated:false`, no assistant invocation, and one persisted copy.
+- A synthetic `fromMe:true` echo was ignored without mutating the connected
+  session. Synthetic checks are separate from the owner's real receipt evidence.
+- The restart integration exposed an obsolete HTTP method. Evolution 2.3.7 uses
+  `POST /instance/restart/:instance`; the client and its regression test now match
+  the [pinned upstream route](https://raw.githubusercontent.com/EvolutionAPI/evolution-api/2.3.7/src/api/routes/instance.router.ts).
+- The QA instance restarted and reopened without a new QR. An isolated temporary
+  TCP/443 egress block in the Evolution container's network namespace produced
+  `close`; after rule removal the provider returned to `open`. No host firewall,
+  PostgreSQL, Redis, panel, or application service was stopped.
+- During recovery the app briefly retained an old session state. A synthetic
+  state reconciliation was followed by a real restart callback; the latter
+  persisted `connected` with a fresh heartbeat and no session error. This checks
+  recovery, but does not establish that every delayed/out-of-order lifecycle event
+  automatically reconciles without an operational retry.
+- A dedicated queue database-contract test asserts E.164 persistence and unchanged
+  idempotency for equivalent formatted and digits-only recipient inputs.
+- Independent static review found no functional defects in the two transport
+  fixes and requested that queue-contract regression test; it was added.
+- Legacy test fixtures containing the temporary QA telephone were replaced with
+  fictional values in the current source. Shared Git history was not rewritten.
+
+After merging, redeploy the configured production environment, retarget the QA
+webhook to the canonical app URL, validate it, and then revoke the temporary
+preview automation bypass. Preview acceptance does not replace that promotion
+check or the broader bot stories' functional regression.
+
 ## Operations
 
 1. Verify the eight tables and restrictive grants before enabling the pilot.

@@ -152,7 +152,7 @@ const inboundPayload = {
   instance: buildEvolutionInstanceName({ storeId: 9, numberId: 2 }),
   data: {
     key: {
-      remoteJid: '5513991840862@s.whatsapp.net',
+      remoteJid: '5511900000001@s.whatsapp.net',
       id: 'MSG-KAN-96-001',
       fromMe: false,
     },
@@ -187,7 +187,7 @@ describe('KAN-96 whatsapp bot functional journey', () => {
 
     const inbound = parseEvolutionInboundMessagePayload(inboundPayload)
     expect(inbound).toMatchObject({
-      senderPhone: '5513991840862@s.whatsapp.net',
+      senderPhone: '5511900000001@s.whatsapp.net',
       displayName: 'Cliente QA',
       providerMessageId: 'MSG-KAN-96-001',
       messageType: 'text',
@@ -195,7 +195,7 @@ describe('KAN-96 whatsapp bot functional journey', () => {
     })
 
     const phoneNumber = normalizeWhatsappPhoneNumber(inbound!.senderPhone)
-    expect(phoneNumber).toBe('+5513991840862')
+    expect(phoneNumber).toBe('+5511900000001')
 
     const contactMetadata = buildContactIngestionMetadata({
       body: inbound!.body,
@@ -359,13 +359,13 @@ describe('KAN-96 whatsapp bot functional journey', () => {
     const sameRecipientKey = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',
       eventId: firstStatusEvent,
-      recipientPhone: '+55 (13) 99184-0862',
+      recipientPhone: '+55 (11) 90000-0001',
     })
     expect(
       buildWhatsappTransactionalIdempotencyKey({
         eventType: 'order_status',
         eventId: firstStatusEvent,
-        recipientPhone: '5513991840862',
+        recipientPhone: '5511900000001',
       })
     ).toBe(sameRecipientKey)
 
@@ -384,7 +384,7 @@ describe('KAN-96 whatsapp bot functional journey', () => {
       storeSubdomain: 'ccocobongo',
       orderId: 42,
       orderDisplayId: '42',
-      customerPhone: '+5513991840862',
+      customerPhone: '+5511900000001',
       orderStatus: 'COMPLETED',
       snapshot: {
         benefits: {

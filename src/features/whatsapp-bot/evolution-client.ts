@@ -268,7 +268,7 @@ export function createEvolutionClient(): EvolutionClient {
       const payload = await request<unknown>(
         `/instance/restart/${instanceName}`,
         {
-          method: 'PUT',
+          method: 'POST',
           token,
         }
       )

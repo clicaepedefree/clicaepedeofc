@@ -67,7 +67,7 @@ describe('KAN-98 whatsapp bot operations documentation', () => {
   test('uses only fictitious examples and does not expose obvious sensitive values', () => {
     expect(doc).toContain('Cliente Exemplo')
     expect(doc).toContain('5511999999999')
-    expect(doc).not.toContain('+55 (13) 991840862')
+    expect(doc).not.toContain('+55 (11) 900000001')
     expect(doc).not.toContain('qaclicapede+clerk_test@gmail.com')
     expect(doc).not.toMatch(/0x4[A-Za-z0-9_-]{20,}/)
     expect(doc).not.toMatch(/\bsk-[A-Za-z0-9_-]{16,}/)

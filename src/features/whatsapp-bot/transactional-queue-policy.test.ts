@@ -13,12 +13,12 @@ describe('whatsapp transactional queue policy', () => {
     const first = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',
       eventId: 'order-10:accepted',
-      recipientPhone: '+55 (13) 99184-0862',
+      recipientPhone: '+55 (11) 90000-0001',
     })
     const replay = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',
       eventId: 'order-10:accepted',
-      recipientPhone: '5513991840862',
+      recipientPhone: '5511900000001',
     })
     const otherRecipient = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',

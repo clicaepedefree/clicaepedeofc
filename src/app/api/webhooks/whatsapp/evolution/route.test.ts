@@ -10,7 +10,7 @@ const processWhatsappInboundMessage = mock(async () => ({
   contact: {
     id: 20,
     storeId: 9,
-    phoneNumber: '+5513991840862',
+    phoneNumber: '+5511900000001',
     promotionalOptOutAt: null,
   },
   conversation: {
@@ -84,7 +84,7 @@ describe('Evolution webhook route', () => {
         instance: 'clica-store-9-wa-2',
         data: {
           key: {
-            remoteJid: '5513991840862@s.whatsapp.net',
+            remoteJid: '5511900000001@s.whatsapp.net',
             id: 'MSG-KAN-85',
             fromMe: false,
           },
@@ -103,7 +103,7 @@ describe('Evolution webhook route', () => {
       contact: {
         id: 20,
         storeId: 9,
-        phoneNumberMasked: '***0862',
+        phoneNumberMasked: '***0001',
         promotionalOptOutAt: null,
       },
       conversation: {
@@ -123,7 +123,7 @@ describe('Evolution webhook route', () => {
     expect(processWhatsappInboundMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         instanceName: 'clica-store-9-wa-2',
-        senderPhone: '5513991840862@s.whatsapp.net',
+        senderPhone: '5511900000001@s.whatsapp.net',
         displayName: 'Bruno',
         providerMessageId: 'MSG-KAN-85',
         body: 'Pode parar de mandar promocoes?',
@@ -143,7 +143,7 @@ describe('Evolution webhook route', () => {
       contact: {
         id: 20,
         storeId: 9,
-        phoneNumber: '+5513991840862',
+        phoneNumber: '+5511900000001',
         promotionalOptOutAt: new Date('2026-09-05T12:00:00.000Z'),
       },
       conversation: {
@@ -160,7 +160,7 @@ describe('Evolution webhook route', () => {
         instance: 'clica-store-9-wa-2',
         data: {
           key: {
-            remoteJid: '5513991840862@s.whatsapp.net',
+            remoteJid: '5511900000001@s.whatsapp.net',
             id: 'MSG-KAN-85',
             fromMe: false,
           },
@@ -216,7 +216,7 @@ describe('Evolution webhook route', () => {
           instance: 'clica-store-9-wa-2',
           data: {
             key: {
-              remoteJid: '5513991840862@s.whatsapp.net',
+              remoteJid: '5511900000001@s.whatsapp.net',
               fromMe: false,
             },
             message: { conversation: 'Oi' },
@@ -239,9 +239,9 @@ describe('Evolution webhook route', () => {
   test.each([
     [
       'key.fromMe',
-      { key: { remoteJid: '5513991840862@s.whatsapp.net', fromMe: true } },
+      { key: { remoteJid: '5511900000001@s.whatsapp.net', fromMe: true } },
     ],
-    ['data.fromMe', { fromMe: true, sender: '5513991840862@s.whatsapp.net' }],
+    ['data.fromMe', { fromMe: true, sender: '5511900000001@s.whatsapp.net' }],
     ['group', { key: { remoteJid: '123456789@g.us', fromMe: false } }],
     ['broadcast', { key: { remoteJid: 'status@broadcast', fromMe: false } }],
     [
@@ -276,7 +276,7 @@ describe('Evolution webhook route', () => {
         event: 'messages.upsert',
         instanceName: 'clica-store-9-wa-2',
         fromMe: true,
-        sender: '5513991840862@s.whatsapp.net',
+        sender: '5511900000001@s.whatsapp.net',
         messageText: 'Resposta do bot',
       })
     )
@@ -304,7 +304,7 @@ describe('Evolution webhook route', () => {
           event,
           instance: 'clica-store-9-wa-2',
           data: {
-            key: { remoteJid: '5513991840862@s.whatsapp.net', fromMe: false },
+            key: { remoteJid: '5511900000001@s.whatsapp.net', fromMe: false },
             message: { conversation: 'Oi' },
             state: 'close',
             qrcode: { base64: 'qr-image' },
@@ -330,7 +330,7 @@ describe('Evolution webhook route', () => {
         instance: { instanceName: 'clica-store-9-wa-2' },
         data: {
           state,
-          key: { remoteJid: '5513991840862@s.whatsapp.net', fromMe: false },
+          key: { remoteJid: '5511900000001@s.whatsapp.net', fromMe: false },
           message: { conversation: 'Not an inbound event' },
           qrcode: { base64: 'must-not-be-used' },
         },
@@ -360,7 +360,7 @@ describe('Evolution webhook route', () => {
       ...envelope,
       event: 'qrcode.updated',
       instance: 'clica-store-9-wa-2',
-      sender: '5513991840862@s.whatsapp.net',
+      sender: '5511900000001@s.whatsapp.net',
       state: 'close',
     }
     const response = await route.POST(buildRequest(payload))
@@ -383,7 +383,7 @@ describe('Evolution webhook route', () => {
       buildRequest({
         event: 'messages.upsert',
         instanceName: 'clica-store-9-wa-2',
-        sender: '5513991840862@s.whatsapp.net',
+        sender: '5511900000001@s.whatsapp.net',
         fromMe: false,
         messageText: 'Oi',
         id: 'legacy-message',

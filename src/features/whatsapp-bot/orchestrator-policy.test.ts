@@ -109,7 +109,7 @@ describe('whatsapp assistant orchestrator policy', () => {
   test('builds prompts with store, personality, rules, menu, hours and payments', () => {
     const systemPrompt = buildWhatsappAssistantSystemPrompt({
       assistantConfig: activeConfig,
-      contact: { displayName: 'Bruno', phoneNumber: '+5513991840862' },
+      contact: { displayName: 'Bruno', phoneNumber: '+5511900000001' },
       conversation: {
         mode: 'automatic',
         status: 'open',

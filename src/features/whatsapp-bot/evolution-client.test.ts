@@ -26,6 +26,23 @@ function configureEvolutionEnv() {
 }
 
 describe('Evolution client', () => {
+  test('restarts the instance with POST as required by Evolution 2.3.7', async () => {
+    configureEvolutionEnv()
+    const calls: unknown[][] = []
+    globalThis.fetch = (async (...args: unknown[]) => {
+      calls.push(args)
+      return new Response(JSON.stringify({ instance: { instanceName: 'qa-test', state: 'open' } }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await createEvolutionClient().restartInstance({ instanceName: 'qa-test', token: 'qa-token' })
+
+    expect(calls).toHaveLength(1)
+    const [url, init] = calls[0] as [string, RequestInit & { headers: Record<string, string> }]
+    expect(url).toBe('https://evolution.example.com/instance/restart/qa-test')
+    expect(init.method).toBe('POST')
+    expect(init.headers.apikey).toBe('qa-token')
+  })
+
   test('creates a Baileys instance with one authenticated webhook URL, exactly three events and QR preserved without media base64', async () => {
     configureEvolutionEnv()
     const fetchCalls: unknown[][] = []
@@ -163,7 +180,7 @@ describe('Evolution client', () => {
     const result = await client.sendTextMessage({
       instanceName: 'clica-store-9-wa-1',
       token: 'instance-token',
-      number: '+55 (13) 99184-0862',
+      number: '+55 (11) 90000-0001',
       text: 'Oi! Posso ajudar?',
     })
 
@@ -178,7 +195,7 @@ describe('Evolution client', () => {
     )
     expect(init.headers.apikey).toBe('instance-token')
     expect(JSON.parse(init.body)).toEqual({
-      number: '5513991840862',
+      number: '5511900000001',
       text: 'Oi! Posso ajudar?',
     })
     globalThis.fetch = originalFetch
