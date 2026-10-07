@@ -1,0 +1,15 @@
+{
+  "issue": "KAN-133",
+  "validatedAtUtc": "2026-10-07T02:23:00Z",
+  "status": "passed-with-documented-qa-limits",
+  "environment": "Evolution QA only",
+  "offsite": {"private": true, "encryption": "age", "copies": 3, "storedBytes": 963352, "roundtripSha256Verified": true},
+  "restoreWithFixture": {"seconds": 37.423, "tables": 37, "rows": 60, "instances": 1, "unpairedBaileysSessions": 1, "sessionFiles": 1, "redisKeys": 1, "redisAofRestartVerified": true, "isolated": true, "cleanupVerified": true},
+  "restoreFinalCleanState": {"seconds": 36.408, "tables": 37, "rows": 57, "instances": 0, "sessions": 0, "redisKeys": 0, "offsiteDownloadAndDecryptionVerified": true, "redisAofRestartVerified": true, "cleanupVerified": true},
+  "recoveryDrills": {"backupSigkill": "passed; independent recovery restored QA services in approximately 64s", "restoreSigkill": "passed; removed three owned resources and two private directories", "finalPlaintextCleanupOrdering": "four regression tests passed; final real restore passed"},
+  "monitoring": {"healthyServices": 5, "enabledTimers": ["backup", "retention", "monitor", "recover"], "externalCronMinutes": 1, "heartbeatLossAlertMinutes": 5, "externalObservedState": "ok/ok", "externalHttpStatus": 204, "externalError": null, "telegramIncidentAndRecoveryReceiptsVerified": true, "manualInitialDeliveryConfirmed": true},
+  "retention": {"days": 7, "minimumCopies": 2, "automaticTimerEnabled": true, "applyResult": {"listed": 3, "eligible": 0, "deleted": 0}, "recentDeletionDeniedByRls": true, "janitorUploadDenied": true, "oldObjectDeletionObserved": false},
+  "tests": {"pythonTotal": 140, "pythonPassed": 139, "pythonSkippedLinux": 1, "policyNodePassed": 7, "bunPassed": 462, "bunSkipped": 1, "bunFailed": 0, "storageFunctionalPassed": 8, "watchdogFunctionalPassed": 10, "retentionFunctionalPassed": true, "deployedScriptsSha256Match": 6, "reviewOpenP0P1": 0},
+  "migrationAudit": {"kan133LocalRemoteVersionsMatch": true, "preexistingRemoteMissingLocally": ["20260822020934"], "preexistingLocalNotInRemoteHistory": ["20260821193000", "20260821203000", "20260821213000", "20260822024500", "20260822033000", "20260901014743", "20260909024500"], "preexistingHistoryRepaired": false},
+  "limits": ["Full VPS rebuild RTO8h is a target, not measured; proven timing covers isolated Evolution restore with Docker available", "Supabase app database and Vercel app are outside this backup scope", "DPAPI key recovery assumes the authorized Windows profile remains available; portable team vault recovery required before production", "Supabase Free Storage/watchdog share one provider and cannot detect their own total outage", "No paid plan purchase, real WhatsApp pairing, LLM or production HA test", "Seven-day retention has not yet accumulated seven days of history"]
+}

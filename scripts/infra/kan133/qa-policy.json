@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "environment": "qa",
+  "deploymentAuthorized": true,
+  "status": "deployed-qa-verified",
+  "stack": "clica-evolution-qa",
+  "backup": {
+    "rpoHours": 24,
+    "rtoHours": 8,
+    "intervalHours": 12,
+    "retentionDays": 7,
+    "backend": "supabase-storage-rest-scoped-auth",
+    "bucket": "infra-backups-qa",
+    "prefix": "kan133/evolution-qa/",
+    "privateBucketRequired": true,
+    "clientEncryption": "age-1.1.1",
+    "sources": ["postgres-logical-dump", "redis-consistent-export", "evolution-session-volume", "infra-config-and-secrets"],
+    "credentialsRecoveryOffsiteRequired": true,
+    "restoreTarget": "isolated-no-egress-no-published-ports",
+    "automaticPruneEnabled": true,
+    "restoreGatePassed": true,
+    "minimumCopies": 2
+  },
+  "monitoring": {
+    "pollSeconds": 60,
+    "cpuPercent": 60,
+    "cpuSustainMinutes": 15,
+    "ramPercent": 70,
+    "ramSustainMinutes": 15,
+    "diskPercent": 70,
+    "backupWarningHours": 18,
+    "backupCriticalHours": 24,
+    "requiredSignals": ["cpu", "ram", "disk", "evolution-https", "container-restarts", "container-oom", "backup-offsite-success", "backup-failure"],
+    "externalWatchdogRequired": true,
+    "recipient": "Bruno via Telegram; identifiers outside Git"
+  },
+  "logging": {
+    "containerMaxSizeMiB": 10,
+    "containerMaxFiles": 3,
+    "operationalRetentionDays": 7,
+    "includeMessageBodies": false,
+    "includeQrOrCredentials": false
+  },
+  "acceptanceGates": [
+    "deployment-approval",
+    "storage-plan-quota-and-cost-confirmation",
+    "private-bucket-and-credential-scope",
+    "age-storage-roundtrip-test",
+    "encryption-key-offsite-recovery",
+    "alert-channel-recipient-and-delivery",
+    "off-vps-watchdog-heartbeat",
+    "isolated-full-restore-and-rpo-rto-evidence"
+  ],
+  "pendingGates": []
+}

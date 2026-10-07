@@ -9,6 +9,27 @@ on:
       - main
 
 jobs:
+  infra-qa:
+    name: Backup e recuperacao QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar fixture de imagens confiaveis
+        run: |
+          sudo chown root:root /opt
+          sudo chmod go-w /opt
+          sudo install -d -m 700 /opt/clicaepede/kan132 /var/lib/clicaepede/kan133
+          sudo chown root:root /opt/clicaepede
+          sudo chmod go-w /opt/clicaepede
+          sudo install -m 600 scripts/infra/kan132/stack.yaml /opt/clicaepede/kan132/stack.yaml
+      - name: Testar infraestrutura sem credenciais ou rede
+        run: |
+          set -e
+          for suite in backup restore monitor retention restore-recover restore-offsite; do
+            sudo python3 "scripts/infra/kan133/$suite.test.py"
+          done
+
   test-and-build:
     name: Testes e build
     runs-on: ubuntu-latest
