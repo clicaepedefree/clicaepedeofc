@@ -32,6 +32,11 @@ webhook uses `/api/webhooks/whatsapp/evolution`, with only `CONNECTION_UPDATE`,
 `QRCODE_UPDATED`, and `MESSAGES_UPSERT`. `byEvents:false` is required: otherwise
 Evolution appends an event-specific URL path that does not exist in the app.
 `base64:false` avoids inline message media; QR events still contain the pairing QR.
+The exact callback path is excluded from Clerk login enforcement; its own Bearer
+authentication remains mandatory. Protected previews require a separate automation
+credential in the provider's `x-vercel-protection-bypass` header, never in the URL.
+Keep that credential outside Git and remove it after preview QA; do not disable
+deployment protection or expose other routes.
 See the [version-pinned provider implementation](https://github.com/evolution-foundation/evolution-api/blob/2.3.7/src/api/integrations/event/webhook/webhook.controller.ts).
 
 ## Database reconciliation
