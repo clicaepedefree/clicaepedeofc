@@ -1,0 +1,40 @@
+{
+  "http": {
+    "middlewares": {
+      "kan131-https": {
+        "redirectScheme": { "scheme": "https", "permanent": true }
+      }
+    },
+    "routers": {
+      "kan131-block-panel-http": {
+        "rule": "HostRegexp(`.+`)",
+        "ruleSyntax": "v3",
+        "priority": 3,
+        "entryPoints": ["http"],
+        "service": "noop@internal"
+      },
+      "kan131-block-panel-https": {
+        "rule": "HostRegexp(`.+`)",
+        "ruleSyntax": "v3",
+        "priority": 3,
+        "entryPoints": ["https"],
+        "service": "noop@internal",
+        "tls": {}
+      },
+      "kan131-evolution-qa-http": {
+        "rule": "Host(`evolution-staging.clicaepede.com.br`)",
+        "priority": 100,
+        "entryPoints": ["http"],
+        "middlewares": ["kan131-https"],
+        "service": "noop@internal"
+      },
+      "kan131-evolution-qa-https": {
+        "rule": "Host(`evolution-staging.clicaepede.com.br`)",
+        "priority": 100,
+        "entryPoints": ["https"],
+        "service": "noop@internal",
+        "tls": { "certResolver": "letsencrypt" }
+      }
+    }
+  }
+}

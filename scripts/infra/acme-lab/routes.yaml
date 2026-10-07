@@ -1,0 +1,12 @@
+{
+  "http": {
+    "routers": {
+      "lab": {
+        "rule": "Host(`renewal.example.test`)",
+        "entryPoints": ["https"],
+        "service": "noop@internal",
+        "tls": { "certResolver": "lab" }
+      }
+    }
+  }
+}
