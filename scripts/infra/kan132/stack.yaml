@@ -1,0 +1,55 @@
+{
+  "version": "3.8",
+  "services": {
+    "postgres": {
+      "image": "postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826",
+      "environment": {"POSTGRES_USER":"evolution_admin", "POSTGRES_DB":"evolution", "POSTGRES_PASSWORD_FILE":"/run/secrets/pg_admin_password", "POSTGRES_INITDB_ARGS":"--data-checksums"},
+      "command": ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=40", "-c", "work_mem=4MB"],
+      "secrets": ["pg_admin_password", "pg_app_password"],
+      "configs": [{"source":"postgres_init_v2", "target":"/docker-entrypoint-initdb.d/kan132-init.sh", "mode":365}],
+      "volumes": ["postgres_data:/var/lib/postgresql/data"],
+      "networks": ["internal"],
+      "healthcheck": {"test":["CMD-SHELL", "pg_isready -U evolution_admin -d evolution"], "interval":"15s", "timeout":"5s", "retries":5, "start_period":"60s"},
+      "deploy": {"replicas":1, "placement":{"constraints":["node.role == manager"]}, "restart_policy":{"condition":"any", "delay":"10s"}, "update_config":{"order":"stop-first", "failure_action":"pause"}, "resources":{"limits":{"cpus":"0.50", "memory":"512M"}, "reservations":{"cpus":"0.10", "memory":"128M"}}},
+      "logging": {"driver":"json-file", "options":{"max-size":"10m", "max-file":"3"}}
+    },
+    "redis": {
+      "image": "redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499",
+      "entrypoint": ["/bin/sh", "/run/configs/redis-entrypoint.sh"],
+      "secrets": ["redis_password"],
+      "configs": [{"source":"redis_entrypoint_v1", "target":"/run/configs/redis-entrypoint.sh"}],
+      "volumes": ["redis_data:/data"],
+      "networks": ["internal"],
+      "healthcheck": {"test":["CMD-SHELL", "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli --no-auth-warning ping | grep -qx PONG"], "interval":"15s", "timeout":"5s", "retries":5, "start_period":"30s"},
+      "deploy": {"replicas":1, "placement":{"constraints":["node.role == manager"]}, "restart_policy":{"condition":"any", "delay":"10s"}, "update_config":{"order":"stop-first", "failure_action":"pause"}, "resources":{"limits":{"cpus":"0.30", "memory":"384M"}, "reservations":{"cpus":"0.10", "memory":"64M"}}},
+      "logging": {"driver":"json-file", "options":{"max-size":"10m", "max-file":"3"}}
+    },
+    "evolution": {
+      "image": "evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339",
+      "entrypoint": ["/bin/sh", "/run/configs/evolution-entrypoint.sh"],
+      "command": ["/bin/bash", "-c", ". ./Docker/scripts/deploy_database.sh && npm run start:prod"],
+      "environment": {
+        "SERVER_TYPE":"http", "SERVER_PORT":"8080", "SERVER_URL":"https://evolution-staging.clicaepede.com.br", "DOCKER_ENV":"true",
+        "DATABASE_PROVIDER":"postgresql", "DATABASE_CONNECTION_CLIENT_NAME":"clica_evolution_qa", "DATABASE_SAVE_DATA_INSTANCE":"true", "DATABASE_SAVE_DATA_NEW_MESSAGE":"false", "DATABASE_SAVE_MESSAGE_UPDATE":"false", "DATABASE_SAVE_DATA_CONTACTS":"false", "DATABASE_SAVE_DATA_CHATS":"false", "DATABASE_SAVE_DATA_LABELS":"false", "DATABASE_SAVE_DATA_HISTORIC":"false",
+        "CACHE_REDIS_ENABLED":"true", "CACHE_REDIS_PREFIX_KEY":"clica_evolution_qa", "CACHE_REDIS_SAVE_INSTANCES":"false", "CACHE_LOCAL_ENABLED":"false",
+        "AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES":"false", "DEL_INSTANCE":"false", "LOG_LEVEL":"ERROR,WARN", "LOG_BAILEYS":"error", "TELEMETRY_ENABLED":"false", "EVENT_EMITTER_MAX_LISTENERS":"50", "NODE_OPTIONS":"--max-old-space-size=768", "WEBHOOK_GLOBAL_ENABLED":"false", "CONFIG_SESSION_PHONE_NAME":"Clica e Pede QA", "CONFIG_SESSION_PHONE_CLIENT":"Chrome", "QRCODE_LIMIT":"5"
+      },
+      "secrets": ["api_key", "pg_app_password", "redis_password"],
+      "configs": [{"source":"evolution_entrypoint_v1", "target":"/run/configs/evolution-entrypoint.sh"}, {"source":"evolution_logs_v3", "target":"/run/configs/start-redacted.cjs"}],
+      "volumes": ["evolution_instances:/evolution/instances"],
+      "networks": ["internal", "proxy"],
+      "healthcheck": {"test":["CMD", "node", "-e", "const fs=require('fs');fetch('http://127.0.0.1:8080/instance/fetchInstances',{headers:{apikey:fs.readFileSync('/run/secrets/api_key','utf8').trim()},signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], "interval":"20s", "timeout":"6s", "retries":5, "start_period":"180s"},
+      "deploy": {"replicas":1, "placement":{"constraints":["node.role == manager"]}, "restart_policy":{"condition":"any", "delay":"15s"}, "update_config":{"order":"stop-first", "failure_action":"pause"}, "resources":{"limits":{"cpus":"0.75", "memory":"1536M"}, "reservations":{"cpus":"0.25", "memory":"256M"}}},
+      "logging": {"driver":"json-file", "options":{"max-size":"10m", "max-file":"3"}}
+    }
+  },
+  "networks": {"internal":{"driver":"overlay", "internal":true}, "proxy":{"external":true, "name":"easypanel"}},
+  "volumes": {"postgres_data":{}, "redis_data":{}, "evolution_instances":{}},
+  "secrets": {
+    "pg_admin_password":{"external":true,"name":"kan132_pg_admin_v1"}, "pg_app_password":{"external":true,"name":"kan132_pg_app_v1"},
+    "redis_password":{"external":true,"name":"kan132_redis_v1"}, "api_key":{"external":true,"name":"kan132_api_v1"}
+  },
+  "configs": {
+    "postgres_init_v2":{"file":"./postgres-init.sh"}, "redis_entrypoint_v1":{"file":"./redis-entrypoint.sh"}, "evolution_entrypoint_v1":{"file":"./evolution-entrypoint.sh"}, "evolution_logs_v3":{"file":"./start-redacted.cjs"}
+  }
+}
