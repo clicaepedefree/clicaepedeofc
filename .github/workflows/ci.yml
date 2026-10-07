@@ -17,7 +17,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Preparar fixture de imagens confiaveis
         run: |
+          sudo chown root:root /opt
+          sudo chmod go-w /opt
           sudo install -d -m 700 /opt/clicaepede/kan132 /var/lib/clicaepede/kan133
+          sudo chown root:root /opt/clicaepede
+          sudo chmod go-w /opt/clicaepede
           sudo install -m 600 scripts/infra/kan132/stack.yaml /opt/clicaepede/kan132/stack.yaml
       - name: Testar infraestrutura sem credenciais ou rede
         run: |
