@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "incremental": false, "types": ["node"], "plugins": [] },
+  "include": ["kan136-*.ts", "../../next-env.d.ts"],
+  "exclude": [
+    "../../node_modules",
+    "../../supabase/functions/**",
+    "../../**/*.test.ts"
+  ]
+}
