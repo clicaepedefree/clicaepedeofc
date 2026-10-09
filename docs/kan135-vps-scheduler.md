@@ -4,8 +4,8 @@
 
 O worker Python stdlib dispara POST HTTPS na aplicacao Vercel. Nao executa
 Next.js, consultas ao banco, cobrancas ou envio de mensagens localmente.
-Ownership desta entrega: `scripts/infra/kan135/` e este documento.
-Nenhum SSH, instalacao live, ativacao ou commit foi feito nesta entrega.
+Implementacao: `scripts/infra/kan135/`, endpoints de cron e lease server-only
+no PostgreSQL. A instalacao QA e as evidencias reais estao no final deste documento.
 
 | Agendamento | Dono atual / destino | Frequencia |
 | --- | --- | --- |
@@ -86,7 +86,8 @@ omite o campo. Validar o preview aprovado, nao um alias que muda sem revisao.
 
 ## Instalacao e execucao explicitas
 
-Comandos abaixo sao runbook, nao foram executados nesta entrega.
+Comandos abaixo compoem o runbook; a instalacao QA segue os limites registrados
+na secao de evidencias. Nao aplicar o cutover billing automaticamente.
 
 ```sh
 sudo sh /caminho/aprovado/kan135/install.sh /caminho/aprovado/kan135
@@ -127,8 +128,7 @@ catch-up deliberado, nao faturamento antecipado da janela seguinte.
    Vercel GET continua unico scheduled owner de producao.
 2. Pos-merge, Main remove o cron billing de `vercel.json`, faz deploy e
    confirma a remocao efetiva do schedule Vercel e a migration do lease.
-   Nenhuma mudanca nesses arquivos
-   arquivo e feita por este especialista. Aguardar execucao anterior terminar.
+   Nesta entrega o cron Vercel foi preservado. Aguardar execucao anterior terminar.
 3. Provisionar segredo POST dedicado, ajustar origin para producao,
    habilitar `billing_enabled=true` no config privado.
 4. Somente entao instalar com `--enable-billing-after-cutover` e iniciar
@@ -176,9 +176,12 @@ rodar. Claims/processing com outcome desconhecido permanecem protegidos pelo
 lease de 15 minutos; Main coloca itens processing antigos (>15 minutos) em
 quarentena sem blind resend. Nao liberar lease manualmente so porque houve
 disconnect/timeout; investigar o resultado antes de qualquer intervencao.
-`<job>.dead-letter.json` preserva somente ultima falha operacional
-(job, slot, reason, status HTTP, attempts, timestamp), sem PII/token/corpos.
-Nao e historico ilimitado nem fila de mensagens para reenvio.
+`<job>.dead-letter.json` e tambem uma mailbox operacional limitada: ultima
+falha (job, slot, reason, status HTTP, attempts, timestamp), sequence monotona,
+ack_sequence e primeira falha ainda nao confirmada. Gravada no run terminal
+sob o flock do job ANTES de persistir conclusao. Sucesso de outra janela nao
+apaga a mailbox; falhas consecutivas agregam contagem/sequence sem crescer
+uma lista. Sem PII/token/corpos, nao e fila de mensagens para reenvio.
 
 Timers calendar tem `Persistent=true`: reboot faz catch-up de uma janela,
 nao replay de todos os minutos/dias perdidos. Retry state e bloqueio auth
@@ -194,7 +197,21 @@ persistida. Flags false suprimem atraso, nao falhas/interrupcoes retidas.
 `telegram_chat_id` do config privado KAN133, com texto fixo de codigo operacional.
 Envio confirmado pelo `ok`, message_id e chat exato, sem registrar resposta.
 
-Incidentes/recuperacoes deduplicados e pendentes persistidos. Entrega tem
+Monitor consome mailbox por job/sequence/timestamp, com cursors consumidos e
+confirmados persistidos em `monitor.json`. Ack so apos confirmacao Telegram
+(ou agregacao a um episodio ativo ja confirmado); sincroniza ack_sequence
+sob flock no proximo ciclo. Falha nova durante notificacao fica acima do
+receipt confirmado e nao e apagada. Mailboxes legadas sem sequence migram
+como sequence 1. Assim falha -> sucesso antes do monitor ainda produz alerta.
+
+Incidentes/recuperacoes deduplicados e pendentes persistidos. Recuperacao
+NUNCA remove incidente nao entregue e espera confirmacao dele antes de enviar,
+inclusive se ambos forem descobertos no mesmo ciclo. Reincidencia nao reseta
+attempts/backoff de incidente pendente. Recuperacao pendente obsoleta e
+cancelada quando a falha reaparece; a condicao e conferida novamente antes
+do envio. Estado limitado a dois tipos de evento
+por sinal/job e duas mailboxes; slots repetidos nao criam lista ilimitada.
+Entrega tem
 3 tentativas com backoff 60/120s, sem loop infinito; pendente terminal fica
 visivel em `monitor.json` e resumo do journal para intervencao. Maximo 3
 envios por ciclo; timeout Telegram 12s. Config ausente/mode invalido gera
@@ -222,6 +239,30 @@ Linux cross-process flock/0600/symlink incluido e pulado no Windows. CI/Linux
 deve executa-lo e validar units antes de QA agendada aprovada. Testes mocks
 nao substituem integracao POST/lease/fila na Vercel ou reboot real da VPS.
 
-Resultado local desta entrega: 28 testes coletados, 27 aprovados, 1 Linux
-pulado; sem HTTP live. Verificacao systemd real e teste flock/0600 POSIX
-pendentes em CI/Linux. Preparado para revisao independente de infra.
+## Validacao realizada em 2026-10-09
+
+- Suite do app: 527 testes aprovados, 1 pulado; cobertura critica aprovada.
+- Scheduler: 37 testes coletados, 36 aprovados no Windows e 1 exclusivo de
+  Linux; todos executados na VPS, incluindo flock entre processos, modos
+  privados e rejeicao de symlinks. Units verificadas com systemd-analyze.
+- Banco real: concorrencia, lease sobrevivendo perda de conexao, expiracao,
+  reconhecimento perdido e liberacao condicionada ao owner exercitados.
+  RLS bloqueia anon/authenticated na tabela de leases.
+- POST real no preview: Bearer incorreto rejeitado (401); worker autorizado
+  executa. Um envio manual e um agendado percorreram VPS -> Vercel ->
+  Supabase -> Evolution; ambos registrados como sent, uma tentativa cada.
+  A API do provedor confirmou o envio; nao equivale a confirmacao de leitura.
+- Repeticao do mesmo evento recusada por idempotencia; repeticao da janela
+  ignorada pelo scheduler. Alertas reais de incidente e recuperacao foram
+  confirmados pela API Telegram em estado de teste isolado.
+- Timers/servicos QA reiniciados preservando estado; testes de crash e
+  persistencia aprovados. NAO houve reboot fisico da VPS: esse ensaio permanece
+  para homologacao de infraestrutura, sem confundir restart de worker com host.
+- WhatsApp/retry/monitor habilitados apenas para QA, com origem imutavel do
+  preview deste PR. Billing VPS permanece desabilitado; cron GET existente e
+  configuracao de producao da Vercel permanecem inalterados. Cutover exige
+  aplicar segredos de producao e retarget aprovado; billing exige dono unico.
+
+Sem migracao de UI/app/dominio, LLM ou gateway. Esta validacao de infraestrutura
+nao substitui regressao visual ou ensaio financeiro real. Segredos, telefone,
+QR e credenciais nao integram as evidencias publicadas.

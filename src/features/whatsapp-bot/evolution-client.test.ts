@@ -228,4 +228,12 @@ describe('Evolution client', () => {
       } finally { globalThis.fetch = originalFetch }
     })
   }
+
+  test('does not report success without a provider message acknowledgement', async () => {
+    configureEvolutionEnv()
+    globalThis.fetch = (async () => Response.json({ status: 'PENDING' })) as typeof fetch
+    try {
+      await expect(createEvolutionClient().sendTextMessage({ instanceName: 'fixture', number: '5511900000001', text: 'Fixed QA text' })).rejects.toMatchObject({ name: 'DeliveryOutcomeUnknownError' })
+    } finally { globalThis.fetch = originalFetch }
+  })
 })

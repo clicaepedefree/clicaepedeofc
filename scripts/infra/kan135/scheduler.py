@@ -171,6 +171,35 @@ def invoke(job, secret, request=http, origin=ORIGIN, bypass=None):
         return 'ambiguous', None
 
 
+def record_failure(root, job, state, reason, code, now):
+    path = root / (job + '.dead-letter.json')
+    previous = read_state(path)
+    sequence = previous.get('sequence', 1 if previous else 0) + 1
+    dead = {'job': job, 'slot': state['slot'], 'reason': reason,
+            'http_status': code, 'attempts': state['attempts'], 'at': now,
+            'sequence': sequence, 'ack_sequence': previous.get('ack_sequence', 0)}
+    # One bounded mailbox per job: retain the first unconfirmed failure even
+    # when later slots overwrite the latest failure details.
+    dead['first_unconfirmed'] = previous.get('first_unconfirmed') or {
+        'sequence': sequence, 'at': now, 'reason': reason}
+    atomic(path, dead)
+
+
+def acknowledge_failure(root, job, sequence):
+    path = root / (job + '.dead-letter.json')
+    with locked(root, job):
+        dead = read_state(path)
+        if not dead or sequence <= dead.get('ack_sequence', 0):
+            return
+        dead.setdefault('sequence', 1)
+        dead['ack_sequence'] = min(sequence, dead['sequence'])
+        if dead['ack_sequence'] >= dead.get('sequence', 1):
+            dead.pop('first_unconfirmed', None)
+        elif dead.get('first_unconfirmed', {}).get('sequence', 0) <= sequence:
+            dead['first_unconfirmed'] = {'sequence': dead['sequence'], 'at': dead['at'], 'reason': dead['reason']}
+        atomic(path, dead)
+
+
 def run(job, config, root=ROOT, clock=time.time, request=http, reset=False, retry_only=False):
     if not config.get(job + '_enabled', False):
         return 'disabled'
@@ -190,8 +219,7 @@ def run(job, config, root=ROOT, clock=time.time, request=http, reset=False, retr
         if state.get('status') == 'running':
             # Persisted before HTTP; after a crash the remote outcome is unknown.
             state.update(status='terminal', reason='interrupted', finished_at=now)
-            atomic(root / (job + '.dead-letter.json'), {'job': job, 'slot': state['slot'],
-                   'reason': 'interrupted', 'http_status': None, 'attempts': state['attempts'], 'at': now})
+            record_failure(root, job, state, 'interrupted', None, now)
             atomic(path, state)
             return 'interrupted'
         if state.get('status') == 'retry':
@@ -230,9 +258,7 @@ def run(job, config, root=ROOT, clock=time.time, request=http, reset=False, retr
                 state['last_success_slot'] = state['slot']
         else:
             state.update(status='terminal', blocked=outcome == 'auth')
-            dead = {'job': job, 'slot': state['slot'], 'reason': outcome,
-                    'http_status': code, 'attempts': state['attempts'], 'at': now}
-            atomic(root / (job + '.dead-letter.json'), dead)
+            record_failure(root, job, state, outcome, code, now)
         atomic(path, state)
         return outcome
 
@@ -296,16 +322,46 @@ def monitor(config, root=ROOT, clock=time.time, send=notify):
         active = active_incidents(config, root, now, started)
         previous = state.get('active', [])
         pending = state.setdefault('pending', {})
+        consumed = state.setdefault('consumed_failures', {})
+        confirmed = state.setdefault('confirmed_failures', {})
+        for job in PATHS:
+            try:
+                acknowledge_failure(root, job, confirmed.get(job, 0))
+                with locked(root, job):
+                    dead = read_state(root / (job + '.dead-letter.json'))
+            except Busy:
+                continue
+            sequence = dead.get('sequence', 1 if dead else 0)
+            if sequence <= max(consumed.get(job, 0), confirmed.get(job, 0), dead.get('ack_sequence', 0)):
+                continue
+            key = job + ':failure'
+            event = 'incident:' + key
+            if key in previous and event not in pending and confirmed.get(job, 0):
+                # Same already-notified active episode: coalesce, no alert storm.
+                confirmed[job] = sequence
+            else:
+                delivery = pending.setdefault(event, {'attempts': 0, 'next_at': now})
+                delivery['failure_sequence'] = sequence
+                delivery.setdefault('failure_at', dead.get('first_unconfirmed', {}).get('at', dead['at']))
+                if key not in active:
+                    pending.setdefault('recovery:' + key, {'attempts': 0, 'next_at': now})
+            consumed[job] = sequence
         for key in set(active) - set(previous):
-            pending.pop('recovery:' + key, None)
-            pending['incident:' + key] = {'attempts': 0, 'next_at': now}
+            pending.setdefault('incident:' + key, {'attempts': 0, 'next_at': now})
         for key in set(previous) - set(active):
-            pending.pop('incident:' + key, None)
-            pending['recovery:' + key] = {'attempts': 0, 'next_at': now}
+            pending.setdefault('recovery:' + key, {'attempts': 0, 'next_at': now})
+        for key in active:
+            pending.pop('recovery:' + key, None)
         state.update(active=active, checked_at=now)
         atomic(path, state)
         delivered = 0
-        for event, delivery in list(pending.items()):
+        for event, delivery in sorted(list(pending.items())):
+            if event.startswith('recovery:') and event[len('recovery:'):] in active_incidents(config, root, clock(), started):
+                pending.pop(event, None)
+                atomic(path, state)
+                continue
+            if event.startswith('recovery:') and 'incident:' + event[len('recovery:'):] in pending:
+                continue
             if delivery['attempts'] >= 3 or now < delivery['next_at']:
                 continue
             if delivered >= 3:
@@ -317,6 +373,9 @@ def monitor(config, root=ROOT, clock=time.time, send=notify):
             atomic(path, state)
             try:
                 send(event, config)
+                if 'failure_sequence' in delivery:
+                    job = event.split(':')[1]
+                    confirmed[job] = max(confirmed.get(job, 0), delivery['failure_sequence'])
                 del pending[event]
             except Exception:
                 pass

@@ -303,7 +303,13 @@ export function createEvolutionClient(): EvolutionClient {
         }
       )
 
-      return normalizeSendTextResult(payload)
+      const result = normalizeSendTextResult(payload)
+      if (!result.providerMessageId || typeof result.providerMessageId !== 'string') {
+        const error = new Error('Provider delivery acknowledgement is incomplete; reconcile before retry.')
+        error.name = 'DeliveryOutcomeUnknownError'
+        throw error
+      }
+      return result
     },
   }
 }

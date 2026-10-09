@@ -234,6 +234,161 @@ class SchedulerTests(unittest.TestCase):
         self.run_job()
         self.assertIn('whatsapp:failure', s.active_incidents(self.config, self.root, self.now, self.now))
 
+    def test_failure_success_before_monitor_still_delivers_incident_then_recovery(self):
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        failed_at = self.now
+        self.now += 60
+        self.request.return_value = (200, {'ok': True})
+        self.run_job()
+        send = Mock()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual([call.args[0] for call in send.call_args_list],
+                         ['incident:whatsapp:failure', 'recovery:whatsapp:failure'])
+        monitor = s.read_state(self.root / 'monitor.json')
+        self.assertEqual(monitor['confirmed_failures']['whatsapp'], 1)
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual(send.call_count, 2)
+        dead = s.read_state(self.root / 'whatsapp.dead-letter.json')
+        self.assertEqual(dead['ack_sequence'], 1)
+        self.assertEqual(dead['at'], failed_at)
+        self.assertNotIn('first_unconfirmed', dead)
+
+    def test_delivery_failure_recovery_restart_retry_keeps_incident_first(self):
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        send = Mock(side_effect=RuntimeError('private-error'))
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.now += 60
+        self.request.return_value = (200, {'ok': True})
+        self.run_job()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        pending = s.read_state(self.root / 'monitor.json')['pending']
+        self.assertEqual(set(pending), {'incident:whatsapp:failure', 'recovery:whatsapp:failure'})
+        self.assertEqual(send.call_count, 2)
+        self.now += 120
+        send.side_effect = None
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual([call.args[0] for call in send.call_args_list],
+                         ['incident:whatsapp:failure', 'incident:whatsapp:failure',
+                          'incident:whatsapp:failure', 'recovery:whatsapp:failure'])
+        self.assertFalse(s.read_state(self.root / 'monitor.json')['pending'])
+
+    def test_overwritten_failures_coalesce_and_preserve_first_unconfirmed(self):
+        self.request.return_value = (200, {'ok': False})
+        first = self.now
+        for _ in range(20):
+            self.run_job()
+            self.now += 60
+        dead = s.read_state(self.root / 'whatsapp.dead-letter.json')
+        self.assertEqual(dead['sequence'], 20)
+        self.assertEqual(dead['first_unconfirmed']['at'], first)
+        send = Mock(side_effect=RuntimeError())
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        pending = s.read_state(self.root / 'monitor.json')['pending']
+        self.assertEqual(pending['incident:whatsapp:failure']['failure_sequence'], 20)
+        self.assertEqual(pending['incident:whatsapp:failure']['failure_at'], first)
+        self.assertLessEqual(len(pending), 6)
+        self.assertLess(len(json.dumps(dead)), 600)
+
+    def test_terminal_alert_retained_on_recovery_no_recovery_overtakes(self):
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        send = Mock(side_effect=RuntimeError())
+        for delay in [0, 60, 120]:
+            self.now += delay
+            s.monitor(self.config, self.root, lambda: self.now, send)
+        self.request.return_value = (200, {'ok': True})
+        self.now += 60
+        self.run_job()
+        send.side_effect = None
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        pending = s.read_state(self.root / 'monitor.json')['pending']
+        self.assertIn('incident:whatsapp:failure', pending)
+        self.assertIn('recovery:whatsapp:failure', pending)
+        self.assertEqual(send.call_count, 3)
+
+    def test_confirmed_consecutive_failure_episode_deduplicated(self):
+        self.request.return_value = (200, {'ok': False})
+        send = Mock()
+        for _ in range(3):
+            self.run_job()
+            s.monitor(self.config, self.root, lambda: self.now, send)
+            self.now += 60
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(s.read_state(self.root / 'monitor.json')['confirmed_failures']['whatsapp'], 3)
+
+    def test_new_failure_after_confirmed_recovery_is_new_incident(self):
+        send = Mock()
+        for ok in [False, True, False]:
+            self.request.return_value = (200, {'ok': ok})
+            self.run_job()
+            s.monitor(self.config, self.root, lambda: self.now, send)
+            self.now += 60
+        self.assertEqual([call.args[0] for call in send.call_args_list],
+                         ['incident:whatsapp:failure', 'recovery:whatsapp:failure', 'incident:whatsapp:failure'])
+
+    def test_failure_during_notification_not_acknowledged_by_older_receipt(self):
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        self.now += 60
+        self.request.return_value = (200, {'ok': True})
+        self.run_job()
+        def new_failure(event, config):
+            if event == 'incident:whatsapp:failure':
+                self.now += 60
+                self.request.return_value = (200, {'ok': False})
+                self.run_job()
+        s.monitor(self.config, self.root, lambda: self.now, new_failure)
+        self.assertEqual(s.read_state(self.root / 'monitor.json')['confirmed_failures']['whatsapp'], 1)
+        dead = s.read_state(self.root / 'whatsapp.dead-letter.json')
+        self.assertEqual(dead['sequence'], 2)
+        self.assertEqual(dead['ack_sequence'], 0)
+        send = Mock()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        send.assert_called_once_with('incident:whatsapp:failure', self.config)
+        self.assertEqual(s.read_state(self.root / 'monitor.json')['confirmed_failures']['whatsapp'], 2)
+
+    def test_pending_recovery_cancelled_when_failure_recurs(self):
+        send = Mock()
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.now += 60
+        self.request.return_value = (200, {'ok': True})
+        self.run_job()
+        send.side_effect = RuntimeError('delivery-failed')
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertIn('recovery:whatsapp:failure', s.read_state(self.root / 'monitor.json')['pending'])
+        self.now += 60
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        send.reset_mock()
+        send.side_effect = None
+        result = s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertIn('whatsapp:failure', result['active'])
+        send.assert_called_once_with('incident:whatsapp:failure', self.config)
+        self.assertNotIn('recovery:whatsapp:failure', s.read_state(self.root / 'monitor.json')['pending'])
+        self.now += 60
+        self.request.return_value = (200, {'ok': True})
+        self.run_job()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual(send.call_args.args[0], 'recovery:whatsapp:failure')
+
+    def test_legacy_dead_letter_migrates_and_new_failure_sequence_advances(self):
+        s.atomic(self.root / 'whatsapp.dead-letter.json',
+                 {'job': 'whatsapp', 'slot': s.slot('whatsapp', self.now),
+                  'reason': 'application-failure', 'at': self.now, 'attempts': 1, 'http_status': 200})
+        send = Mock()
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual(s.read_state(self.root / 'whatsapp.dead-letter.json')['ack_sequence'], 1)
+        self.request.return_value = (200, {'ok': False})
+        self.run_job()
+        self.assertEqual(s.read_state(self.root / 'whatsapp.dead-letter.json')['sequence'], 2)
+        s.monitor(self.config, self.root, lambda: self.now, send)
+        self.assertEqual(send.call_count, 3)
+
     def test_alert_failure_backoff_and_terminal_persisted(self):
         send = Mock(side_effect=RuntimeError('SECRET'))
         self.request.return_value = (401, {})

@@ -10,7 +10,7 @@ import {
 
 describe('whatsapp transactional queue policy', () => {
   test('never blindly retries a network failure with an uncertain delivery outcome', () => {
-    for (const name of ['TimeoutError', 'AbortError', 'TypeError']) {
+    for (const name of ['TimeoutError', 'AbortError', 'TypeError', 'SyntaxError', 'DeliveryOutcomeUnknownError']) {
       const error = new Error('fixture network error')
       error.name = name
       const result = resolveWhatsappTransactionalDeliveryDecision({ now: new Date(), attempts: 1, maxAttempts: 4, error })
