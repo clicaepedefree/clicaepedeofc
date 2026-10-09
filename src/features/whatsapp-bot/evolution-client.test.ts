@@ -217,4 +217,23 @@ describe('Evolution client', () => {
     }
     globalThis.fetch = originalFetch
   })
+
+  for (const status of [408, 504]) {
+    test(`preserves ambiguous HTTP ${status} even when the gateway returns HTML`, async () => {
+      configureEvolutionEnv()
+      globalThis.fetch = (async () => new Response('<html>Gateway timeout</html>', { status })) as typeof fetch
+      try {
+        const client = createEvolutionClient()
+        await expect(client.sendTextMessage({ instanceName: 'fixture', number: '5511900000001', text: 'Fixed QA text' })).rejects.toMatchObject({ status })
+      } finally { globalThis.fetch = originalFetch }
+    })
+  }
+
+  test('does not report success without a provider message acknowledgement', async () => {
+    configureEvolutionEnv()
+    globalThis.fetch = (async () => Response.json({ status: 'PENDING' })) as typeof fetch
+    try {
+      await expect(createEvolutionClient().sendTextMessage({ instanceName: 'fixture', number: '5511900000001', text: 'Fixed QA text' })).rejects.toMatchObject({ name: 'DeliveryOutcomeUnknownError' })
+    } finally { globalThis.fetch = originalFetch }
+  })
 })

@@ -1,0 +1,9 @@
+[Unit]
+Description=KAN135 WhatsApp minute schedule
+[Timer]
+OnCalendar=*-*-* *:*:00 UTC
+Persistent=true
+AccuracySec=1s
+Unit=kan135-whatsapp.service
+[Install]
+WantedBy=timers.target

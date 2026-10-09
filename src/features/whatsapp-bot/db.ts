@@ -1,6 +1,7 @@
 import { decrypt, encrypt } from '@/lib/encryption'
 import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import { db } from '@/services/db'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import type { DbSession } from '@/services/db/types'
 import {
   categoriesTable,
@@ -80,6 +81,7 @@ import {
 import {
   canStoreReceiveWhatsappBotReplies,
   canStoreUseWhatsappBotRollout,
+  resolveWhatsappBotRolloutConfig,
 } from './rollout-policy'
 import {
   buildWhatsappHumanHandoffContextSummary,
@@ -1179,13 +1181,36 @@ export async function processWhatsappTransactionalQueue({
   limit?: number
   evolutionClient?: EvolutionClient
 } = {}): Promise<WhatsappTransactionalQueueResult> {
+  const rollout = resolveWhatsappBotRolloutConfig()
+  if (rollout.mode === 'off' || (rollout.mode === 'pilot' && !rollout.pilotStoreIds.size)) {
+    return { processed: 0, sent: 0, failed: 0, discarded: 0 }
+  }
+  const storeScope = rollout.mode === 'pilot'
+    ? inArray(whatsappBotTransactionalEventsTable.storeId, [...rollout.pilotStoreIds])
+    : undefined
   const now = new Date()
-  await pruneWhatsappBotRetainedHistory({ now })
+  await pruneWhatsappBotRetainedHistory({ now, storeIds: rollout.mode === 'pilot' ? [...rollout.pilotStoreIds] : undefined })
+  // A lost acknowledgement is not proof that the provider failed to send.
+  // Quarantine interrupted claims rather than risk charging customers with duplicate messages.
+  const interrupted = await db
+    .update(whatsappBotTransactionalEventsTable)
+    .set({
+      status: 'discarded',
+      lastError: 'delivery_outcome_unknown: reconcile with provider before retry.',
+      updatedAt: now,
+    })
+    .where(and(
+      storeScope,
+      eq(whatsappBotTransactionalEventsTable.status, 'processing'),
+      lt(whatsappBotTransactionalEventsTable.updatedAt, new Date(now.getTime() - 15 * 60_000))
+    ))
+    .returning({ id: whatsappBotTransactionalEventsTable.id })
   const events = await db
     .select()
     .from(whatsappBotTransactionalEventsTable)
     .where(
       and(
+        storeScope,
         inArray(whatsappBotTransactionalEventsTable.status, [
           'queued',
           'failed',
@@ -1207,7 +1232,7 @@ export async function processWhatsappTransactionalQueue({
     processed: 0,
     sent: 0,
     failed: 0,
-    discarded: 0,
+    discarded: interrupted.length,
   }
 
   for (const event of events) {
@@ -1266,10 +1291,13 @@ export async function processWhatsappTransactionalQueue({
 
 export async function pruneWhatsappBotRetainedHistory({
   now = new Date(),
+  storeIds,
 }: {
   now?: Date
+  storeIds?: number[]
 } = {}) {
   const cutoffs = getWhatsappRetentionCutoffs(now)
+  const scope = (column: AnyPgColumn) => storeIds ? inArray(column, storeIds) : undefined
 
   const expiredQrSessions = await db
     .update(whatsappBotSessionsTable)
@@ -1280,6 +1308,7 @@ export async function pruneWhatsappBotRetainedHistory({
     })
     .where(
       and(
+        scope(whatsappBotSessionsTable.storeId),
         lt(
           whatsappBotSessionsTable.qrCodeExpiresAt,
           cutoffs.expiredQrCodeBefore
@@ -1292,10 +1321,10 @@ export async function pruneWhatsappBotRetainedHistory({
   const deletedDeliveryAttempts = await db
     .delete(whatsappBotDeliveryAttemptsTable)
     .where(
-      lt(
+      and(scope(whatsappBotDeliveryAttemptsTable.storeId), lt(
         whatsappBotDeliveryAttemptsTable.attemptedAt,
         cutoffs.deliveryAttemptBefore
-      )
+      ))
     )
     .returning({ id: whatsappBotDeliveryAttemptsTable.id })
 
@@ -1303,6 +1332,7 @@ export async function pruneWhatsappBotRetainedHistory({
     .delete(whatsappBotTransactionalEventsTable)
     .where(
       and(
+        scope(whatsappBotTransactionalEventsTable.storeId),
         inArray(whatsappBotTransactionalEventsTable.status, [
           'sent',
           'discarded',
@@ -1318,7 +1348,7 @@ export async function pruneWhatsappBotRetainedHistory({
   const deletedMessages = await db
     .delete(whatsappBotMessagesTable)
     .where(
-      lt(whatsappBotMessagesTable.occurredAt, cutoffs.openConversationBefore)
+      and(scope(whatsappBotMessagesTable.storeId), lt(whatsappBotMessagesTable.occurredAt, cutoffs.openConversationBefore))
     )
     .returning({ id: whatsappBotMessagesTable.id })
 
@@ -1326,6 +1356,7 @@ export async function pruneWhatsappBotRetainedHistory({
     .delete(whatsappBotConversationsTable)
     .where(
       and(
+        scope(whatsappBotConversationsTable.storeId),
         inArray(whatsappBotConversationsTable.status, ['closed', 'blocked']),
         lt(
           whatsappBotConversationsTable.updatedAt,
@@ -1339,6 +1370,7 @@ export async function pruneWhatsappBotRetainedHistory({
     .delete(whatsappBotContactsTable)
     .where(
       and(
+        scope(whatsappBotContactsTable.storeId),
         lt(
           whatsappBotContactsTable.lastContactAt,
           cutoffs.inactiveContactBefore

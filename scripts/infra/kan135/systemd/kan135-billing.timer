@@ -1,0 +1,9 @@
+[Unit]
+Description=KAN135 billing daily 09 UTC schedule
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+Persistent=true
+AccuracySec=1s
+Unit=kan135-billing.service
+[Install]
+WantedBy=timers.target

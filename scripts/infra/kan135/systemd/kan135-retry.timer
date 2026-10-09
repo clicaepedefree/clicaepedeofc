@@ -1,0 +1,8 @@
+[Unit]
+Description=KAN135 check durable preconnect backoff
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+Unit=kan135-retry.service
+[Install]
+WantedBy=timers.target

@@ -194,10 +194,10 @@ export function createEvolutionClient(): EvolutionClient {
         'Content-Type': 'application/json',
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(8_000),
     })
 
     const responseText = await response.text()
-    const payload = responseText ? JSON.parse(responseText) : {}
 
     if (!response.ok) {
       throw new EvolutionApiError(
@@ -206,6 +206,8 @@ export function createEvolutionClient(): EvolutionClient {
         responseText
       )
     }
+
+    const payload = responseText ? JSON.parse(responseText) : {}
 
     return payload as T
   }
@@ -301,7 +303,13 @@ export function createEvolutionClient(): EvolutionClient {
         }
       )
 
-      return normalizeSendTextResult(payload)
+      const result = normalizeSendTextResult(payload)
+      if (!result.providerMessageId || typeof result.providerMessageId !== 'string') {
+        const error = new Error('Provider delivery acknowledgement is incomplete; reconcile before retry.')
+        error.name = 'DeliveryOutcomeUnknownError'
+        throw error
+      }
+      return result
     },
   }
 }

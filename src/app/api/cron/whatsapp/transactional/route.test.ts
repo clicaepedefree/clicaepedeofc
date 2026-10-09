@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { authorizeWorkerRequest, jobAlreadyRunning, matchesJobSecret } from '@/shared/lib/scheduled-job-policy'
+
+const jobLock = mock(async (_job: string, run: () => Promise<Response>) => ({ acquired: true, result: await run() }))
+mock.module('@/shared/lib/scheduled-job', () => ({ authorizeWorkerRequest, jobAlreadyRunning, matchesJobSecret, withScheduledJobLock: jobLock }))
 
 const processQueue = mock(async () => ({
   processed: 1,
@@ -11,7 +15,7 @@ mock.module('@/features/whatsapp-bot/db', () => ({
   processWhatsappTransactionalQueue: processQueue,
 }))
 
-const { GET } = await import('./route')
+const { GET, POST } = await import('./route')
 
 const buildRequest = (secret = 'cron-secret') =>
   new Request(
@@ -28,6 +32,8 @@ describe('whatsapp transactional cron route', () => {
 
   beforeEach(() => {
     process.env.CRON_SECRET = 'cron-secret'
+    process.env.WHATSAPP_WORKER_SECRET = 'fixture-whatsapp-worker'
+    jobLock.mockImplementation(async (_job, run) => ({ acquired: true, result: await run() }))
     processQueue.mockReset()
     processQueue.mockImplementation(async () => ({
       processed: 1,
@@ -53,6 +59,17 @@ describe('whatsapp transactional cron route', () => {
       ok: false,
       error: 'Unauthorized WhatsApp transactional queue run.',
     })
+    expect(processQueue).not.toHaveBeenCalled()
+  })
+
+  test('worker POST rejects legacy credentials and accepts its dedicated secret', async () => {
+    expect((await POST(buildRequest())).status).toBe(401)
+    expect((await POST(buildRequest('fixture-whatsapp-worker'))).status).toBe(200)
+  })
+
+  test('does not touch the queue when the distributed lock is held', async () => {
+    jobLock.mockImplementation(async () => ({ acquired: false, result: undefined as unknown as Response }))
+    expect((await GET(buildRequest())).status).toBe(409)
     expect(processQueue).not.toHaveBeenCalled()
   })
 
