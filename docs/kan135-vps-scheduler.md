@@ -255,9 +255,20 @@ nao substituem integracao POST/lease/fila na Vercel ou reboot real da VPS.
 - Repeticao do mesmo evento recusada por idempotencia; repeticao da janela
   ignorada pelo scheduler. Alertas reais de incidente e recuperacao foram
   confirmados pela API Telegram em estado de teste isolado.
-- Timers/servicos QA reiniciados preservando estado; testes de crash e
-  persistencia aprovados. NAO houve reboot fisico da VPS: esse ensaio permanece
-  para homologacao de infraestrutura, sem confundir restart de worker com host.
+- Reboot integral autorizado da VPS validado pela Hostinger e por mudanca de
+  boot_id. Timers, Docker/Evolution, Redis, PostgreSQL e EasyPanel retomaram
+  automaticamente. Config/segredos mantiveram 0600 e state 0700.
+- Ensaio inicial com fixture limitada a uma tentativa preservou o evento,
+  mas esgotou o limite ao receber 502 durante inicializacao da Evolution;
+  falha mantida no historico, sem alterar status ou apagar auditoria.
+- Segundo ensaio com tres tentativas, como configuracao normal: evento
+  queued/attempts=0 antes do reboot; primeiro envio recebeu 502; retry via
+  scheduler resultou em sent/attempts=2 em 2026-10-09 03:32:01 UTC.
+  Uma unica tentativa succeeded; evento repetido recusado como duplicate.
+  Nenhum reset manual de status ou envio forcado foi usado. Monitor confirmou
+  incidente/recuperacao; state e cursors persistidos sobreviveram ao host.
+- App de producao Vercel respondeu HTTP 200 durante o ensaio. Billing VPS
+  permaneceu desabilitado; nao houve reinicio do Supabase nem alteracao de DNS.
 - WhatsApp/retry/monitor habilitados apenas para QA, com origem imutavel do
   preview deste PR. Billing VPS permanece desabilitado; cron GET existente e
   configuracao de producao da Vercel permanecem inalterados. Cutover exige
