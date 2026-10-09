@@ -1,0 +1,16 @@
+[Unit]
+Description=KAN135 trigger Vercel WhatsApp transactional queue
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /opt/clicaepede/kan135/scheduler.py whatsapp
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clicaepede/kan135
+MemoryMax=128M
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

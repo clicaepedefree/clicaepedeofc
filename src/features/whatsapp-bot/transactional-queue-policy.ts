@@ -116,7 +116,7 @@ export const classifyWhatsappTransactionalFailure = (
     error instanceof Error ? error.message : 'Erro desconhecido no envio.'
   const maybeStatus = (error as Partial<EvolutionApiError> | null)?.status
 
-  if (error instanceof Error && ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name)) {
+  if ((error instanceof Error && ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name)) || maybeStatus === 408 || maybeStatus === 504) {
     return {
       kind: 'permanent',
       code: 'delivery_outcome_unknown',
@@ -137,8 +137,7 @@ export const classifyWhatsappTransactionalFailure = (
 
   if (
     typeof maybeStatus === 'number' &&
-    (maybeStatus === 408 ||
-      maybeStatus === 409 ||
+    (maybeStatus === 409 ||
       maybeStatus === 429 ||
       maybeStatus >= 500)
   ) {

@@ -1,0 +1,8 @@
+[Unit]
+Description=KAN135 minute incident monitor
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+Unit=kan135-monitor.service
+[Install]
+WantedBy=timers.target

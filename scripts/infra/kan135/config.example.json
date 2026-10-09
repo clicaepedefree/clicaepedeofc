@@ -1,0 +1,9 @@
+{
+  "origin": "https://clicaepedeofc.vercel.app",
+  "allowlisted_origins": ["https://clicaepedeofc.vercel.app"],
+  "whatsapp_enabled": false,
+  "billing_enabled": false,
+  "whatsapp_secret_file": "/etc/clicaepede/kan135/whatsapp.token",
+  "billing_secret_file": "/etc/clicaepede/kan135/billing.token",
+  "telegram_config_file": "/etc/clicaepede/kan133/config.json"
+}

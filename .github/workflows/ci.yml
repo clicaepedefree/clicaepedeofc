@@ -29,6 +29,7 @@ jobs:
           for suite in backup restore monitor retention restore-recover restore-offsite; do
             sudo python3 "scripts/infra/kan133/$suite.test.py"
           done
+          python3 -B scripts/infra/kan135/test_scheduler.py
 
   test-and-build:
     name: Testes e build
