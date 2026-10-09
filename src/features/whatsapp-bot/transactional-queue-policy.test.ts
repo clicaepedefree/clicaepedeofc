@@ -9,6 +9,16 @@ import {
 } from './transactional-queue-policy'
 
 describe('whatsapp transactional queue policy', () => {
+  test('never blindly retries a network failure with an uncertain delivery outcome', () => {
+    for (const name of ['TimeoutError', 'AbortError', 'TypeError']) {
+      const error = new Error('fixture network error')
+      error.name = name
+      const result = resolveWhatsappTransactionalDeliveryDecision({ now: new Date(), attempts: 1, maxAttempts: 4, error })
+      expect(result.status).toBe('discarded')
+      expect(result.shouldRetry).toBe(false)
+      expect(result.errorCode).toBe('delivery_outcome_unknown')
+    }
+  })
   test('builds deterministic idempotency by event type, event id and recipient', () => {
     const first = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',

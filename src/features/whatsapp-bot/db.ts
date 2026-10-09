@@ -80,6 +80,7 @@ import {
 import {
   canStoreReceiveWhatsappBotReplies,
   canStoreUseWhatsappBotRollout,
+  resolveWhatsappBotRolloutConfig,
 } from './rollout-policy'
 import {
   buildWhatsappHumanHandoffContextSummary,
@@ -1179,13 +1180,36 @@ export async function processWhatsappTransactionalQueue({
   limit?: number
   evolutionClient?: EvolutionClient
 } = {}): Promise<WhatsappTransactionalQueueResult> {
+  const rollout = resolveWhatsappBotRolloutConfig()
+  if (rollout.mode === 'off' || (rollout.mode === 'pilot' && !rollout.pilotStoreIds.size)) {
+    return { processed: 0, sent: 0, failed: 0, discarded: 0 }
+  }
+  const storeScope = rollout.mode === 'pilot'
+    ? inArray(whatsappBotTransactionalEventsTable.storeId, [...rollout.pilotStoreIds])
+    : undefined
   const now = new Date()
   await pruneWhatsappBotRetainedHistory({ now })
+  // A lost acknowledgement is not proof that the provider failed to send.
+  // Quarantine interrupted claims rather than risk charging customers with duplicate messages.
+  const interrupted = await db
+    .update(whatsappBotTransactionalEventsTable)
+    .set({
+      status: 'discarded',
+      lastError: 'delivery_outcome_unknown: reconcile with provider before retry.',
+      updatedAt: now,
+    })
+    .where(and(
+      storeScope,
+      eq(whatsappBotTransactionalEventsTable.status, 'processing'),
+      lt(whatsappBotTransactionalEventsTable.updatedAt, new Date(now.getTime() - 15 * 60_000))
+    ))
+    .returning({ id: whatsappBotTransactionalEventsTable.id })
   const events = await db
     .select()
     .from(whatsappBotTransactionalEventsTable)
     .where(
       and(
+        storeScope,
         inArray(whatsappBotTransactionalEventsTable.status, [
           'queued',
           'failed',
@@ -1207,7 +1231,7 @@ export async function processWhatsappTransactionalQueue({
     processed: 0,
     sent: 0,
     failed: 0,
-    discarded: 0,
+    discarded: interrupted.length,
   }
 
   for (const event of events) {

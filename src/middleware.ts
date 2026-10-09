@@ -17,6 +17,8 @@ const isPublicRoute = createRouteMatcher([
   '/api/webhooks/billing(.*)',
   '/api/webhooks/clerk(.*)',
   '/api/webhooks/whatsapp/evolution',
+  '/api/cron/billing',
+  '/api/cron/whatsapp/transactional',
   '/unauthorized(.*)',
 ])
 

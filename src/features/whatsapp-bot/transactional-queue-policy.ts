@@ -116,6 +116,14 @@ export const classifyWhatsappTransactionalFailure = (
     error instanceof Error ? error.message : 'Erro desconhecido no envio.'
   const maybeStatus = (error as Partial<EvolutionApiError> | null)?.status
 
+  if (error instanceof Error && ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name)) {
+    return {
+      kind: 'permanent',
+      code: 'delivery_outcome_unknown',
+      message: 'Provider acknowledgement was not received; reconcile before retry.',
+    }
+  }
+
   if (
     message.includes('WHATSAPP_TRANSACTIONAL_SESSION_DISCONNECTED') ||
     message.includes('WHATSAPP_TRANSACTIONAL_SESSION_NOT_FOUND')

@@ -194,6 +194,7 @@ export function createEvolutionClient(): EvolutionClient {
         'Content-Type': 'application/json',
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(8_000),
     })
 
     const responseText = await response.text()

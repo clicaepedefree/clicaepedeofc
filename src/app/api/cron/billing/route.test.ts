@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { authorizeWorkerRequest, jobAlreadyRunning, matchesJobSecret } from '@/shared/lib/scheduled-job-policy'
+
+const jobLock = mock(async (_job: string, run: () => Promise<Response>) => ({ acquired: true, result: await run() }))
+mock.module('@/shared/lib/scheduled-job', () => ({ authorizeWorkerRequest, jobAlreadyRunning, matchesJobSecret, withScheduledJobLock: jobLock }))
 
 const recurringCycle = mock(async () => ({ created: 1, skipped: 0, failed: 0 }))
 const planChangeCycle = mock(async () => ({
@@ -65,6 +69,8 @@ async function readJson(response: Response) {
 describe('billing cron route', () => {
   beforeEach(() => {
     process.env.CRON_SECRET = 'cron-secret'
+    process.env.BILLING_WORKER_SECRET = 'fixture-billing-worker'
+    jobLock.mockImplementation(async (_job, run) => ({ acquired: true, result: await run() }))
     process.env.BILLING_INVOICE_LEAD_DAYS = '5'
     process.env.BILLING_RECURRING_RUN_LIMIT = '7'
 
@@ -125,6 +131,17 @@ describe('billing cron route', () => {
       ok: false,
       error: 'CRON_SECRET is required to run recurring billing safely.',
     })
+    expect(recurringCycle).not.toHaveBeenCalled()
+  })
+
+  test('worker POST uses a dedicated secret rather than the legacy cron secret', async () => {
+    expect((await route.POST(buildRequest())).status).toBe(401)
+    expect((await route.POST(buildRequest('fixture-billing-worker'))).status).toBe(200)
+  })
+
+  test('skips concurrent runs before executing any billing operation', async () => {
+    jobLock.mockImplementation(async () => ({ acquired: false, result: undefined as unknown as Response }))
+    expect((await route.GET(buildRequest())).status).toBe(409)
     expect(recurringCycle).not.toHaveBeenCalled()
   })
 

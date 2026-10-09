@@ -11,8 +11,16 @@ import {
   isBillingCronRunSuccessful,
   resolveBillingCronConfig,
 } from '@/features/billing/billing-cron-policy'
+import { authorizeWorkerRequest, jobAlreadyRunning, withScheduledJobLock } from '@/shared/lib/scheduled-job'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
+
+export async function POST(request: Request) {
+  const denied = authorizeWorkerRequest(request, 'billing')
+  if (denied) return denied
+  return executeBillingJob()
+}
 
 export async function GET(request: Request) {
   const authorization = authorizeBillingCronRequest({
@@ -27,6 +35,15 @@ export async function GET(request: Request) {
     )
   }
 
+  return executeBillingJob()
+}
+
+async function executeBillingJob() {
+  const execution = await withScheduledJobLock('billing', runBillingJob)
+  return execution.acquired ? execution.result : jobAlreadyRunning()
+}
+
+async function runBillingJob() {
   const config = resolveBillingCronConfig()
 
   const result = await runRecurringBillingCycle({
