@@ -198,7 +198,6 @@ export function createEvolutionClient(): EvolutionClient {
     })
 
     const responseText = await response.text()
-    const payload = responseText ? JSON.parse(responseText) : {}
 
     if (!response.ok) {
       throw new EvolutionApiError(
@@ -207,6 +206,8 @@ export function createEvolutionClient(): EvolutionClient {
         responseText
       )
     }
+
+    const payload = responseText ? JSON.parse(responseText) : {}
 
     return payload as T
   }

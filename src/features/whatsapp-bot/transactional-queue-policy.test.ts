@@ -19,6 +19,16 @@ describe('whatsapp transactional queue policy', () => {
       expect(result.errorCode).toBe('delivery_outcome_unknown')
     }
   })
+
+  test('quarantines HTTP timeouts that may follow provider acceptance', () => {
+    for (const status of [408, 504]) {
+      const error = Object.assign(new Error('fixture gateway timeout'), { status })
+      const result = resolveWhatsappTransactionalDeliveryDecision({ now: new Date(), attempts: 1, maxAttempts: 4, error })
+      expect(result.status).toBe('discarded')
+      expect(result.errorCode).toBe('delivery_outcome_unknown')
+      expect(result.shouldRetry).toBe(false)
+    }
+  })
   test('builds deterministic idempotency by event type, event id and recipient', () => {
     const first = buildWhatsappTransactionalIdempotencyKey({
       eventType: 'order_status',
