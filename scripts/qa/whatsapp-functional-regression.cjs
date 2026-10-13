@@ -948,6 +948,11 @@ async function main() {
               async (page, entry) => {
                 await page.getByRole('tab', { name: tab, exact: true }).click()
                 await page.waitForTimeout(1500)
+                if (tab === 'Conexao') {
+                  await page
+                    .getByText('Carregando', { exact: true })
+                    .waitFor({ state: 'hidden', timeout: 60000 })
+                }
                 const panel = page
                   .getByRole('tabpanel')
                   .filter({ visible: true })
