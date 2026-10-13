@@ -13,9 +13,13 @@ matrix entry; this is not a claim that every acceptance flow passed or ran.
 - QA membership temporarily changed to cashier for a deployed mutation denial;
   original role restored and verified. No connection command used for this test.
 - Synthetic webhook contract: nine HTTP checks and one owned-fixture cleanup.
-- Backend: 35 independent scenarios, 30 PASS and five FAIL_CONFIRMED. Real domain
+- Backend: 36 scenarios, 31 PASS and five FAIL_CONFIRMED. Real domain
   functions and current PostgreSQL; new synthetic tenants rolled back. Model and
   WhatsApp transports simulated; zero fixture stores remained.
+- The supplemental retention scenario used actual tenant-scoped DELETE/metadata
+  cleanup inside rollback, preserving opt-out, recent rows, pending queue and
+  the other fixture tenant. It did not prove an authenticated user exclusion
+  request or retention-operation audit.
 - Infra: 87 criterion observations, current SSH/DNS/TLS/services/backups/timers,
   183 local Windows and 45 local Linux tests, eight skips. Local tests do not prove
   a fresh paired-session crash recovery or full host restore.
