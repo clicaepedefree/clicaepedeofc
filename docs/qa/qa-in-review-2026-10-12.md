@@ -42,6 +42,7 @@ React #418 occurs, despite successful business assertions.
 | KAN-145 | Queued promotion still dispatches after opt-out | Real dispatcher, fake transport                                        |
 | KAN-146 | Unsafe/fabricated provider output not blocked   | Real orchestrator, fake model/transport; no actual hallucination claim |
 | KAN-147 | Invalid cashback expiry renders null            | Real template, synthetic canonical benefit                             |
+| KAN-148 | Permission denial displayed as English server error and disconnected state | Real cashier screenshot; server authorization correctly denied |
 
 Issue URLs use https://gustavosworkspace-15436204.atlassian.net/browse/ plus the key.
 Sanitized evidence uploaded to Jira; technical report screenshots are explicitly
