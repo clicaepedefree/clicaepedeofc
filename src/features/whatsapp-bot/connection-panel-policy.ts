@@ -24,6 +24,10 @@ const secretPatterns = [
 export const sanitizeWhatsappConnectionError = (message?: string | null) => {
   if (!message) return null
 
+  if (/server components|digest|server action/i.test(message)) {
+    return 'Nao foi possivel concluir a operacao. Verifique sua permissao com um proprietario ou gerente e tente novamente.'
+  }
+
   const redacted = secretPatterns.reduce(
     (current, pattern) => current.replace(pattern, '[credencial protegida]'),
     message

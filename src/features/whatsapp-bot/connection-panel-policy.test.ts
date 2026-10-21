@@ -67,6 +67,9 @@ describe('whatsapp connection panel policy', () => {
   })
 
   test('sanitizes credentials and returns actionable errors', () => {
+    const serverError = sanitizeWhatsappConnectionError('An error occurred in the Server Components render. A digest property is included.')
+    expect(serverError?.includes('Verifique sua permissao')).toBe(true)
+    expect(serverError?.includes('Server Components')).toBe(false)
     expect(
       sanitizeWhatsappConnectionError(
         'Unauthorized apikey=super-secret-token Bearer other-secret'

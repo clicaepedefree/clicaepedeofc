@@ -7,6 +7,7 @@ import {
 } from '@/features/whatsapp-bot/api'
 import type { WhatsappAssistantConfigInput } from '@/features/whatsapp-bot/assistant-config-policy'
 import { dispatchToast } from '@/shared/lib/toast'
+import { sanitizeWhatsappConnectionError } from '@/features/whatsapp-bot/connection-panel-policy'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 const whatsappAssistantConfigCacheKey = (storeId: number | null) => [
@@ -45,7 +46,7 @@ export const useWhatsappAssistantConfig = (storeId: number | null) => {
         type: 'error',
         message:
           error instanceof Error
-            ? error.message
+            ? sanitizeWhatsappConnectionError(error.message) ?? 'Nao foi possivel salvar a personalidade.'
             : 'Nao foi possivel salvar a personalidade.',
       })
     },
@@ -61,7 +62,7 @@ export const useWhatsappAssistantConfig = (storeId: number | null) => {
         type: 'error',
         message:
           error instanceof Error
-            ? error.message
+            ? sanitizeWhatsappConnectionError(error.message) ?? 'Nao foi possivel testar o assistente.'
             : 'Nao foi possivel testar o assistente.',
       })
     },

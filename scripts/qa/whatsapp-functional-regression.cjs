@@ -1,6 +1,9 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createRequire } = require('node:module')
+const {
+  authorizePreview: attachPreviewAuthorization,
+} = require('./preview-auth.cjs')
 const assert = require('node:assert/strict')
 const fallback = createRequire('D:/ProjetoIA/codex/clicaepede/package.json')
 const { chromium } = fallback('playwright')
@@ -58,6 +61,14 @@ async function identity(page) {
     () => window.Clerk?.user?.primaryEmailAddress?.emailAddress || null
   )
 }
+async function authorizePreview(context, page) {
+  await attachPreviewAuthorization(context, {
+    page,
+    baseUrl: BASE,
+    oidcToken: process.env.QA_PREVIEW_OIDC_TOKEN,
+    bypassToken: process.env.QA_PREVIEW_BYPASS_TOKEN,
+  })
+}
 async function waitForInputValue(input, expected) {
   const deadline = Date.now() + 25000
   while (Date.now() < deadline) {
@@ -76,6 +87,7 @@ async function login(browser) {
     storageState: fs.existsSync(AUTH) ? AUTH : undefined,
   })
   const page = await context.newPage()
+  await authorizePreview(context, page)
   await page.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(2500)
   if ((await identity(page)) !== EMAIL) {
@@ -169,6 +181,7 @@ async function flow(browser, name, viewport, theme, work) {
     sources: false,
   })
   const page = await context.newPage()
+  await authorizePreview(context, page)
   const errors = []
   page.on('pageerror', error => errors.push(redact(error.message)))
   const entry = {
@@ -339,11 +352,9 @@ async function main() {
           await page
             .getByRole('tab', { name: 'Atendimentos', exact: true })
             .click()
-          const conversationButton = page
-            .getByRole('button')
-            .filter({
-              has: page.getByText(contact.phone_number, { exact: true }),
-            })
+          const conversationButton = page.getByRole('button').filter({
+            has: page.getByText(contact.phone_number, { exact: true }),
+          })
           await conversationButton.waitFor({ state: 'visible', timeout: 20000 })
           assert.equal(
             await conversationButton.count(),
@@ -952,6 +963,9 @@ async function main() {
                   await page
                     .getByText('Carregando', { exact: true })
                     .waitFor({ state: 'hidden', timeout: 60000 })
+                  await page
+                    .getByText('Robo WhatsApp', { exact: true })
+                    .waitFor({ state: 'visible', timeout: 60000 })
                 }
                 const panel = page
                   .getByRole('tabpanel')

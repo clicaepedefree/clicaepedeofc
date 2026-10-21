@@ -16,6 +16,30 @@ const baseInput = {
 }
 
 describe('order benefit whatsapp notifications', () => {
+  test.each([undefined, null, '', 'invalid-date', new Date(NaN)])(
+    'omits invalid or absent cashback validity: %s',
+    expiresAt => {
+      const [notification] = buildOrderBenefitWhatsappNotifications({
+        ...baseInput,
+        snapshot: {
+          benefits: {
+            cashback: {
+              grantId: 'cashback-invalid-date',
+              earnedAmount: '2',
+              balanceAmount: '3',
+              expiresAt,
+            },
+          },
+        },
+      })
+      expect(notification?.text).toContain('de cashback')
+      expect(notification?.text).not.toContain('Validade:')
+      expect(notification?.text).not.toContain('null')
+      expect(notification?.eventId).toBe(
+        'order:123:benefit:cashback:cashback-invalid-date'
+      )
+    }
+  )
   test('builds cashback message with real earned amount and updated balance', () => {
     const [notification] = buildOrderBenefitWhatsappNotifications({
       ...baseInput,
