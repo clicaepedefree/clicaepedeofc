@@ -8,6 +8,7 @@ import {
 } from '@/features/whatsapp-bot/assistant-config-policy'
 import { useWhatsappAssistantConfig } from '@/features/whatsapp-bot/hooks/use-whatsapp-assistant-config'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { IntegrationUnavailable } from '@/features/integrations/components/integration-unavailable'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
 import { Input } from '@/shared/input'
@@ -187,12 +188,14 @@ export function WhatsappAssistantConfigCard() {
   }
 
   const handleSave = async () => {
+    if (!selectedStoreId || isLoading || error) return
     if (!validateForm()) return
 
     await saveConfig(form)
   }
 
   const handleTest = async () => {
+    if (!selectedStoreId || isLoading || error) return
     if (!validateForm()) return
 
     await saveConfig(form)
@@ -210,6 +213,11 @@ export function WhatsappAssistantConfigCard() {
     : config?.status === 'active'
       ? 'Ativo'
       : 'Pronto para ativar'
+
+  if (error) return <IntegrationUnavailable name="Personalidade do assistente" />
+  if (!selectedStoreId || isLoading) {
+    return <div role="status" className="p-4 text-sm text-muted-foreground">Carregando configuracao do assistente...</div>
+  }
 
   return (
     <div className="rounded-lg border bg-card p-4 text-card-foreground">
@@ -248,17 +256,6 @@ export function WhatsappAssistantConfigCard() {
 
           {isLoading && <LoadingSpinner size={20} className="mt-2" />}
         </div>
-
-        {error && (
-          <div
-            className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200"
-            role="alert"
-          >
-            {error instanceof Error
-              ? error.message
-              : 'Nao foi possivel carregar a configuracao.'}
-          </div>
-        )}
 
         {inlineError && (
           <div

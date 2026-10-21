@@ -9,7 +9,7 @@ import { StoreUsersSettings } from '@/features/store-users/components/store-user
 import { PageHeaderBlock } from '@/shared/blocks/page-header-block'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/tabs'
 import { useParams, useRouter } from 'next/navigation'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 const settingsPages = [
   {
@@ -55,6 +55,12 @@ const getPageContentById = (id: string) =>
 export default function SettingsPage() {
   const router = useRouter()
   const { settingId = 'store' } = useParams<{ settingId?: string }>()
+  const tabsListRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    tabsListRef.current?.querySelector<HTMLElement>('[data-state="active"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [settingId])
 
   const settingsPageContent = useMemo(
     () => getPageContentById(settingId),
@@ -69,11 +75,11 @@ export default function SettingsPage() {
       <Tabs
         value={settingId ?? 'store'}
         onValueChange={settingId => router.replace(`/settings/${settingId}`)}
-        className="p-3 relative w-full"
+        className="p-3 relative w-full min-w-0"
       >
-        <TabsList className="gap-2">
+        <TabsList ref={tabsListRef} aria-label="Configuracoes" className="h-auto min-h-11 max-w-full justify-start gap-2 overflow-x-auto p-1">
           {settingsPages.map(page => (
-            <TabsTrigger key={page.id} value={page.id} className="px-4 py-3">
+            <TabsTrigger key={page.id} value={page.id} className="min-h-11 shrink-0 flex-none px-4 py-3">
               {page.label}
             </TabsTrigger>
           ))}

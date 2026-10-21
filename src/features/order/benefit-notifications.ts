@@ -195,10 +195,9 @@ export function buildOrderBenefitWhatsappNotifications({
       const balanceAmount = readNonNegativeDecimal(grant.balanceAmount)
       if (!earnedAmount || !balanceAmount) continue
 
+      const expiresAtLabel = formatOptionalDate(grant.expiresAt)
       const details = [
-        grant.expiresAt
-          ? `Validade: ${formatOptionalDate(grant.expiresAt)}.`
-          : null,
+        expiresAtLabel ? `Validade: ${expiresAtLabel}.` : null,
         grant.ruleDescription ? `Regra: ${grant.ruleDescription}.` : null,
       ].filter(Boolean)
 

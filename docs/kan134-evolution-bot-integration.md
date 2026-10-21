@@ -118,6 +118,42 @@ check or the broader bot stories' functional regression.
 
 ## Operations
 
+### Canonical callback promotion (KAN-143)
+
+The QA instance was promoted on 2026-10-20 to the canonical callback:
+`https://clicaepedeofc.vercel.app/api/webhooks/whatsapp/evolution`.
+The VPS WhatsApp worker uses that same application origin. The webhook is enabled,
+uses its own Bearer credential, and no longer carries a preview-protection bypass.
+Provider state was `open`; the app session was explicitly resumed from its
+intentional maintenance pause, without logout, restart or new QR.
+
+Before promoting or resuming again:
+
+1. Read the provider state and current webhook/worker origins without printing
+   credentials. Keep a restricted, server-side copy of the previous configuration.
+2. POST an outgoing-echo/ignored fixture to the candidate canonical callback with
+   the configured Bearer credential. Require HTTP 200 and `ignored:true`; a GET
+   405 alone does not establish callback authentication. Do not send customer text.
+3. For a deliberate resume, reconcile only a provider state observed through the
+   authenticated API. A valid connection callback returns HTTP 202, not only 200.
+   An intentionally paused session must be resumed explicitly; callbacks alone
+   must not defeat the maintenance pause.
+4. Set the exact callback path, `byEvents:false`, `base64:false`, and the three
+   allowlisted events. Remove `x-vercel-protection-bypass` when targeting the
+   canonical production app. Read the configuration back and verify both origins.
+5. Resume the assistant/worker only for the approved pilot. Preserve personality,
+   existing contacts, queues and other stores; do not enable the billing worker.
+6. Confirm worker timer activity and app/provider connection state independently.
+   Record synthetic probes separately from a fresh, distinct-sender inbound and
+   recipient-confirmed real outbound. Do not claim physical delivery from an ACK.
+
+The pause backup may contain the old preview URL and authorization headers.
+Never restore it blindly after promotion, publish it, or revoke a shared preview
+bypass before checking whether another deployment still depends on it. If the
+canonical validation fails, keep automatic processing paused and diagnose first;
+returning to a preview is a deliberate, separately validated rollback, not an
+automatic retry. This runbook does not claim a new physical-message receipt.
+
 1. Verify the eight tables and restrictive grants before enabling the pilot.
 2. Deploy the reviewed branch preview with the configured environment.
 3. Ensure the callback URL is reachable by Evolution, without a Vercel login page.

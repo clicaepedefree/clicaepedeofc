@@ -134,7 +134,12 @@ function event(id: string, overrides: Partial<Event> = {}): Event {
 function createDatabaseContract(
   rows: Event[],
   pilotIds?: number[],
-  retained = new Map<PgTable, RetentionRow[]>()
+  retained = new Map<PgTable, RetentionRow[]>(),
+  contacts: {
+    storeId: number
+    phoneNumber: string
+    promotionalOptOutAt: Date | null
+  }[] = []
 ) {
   const selected: string[][] = []
   const claimed: string[] = []
@@ -308,6 +313,18 @@ function createDatabaseContract(
     select: () => ({
       from: (table: unknown) => ({
         where: (predicate: SQL) => ({
+          limit: async () => {
+            expect(table).toBe(whatsappBotContactsTable)
+            const query = dialect.sqlToQuery(predicate)
+            expect(query.sql).toBe(
+              '("whatsapp_bot_contacts"."store_id" = $1 and "whatsapp_bot_contacts"."phone_number" = $2)'
+            )
+            return contacts.filter(
+              contact =>
+                contact.storeId === query.params[0] &&
+                contact.phoneNumber === query.params[1]
+            )
+          },
           orderBy: (...ordering: SQL[]) => ({
             limit: async (limit: number) => {
               if (table === whatsappBotSessionsTable) {
@@ -388,6 +405,64 @@ function createDatabaseContract(
 }
 
 describe('transactional recovery database contract', () => {
+  test('discards promotion opted out after enqueue, records reason and never retries', async () => {
+    const queued = event('late-opt-out', { status: 'queued', attempts: 0 })
+    const contacts = [
+      {
+        storeId: 9,
+        phoneNumber: queued.recipientPhone,
+        promotionalOptOutAt: null as Date | null,
+      },
+    ]
+    const contract = createDatabaseContract(
+      [queued],
+      undefined,
+      undefined,
+      contacts
+    )
+    contacts[0].promotionalOptOutAt = now
+    const first = await processWhatsappTransactionalQueue({
+      evolutionClient: contract.evolutionClient,
+    })
+    const second = await processWhatsappTransactionalQueue({
+      evolutionClient: contract.evolutionClient,
+    })
+    expect(first).toEqual({ processed: 1, sent: 0, failed: 0, discarded: 1 })
+    expect(second.processed).toBe(0)
+    expect(queued.status).toBe('discarded')
+    expect(queued.processedAt).toEqual(now)
+    expect(queued.lastError).toContain('promotional_opt_out')
+    expect(contract.deliveryAttempts).toHaveLength(1)
+    expect(contract.deliveryAttempts[0]).toMatchObject({
+      status: 'skipped',
+      errorCode: 'promotional_opt_out',
+      nextAttemptAt: null,
+    })
+    expect(contract.sendTextMessage).not.toHaveBeenCalled()
+  })
+
+  test.each(['transactional', 'promotional'] as const)(
+    'allows %s when opt-out does not apply to this tenant',
+    async category => {
+      const queued = event('allowed-contact', {
+        status: 'queued',
+        attempts: 0,
+        payload: { text: 'Allowed', notificationCategory: category },
+      })
+      const contract = createDatabaseContract([queued], undefined, undefined, [
+        {
+          storeId: category === 'transactional' ? 9 : 10,
+          phoneNumber: queued.recipientPhone,
+          promotionalOptOutAt: now,
+        },
+      ])
+      const result = await processWhatsappTransactionalQueue({
+        evolutionClient: contract.evolutionClient,
+      })
+      expect(result.sent).toBe(1)
+      expect(contract.sendTextMessage).toHaveBeenCalledTimes(1)
+    }
+  )
   test.each(['pilot', 'all'] as const)(
     '%s applies retention to its scope across all six queries and preserves other history',
     async mode => {

@@ -9,6 +9,7 @@ import {
 } from '@/features/whatsapp-bot/connection-panel-policy'
 import { useWhatsappConnection } from '@/features/whatsapp-bot/hooks/use-whatsapp-connection'
 import { selectedStoreIdAtom } from '@/features/store/state'
+import { IntegrationUnavailable } from '@/features/integrations/components/integration-unavailable'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -141,6 +142,7 @@ export function WhatsappConnectionCard() {
     (connection ? 'Numero nao informado' : 'Nenhum numero conectado')
 
   const handleStartConnection = async () => {
+    if (!selectedStoreId || isLoading || error) return
     const cleanedPhone = phoneNumber.trim()
 
     if (!cleanedPhone) {
@@ -165,7 +167,7 @@ export function WhatsappConnectionCard() {
   }
 
   const handleRenewQrCode = async () => {
-    if (!connection) return
+    if (!connection || isLoading || error) return
 
     try {
       await renewQrCode(connection.id)
@@ -181,7 +183,7 @@ export function WhatsappConnectionCard() {
   }
 
   const handlePause = async () => {
-    if (!connection) return
+    if (!connection || isLoading || error) return
 
     try {
       await pauseConnection(connection.id)
@@ -196,7 +198,7 @@ export function WhatsappConnectionCard() {
   }
 
   const handleDisconnect = async () => {
-    if (!connection) return
+    if (!connection || isLoading || error) return
 
     try {
       await disconnectConnection(connection.id)
@@ -209,6 +211,11 @@ export function WhatsappConnectionCard() {
         ) ?? 'Nao foi possivel desconectar o WhatsApp.'
       )
     }
+  }
+
+  if (error) return <IntegrationUnavailable name="Robo WhatsApp" />
+  if (!selectedStoreId || isLoading) {
+    return <div role="status" className="p-4 text-sm text-muted-foreground">Carregando conexao WhatsApp...</div>
   }
 
   return (

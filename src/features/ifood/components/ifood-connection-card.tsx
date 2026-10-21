@@ -3,6 +3,7 @@
 import { disconnectIFoodAccount } from '@/features/ifood/api'
 import { IFoodConnectionModal } from '@/features/ifood/components/ifood-connection-modal'
 import { useIFoodConnection } from '@/features/ifood/hooks/use-ifood-connection'
+import { IntegrationUnavailable } from '@/features/integrations/components/integration-unavailable'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { Badge } from '@/shared/badge'
 import { Button } from '@/shared/button'
@@ -16,11 +17,12 @@ const IFOOD_CLIENT_ID = process.env.NEXT_PUBLIC_IFOOD_CLIENT_ID
 export function IFoodConnectionCard() {
   const storeId = useAtomValue(selectedStoreIdAtom)
   const router = useRouter()
-  const { connection, isLoading, refetch } = useIFoodConnection(storeId!)
+  const { connection, isLoading, error, refetch } = useIFoodConnection(storeId)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
   const handleConnect = () => {
+    if (error || isLoading) return
     if (!storeId) {
       toast.error('Selecione uma loja primeiro')
       return
@@ -40,7 +42,7 @@ export function IFoodConnectionCard() {
   }
 
   const handleDisconnect = async () => {
-    if (!storeId) return
+    if (!storeId || error || isLoading) return
 
     if (
       !confirm(
@@ -64,10 +66,13 @@ export function IFoodConnectionCard() {
   }
 
   const handleManageMenu = () => {
+    if (!storeId || error || isLoading) return
     router.push('/settings/integracoes/ifood/setup')
   }
 
-  if (isLoading) {
+  if (error) return <IntegrationUnavailable name="iFood" />
+
+  if (isLoading || !storeId) {
     return (
       <div className="rounded-lg border bg-card p-4 text-card-foreground">
         <div className="flex items-center justify-between">
@@ -83,10 +88,10 @@ export function IFoodConnectionCard() {
   const isConnected = connection?.status === 'connected'
 
   return (
-    <div className="rounded-lg border bg-card p-4 text-card-foreground">
-      <div className="flex items-center justify-between gap-8">
-        <div className="flex-1">
-          <div className="flex items-center gap-8">
+    <div className="min-w-0 rounded-lg border bg-card p-4 text-card-foreground">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 break-words">
+          <div className="flex flex-wrap items-center gap-3">
             <h3 className="text-lg font-semibold">iFood</h3>
             {isConnected ? (
               <Badge variant="default" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
@@ -120,7 +125,7 @@ export function IFoodConnectionCard() {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2 [&_button]:h-auto [&_button]:min-h-11 [&_button]:max-w-full [&_button]:whitespace-normal">
           {isConnected ? (
             <>
               <Button variant="default" onClick={handleManageMenu}>
