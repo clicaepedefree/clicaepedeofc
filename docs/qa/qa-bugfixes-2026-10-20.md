@@ -40,6 +40,11 @@ Later QA-harness-only commits do not change the product bundle.
 - Build and GitHub/Vercel checks passed for the tested product revision.
 - Independent senior review included SQL binding, availability claims, unsafe handoff
   promises and preview-auth redirect credential handling.
+- Final browser repeat after the preview-auth fix: 16 passed. Chromium now owns
+  redirect navigation and cookies; CDP scopes credential overrides to each hop.
+  `node --test scripts/qa/preview-auth-browser.cjs` passed the synthetic two-origin
+  fixture (login, restored session, URL/cookies, redirect methods, no external token).
+  This starts only short-lived HTTP fixtures, not the application server.
 
 Evidence index is stored in the operator's dated QA directory. Sanitized reports
 and screenshots are attached to Jira comments. Auth state, recovery records,
