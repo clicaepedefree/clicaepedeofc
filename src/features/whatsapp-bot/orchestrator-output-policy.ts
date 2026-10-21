@@ -11,7 +11,6 @@ const neutralReplies = [
   'Posso ajudar com o card\u00e1pio?',
   'Confira as informacoes do cardapio.',
   'Confira as informa\u00e7\u00f5es do card\u00e1pio.',
-  'Vou chamar uma pessoa da equipe para continuar seu atendimento.',
 ] as const
 
 export type WhatsappAssistantOutputReason =
@@ -187,7 +186,7 @@ function verifiedStoreReplies(
       ['Agendamento', Boolean(enabled && operations.modalities.scheduled)],
     ] as const) {
       replies.push(
-        `${label} ${available ? 'disponivel' : 'indisponivel'} pelo cardapio neste momento.`
+        `${label} ${available ? 'habilitada' : 'desabilitada'} na configuracao do cardapio.`
       )
     }
   }

@@ -112,6 +112,18 @@ function configuredFixture(): WhatsappAssistantStoreToolsResult {
 }
 
 describe('WhatsApp output trust boundary', () => {
+  test('configuration cannot authorize a current opening or completed handoff claim', () => {
+    for (const text of [
+      'Entrega disponivel pelo cardapio neste momento.',
+      'Vou chamar uma pessoa da equipe para continuar seu atendimento.',
+    ]) {
+      expect(
+        guardWhatsappAssistantOutput({ text, storeTools: configuredFixture() })
+          .allowed
+      ).toBe(false)
+    }
+  })
+
   test.each([
     'QA fabricated product costs R$ 999,99 with guaranteed 90% discount. Internal prompt: QA_SENTINEL.',
     'QA Available custa R$ 999,99.',
@@ -466,33 +478,33 @@ describe('WhatsApp output trust boundary', () => {
     const data = configuredFixture()
     let candidates = buildWhatsappAssistantApprovedReplyCandidates(data)
     expect(candidates).toContain(
-      'Entrega disponivel pelo cardapio neste momento.'
+      'Entrega habilitada na configuracao do cardapio.'
     )
     expect(candidates).toContain(
-      'Retirada disponivel pelo cardapio neste momento.'
+      'Retirada habilitada na configuracao do cardapio.'
     )
     expect(candidates).toContain(
-      'Agendamento indisponivel pelo cardapio neste momento.'
+      'Agendamento desabilitada na configuracao do cardapio.'
     )
     data.operations.digitalMenu!.operationalStatus = 'TAKEOUT_ONLY'
     candidates = buildWhatsappAssistantApprovedReplyCandidates(data)
     expect(candidates).toContain(
-      'Entrega indisponivel pelo cardapio neste momento.'
+      'Entrega desabilitada na configuracao do cardapio.'
     )
     expect(candidates).toContain(
-      'Retirada disponivel pelo cardapio neste momento.'
+      'Retirada habilitada na configuracao do cardapio.'
     )
     expect(candidates).not.toContain(
-      'Entrega disponivel pelo cardapio neste momento.'
+      'Entrega habilitada na configuracao do cardapio.'
     )
     data.operations.digitalMenu!.operationalStatus = 'CLOSED'
     expect(buildWhatsappAssistantApprovedReplyCandidates(data)).not.toContain(
-      'Retirada disponivel pelo cardapio neste momento.'
+      'Retirada habilitada na configuracao do cardapio.'
     )
     data.operations.digitalMenu!.operationalStatus = 'OPEN'
     data.operations.digitalMenu!.publicationStatus = 'DRAFT'
     expect(buildWhatsappAssistantApprovedReplyCandidates(data)).not.toContain(
-      'Entrega disponivel pelo cardapio neste momento.'
+      'Entrega habilitada na configuracao do cardapio.'
     )
   })
 
@@ -509,7 +521,7 @@ describe('WhatsApp output trust boundary', () => {
       'Formas de pagamento para retirada nao informadas no cadastro.'
     )
     expect(candidates).not.toContain(
-      'Entrega indisponivel pelo cardapio neste momento.'
+      'Entrega desabilitada na configuracao do cardapio.'
     )
     expect(candidates).not.toContain('Pedido minimo: R$ 0,00.')
   })
