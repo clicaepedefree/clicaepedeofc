@@ -9,6 +9,7 @@ or proof that exploitation has or has not occurred.
 | Component | Before | Verified result |
 | --- | --- | --- |
 | Windows project runtime in D:/nodejs | 24.15.0 | 24.22.1, official SHA-256 and valid OpenJS Authenticode signature |
+| Windows Bun and bunx in D:/ProjetoIA/tools/bun/bin | 1.3.13 | 1.4.4 from the official release; CI pinned to the tested version; 607 tests passed again |
 | EasyPanel | Node 22.23.3 | Official vendor image running Node 22.23.4; local HTTP 200 |
 | Evolution application 2.3.7 | Node 24.11.1 | Node 24.22.1 live, healthy; sharp operation, Prisma load and exact-pin recovery passed; provider remains paired |
 | Vercel project | Managed 24.x | Real preview Function still reported 24.21.0; patch NOT established by settings/build |
@@ -47,6 +48,12 @@ introducing an ineffective downgrade. The two observed Functions need a vendor
 runtime patch; no claim is made that every region or production uses those builds.
 Do not move KAN-150 to Done based on a green build or an engines range.
 
+A fresh verification of final preview `dpl_J7kb8oKZnKaWegn95vxXTAAPifx9`
+on October 23 at 00:34:31 UTC still reported Node 24.21.0 in IAD1.
+Switching blindly to Bun is not a security fix: Bun also required the Brotli
+patch, and Vercel's `1.x` currently selects the older 1.3 line. The 1.4 line is
+a runtime migration with documented breaking changes, not a Node patch update.
+
 The new instrumentation logs only runtime version and a tested patch classification.
 It adds no public endpoint, no secrets and no request logging. It is informational,
 not an availability gate. Unknown versions are not certified. The policy covers
@@ -78,3 +85,7 @@ this specific October release, not all future security advisories.
 - https://nodejs.org/en/blog/release/v24.22.1
 - https://vercel.com/ja/kb/bulletin/node-js-security-advisory
 - https://vercel.com/docs/functions/runtimes/node-js/node-js-versions
+- https://github.com/oven-sh/bun/releases/tag/bun-v1.4.4
+- https://github.com/oven-sh/bun/issues/46352
+- https://github.com/oven-sh/bun/pull/46392
+- https://vercel.com/docs/functions/runtimes/bun
