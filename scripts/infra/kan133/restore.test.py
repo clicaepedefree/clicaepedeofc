@@ -100,6 +100,52 @@ class Fixture(unittest.TestCase):
             restore.input_contract(self.root, "config/evolution-qa/secrets", time.monotonic() + 5)
 
 
+class LocalImagePinTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.stack = json.loads(restore.trusted_stack_path().read_text())
+        self.pin = ("localhost:5001/clicaepede/evolution-api:"
+                    "2.3.7-node24.22.1-security20261022@sha256:" + "a" * 64)
+        self.stack["services"]["evolution"]["image"] = self.pin
+        self.trusted = self.root / "trusted.json"
+        self.trusted.write_text(json.dumps(self.stack))
+
+    def contract(self, image, service="evolution"):
+        stack = json.loads(json.dumps(self.stack))
+        stack["services"][service]["image"] = image
+        path = self.root / "restored.json"
+        path.write_text(json.dumps(stack))
+        with patch.object(restore, "trusted_stack_path", return_value=self.trusted):
+            return restore.stack_contract(path)
+
+    def test_exact_trusted_loopback_pin_accepted(self):
+        self.assertEqual(self.contract(self.pin)["evolution"]["image"], self.pin)
+
+    def test_other_ports_hosts_repositories_and_suffixes_rejected(self):
+        for image in (
+            self.pin.replace("localhost:5001", "localhost:5002"),
+            self.pin.replace("localhost:5001", "127.0.0.1:5001"),
+            self.pin.replace("localhost:5001", "outside.example:5001"),
+            self.pin.replace("/clicaepede/", "/other/"),
+            self.pin + "\n", self.pin + "extra", self.pin.split("@")[0],
+        ):
+            with self.subTest(image=image), self.assertRaisesRegex(restore.GateError, "^unpinned-image$"):
+                self.contract(image)
+
+    def test_local_namespace_not_allowed_for_other_services(self):
+        for service in ("postgres", "redis"):
+            with self.subTest(service=service), self.assertRaisesRegex(restore.GateError, "^unpinned-image$"):
+                self.contract(self.pin, service)
+
+    def test_valid_syntax_still_requires_exact_trusted_tag_and_digest(self):
+        for image in (self.pin.replace("@sha256:a", "@sha256:b"),
+                      self.pin.replace("security20261022", "security20261023")):
+            with self.subTest(image=image), self.assertRaisesRegex(restore.GateError, "^restored-image-pin-mismatch$"):
+                self.contract(image)
+
+
 class DockerPolicyTests(unittest.TestCase):
     def setUp(self):
         self.validator = restore.Validator("unused")
@@ -459,6 +505,22 @@ class OrchestrationTests(Fixture):
         output = self.execute()
         self.assertEqual(output["gate"], "restored-image-pin-mismatch")
         self.assertEqual(self.calls, [])
+
+    def test_missing_exact_preloaded_image_fails_before_provision_without_pull(self):
+        original = self.daemon
+        pin = json.loads(self.trusted_source.read_text())["services"]["evolution"]["image"]
+        def missing_image(*args, **kwargs):
+            if args == ("image", "inspect", pin):
+                self.calls.append((args, kwargs))
+                raise restore.GateError("docker-command-failed")
+            return original(*args, **kwargs)
+        self.daemon = missing_image
+        output = self.execute()
+        self.assertEqual(output["status"], "fail")
+        self.assertEqual(output["stage"], "docker-preflight")
+        commands = [args for args, _ in self.calls]
+        self.assertIn(("image", "inspect", pin), commands)
+        self.assertFalse(any("pull" in args or "create" in args for args in commands))
 
     def test_restored_stack_cannot_add_secret_env_or_node_preload(self):
         path = self.root / "config" / "kan132" / "stack.yaml"
