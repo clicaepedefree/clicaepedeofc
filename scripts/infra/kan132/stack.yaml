@@ -25,7 +25,7 @@
       "logging": {"driver":"json-file", "options":{"max-size":"10m", "max-file":"3"}}
     },
     "evolution": {
-      "image": "evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339",
+      "image": "localhost:5001/clicaepede/evolution-api:2.3.7-node24.22.1-security20261022@sha256:4303aaffa99dd1e03a421cb24e3372dc0af07c8258cf82326aab157dd051c98d",
       "entrypoint": ["/bin/sh", "/run/configs/evolution-entrypoint.sh"],
       "command": ["/bin/bash", "-c", ". ./Docker/scripts/deploy_database.sh && npm run start:prod"],
       "environment": {

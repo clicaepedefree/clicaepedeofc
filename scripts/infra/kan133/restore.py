@@ -132,7 +132,10 @@ def stack_contract(path=None):
         raise GateError("restored-stack-format") from None
     services = stack["services"]
     for service in ("postgres", "redis", "evolution"):
-        require(re.fullmatch(r"[a-z0-9./_-]+:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}",
+        repository = r"[a-z0-9./_-]+"
+        if service == "evolution":
+            repository = r"(?:[a-z0-9./_-]+|localhost:5001/clicaepede/evolution-api)"
+        require(re.fullmatch(repository + r":[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}",
                              services[service]["image"]), "unpinned-image")
         require(services[service]["image"] == trusted["services"][service]["image"],
                 "restored-image-pin-mismatch")
