@@ -2603,7 +2603,7 @@ const CheckoutForm = ({
               )}
             </div>
           )}
-      </div> : <p className="border-y py-4 text-sm font-medium">Pedido coberto pelo cashback. Nenhum pagamento adicional.</p>}
+                          </div> : <p className="border-y py-4 text-sm font-medium">Este pedido nao exige pagamento adicional.</p>}
 
       <section className="rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
