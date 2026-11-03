@@ -195,10 +195,14 @@ export function CheckoutWallet({
               disabled={busy}
               onClick={() =>
                 run(async isCurrent => {
-                  await clearWalletSession({ storeSlug })
+                  const result = await clearWalletSession({ storeSlug })
                   if (isCurrent()) {
-                    setBalance(null)
                     onChange('0.00')
+                    if (!result.ok) {
+                      setMessage('Nao foi possivel sair da carteira. Tente novamente.')
+                      return
+                    }
+                    setBalance(null)
                   }
                 })
               }

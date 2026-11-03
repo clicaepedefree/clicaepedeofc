@@ -133,6 +133,7 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
           formattedChangeValue = formatValueToCurrency({
             value: changeValue.toString(),
             includeCurrencySymbol: true,
+            normalizeDisplayValue: true,
           })
         }
       }
