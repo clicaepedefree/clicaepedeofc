@@ -3,7 +3,7 @@ import Decimal from 'decimal.js'
 import { getPublicAppBaseUrl } from '@/shared/lib/domain-config'
 
 export type OrderBenefitNotificationGrant = {
-  type: 'cashback' | 'loyalty'
+  type: 'cashback' | 'loyalty' | 'product_reward'
   grantId: string
   earnedAmount?: unknown
   balanceAmount?: unknown
@@ -12,6 +12,8 @@ export type OrderBenefitNotificationGrant = {
   expiresAt?: unknown
   ruleDescription?: string | null
   nextRewardDescription?: string | null
+  productName?: string | null
+  voucherCode?: string | null
 }
 
 export type OrderBenefitNotificationInput = {
@@ -119,7 +121,11 @@ const normalizeBenefitGrant = (
   if (!record) return null
 
   const type =
-    record.type === 'cashback' || record.type === 'loyalty' ? record.type : null
+    record.type === 'cashback' ||
+    record.type === 'loyalty' ||
+    record.type === 'product_reward'
+      ? record.type
+      : null
   const grantId =
     readString(record.grantId) ??
     readString(record.id) ??
@@ -137,6 +143,8 @@ const normalizeBenefitGrant = (
     expiresAt: (record.expiresAt ?? record.validUntil) as string | Date | null,
     ruleDescription: readString(record.ruleDescription),
     nextRewardDescription: readString(record.nextRewardDescription),
+    productName: readString(record.productName),
+    voucherCode: readString(record.voucherCode),
   }
 }
 
@@ -171,7 +179,7 @@ export const buildOrderBenefitNotificationEventId = ({
   grantId,
 }: {
   orderId: number
-  type: 'cashback' | 'loyalty'
+  type: OrderBenefitNotificationGrant['type']
   grantId: string
 }) => `order:${orderId}:benefit:${type}:${grantId}`
 
@@ -190,6 +198,37 @@ export function buildOrderBenefitWhatsappNotifications({
   const notifications: OrderBenefitNotification[] = []
 
   for (const grant of extractOrderBenefitNotificationGrants(snapshot)) {
+    if (grant.type === 'product_reward') {
+      const productName = readString(grant.productName)
+      const voucherCode = readString(grant.voucherCode)
+      const expiry = formatOptionalDate(grant.expiresAt)
+      if (!productName || !voucherCode || !expiry) continue
+      notifications.push({
+        eventType: 'loyalty',
+        eventId: buildOrderBenefitNotificationEventId({
+          orderId,
+          type: 'product_reward',
+          grantId: grant.grantId,
+        }),
+        grantId: grant.grantId,
+        text: [
+          `${storeName}: voce ganhou 1 ${productName} na fidelidade.`,
+          `Voucher: ${voucherCode}. Validade: ${expiry}.`,
+          `Acesse seus beneficios no cardapio para resgatar: ${ctaUrl}`,
+        ].join('\n'),
+        payload: {
+          source: 'order_benefit_finalization',
+          benefitType: 'product_reward',
+          grantId: grant.grantId,
+          orderDisplayId,
+          productName,
+          voucherCode,
+          expiresAt: grant.expiresAt,
+          ctaUrl,
+        },
+      })
+      continue
+    }
     if (grant.type === 'cashback') {
       const earnedAmount = readPositiveDecimal(grant.earnedAmount)
       const balanceAmount = readNonNegativeDecimal(grant.balanceAmount)

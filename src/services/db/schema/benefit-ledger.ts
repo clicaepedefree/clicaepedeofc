@@ -345,3 +345,55 @@ export const benefitEventsTable = pgTable(
     }),
   ]
 )
+
+export const benefitProductRedemptionsTable = pgTable(
+  'benefit_product_redemptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    storeId: integer('store_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    grantId: uuid('grant_id').notNull(),
+    orderId: integer('order_id').notNull(),
+    itemId: integer('item_id').notNull(),
+    itemName: text('item_name').notNull(),
+    originalExpiresAt: timestamp('original_expires_at', {
+      withTimezone: true,
+    }).notNull(),
+    state: text('state', { enum: ['reserved', 'completed', 'refunded'] })
+      .notNull()
+      .default('reserved'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
+    createdAt: instant('created_at'),
+  },
+  t => [
+    unique('benefit_product_redemption_order').on(t.orderId),
+    uniqueIndex('benefit_product_redemption_active')
+      .on(t.grantId)
+      .where(sql`${t.state} <> 'refunded'`),
+    index('benefit_product_redemption_history').on(t.accountId, t.createdAt, t.id),
+    foreignKey({
+      columns: [t.grantId, t.accountId, t.storeId],
+      foreignColumns: [
+        benefitGrantsTable.id,
+        benefitGrantsTable.accountId,
+        benefitGrantsTable.storeId,
+      ],
+    }),
+    foreignKey({
+      columns: [t.orderId, t.storeId],
+      foreignColumns: [ordersTable.id, ordersTable.storeId],
+    }),
+    check(
+      'benefit_product_redemption_state',
+      sql`${t.state} in ('reserved','completed','refunded')`
+    ),
+    check('benefit_product_redemption_times', sql`
+      ${t.originalExpiresAt} > ${t.createdAt}
+      and (${t.completedAt} is null or ${t.completedAt} >= ${t.createdAt})
+      and (${t.refundedAt} is null or ${t.refundedAt} >= coalesce(${t.completedAt}, ${t.createdAt}))
+      and ((${t.state} = 'reserved' and ${t.completedAt} is null and ${t.refundedAt} is null)
+        or (${t.state} = 'completed' and ${t.completedAt} is not null and ${t.refundedAt} is null)
+        or (${t.state} = 'refunded' and ${t.refundedAt} is not null))`),
+  ]
+)

@@ -10,6 +10,8 @@ import {
   walletAuthSessionsTable as sessions,
 } from '@/services/db/schema/wallet-auth'
 import { getBenefitAccountSummary } from './ledger'
+import { listAvailableProductRewards } from './product-rewards'
+import type { ProductRewardState } from './product-rewards-policy'
 import { requireWalletIdentity } from './wallet-auth'
 import {
   consumeWalletRates,
@@ -39,6 +41,15 @@ import {
 
 type Failure = { ok: false; message: string; retryAfterSeconds?: number }
 type Input = { storeSlug: string; phone: string }
+export type WalletProductReward = {
+  id: string
+  productName: string
+  voucherCode: string
+  expiresAt: string
+  state: ProductRewardState
+  isAvailable: boolean
+  unavailableReason?: string
+}
 const failure = (): Failure => ({
   ok: false,
   message:
@@ -129,26 +140,24 @@ export async function requestWalletCode(
     await db.transaction(async tx => {
       await supersedeWalletChallenges(tx, store.id, phone, bindingHash)
       const now = await walletDbNow(tx)
-      await tx
-        .insert(challenges)
-        .values({
-          idHash,
-          storeId: store.id,
+      await tx.insert(challenges).values({
+        idHash,
+        storeId: store.id,
+        phone,
+        bindingHash,
+        codeHash: walletCodeHash(
+          secret,
+          challengeId,
+          store.id,
           phone,
           bindingHash,
-          codeHash: walletCodeHash(
-            secret,
-            challengeId,
-            store.id,
-            phone,
-            bindingHash,
-            code
-          ),
-          createdAt: now,
-          expiresAt: new Date(
-            now.getTime() + walletPolicy.challengeSeconds * 1000
-          ),
-        })
+          code
+        ),
+        createdAt: now,
+        expiresAt: new Date(
+          now.getTime() + walletPolicy.challengeSeconds * 1000
+        ),
+      })
     })
     try {
       const send = await prepareWalletOtpSender(store.id)
@@ -217,7 +226,13 @@ export async function verifyWalletCode(
 export async function getWalletBalance(
   input: Input
 ): Promise<
-  { ok: true; availableAmount: string; pendingAmount: string } | Failure
+  | {
+      ok: true
+      availableAmount: string
+      pendingAmount: string
+      productRewards: WalletProductReward[]
+    }
+  | Failure
 > {
   try {
     await context()
@@ -233,10 +248,33 @@ export async function getWalletBalance(
         identity.phone,
         tx
       )
+      const rewards = await listAvailableProductRewards(
+        identity.storeId,
+        identity.phone,
+        tx
+      )
+      const unavailableMessages = {
+        deleted:
+          'Produto retirado do catalogo. Seu direito foi preservado; fale com a loja.',
+        out_of_stock: 'Produto sem estoque. Seu direito foi preservado.',
+        unavailable:
+          'Produto indisponivel para resgate sem adicionais. Fale com a loja.',
+      }
       return {
         ok: true as const,
         availableAmount: balance.availableAmount,
         pendingAmount: balance.pendingAmount,
+        productRewards: rewards.map(reward => ({
+          id: reward.rewardId,
+          productName: reward.itemName,
+          voucherCode: reward.voucherCode,
+          expiresAt: reward.expiresAt?.toISOString() ?? '',
+          state: reward.state,
+          isAvailable: reward.canReserve,
+          ...(reward.availability !== 'available'
+            ? { unavailableReason: unavailableMessages[reward.availability] }
+            : {}),
+        })),
       }
     })
   } catch {

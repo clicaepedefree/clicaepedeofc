@@ -11,6 +11,37 @@ import {
   verifyWalletCode,
 } from '../wallet-auth-actions'
 import { walletInputAmount } from '../wallet-payment-policy'
+import type { ProductRewardState } from '../product-rewards-policy'
+
+export type CheckoutProductReward = {
+  id: string
+  productName: string
+  voucherCode: string
+  expiresAt: string
+  state: ProductRewardState
+  isAvailable: boolean
+  unavailableReason?: string
+}
+
+type WalletBalance = {
+  availableAmount: string
+  pendingAmount: string
+  productRewards?: CheckoutProductReward[]
+}
+
+const rewardStatuses: Record<ProductRewardState, string> = {
+  available: 'Disponivel',
+  pending: 'Pendente',
+  reserved: 'Reservado',
+  consumed: 'Utilizado',
+  expired: 'Expirado',
+  reversed: 'Estornado',
+  suspended: 'Suspenso',
+}
+const canUseReward = (reward: CheckoutProductReward) =>
+  reward.isAvailable &&
+  reward.state === 'available' &&
+  new Date(reward.expiresAt).getTime() > Date.now()
 
 type Props = {
   storeSlug: string
@@ -18,6 +49,8 @@ type Props = {
   total: string
   value: string
   onChange: (amount: string) => void
+  productRewardId: string | null
+  onProductRewardChange: (id: string | null) => void
 }
 const currency = (amount: string) =>
   new Intl.NumberFormat('pt-BR', {
@@ -31,6 +64,8 @@ export function CheckoutWallet({
   total,
   value,
   onChange,
+  productRewardId,
+  onProductRewardChange,
 }: Props) {
   const identity = `${storeSlug}:${phone.replace(/\D/g, '')}`
   const current = useRef(identity)
@@ -38,18 +73,24 @@ export function CheckoutWallet({
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [amount, setAmount] = useState('')
-  const [balance, setBalance] = useState<{
-    availableAmount: string
-    pendingAmount: string
-  } | null>(null)
+  const [balance, setBalance] = useState<WalletBalance | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const operation = useRef(0)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onProductRewardChangeRef = useRef(onProductRewardChange)
+  onProductRewardChangeRef.current = onProductRewardChange
+  const previousIdentity = useRef(identity)
 
   useEffect(() => {
+    const activeOperations = operation
+    // A checkout remount keeps the parent's selection until a fresh wallet read.
+    if (previousIdentity.current !== identity) {
+      previousIdentity.current = identity
+      onProductRewardChangeRef.current(null)
+    }
     operation.current++
     setChallengeId(null)
     setCode('')
@@ -59,7 +100,20 @@ export function CheckoutWallet({
     setBusy(false)
     setCooldown(0)
     onChangeRef.current('0.00')
+    return () => {
+      activeOperations.current++
+    }
   }, [identity])
+
+  useEffect(() => {
+    if (!balance || !productRewardId) return
+    const selected = balance.productRewards?.find(
+      reward => reward.id === productRewardId
+    )
+    if (!selected || !canUseReward(selected)) {
+      onProductRewardChangeRef.current(null)
+    }
+  }, [balance, productRewardId])
 
   useEffect(() => {
     if (!cooldown) return
@@ -92,8 +146,12 @@ export function CheckoutWallet({
     try {
       await action(isCurrent)
     } catch {
-      if (isCurrent())
+      if (isCurrent()) {
+        setBalance(null)
+        onChangeRef.current('0.00')
+        onProductRewardChangeRef.current(null)
         setMessage('Nao foi possivel acessar a carteira. Tente novamente.')
+      }
     } finally {
       if (isCurrent()) setBusy(false)
     }
@@ -106,6 +164,7 @@ export function CheckoutWallet({
     else {
       setBalance(null)
       onChangeRef.current('0.00')
+      onProductRewardChangeRef.current(null)
       setMessage(result.message)
     }
   }
@@ -122,6 +181,8 @@ export function CheckoutWallet({
           'Confira seu WhatsApp e informe o codigo recebido. Se nao chegar, aguarde para tentar novamente.'
         )
       } else {
+        setBalance(null)
+        onProductRewardChangeRef.current(null)
         setMessage(result.message)
         setCooldown(result.retryAfterSeconds ?? 0)
       }
@@ -139,6 +200,8 @@ export function CheckoutWallet({
       if (!isCurrent()) return
       setCode('')
       if (!result.ok) {
+        setBalance(null)
+        onProductRewardChangeRef.current(null)
         setMessage(result.message)
         return
       }
@@ -171,7 +234,7 @@ export function CheckoutWallet({
           className="flex items-center gap-2 text-sm font-medium"
         >
           <Wallet className="size-4" aria-hidden />
-          Cashback
+          Meus beneficios
         </h3>
         {balance && (
           <div className="flex gap-1">
@@ -195,14 +258,17 @@ export function CheckoutWallet({
               disabled={busy}
               onClick={() =>
                 run(async isCurrent => {
+                  onProductRewardChangeRef.current(null)
                   const result = await clearWalletSession({ storeSlug })
                   if (isCurrent()) {
-                    onChange('0.00')
+                    onChangeRef.current('0.00')
+                    setBalance(null)
                     if (!result.ok) {
-                      setMessage('Nao foi possivel sair da carteira. Tente novamente.')
+                      setMessage(
+                        'Nao foi possivel sair da carteira. Tente novamente.'
+                      )
                       return
                     }
-                    setBalance(null)
                   }
                 })
               }
@@ -214,6 +280,7 @@ export function CheckoutWallet({
       </div>
       {balance ? (
         <div className="mt-3 space-y-3">
+          <h4 className="text-sm font-medium">Cashback</h4>
           <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
             <div>
               <dt className="text-muted-foreground">Disponivel</dt>
@@ -275,6 +342,64 @@ export function CheckoutWallet({
                 <X className="size-4" />
               </Button>
             </div>
+          )}
+          {!!balance.productRewards?.length && (
+            <fieldset className="min-w-0 space-y-3 border-t pt-3">
+              <legend className="text-sm font-medium">Produtos-premio</legend>
+              {balance.productRewards.map(reward => {
+                const available = canUseReward(reward)
+                const expiresAt = new Date(reward.expiresAt)
+                return (
+                  <label
+                    key={reward.id}
+                    className="flex min-w-0 items-start gap-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      checked={productRewardId === reward.id}
+                      disabled={busy || !available}
+                      aria-label={`Usar premio ${reward.productName}, voucher ${reward.voucherCode}`}
+                      onChange={event => {
+                        if (busy || !canUseReward(reward)) return
+                        onProductRewardChangeRef.current(
+                          event.target.checked ? reward.id : null
+                        )
+                      }}
+                    />
+                    <span className="min-w-0 space-y-1 break-words">
+                      <span className="block font-medium">
+                        {reward.productName}
+                      </span>
+                      <span className="block text-muted-foreground">
+                        Voucher: {reward.voucherCode}
+                      </span>
+                      <span className="block text-muted-foreground">
+                        Validade:{' '}
+                        {Number.isNaN(expiresAt.getTime()) ? (
+                          'Indisponivel'
+                        ) : (
+                          <time dateTime={reward.expiresAt}>
+                            {expiresAt.toLocaleString('pt-BR')}
+                          </time>
+                        )}
+                      </span>
+                      <span className="block text-muted-foreground">
+                        {rewardStatuses[reward.state]}
+                        {!available && (
+                          <>
+                            {' '}
+                            -{' '}
+                            {reward.unavailableReason ||
+                              'Indisponivel para este pedido'}
+                          </>
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </fieldset>
           )}
         </div>
       ) : (
