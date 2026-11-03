@@ -8,6 +8,7 @@ import {
   transitionOrderStatus,
 } from '@/features/order/api'
 import { ordersCacheKey } from '@/features/order/cache-keys'
+import { CompletedCancellationControls } from './completed-cancellation-controls'
 import {
   getBrowserNotificationPermission,
   requestBrowserNotificationPermission,
@@ -126,6 +127,9 @@ type Order = {
   salesChannel: string
   type: string
   totalPrice: number | string
+  canCancelCompleted?: boolean
+  cashbackApplied?: string
+  amountDue?: string
   customerName?: string | null
   customerPhone?: string | null
   orderNotes?: string | null
@@ -793,6 +797,7 @@ export function OrdersPage() {
       </main>
 
       <OrderDetails
+        storeId={storeId!}
         order={selectedOrder}
         open={!!selectedOrder}
         busy={transitionMutation.isPending || noteMutation.isPending || printMutation.isPending || trackingLinkMutation.isPending || isPrinting}
@@ -840,7 +845,7 @@ function StatePanel({ icon, title, description, action }: { icon: React.ReactNod
   return <div className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-md border border-dashed bg-background p-8 text-center"><div className="text-muted-foreground">{icon}</div><div><h2 className="font-semibold">{title}</h2><p className="mt-1 max-w-md text-sm text-muted-foreground">{description}</p></div>{action}</div>
 }
 
-function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, onPrint, onCopyTrackingLink }: { order: Order | null; open: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onAction: (action: OrderAction) => void; onAddNote: () => void; onPrint: (order: Order) => void; onCopyTrackingLink: (order: Order) => void }) {
+function OrderDetails({ storeId, order, open, busy, onOpenChange, onAction, onAddNote, onPrint, onCopyTrackingLink }: { storeId: number; order: Order | null; open: boolean; busy: boolean; onOpenChange: (open: boolean) => void; onAction: (action: OrderAction) => void; onAddNote: () => void; onPrint: (order: Order) => void; onCopyTrackingLink: (order: Order) => void }) {
   if (!order) return null
   const events = [...(order.auditEvents ?? [])].sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime())
   const actions = (validActions[order.status] ?? []).filter(action => !(action === 'dispatch' && order.type !== 'DELIVERY'))
@@ -882,8 +887,10 @@ function OrderDetails({ order, open, busy, onOpenChange, onAction, onAddNote, on
             </div>
           </DetailSection>
           <DetailSection title="Pagamentos">
+            {Number(order.cashbackApplied ?? 0) > 0 && <p className="mb-3 text-sm">Cashback utilizado: {formatCurrency(order.cashbackApplied!)}. A pagar: {formatCurrency(order.amountDue ?? order.totalPrice)}.</p>}
             <div className="space-y-2">{(order.payments ?? []).map(payment => <div key={payment.id} className="flex items-center justify-between text-sm"><span>{paymentLabels[payment.method] ?? payment.method}{payment.cardBrand ? ` - ${payment.cardBrand}` : ''}</span><span className="font-medium tabular-nums">{formatCurrency(payment.value)}</span></div>)}{!order.payments?.length && <p className="text-sm text-muted-foreground">Nenhum pagamento informado.</p>}</div>
           </DetailSection>
+          {order.canCancelCompleted && ['COMPLETED', 'CANCELLED'].includes(order.status) && <CompletedCancellationControls key={`${storeId}:${order.id}`} storeId={storeId} orderId={order.id} status={order.status} />}
           <DetailSection title="Linha do tempo">
             <ol className="relative ml-2 border-l pl-5">{events.map((event, index) => <li key={event.id ?? `${event.createdAt}-${index}`} className="relative pb-5 last:pb-0"><span className="absolute -left-[1.56rem] top-1 size-2.5 rounded-full border-2 border-background bg-primary" /><p className="text-sm font-medium">{auditEventTitle(event)}</p>{(event.reason || event.note) && <p className="mt-1 text-sm text-muted-foreground">{event.reason || event.note}</p>}<p className="mt-1 text-xs text-muted-foreground">{formatDateTime(event.createdAt)}{event.actorName ? ` - ${event.actorName}` : ''}{event.origin ? ` - ${auditOriginLabels[event.origin] ?? event.origin}` : ''}</p></li>)}{!events.length && <li className="text-sm text-muted-foreground">Nenhum evento registrado.</li>}</ol>
           </DetailSection>

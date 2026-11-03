@@ -1,6 +1,7 @@
 'use client'
 
 import { getPublicOrderTracking } from '@/features/digital-menu/api'
+import { publicTrackingRefetchInterval } from '@/features/digital-menu/tracking-polling'
 import {
   getPublicOrderProgressStatuses,
   getPublicOrderStatusCopy,
@@ -22,6 +23,8 @@ type TrackingView = {
   orderType?: string
   updatedAt?: string | Date
   total: string
+  cashbackApplied: string
+  amountDue: string
   payment: PublicOrderTrackingDto['payment']
   orderSummary: PublicOrderTrackingDto['orderSummary']
   estimatedMinutes?: number | null
@@ -49,6 +52,8 @@ function normalizeTracking(data: PublicOrderTrackingDto): TrackingView {
     orderType: typeof value.orderType === 'string' ? value.orderType : undefined,
     updatedAt: value.updatedAt as string | Date | undefined,
     total: String(value.total ?? '0'),
+    cashbackApplied: data.cashbackApplied ?? '0.00',
+    amountDue: data.amountDue ?? String(value.total ?? '0'),
     payment: data.payment ?? null,
     orderSummary: data.orderSummary ?? [],
     estimatedMinutes: typeof value.estimatedMinutes === 'number'
@@ -64,8 +69,6 @@ function normalizeTracking(data: PublicOrderTrackingDto): TrackingView {
   }
 }
 
-const isTerminal = (status: string) => ['COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'].includes(status)
-
 export function PublicOrderTracking({ token }: { token: string }) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null)
   const query = useQuery({
@@ -73,7 +76,7 @@ export function PublicOrderTracking({ token }: { token: string }) {
     queryFn: () => getPublicOrderTracking(token),
     refetchInterval: query => {
       const data = query.state.data
-      return data && isTerminal(normalizeTracking(data).status) ? false : 15_000
+      return publicTrackingRefetchInterval(data, query.state.status === 'success')
     },
     retry: (count, error) => {
       const message = error instanceof Error ? error.message.toLowerCase() : ''
@@ -170,6 +173,10 @@ export function PublicOrderTracking({ token }: { token: string }) {
             <h2 className="text-sm font-semibold">Pagamento</h2>
             <dl className="mt-3 grid gap-2 text-sm">
               <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Total</dt><dd className="font-semibold">{currency(order.total)}</dd></div>
+              {Number(order.cashbackApplied) > 0 && <>
+                <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Cashback utilizado</dt><dd>{currency(order.cashbackApplied)}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-muted-foreground">A pagar</dt><dd className="font-semibold">{currency(order.amountDue)}</dd></div>
+              </>}
               <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Forma</dt><dd className="font-medium">{order.payment?.label ?? 'Nao informada'}</dd></div>
             </dl>
           </div>

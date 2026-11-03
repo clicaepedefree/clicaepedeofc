@@ -42,6 +42,8 @@ export type OrderTemplateInput = {
   discount?: string | number | null
   totalPrice: string | number
   payments: OrderTemplatePayment[]
+  cashbackApplied?: string
+  amountDue?: string
   customerName?: string | null
   customerPhone?: string | null
   customerAddress?: string | null
@@ -131,6 +133,7 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
           formattedChangeValue = formatValueToCurrency({
             value: changeValue.toString(),
             includeCurrencySymbol: true,
+            normalizeDisplayValue: true,
           })
         }
       }
@@ -157,6 +160,10 @@ export const OrderTemplate = BaseTemplate<OrderTemplateInput>({
       discount: formattedDiscount,
       items: formattedItems,
       payments: formattedPayments,
+      hasCashback: Number(data.cashbackApplied ?? 0) > 0,
+      coveredByCashback: data.amountDue === '0.00' && Number(data.cashbackApplied ?? 0) > 0,
+      cashbackApplied: formatValueToCurrency({ value: data.cashbackApplied ?? '0', includeCurrencySymbol: true, normalizeDisplayValue: true }),
+      amountDue: formatValueToCurrency({ value: data.amountDue ?? data.totalPrice, includeCurrencySymbol: true, normalizeDisplayValue: true }),
       hasCustomerInfo,
     }
   },

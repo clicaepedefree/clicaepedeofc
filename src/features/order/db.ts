@@ -29,6 +29,11 @@ import { whatsappBotAssistantConfigsTable } from '@/services/db/schema/whatsapp-
 import { enqueueWhatsappTransactionalMessage } from '@/features/whatsapp-bot/db'
 import { buildOrderBenefitWhatsappNotifications } from './benefit-notifications'
 import {
+  captureOrderBenefits,
+  settleOrderBenefits,
+  getOrderBenefitNotificationData,
+} from '@/features/benefit-programs/ledger'
+import {
   OrderTransitionAction,
   requireAuditReason,
   resolveOrderTransition,
@@ -42,9 +47,24 @@ import {
 } from './status-notifications'
 import { buildOrderTransitionPersistenceFields } from './transition-fields'
 import { OutOfStockItem } from '@/shared/errors/out-of-stock-error'
-import { DbSession } from '@/services/db/types'
+import { DbSession, DbTransaction } from '@/services/db/types'
 import { decrementColumnValue } from '@/services/db/utils/decrement-column-value'
 import { and, count, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
+
+async function runBenefitLedger<T>(
+  order: Pick<SelectOrder, 'id' | 'storeId'>,
+  stage: 'capture' | 'settle' | 'notification',
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation()
+  } catch {
+    // Drizzle errors may contain bound customer identifiers. Keep them out of
+    // the public-checkout catch/log while retaining safe order correlation.
+    console.error('[benefit-ledger] Operation failed', { stage, orderId: order.id, storeId: order.storeId })
+    throw new Error('Nao foi possivel atualizar os beneficios do pedido.')
+  }
+}
 
 export const getNextOrderDisplayIdForStore = async ({
   storeId,
@@ -73,14 +93,25 @@ export const getNextOrderDisplayIdForStore = async ({
 export const createOrderOnDb = async ({
   newOrder,
   dbSession,
+  captureBenefits = false,
 }: {
   newOrder: InsertOrder
-  dbSession: DbSession
+  dbSession: DbTransaction
+  captureBenefits?: boolean
 }) => {
   const [createdOrder] = await dbSession
     .insert(ordersTable)
     .values(newOrder)
     .returning()
+
+  // Only the server-priced public checkout opts in. POS input is not a grant source.
+  if (captureBenefits) {
+    await runBenefitLedger(createdOrder, 'capture', () => captureOrderBenefits(createdOrder, dbSession))
+    await runBenefitLedger(createdOrder, 'settle', () => settleOrderBenefits(createdOrder, dbSession))
+    if (createdOrder.status === 'COMPLETED') {
+      await enqueueOrderBenefitWhatsappNotificationsOnDb({ order: createdOrder, dbSession })
+    }
+  }
 
   return createdOrder
 }
@@ -190,9 +221,12 @@ export const enqueueOrderBenefitWhatsappNotificationsOnDb = async ({
     SelectOrder,
     'id' | 'displayId' | 'storeId' | 'status' | 'customerPhone' | 'snapshot'
   >
-  dbSession: DbSession
+  dbSession: DbTransaction
 }) => {
-  if (!order.customerPhone || order.status !== 'COMPLETED') return []
+  if (order.status !== 'COMPLETED') return []
+
+  const persistedBenefits = await runBenefitLedger(order, 'notification', () => getOrderBenefitNotificationData(order.id, order.storeId, dbSession))
+  if (!persistedBenefits || persistedBenefits.grants.length === 0) return []
 
   const [store] = await dbSession
     .select({ name: storesTable.name, subdomain: storesTable.subdomain })
@@ -207,9 +241,9 @@ export const enqueueOrderBenefitWhatsappNotificationsOnDb = async ({
     storeSubdomain: store.subdomain,
     orderId: order.id,
     orderDisplayId: order.displayId,
-    customerPhone: order.customerPhone,
+    customerPhone: persistedBenefits.customerPhone,
     orderStatus: order.status,
-    snapshot: order.snapshot,
+    snapshot: { benefits: { grants: persistedBenefits.grants } },
   })
 
   const results = []
@@ -220,7 +254,7 @@ export const enqueueOrderBenefitWhatsappNotificationsOnDb = async ({
         storeId: order.storeId,
         eventType: notification.eventType,
         eventId: notification.eventId,
-        recipientPhone: order.customerPhone,
+        recipientPhone: persistedBenefits.customerPhone,
         text: notification.text,
         orderId: order.id,
         payload: notification.payload,
@@ -248,7 +282,7 @@ export const transitionOrderOnDb = async ({
   estimatedMinutes?: number
   actorUserId: string
   requestId: string
-  dbSession: DbSession
+  dbSession: DbTransaction
 }) => {
   const [order] = await dbSession
     .select()
@@ -328,6 +362,8 @@ export const transitionOrderOnDb = async ({
       },
     },
   })
+
+  await runBenefitLedger(updatedOrder, 'settle', () => settleOrderBenefits(updatedOrder, dbSession))
 
   await enqueueOrderStatusWhatsappNotificationOnDb({
     order: updatedOrder,

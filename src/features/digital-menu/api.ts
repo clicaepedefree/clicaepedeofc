@@ -37,6 +37,9 @@ import {
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
+import { captureOrderBenefits, debitOrderBenefitBalance, settleOrderBenefits } from '@/features/benefit-programs/ledger'
+import { walletPaymentAmounts, readWalletPaymentSnapshot } from '@/features/benefit-programs/wallet-payment-policy'
+import { requireWalletIdentity } from '@/features/benefit-programs/wallet-auth'
 import { and, asc, count, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
@@ -1278,6 +1281,13 @@ export const submitDigitalMenuOrder = async (
     }
   }
 
+  let walletPayment: ReturnType<typeof walletPaymentAmounts>
+  try {
+    walletPayment = walletPaymentAmounts(validatedCart.total, payload.cashbackAmount)
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Cashback invalido.' }
+  }
+
   const normalizedChangeFor =
     payload.payment.method === 'CASH'
       ? normalizeOptionalMoney(payload.payment.changeFor)
@@ -1292,7 +1302,7 @@ export const submitDigitalMenuOrder = async (
 
   if (
     normalizedChangeFor &&
-    new Decimal(normalizedChangeFor).lessThanOrEqualTo(validatedCart.total)
+    new Decimal(normalizedChangeFor).lessThanOrEqualTo(walletPayment.amountDue)
   ) {
     return {
       ok: false,
@@ -1331,6 +1341,9 @@ export const submitDigitalMenuOrder = async (
     address: payload.address ?? null,
     payment: payload.payment,
     couponCode: normalizedCouponCode,
+    ...(new Decimal(walletPayment.cashbackApplied).gt(0)
+      ? { cashbackAmount: walletPayment.cashbackApplied }
+      : {}),
     items: cartItemsForValidation,
     attribution: orderAttribution,
   })
@@ -1350,6 +1363,13 @@ export const submitDigitalMenuOrder = async (
 
   try {
     const result = await db.transaction(async tx => {
+      if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
+        try {
+          await requireWalletIdentity(menu.store.id, payload.customerPhone, tx)
+        } catch {
+          throw new DigitalMenuOrderDomainError('Confirme seu telefone para usar o cashback.')
+        }
+      }
       const existing = await tx.query.publicOrderSubmissionsTable.findFirst({
         where: and(
           eq(publicOrderSubmissionsTable.storeId, menu.store.id),
@@ -1399,7 +1419,7 @@ export const submitDigitalMenuOrder = async (
           publicOrderId: existing.id,
           requestId: existing.requestId,
           status: existing.status,
-          total: totals.total ?? validatedCart.total,
+          ...readWalletPaymentSnapshot(totals, totals.total ?? validatedCart.total),
           reused: true,
           ...(reusableTrackingToken
             ? { trackingToken: reusableTrackingToken }
@@ -1506,6 +1526,8 @@ export const submitDigitalMenuOrder = async (
             couponCode: normalizedCouponCode,
             appliedPromotion: validatedCart.appliedPromotion,
             total: validatedCart.total,
+            cashbackApplied: walletPayment.cashbackApplied,
+            amountDue: walletPayment.amountDue,
           }),
           catalogSnapshot: toJsonSnapshot({
             store: menu.store,
@@ -1527,7 +1549,7 @@ export const submitDigitalMenuOrder = async (
             : null,
           paymentSnapshot: toJsonSnapshot({
             method: payload.payment.method,
-            label: paymentMethod.label,
+            label: walletPayment.amountDue === '0.00' ? 'Cashback' : paymentMethod.label,
             changeFor: normalizedChangeFor,
             instructions: paymentMethod.instructions,
             proofInstructions: paymentMethod.proofInstructions,
@@ -1535,7 +1557,9 @@ export const submitDigitalMenuOrder = async (
               payload.payment.method === 'PIX' ? paymentMethod.pixKey : null,
             integrationProvider: paymentMethod.integrationProvider,
             availableFor: paymentMethod.availableFor,
-            status: 'PENDING',
+            status: walletPayment.amountDue === '0.00' ? 'COVERED_BY_CASHBACK' : 'PENDING',
+            cashbackApplied: walletPayment.cashbackApplied,
+            amountDue: walletPayment.amountDue,
           }),
           deliveryZoneSnapshot:
             validatedCart.deliveryZoneId === null
@@ -1632,6 +1656,8 @@ export const submitDigitalMenuOrder = async (
               couponCode: normalizedCouponCode,
               appliedPromotion: validatedCart.appliedPromotion,
               total: validatedCart.total,
+              cashbackApplied: walletPayment.cashbackApplied,
+              amountDue: walletPayment.amountDue,
             },
             deliveryZoneId: validatedCart.deliveryZoneId,
             deliveryEstimatedMinutes: validatedCart.deliveryEstimatedMinutes,
@@ -1645,7 +1671,19 @@ export const submitDigitalMenuOrder = async (
           technicalAckAt: submittedAt,
         },
         dbSession: tx,
+        captureBenefits: false,
       })
+
+      try {
+        if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
+          await debitOrderBenefitBalance(createdOrder, payload.customerPhone, walletPayment.cashbackApplied, tx)
+        }
+        await captureOrderBenefits(createdOrder, tx)
+        await settleOrderBenefits(createdOrder, tx)
+      } catch {
+        // Never log bound phone values or expose a database/ledger exception.
+        throw new DigitalMenuOrderDomainError('Nao foi possivel aplicar os beneficios. Atualize o saldo e tente novamente.')
+      }
 
       await createOrderAuditEventOnDb({
         dbSession: tx,
@@ -1715,10 +1753,10 @@ export const submitDigitalMenuOrder = async (
         })
       }
 
-      await createOrderPaymentOnDb({
+      if (new Decimal(walletPayment.amountDue).gt(0)) await createOrderPaymentOnDb({
         newOrderPayment: {
           orderId: createdOrder.id,
-          value: validatedCart.total,
+          value: walletPayment.amountDue,
           type: 'PENDING',
           method: payload.payment.method,
           changeFor:
@@ -1854,6 +1892,8 @@ export const submitDigitalMenuOrder = async (
         requestId: created.requestId,
         status: created.status,
         total: validatedCart.total,
+        cashbackApplied: walletPayment.cashbackApplied,
+        amountDue: walletPayment.amountDue,
         reused: false,
         trackingToken,
       }
@@ -1867,7 +1907,12 @@ export const submitDigitalMenuOrder = async (
         'public_order_submissions_store_id_idempotency_key_unique'
       )
     ) {
-      const existing = await db.query.publicOrderSubmissionsTable.findFirst({
+      try {
+        return await db.transaction(async tx => {
+          if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
+            await requireWalletIdentity(menu.store.id, payload.customerPhone, tx)
+          }
+      const existing = await tx.query.publicOrderSubmissionsTable.findFirst({
         where: and(
           eq(publicOrderSubmissionsTable.storeId, menu.store.id),
           eq(publicOrderSubmissionsTable.idempotencyKey, payload.idempotencyKey)
@@ -1909,7 +1954,7 @@ export const submitDigitalMenuOrder = async (
           publicOrderId: existing.id,
           requestId: existing.requestId,
           status: existing.status,
-          total: totals.total ?? validatedCart.total,
+          ...readWalletPaymentSnapshot(totals, totals.total ?? validatedCart.total),
           reused: true,
           ...(reusableTrackingToken
             ? { trackingToken: reusableTrackingToken }
@@ -1918,8 +1963,12 @@ export const submitDigitalMenuOrder = async (
       }
 
       return {
-        ok: false,
+        ok: false as const,
         message: 'Este identificador de pedido ja foi usado com outros dados.',
+      }
+        })
+      } catch {
+        return { ok: false, message: 'Confirme seu telefone e atualize o pedido antes de tentar novamente.' }
       }
     }
 
