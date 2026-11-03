@@ -200,7 +200,6 @@ export const BenefitProgramsEditor = ({
             : `Não configurado · Versão ${version}`}
           {dirty ? ' · Alterações não salvas' : ''}
         </p>
-        <p>Configuração de regras. Concessão e resgate ainda indisponíveis.</p>
       </div>
       {error && (
         <p role="alert" className="break-words text-sm text-destructive">
