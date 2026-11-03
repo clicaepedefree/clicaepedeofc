@@ -9,6 +9,7 @@ import {
 } from '@/services/db/schema'
 
 const mockDb = {}
+mock.module('server-only', () => ({}))
 mock.module('@/services/db', () => ({ db: mockDb }))
 const { processWhatsappInboundMessage } = await import('./db')
 const dialect = new PgDialect()

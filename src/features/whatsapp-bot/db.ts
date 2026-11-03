@@ -1,7 +1,8 @@
 import { decrypt, encrypt } from '@/lib/encryption'
 import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import { db } from '@/services/db'
-import type { AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pruneWhatsappBotRetainedHistory } from './retention'
+export { pruneWhatsappBotRetainedHistory } from './retention'
 import type { DbSession } from '@/services/db/types'
 import {
   categoriesTable,
@@ -113,7 +114,6 @@ import {
 import {
   canSendWhatsappNotificationToContact,
   classifyWhatsappNotificationCategory,
-  getWhatsappRetentionCutoffs,
   maskWhatsappAuditPhone,
   redactWhatsappSensitiveMetadata,
 } from './security-lgpd-policy'
@@ -1222,9 +1222,11 @@ async function processWhatsappTransactionalEvent({
 export async function processWhatsappTransactionalQueue({
   limit,
   evolutionClient,
+  correlationId = randomUUID(),
 }: {
   limit?: number
   evolutionClient?: EvolutionClient
+  correlationId?: string
 } = {}): Promise<WhatsappTransactionalQueueResult> {
   const rollout = resolveWhatsappBotRolloutConfig()
   if (
@@ -1243,6 +1245,8 @@ export async function processWhatsappTransactionalQueue({
   await pruneWhatsappBotRetainedHistory({
     now,
     storeIds: rollout.mode === 'pilot' ? [...rollout.pilotStoreIds] : undefined,
+    runId: correlationId,
+    correlationId,
   })
   // A lost acknowledgement is not proof that the provider failed to send.
   // Quarantine interrupted claims rather than risk charging customers with duplicate messages.
@@ -1347,124 +1351,6 @@ export async function processWhatsappTransactionalQueue({
   }
 
   return result
-}
-
-export async function pruneWhatsappBotRetainedHistory({
-  now = new Date(),
-  storeIds,
-}: {
-  now?: Date
-  storeIds?: number[]
-} = {}) {
-  const cutoffs = getWhatsappRetentionCutoffs(now)
-  const scope = (column: AnyPgColumn) =>
-    storeIds ? inArray(column, storeIds) : undefined
-
-  const expiredQrSessions = await db
-    .update(whatsappBotSessionsTable)
-    .set({
-      qrCodeExpiresAt: null,
-      metadata: sql`${whatsappBotSessionsTable.metadata} - 'qrCode'`,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        scope(whatsappBotSessionsTable.storeId),
-        lt(
-          whatsappBotSessionsTable.qrCodeExpiresAt,
-          cutoffs.expiredQrCodeBefore
-        ),
-        sql`${whatsappBotSessionsTable.status} <> 'connected'`
-      )
-    )
-    .returning({ id: whatsappBotSessionsTable.id })
-
-  const deletedDeliveryAttempts = await db
-    .delete(whatsappBotDeliveryAttemptsTable)
-    .where(
-      and(
-        scope(whatsappBotDeliveryAttemptsTable.storeId),
-        lt(
-          whatsappBotDeliveryAttemptsTable.attemptedAt,
-          cutoffs.deliveryAttemptBefore
-        )
-      )
-    )
-    .returning({ id: whatsappBotDeliveryAttemptsTable.id })
-
-  const deletedTransactionalEvents = await db
-    .delete(whatsappBotTransactionalEventsTable)
-    .where(
-      and(
-        scope(whatsappBotTransactionalEventsTable.storeId),
-        inArray(whatsappBotTransactionalEventsTable.status, [
-          'sent',
-          'discarded',
-        ]),
-        lt(
-          whatsappBotTransactionalEventsTable.updatedAt,
-          cutoffs.transactionalEventBefore
-        )
-      )
-    )
-    .returning({ id: whatsappBotTransactionalEventsTable.id })
-
-  const deletedMessages = await db
-    .delete(whatsappBotMessagesTable)
-    .where(
-      and(
-        scope(whatsappBotMessagesTable.storeId),
-        lt(whatsappBotMessagesTable.occurredAt, cutoffs.openConversationBefore)
-      )
-    )
-    .returning({ id: whatsappBotMessagesTable.id })
-
-  const deletedConversations = await db
-    .delete(whatsappBotConversationsTable)
-    .where(
-      and(
-        scope(whatsappBotConversationsTable.storeId),
-        inArray(whatsappBotConversationsTable.status, ['closed', 'blocked']),
-        lt(
-          whatsappBotConversationsTable.updatedAt,
-          cutoffs.closedConversationBefore
-        )
-      )
-    )
-    .returning({ id: whatsappBotConversationsTable.id })
-
-  const deletedContacts = await db
-    .delete(whatsappBotContactsTable)
-    .where(
-      and(
-        scope(whatsappBotContactsTable.storeId),
-        lt(
-          whatsappBotContactsTable.lastContactAt,
-          cutoffs.inactiveContactBefore
-        ),
-        sql`${whatsappBotContactsTable.promotionalOptOutAt} is null`,
-        sql`not exists (
-          select 1 from ${whatsappBotConversationsTable}
-          where ${whatsappBotConversationsTable.storeId} = ${whatsappBotContactsTable.storeId}
-            and ${whatsappBotConversationsTable.contactId} = ${whatsappBotContactsTable.id}
-        )`,
-        sql`not exists (
-          select 1 from ${whatsappBotTransactionalEventsTable}
-          where ${whatsappBotTransactionalEventsTable.storeId} = ${whatsappBotContactsTable.storeId}
-            and ${whatsappBotTransactionalEventsTable.contactId} = ${whatsappBotContactsTable.id}
-        )`
-      )
-    )
-    .returning({ id: whatsappBotContactsTable.id })
-
-  return {
-    expiredQrSessions: expiredQrSessions.length,
-    deletedDeliveryAttempts: deletedDeliveryAttempts.length,
-    deletedTransactionalEvents: deletedTransactionalEvents.length,
-    deletedMessages: deletedMessages.length,
-    deletedConversations: deletedConversations.length,
-    deletedContacts: deletedContacts.length,
-  }
 }
 
 export async function getWhatsappBotSessionForStore(storeId: number) {

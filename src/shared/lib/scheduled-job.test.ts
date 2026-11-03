@@ -41,7 +41,8 @@ describe('scheduled jobs', () => {
       owner = null
       return []
     } } as unknown as Pick<DbSession, 'execute'>
-    expect(await withScheduledJobLock('billing', async () => {
+    expect(await withScheduledJobLock('billing', async context => {
+      expect(context).toEqual({ runId: owner!, job: 'billing' })
       expect(releaseCount).toBe(0)
       expect(await withScheduledJobLock('billing', async () => 99, database)).toEqual({ acquired: false })
       return 42

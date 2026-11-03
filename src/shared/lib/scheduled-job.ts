@@ -8,7 +8,7 @@ export { authorizeWorkerRequest, matchesJobSecret, jobAlreadyRunning } from './s
 // The durable reservation outlives a dropped DB connection and the 60s route lifetime.
 export async function withScheduledJobLock<T>(
   job: ScheduledJob,
-  run: () => Promise<T>,
+  run: (context: { runId: string; job: ScheduledJob }) => Promise<T>,
   database: Pick<DbSession, 'execute'> = db
 ): Promise<{ acquired: false } | { acquired: true; result: T }> {
   const owner = randomUUID()
@@ -21,7 +21,7 @@ export async function withScheduledJobLock<T>(
   `)
   if (rows[0]?.owner !== owner) return { acquired: false }
   try {
-    return { acquired: true, result: await run() }
+    return { acquired: true, result: await run({ runId: owner, job }) }
   } finally {
     // If release fails, leave the reservation to expire instead of permitting overlap.
     await database.execute(sql`delete from public.scheduled_job_leases where job = ${job} and owner = ${owner}::uuid`)

@@ -7,7 +7,7 @@ import {
   setSystemTime,
   test,
 } from 'bun:test'
-import { getTableName, type SQL } from 'drizzle-orm'
+import { getTableColumns, getTableName, type SQL } from 'drizzle-orm'
 import { PgDialect, type PgTable } from 'drizzle-orm/pg-core'
 import {
   whatsappBotContactsTable,
@@ -16,12 +16,15 @@ import {
   whatsappBotMessagesTable,
   whatsappBotSessionsTable,
   whatsappBotTransactionalEventsTable,
+  whatsappRetentionRunsTable,
+  type SelectWhatsappRetentionRun,
   type SelectWhatsappBotTransactionalEvent,
 } from '@/services/db/schema'
 import type { EvolutionClient } from './evolution-client'
 import { getWhatsappRetentionCutoffs } from './security-lgpd-policy'
 
 const mockDb = {}
+mock.module('server-only', () => ({}))
 mock.module('@/services/db', () => ({ db: mockDb }))
 const { processWhatsappTransactionalQueue, pruneWhatsappBotRetainedHistory } =
   await import('./db')
@@ -43,6 +46,10 @@ type RetentionRow = {
   updatedAt?: Date
   occurredAt?: Date
   lastContactAt?: Date
+  eventId?: string
+  conversationId?: string
+  contactId?: string
+  promotionalOptOutAt?: Date | null
 }
 const retentionDefinitions = [
   {
@@ -145,6 +152,18 @@ function createDatabaseContract(
   const claimed: string[] = []
   const deliveryAttempts: Record<string, unknown>[] = []
   const pruneQueries: string[] = []
+  const parentLockOrder = [
+    whatsappBotContactsTable,
+    whatsappBotConversationsTable,
+    whatsappBotTransactionalEventsTable,
+  ]
+  const parentLocks: string[] = []
+  const lockedParentIds = new Map<PgTable, string[]>()
+  let afterParentsLocked: (() => void) | undefined
+  const auditRows = new Map<string, SelectWhatsappRetentionRun>()
+  const auditOperations: string[] = []
+  const executeSql: string[] = []
+  let pruneError: Error | undefined
   const sendTextMessage = mock(
     async (_input: Parameters<EvolutionClient['sendTextMessage']>[0]) => ({
       providerMessageId: 'qa-provider-message',
@@ -154,7 +173,99 @@ function createDatabaseContract(
   )
   const evolutionClient = { sendTextMessage } as unknown as EvolutionClient
 
+  function lockParents(
+    table: PgTable,
+    predicate: SQL,
+    fields: Record<string, unknown>,
+    ordering: unknown[],
+    lock: string
+  ) {
+    expect(lock).toBe('update')
+    expect(table).toBe(
+      parentLockOrder[parentLocks.length % parentLockOrder.length]
+    )
+    const idColumn = getTableColumns(table).id
+    expect(fields).toEqual({ id: idColumn })
+    expect(ordering).toEqual([idColumn])
+    expect(executeSql.at(-1)).toBe('select pg_advisory_xact_lock(154, 1)')
+    const name = getTableName(table)
+    const ref = (key: string) => `"${name}"."${key}"`
+    const params: unknown[] = pilotIds ? [...pilotIds] : []
+    const clauses = pilotIds
+      ? [
+          `${ref('store_id')} in (${pilotIds.map((_, index) => `$${index + 1}`).join(', ')})`,
+        ]
+      : []
+    const cutoffs = getWhatsappRetentionCutoffs(now)
+    const bind = (value: unknown) => {
+      params.push(value)
+      return `$${params.length}`
+    }
+    if (table === whatsappBotContactsTable) {
+      clauses.push(
+        `${ref('last_contact_at')} < ${bind(cutoffs.inactiveContactBefore.toISOString())}`,
+        `${ref('promotional_opt_out_at')} is null`
+      )
+    } else {
+      const statuses =
+        table === whatsappBotConversationsTable
+          ? ['closed', 'blocked']
+          : ['sent', 'discarded']
+      clauses.push(`${ref('status')} in (${statuses.map(bind).join(', ')})`)
+      if (table === whatsappBotConversationsTable)
+        clauses.push(
+          `${ref('updated_at')} < ${bind(cutoffs.closedConversationBefore.toISOString())}`
+        )
+      else {
+        const eventDate = bind(cutoffs.transactionalEventBefore.toISOString())
+        const attemptDate = bind(cutoffs.deliveryAttemptBefore.toISOString())
+        clauses.push(
+          `(${ref('updated_at')} < ${eventDate} or exists (select 1 from "whatsapp_bot_delivery_attempts" where "whatsapp_bot_delivery_attempts"."event_id"=${ref('id')} and "whatsapp_bot_delivery_attempts"."store_id"=${ref('store_id')} and "whatsapp_bot_delivery_attempts"."attempted_at" < ${attemptDate}))`
+        )
+      }
+    }
+    const query = dialect.sqlToQuery(predicate)
+    expect(query.sql.replace(/\s+/g, ' ')).toBe(`(${clauses.join(' and ')})`)
+    expect(query.params).toEqual(params)
+    const candidates = (retained.get(table) ?? [])
+      .filter(row => {
+        if (pilotIds && !pilotIds.includes(row.storeId)) return false
+        if (table === whatsappBotContactsTable)
+          return (
+            row.lastContactAt instanceof Date &&
+            row.lastContactAt < cutoffs.inactiveContactBefore &&
+            row.promotionalOptOutAt == null
+          )
+        if (table === whatsappBotConversationsTable)
+          return (
+            ['closed', 'blocked'].includes(row.status ?? '') &&
+            row.updatedAt instanceof Date &&
+            row.updatedAt < cutoffs.closedConversationBefore
+          )
+        return (
+          ['sent', 'discarded'].includes(row.status ?? '') &&
+          ((row.updatedAt instanceof Date &&
+            row.updatedAt < cutoffs.transactionalEventBefore) ||
+            (retained.get(whatsappBotDeliveryAttemptsTable) ?? []).some(
+              attempt =>
+                attempt.eventId === row.id &&
+                attempt.storeId === row.storeId &&
+                attempt.attemptedAt instanceof Date &&
+                attempt.attemptedAt < cutoffs.deliveryAttemptBefore
+            ))
+        )
+      })
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    const ids = candidates.map(row => row.id)
+    lockedParentIds.set(table, ids)
+    parentLocks.push(name)
+    if (table === whatsappBotTransactionalEventsTable) afterParentsLocked?.()
+    return ids.map(id => ({ id }))
+  }
+
   function prune(table: PgTable, predicate: SQL, values?: Partial<Event>) {
+    if (pruneError) throw pruneError
+    expect(parentLocks.slice(-3)).toEqual(parentLockOrder.map(getTableName))
     const definition = retentionDefinitions.find(item => item.table === table)
     if (!definition)
       throw new Error(`Unexpected retention table: ${getTableName(table)}`)
@@ -181,14 +292,125 @@ function createDatabaseContract(
     expect(expiresBefore).toEqual(
       getWhatsappRetentionCutoffs(now)[definition.cutoff]
     )
-    // Fixtures satisfy the non-date retention guards, including unreferenced contacts.
+    const ref = (table: PgTable, key: string) =>
+      `"${getTableName(table)}"."${key}"`
+    const childGuard = (child: PgTable, foreignKey: string) =>
+      `not exists (select 1 from "${getTableName(child)}" where ${ref(child, foreignKey)}=${ref(table, 'id')} and ${ref(child, 'store_id')}=${ref(table, 'store_id')})`
+    const guards: string[] = []
+    if (table === whatsappBotSessionsTable)
+      guards.push(`${ref(table, 'status')} <> 'connected'`)
+    if (table === whatsappBotDeliveryAttemptsTable)
+      guards.push(
+        `exists (select 1 from "whatsapp_bot_transactional_events" where ${column('id')}=${ref(table, 'event_id')} and ${column('store_id')}=${ref(table, 'store_id')} and ${column('status')} in ('sent','discarded'))`
+      )
+    if (table === whatsappBotTransactionalEventsTable)
+      guards.push(childGuard(whatsappBotDeliveryAttemptsTable, 'event_id'))
+    if (table === whatsappBotMessagesTable)
+      guards.push(`${ref(table, 'status')} <> 'queued'`)
+    if (table === whatsappBotConversationsTable)
+      guards.push(
+        childGuard(whatsappBotMessagesTable, 'conversation_id'),
+        childGuard(whatsappBotTransactionalEventsTable, 'conversation_id')
+      )
+    if (table === whatsappBotContactsTable)
+      guards.push(
+        `${ref(table, 'promotional_opt_out_at')} is null`,
+        childGuard(whatsappBotConversationsTable, 'contact_id'),
+        childGuard(whatsappBotTransactionalEventsTable, 'contact_id'),
+        childGuard(whatsappBotMessagesTable, 'contact_id')
+      )
+    const expectedParams: unknown[] = pilotIds ? [...pilotIds] : []
+    const clauses = pilotIds
+      ? [
+          `${ref(table, 'store_id')} in (${pilotIds.map((_, index) => `$${index + 1}`).join(', ')})`,
+        ]
+      : []
+    if (
+      table === whatsappBotTransactionalEventsTable ||
+      table === whatsappBotConversationsTable
+    ) {
+      clauses.push(
+        `${ref(table, 'status')} in ($${expectedParams.length + 1}, $${expectedParams.length + 2})`
+      )
+      expectedParams.push(
+        ...(table === whatsappBotTransactionalEventsTable
+          ? ['sent', 'discarded']
+          : ['closed', 'blocked'])
+      )
+    }
+    clauses.push(
+      `${ref(table, definition.column)} < $${expectedParams.length + 1}`
+    )
+    expectedParams.push(
+      getWhatsappRetentionCutoffs(now)[definition.cutoff].toISOString()
+    )
+    const lockedTable =
+      table === whatsappBotDeliveryAttemptsTable
+        ? whatsappBotTransactionalEventsTable
+        : parentLockOrder.includes(table as (typeof parentLockOrder)[number])
+          ? table
+          : undefined
+    const lockedIds = lockedTable
+      ? lockedParentIds.get(lockedTable)!
+      : undefined
+    if (lockedIds) {
+      const key = table === whatsappBotDeliveryAttemptsTable ? 'event_id' : 'id'
+      clauses.push(
+        lockedIds.length
+          ? `${ref(table, key)} in (${lockedIds.map((_, index) => `$${expectedParams.length + index + 1}`).join(', ')})`
+          : 'false'
+      )
+      expectedParams.push(...lockedIds)
+    }
+    clauses.push(...guards)
+    expect(query.sql.replace(/\s+/g, ' ')).toBe(`(${clauses.join(' and ')})`)
+    expect(query.params).toEqual(expectedParams)
+
+    const related = (
+      child: PgTable,
+      key: 'eventId' | 'conversationId' | 'contactId',
+      row: RetentionRow
+    ) =>
+      (retained.get(child) ?? []).filter(
+        item => item[key] === row.id && item.storeId === row.storeId
+      )
+    const terminal = (row: RetentionRow) =>
+      ['sent', 'discarded'].includes(row.status ?? '')
     const stored = retained.get(table) ?? []
     const expired = stored.filter(row => {
       const timestamp = row[definition.key]
       return (
         timestamp instanceof Date &&
         timestamp < expiresBefore &&
-        (!storeIds || storeIds.includes(row.storeId))
+        (!storeIds || storeIds.includes(row.storeId)) &&
+        (!lockedIds ||
+          lockedIds.includes(
+            table === whatsappBotDeliveryAttemptsTable ? row.eventId! : row.id
+          )) &&
+        (table !== whatsappBotSessionsTable || row.status !== 'connected') &&
+        (table !== whatsappBotDeliveryAttemptsTable ||
+          (retained.get(whatsappBotTransactionalEventsTable) ?? []).some(
+            parent =>
+              parent.id === row.eventId &&
+              parent.storeId === row.storeId &&
+              terminal(parent)
+          )) &&
+        (table !== whatsappBotTransactionalEventsTable ||
+          (terminal(row) &&
+            !related(whatsappBotDeliveryAttemptsTable, 'eventId', row)
+              .length)) &&
+        (table !== whatsappBotMessagesTable || row.status !== 'queued') &&
+        (table !== whatsappBotConversationsTable ||
+          (['closed', 'blocked'].includes(row.status ?? '') &&
+            !related(whatsappBotMessagesTable, 'conversationId', row).length &&
+            !related(whatsappBotTransactionalEventsTable, 'conversationId', row)
+              .length)) &&
+        (table !== whatsappBotContactsTable ||
+          (row.promotionalOptOutAt == null &&
+            !related(whatsappBotConversationsTable, 'contactId', row).length &&
+            !related(whatsappBotTransactionalEventsTable, 'contactId', row)
+              .length &&
+            !related(whatsappBotMessagesTable, 'contactId', row).length))
       )
     })
     if (table === whatsappBotSessionsTable) {
@@ -246,6 +468,17 @@ function createDatabaseContract(
   }
 
   const database = {
+    execute: async (statement: SQL) => {
+      const query = dialect.sqlToQuery(statement)
+      expect(query.params).toEqual([])
+      const expected = [
+        "set local lock_timeout = '10s'",
+        "set local statement_timeout = '30s'",
+        'select pg_advisory_xact_lock(154, 1)',
+      ]
+      expect(query.sql).toBe(expected[executeSql.length % expected.length])
+      executeSql.push(query.sql)
+    },
     delete: (table: PgTable) => ({
       where: (predicate: SQL) => ({
         returning: async () => prune(table, predicate),
@@ -255,6 +488,18 @@ function createDatabaseContract(
       set: (values: Partial<Event>) => ({
         where: (predicate: SQL) => {
           const execute = () => {
+            if (table === whatsappRetentionRunsTable) {
+              const query = dialect.sqlToQuery(predicate)
+              expect(query.sql).toBe(
+                '(\"whatsapp_retention_runs\".\"id\" = $1 and \"whatsapp_retention_runs\".\"status\" = $2)'
+              )
+              expect(query.params[1]).toBe('running')
+              const row = auditRows.get(query.params[0] as string)
+              expect(row?.status).toBe('running')
+              Object.assign(row!, values)
+              auditOperations.push('finalize')
+              return [{ ...row! }]
+            }
             if (table === whatsappBotSessionsTable)
               return prune(table, predicate, values)
             expect(table).toBe(whatsappBotTransactionalEventsTable)
@@ -310,74 +555,134 @@ function createDatabaseContract(
         },
       }),
     }),
-    select: () => ({
+    select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: (predicate: SQL) => ({
-          limit: async () => {
-            expect(table).toBe(whatsappBotContactsTable)
+        where: (predicate: SQL) => {
+          if (table === whatsappRetentionRunsTable) {
             const query = dialect.sqlToQuery(predicate)
-            expect(query.sql).toBe(
-              '("whatsapp_bot_contacts"."store_id" = $1 and "whatsapp_bot_contacts"."phone_number" = $2)'
-            )
-            return contacts.filter(
-              contact =>
-                contact.storeId === query.params[0] &&
-                contact.phoneNumber === query.params[1]
-            )
-          },
-          orderBy: (...ordering: SQL[]) => ({
-            limit: async (limit: number) => {
-              if (table === whatsappBotSessionsTable) {
-                return [
-                  {
-                    id: 1,
-                    storeId: 9,
-                    numberId: 1,
-                    status: 'connected',
-                    providerSessionId: 'qa-instance',
-                    metadata: {},
-                  },
-                ]
-              }
-              expect(table).toBe(whatsappBotTransactionalEventsTable)
-              const selector = assertSelector(
-                predicate,
-                `(${column('status')} in ($1, $2) and ${column('attempts')} < ${column('max_attempts')} and ${column('next_attempt_at')} <= $3)`,
-                ['queued', 'failed', now.toISOString()]
+            expect(query.sql).toBe('"whatsapp_retention_runs"."id" = $1')
+            const read = () => {
+              const row = auditRows.get(query.params[0] as string)
+              return row ? [{ ...row }] : []
+            }
+            return {
+              then: (
+                resolve: (value: SelectWhatsappRetentionRun[]) => unknown
+              ) => {
+                auditOperations.push('read')
+                return Promise.resolve(read()).then(resolve)
+              },
+              for: async (lock: string) => {
+                expect(lock).toBe('update')
+                expect(executeSql.at(-1)).toBe(
+                  'select pg_advisory_xact_lock(154, 1)'
+                )
+                auditOperations.push('lock')
+                return read()
+              },
+            }
+          }
+          if (
+            fields &&
+            Object.hasOwn(fields, 'id') &&
+            parentLockOrder.includes(table as (typeof parentLockOrder)[number])
+          )
+            return {
+              orderBy: (...ordering: unknown[]) => ({
+                for: async (lock: string) =>
+                  lockParents(
+                    table as PgTable,
+                    predicate,
+                    fields,
+                    ordering,
+                    lock
+                  ),
+              }),
+            }
+          return {
+            limit: async () => {
+              expect(table).toBe(whatsappBotContactsTable)
+              const query = dialect.sqlToQuery(predicate)
+              expect(query.sql).toBe(
+                '("whatsapp_bot_contacts"."store_id" = $1 and "whatsapp_bot_contacts"."phone_number" = $2)'
               )
-              expect(
-                ordering.map(value => dialect.sqlToQuery(value).sql)
-              ).toEqual([
-                `${column('next_attempt_at')} asc`,
-                `${column('created_at')} asc`,
-              ])
-              const eligible = rows
-                .filter(
-                  row =>
-                    selector.params.slice(0, 2).includes(row.status) &&
-                    row.attempts < row.maxAttempts &&
-                    row.nextAttemptAt <=
-                      new Date(selector.params[2] as string) &&
-                    (!selector.storeIds ||
-                      selector.storeIds.includes(row.storeId))
-                )
-                .sort(
-                  (a, b) =>
-                    a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime() ||
-                    a.createdAt.getTime() - b.createdAt.getTime()
-                )
-                .slice(0, limit)
-              selected.push(eligible.map(row => row.id))
-              return eligible.map(row => ({ ...row }))
+              return contacts.filter(
+                contact =>
+                  contact.storeId === query.params[0] &&
+                  contact.phoneNumber === query.params[1]
+              )
             },
-          }),
-        }),
+            orderBy: (...ordering: SQL[]) => ({
+              limit: async (limit: number) => {
+                if (table === whatsappBotSessionsTable) {
+                  return [
+                    {
+                      id: 1,
+                      storeId: 9,
+                      numberId: 1,
+                      status: 'connected',
+                      providerSessionId: 'qa-instance',
+                      metadata: {},
+                    },
+                  ]
+                }
+                expect(table).toBe(whatsappBotTransactionalEventsTable)
+                const selector = assertSelector(
+                  predicate,
+                  `(${column('status')} in ($1, $2) and ${column('attempts')} < ${column('max_attempts')} and ${column('next_attempt_at')} <= $3)`,
+                  ['queued', 'failed', now.toISOString()]
+                )
+                expect(
+                  ordering.map(value => dialect.sqlToQuery(value).sql)
+                ).toEqual([
+                  `${column('next_attempt_at')} asc`,
+                  `${column('created_at')} asc`,
+                ])
+                const eligible = rows
+                  .filter(
+                    row =>
+                      selector.params.slice(0, 2).includes(row.status) &&
+                      row.attempts < row.maxAttempts &&
+                      row.nextAttemptAt <=
+                        new Date(selector.params[2] as string) &&
+                      (!selector.storeIds ||
+                        selector.storeIds.includes(row.storeId))
+                  )
+                  .sort(
+                    (a, b) =>
+                      a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime() ||
+                      a.createdAt.getTime() - b.createdAt.getTime()
+                  )
+                  .slice(0, limit)
+                selected.push(eligible.map(row => row.id))
+                return eligible.map(row => ({ ...row }))
+              },
+            }),
+          }
+        },
       }),
     }),
     insert: (table: unknown) => ({
-      values: async (values: Record<string, unknown>) => {
+      values: (values: Record<string, unknown>) => {
+        if (table === whatsappRetentionRunsTable)
+          return {
+            onConflictDoNothing: async () => {
+              const id = values.id as string
+              if (!auditRows.has(id))
+                auditRows.set(id, {
+                  status: 'running',
+                  counts: null,
+                  errorCode: null,
+                  startedAt: now,
+                  finishedAt: null,
+                  ...values,
+                } as SelectWhatsappRetentionRun)
+              auditOperations.push('start')
+            },
+          }
         expect(table).toBe(whatsappBotDeliveryAttemptsTable)
         deliveryAttempts.push(values)
+        return Promise.resolve()
       },
     }),
   }
@@ -398,9 +703,20 @@ function createDatabaseContract(
     claimed,
     deliveryAttempts,
     pruneQueries,
+    parentLocks,
+    lockedParentIds,
+    afterParentLocks: (callback: () => void) => {
+      afterParentsLocked = callback
+    },
     deleteRows,
     updateRows,
     selectRows,
+    auditRows,
+    auditOperations,
+    executeSql,
+    failPrune: (error: Error) => {
+      pruneError = error
+    },
   }
 }
 
@@ -490,6 +806,9 @@ describe('transactional recovery database contract', () => {
           ...row,
           status: definition.status,
           [definition.key]: timestamp,
+          ...(definition.table === whatsappBotDeliveryAttemptsTable
+            ? { eventId: row.id }
+            : {}),
           ...(definition.table === whatsappBotSessionsTable
             ? { metadata: { qrCode: { base64: 'qa-qr' }, retainedKey: 'keep' } }
             : {}),
@@ -531,6 +850,32 @@ describe('transactional recovery database contract', () => {
       expect(contract.pruneQueries).toEqual(
         retentionDefinitions.map(item => getTableName(item.table))
       )
+      expect(contract.parentLocks).toEqual([
+        'whatsapp_bot_contacts',
+        'whatsapp_bot_conversations',
+        'whatsapp_bot_transactional_events',
+      ])
+      expect(contract.auditOperations).toEqual([
+        'start',
+        'read',
+        'lock',
+        'finalize',
+      ])
+      expect([...contract.auditRows.values()]).toEqual([
+        expect.objectContaining({
+          status: 'succeeded',
+          storeIds: mode === 'pilot' ? [9] : null,
+          effectiveAt: now,
+          counts: {
+            expiredQrSessions: mode === 'pilot' ? 1 : 2,
+            deletedDeliveryAttempts: mode === 'pilot' ? 1 : 2,
+            deletedTransactionalEvents: mode === 'pilot' ? 1 : 2,
+            deletedMessages: mode === 'pilot' ? 1 : 2,
+            deletedConversations: mode === 'pilot' ? 1 : 2,
+            deletedContacts: mode === 'pilot' ? 1 : 2,
+          },
+        }),
+      ])
       for (const definition of retentionDefinitions) {
         const previous = originals.get(definition.table)!
         const expiredIds =
@@ -552,6 +897,255 @@ describe('transactional recovery database contract', () => {
       expect(contract.sendTextMessage).not.toHaveBeenCalled()
     }
   )
+
+  test('locks recent terminal parents when only their delivery attempts are expired', async () => {
+    const retained = new Map<PgTable, RetentionRow[]>([
+      [
+        whatsappBotTransactionalEventsTable,
+        [{ id: 'recent-terminal', storeId: 9, status: 'sent', updatedAt: now }],
+      ],
+      [
+        whatsappBotDeliveryAttemptsTable,
+        [
+          {
+            id: 'old-attempt',
+            storeId: 9,
+            eventId: 'recent-terminal',
+            attemptedAt: new Date('2020-01-01'),
+          },
+        ],
+      ],
+    ])
+    const contract = createDatabaseContract([], undefined, retained)
+    expect(await pruneWhatsappBotRetainedHistory({ now })).toEqual({
+      expiredQrSessions: 0,
+      deletedDeliveryAttempts: 1,
+      deletedTransactionalEvents: 0,
+      deletedMessages: 0,
+      deletedConversations: 0,
+      deletedContacts: 0,
+    })
+    expect(
+      contract.lockedParentIds.get(whatsappBotTransactionalEventsTable)
+    ).toEqual(['recent-terminal'])
+    expect(retained.get(whatsappBotDeliveryAttemptsTable)).toEqual([])
+    expect(retained.get(whatsappBotTransactionalEventsTable)).toEqual([
+      { id: 'recent-terminal', storeId: 9, status: 'sent', updatedAt: now },
+    ])
+    expect(contract.sendTextMessage).not.toHaveBeenCalled()
+  })
+
+  test('never deletes newly eligible parents or attempts outside the locked candidate IDs', async () => {
+    const retained = new Map<PgTable, RetentionRow[]>()
+    const contract = createDatabaseContract([], undefined, retained)
+    const old = new Date('2020-01-01')
+    contract.afterParentLocks(() => {
+      retained.set(whatsappBotContactsTable, [
+        { id: 'unlocked-contact', storeId: 9, lastContactAt: old },
+      ])
+      retained.set(whatsappBotConversationsTable, [
+        {
+          id: 'unlocked-conversation',
+          storeId: 9,
+          status: 'closed',
+          updatedAt: old,
+        },
+      ])
+      retained.set(whatsappBotTransactionalEventsTable, [
+        { id: 'unlocked-event', storeId: 9, status: 'sent', updatedAt: old },
+      ])
+      retained.set(whatsappBotDeliveryAttemptsTable, [
+        {
+          id: 'unlocked-attempt',
+          storeId: 9,
+          eventId: 'unlocked-event',
+          attemptedAt: old,
+        },
+      ])
+    })
+    expect(await pruneWhatsappBotRetainedHistory({ now })).toEqual({
+      expiredQrSessions: 0,
+      deletedDeliveryAttempts: 0,
+      deletedTransactionalEvents: 0,
+      deletedMessages: 0,
+      deletedConversations: 0,
+      deletedContacts: 0,
+    })
+    expect([...contract.lockedParentIds.values()]).toEqual([[], [], []])
+    for (const table of [
+      whatsappBotContactsTable,
+      whatsappBotConversationsTable,
+      whatsappBotTransactionalEventsTable,
+      whatsappBotDeliveryAttemptsTable,
+    ])
+      expect(retained.get(table)).toHaveLength(1)
+    expect(contract.sendTextMessage).not.toHaveBeenCalled()
+  })
+
+  test('preserves pending work, recent children, connected QR and opted-out contacts', async () => {
+    const old = new Date('2020-01-01T00:00:00.000Z')
+    const retained = new Map<PgTable, RetentionRow[]>([
+      [
+        whatsappBotSessionsTable,
+        [
+          {
+            id: 'connected',
+            storeId: 9,
+            status: 'connected',
+            qrCodeExpiresAt: old,
+            metadata: { qrCode: 'keep' },
+          },
+        ],
+      ],
+      [
+        whatsappBotDeliveryAttemptsTable,
+        [
+          {
+            id: 'pending-attempt',
+            storeId: 9,
+            eventId: 'pending',
+            attemptedAt: old,
+          },
+          {
+            id: 'recent-attempt',
+            storeId: 9,
+            eventId: 'terminal',
+            attemptedAt: now,
+          },
+        ],
+      ],
+      [
+        whatsappBotTransactionalEventsTable,
+        [
+          {
+            id: 'pending',
+            storeId: 9,
+            status: 'queued',
+            updatedAt: old,
+            conversationId: 'pending-conversation',
+            contactId: 'event-contact',
+          },
+          { id: 'terminal', storeId: 9, status: 'sent', updatedAt: old },
+        ],
+      ],
+      [
+        whatsappBotMessagesTable,
+        [
+          {
+            id: 'pending-message',
+            storeId: 9,
+            status: 'queued',
+            occurredAt: old,
+          },
+          {
+            id: 'recent-message',
+            storeId: 9,
+            status: 'sent',
+            occurredAt: now,
+            conversationId: 'recent-conversation',
+            contactId: 'message-contact',
+          },
+        ],
+      ],
+      [
+        whatsappBotConversationsTable,
+        [
+          {
+            id: 'pending-conversation',
+            storeId: 9,
+            status: 'closed',
+            updatedAt: old,
+          },
+          {
+            id: 'recent-conversation',
+            storeId: 9,
+            status: 'closed',
+            updatedAt: old,
+          },
+          {
+            id: 'active-conversation',
+            storeId: 9,
+            status: 'open',
+            updatedAt: old,
+            contactId: 'conversation-contact',
+          },
+        ],
+      ],
+      [
+        whatsappBotContactsTable,
+        [
+          'event-contact',
+          'message-contact',
+          'conversation-contact',
+          'opted-out',
+        ].map(id => ({
+          id,
+          storeId: 9,
+          lastContactAt: old,
+          promotionalOptOutAt: id === 'opted-out' ? old : null,
+        })),
+      ],
+    ])
+    const original = structuredClone(
+      retentionDefinitions.map(({ table }) => retained.get(table))
+    )
+    const contract = createDatabaseContract([], undefined, retained)
+    const counts = await pruneWhatsappBotRetainedHistory({ now })
+    expect(counts).toEqual({
+      expiredQrSessions: 0,
+      deletedDeliveryAttempts: 0,
+      deletedTransactionalEvents: 0,
+      deletedMessages: 0,
+      deletedConversations: 0,
+      deletedContacts: 0,
+    })
+    expect(
+      retentionDefinitions.map(({ table }) => retained.get(table))
+    ).toEqual(original)
+    expect([...contract.auditRows.values()][0]).toMatchObject({
+      status: 'noop',
+      counts,
+    })
+    expect(contract.auditOperations).toEqual([
+      'start',
+      'read',
+      'lock',
+      'finalize',
+    ])
+  })
+
+  test('failed retention is audited and blocks queue selection, claims and sending', async () => {
+    const queued = event('blocked-by-retention', {
+      status: 'queued',
+      attempts: 0,
+    })
+    const original = { ...queued }
+    const contract = createDatabaseContract([queued])
+    contract.failPrune(new Error('private database failure'))
+    await expect(
+      processWhatsappTransactionalQueue({
+        evolutionClient: contract.evolutionClient,
+      })
+    ).rejects.toThrow(
+      'WhatsApp retention failed; inspect the private execution audit'
+    )
+    expect([...contract.auditRows.values()][0]).toMatchObject({
+      status: 'failed',
+      errorCode: 'prune_failed',
+    })
+    expect(contract.auditOperations).toEqual([
+      'start',
+      'read',
+      'lock',
+      'lock',
+      'finalize',
+    ])
+    expect(contract.selected).toEqual([])
+    expect(contract.claimed).toEqual([])
+    expect(contract.deliveryAttempts).toEqual([])
+    expect(contract.sendTextMessage).not.toHaveBeenCalled()
+    expect(queued).toEqual(original)
+  })
 
   test.each(['off', 'pilot'] as const)(
     '%s without an active scope returns zero before pruning or touching the queue',

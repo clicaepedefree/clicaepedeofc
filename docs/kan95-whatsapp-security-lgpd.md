@@ -29,6 +29,13 @@ A rotina `pruneWhatsappBotRetainedHistory` aplica as janelas abaixo:
 
 ## Auditoria
 
+A retencao automatica usa a trilha privada `whatsapp_retention_runs`, com identidade
+de sistema, UUID de correlacao do worker, politica versionada, escopo, resultado e
+contagens. Limpeza e confirmacao da auditoria sao atomicas; erro desfaz a limpeza.
+Guardas preservam filhos recentes/pendentes antes de excluir seus pais. Consulte
+`docs/kan154-whatsapp-retention-audit.md` para estados, retry, privacidade e diagnostico.
+Esta trilha nao inventa ator humano nem copia dados pessoais removidos.
+
 Acoes sensiveis geram eventos em `internal_operation_audit_logs` com loja, ator, estado anterior, novo estado e motivo operacional:
 
 - Conectar numero do WhatsApp.

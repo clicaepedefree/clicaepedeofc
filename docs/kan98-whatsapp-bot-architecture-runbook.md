@@ -557,6 +557,11 @@ Nao usar em exemplos:
 
 ## Arquivos de referencia
 
+- `docs/kan154-whatsapp-retention-audit.md`: retencao automatica auditada, estados
+  confirmados versus interrompidos, correlacao com worker e consulta administrativa.
+- `src/features/whatsapp-bot/retention.ts`: limpeza e confirmacao atomicas, retry
+  seguro e escopo conservador; nao executar em dados reais para diagnosticar.
+
 - `src/features/whatsapp-bot/db.ts`: persistencia, orquestracao, fila,
   diagnostico, conexao e webhook interno.
 - `src/features/whatsapp-bot/api.ts`: server actions protegidas por permissao.
