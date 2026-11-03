@@ -1,6 +1,7 @@
 'use client'
 
 import { IntegrationsSettings } from '@/features/integrations/components/integrations-settings'
+import { BenefitProgramsSettings } from '@/features/benefit-programs/components/benefit-programs-settings'
 import { CompanySettings } from '@/features/legal-entity/components/company-settings'
 import { LegalSettings } from '@/features/legal-entity/components/legal-settings'
 import { StoreDeliverySettings } from '@/features/store/components/store-delivery-settings'
@@ -46,6 +47,12 @@ const settingsPages = [
     title: 'Usuários da loja',
     label: 'Usuários',
     pageComponent: () => <StoreUsersSettings />,
+  },
+  {
+    id: 'beneficios',
+    title: 'Programas de benefícios',
+    label: 'Benefícios',
+    pageComponent: () => <BenefitProgramsSettings />,
   },
 ]
 
