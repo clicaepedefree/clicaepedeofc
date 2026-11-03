@@ -5,6 +5,7 @@ import {
   submitDigitalMenuOrder,
 } from '@/features/digital-menu/api'
 import { quoteDigitalMenuDelivery } from '@/features/digital-menu/delivery'
+import { CheckoutWallet } from '@/features/benefit-programs/components/checkout-wallet'
 import { buildDigitalMenuTurnstileOptions } from '@/features/digital-menu/turnstile-widget'
 import {
   getDigitalMenuOrderTypeControls,
@@ -301,6 +302,7 @@ export const DigitalMenuClient = ({
   const [needsChange, setNeedsChange] = useState(false)
   const [changeFor, setChangeFor] = useState('')
   const [couponCode, setCouponCode] = useState('')
+  const [cashbackAmount, setCashbackAmount] = useState('0.00')
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(
     null
   )
@@ -935,11 +937,12 @@ export const DigitalMenuClient = ({
           : undefined,
       payment: {
         method: paymentMethod,
-        needsChange: paymentMethod === 'CASH' && needsChange,
+        needsChange: checkoutTotal > Number(cashbackAmount) && paymentMethod === 'CASH' && needsChange,
         changeFor:
-          paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
+          checkoutTotal > Number(cashbackAmount) && paymentMethod === 'CASH' && needsChange ? changeFor : undefined,
       },
       couponCode: appliedCouponCode ?? undefined,
+      cashbackAmount: cashbackAmount !== '0.00' ? cashbackAmount : undefined,
       scheduledFor: scheduledDate ? scheduledDate.toISOString() : undefined,
       items: cart.map(item => ({
         itemOfferingId: item.itemOfferingId,
@@ -989,13 +992,14 @@ export const DigitalMenuClient = ({
       setOrderConfirmation({
         publicOrderId: result.publicOrderId,
         requestId: result.requestId,
-        total: result.total,
+        total: result.amountDue ?? result.total,
         trackingToken:
           (result as typeof result & { trackingToken?: string })
             .trackingToken ?? null,
         summary: cart.map(item => `${item.quantity}x ${item.name}`).join(', '),
       })
       setCart([])
+      setCashbackAmount('0.00')
       try {
         window.sessionStorage.removeItem(draftStorageKey)
         window.sessionStorage.removeItem(attributionStorageKey)
@@ -1514,6 +1518,9 @@ export const DigitalMenuClient = ({
               </div>
             ) : checkoutStep ? (
               <CheckoutForm
+                storeSlug={menu.store.subdomain}
+                cashbackAmount={cashbackAmount}
+                setCashbackAmount={setCashbackAmount}
                 customerName={customerName}
                 customerPhone={customerPhone}
                 customerDocument={customerDocument}
@@ -1823,6 +1830,9 @@ const CategorySection = ({
 }
 
 const CheckoutForm = ({
+  storeSlug,
+  cashbackAmount,
+  setCashbackAmount,
   customerName,
   customerPhone,
   customerDocument,
@@ -1892,6 +1902,9 @@ const CheckoutForm = ({
   setScheduledFor,
   setCouponCode,
 }: {
+  storeSlug: string
+  cashbackAmount: string
+  setCashbackAmount: (amount: string) => void
   customerName: string
   customerPhone: string
   customerDocument: string
@@ -2044,7 +2057,7 @@ const CheckoutForm = ({
       ? 'Aceite os termos para enviar o pedido.'
       : null,
     changeFor:
-      paymentMethod === 'CASH' && needsChange && !changeFor.trim()
+      checkoutTotal > Number(cashbackAmount) && paymentMethod === 'CASH' && needsChange && !changeFor.trim()
         ? 'Informe o valor para o troco.'
         : null,
     paymentMethod: !selectedPaymentMethod
@@ -2463,7 +2476,7 @@ const CheckoutForm = ({
         />
       </label>
 
-      <div className="rounded-lg border bg-card p-4">
+      {checkoutTotal - Number(cashbackAmount) > 0 ? <div className="rounded-lg border bg-card p-4">
         <h3 className="mb-3 font-medium">Pagamento</h3>
         {availablePaymentMethods.length === 0 ? (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
@@ -2577,7 +2590,7 @@ const CheckoutForm = ({
               )}
             </div>
           )}
-      </div>
+      </div> : <p className="border-y py-4 text-sm font-medium">Pedido coberto pelo cashback. Nenhum pagamento adicional.</p>}
 
       <section className="rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -2620,6 +2633,8 @@ const CheckoutForm = ({
           </p>
         )}
       </section>
+
+      <CheckoutWallet storeSlug={storeSlug} phone={customerPhone} total={checkoutTotal.toFixed(2)} value={cashbackAmount} onChange={setCashbackAmount} />
 
       <section className="rounded-lg border bg-card p-4 text-sm">
         <h3 className="mb-3 font-medium">Resumo do pedido</h3>
@@ -2702,6 +2717,10 @@ const CheckoutForm = ({
             <span className="text-muted-foreground">Total final</span>
             <strong>{currency(checkoutTotal)}</strong>
           </div>
+          {Number(cashbackAmount) > 0 && <>
+            <div className="flex justify-between"><span className="text-muted-foreground">Cashback utilizado</span><strong>-{currency(cashbackAmount)}</strong></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">A pagar</span><strong>{currency(Math.max(0, checkoutTotal - Number(cashbackAmount)))}</strong></div>
+          </>}
           {missingMinimumAmount > 0 && (
             <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
               Faltam {currency(missingMinimumAmount)} para atingir o pedido

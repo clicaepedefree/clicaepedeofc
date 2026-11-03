@@ -38,8 +38,52 @@ import {
 } from '@/features/digital-menu/public-order-security'
 import { requireAuth } from '@/services/auth'
 import { OutOfStockError } from '@/shared/errors/out-of-stock-error'
-import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { completedCancellationCommandSchema, type CompletedCancellationCommand } from './manual-refund-policy'
+import { roleHasStorePermission } from '@/features/store-users/store-users-policy'
+import { readWalletPaymentSnapshot } from '@/features/benefit-programs/wallet-payment-policy'
+import { getManualRefundOnDb, toManualRefundResult } from './manual-refund-db'
+
+const withManualRefundErrorBoundary = async <T>(operation: () => Promise<T>): Promise<T> => {
+  try {
+    return await operation()
+  } catch {
+    throw new Error('Nao foi possivel registrar a operacao. Atualize o pedido e tente novamente com a mesma chave.')
+  }
+}
+
+export const cancelCompletedOrder = async (input: CompletedCancellationCommand) => {
+  const command = completedCancellationCommandSchema.parse(input)
+  const { user } = await validateUserPermissionsForStore(command.storeId, 'orders.completed.cancel')
+  return withManualRefundErrorBoundary(async () => {
+    const { cancelCompletedOrderOnDb } = await import('./completed-cancellation')
+    return db.transaction(tx => cancelCompletedOrderOnDb({ ...command, actorUserId: user.id, dbSession: tx }))
+  })
+}
+
+export const confirmManualRefundReview = async (input: CompletedCancellationCommand) => {
+  const command = completedCancellationCommandSchema.parse(input)
+  const { user } = await validateUserPermissionsForStore(command.storeId, 'orders.completed.cancel')
+  return withManualRefundErrorBoundary(async () => {
+    const { confirmManualRefundReviewOnDb } = await import('./completed-cancellation')
+    return db.transaction(tx => confirmManualRefundReviewOnDb({ ...command, actorUserId: user.id, dbSession: tx }))
+  })
+}
+
+export const listOrderManualRefunds = async (input: { storeId: number; orderId: number }) => {
+  const { storeId, orderId } = completedCancellationCommandSchema
+    .pick({ storeId: true, orderId: true }).strict().parse(input)
+  await validateUserPermissionsForStore(storeId, 'orders.completed.cancel')
+  return withManualRefundErrorBoundary(() => db.transaction(async tx => {
+    const record = await getManualRefundOnDb(orderId, storeId, tx)
+    return record ? [{
+      ...toManualRefundResult(record, false),
+      reason: record.reason,
+      confirmationReason: record.confirmationReason,
+      createdAt: record.createdAt,
+    }] : []
+  }))
+}
 
 const getPublicOrderSecuritySecret = () => {
   const secret =
@@ -174,26 +218,30 @@ export const createOrder = async (newOrder: NewOrder) => {
     const receiptItems = createdOrderItems.map(item => ({
       itemName: item.itemName,
       quantity: Number(item.quantity),
-      unitPrice: getValueFromCurrencyString(item.price),
-      totalPrice: getValueFromCurrencyString(item.price) * Number(item.quantity) +
+      unitPrice: Number(item.price),
+      totalPrice: Number(item.price) * Number(item.quantity) +
         (item.options ?? []).reduce(
-          (sum, opt) => sum + getValueFromCurrencyString(opt.price ?? '0') * Number(opt.quantity),
+          (sum, opt) => sum + Number(opt.price ?? '0') * Number(opt.quantity),
           0
         ) * Number(item.quantity),
       options: (item.options ?? []).map(opt => ({
         optionName: opt.optionName,
         optionQuantity: Number(opt.quantity),
-        optionPrice: opt.price ? getValueFromCurrencyString(opt.price) : undefined,
+        optionPrice: opt.price ? Number(opt.price) : undefined,
       })),
       comment: item.comment,
     }))
 
     const receiptPayments = createdOrderPayments.map(payment => ({
       method: payment.method,
-      value: getValueFromCurrencyString(payment.value),
-      changeFor: payment.changeFor ? getValueFromCurrencyString(payment.changeFor) : null,
+      value: Number(payment.value),
+      changeFor: payment.changeFor ? Number(payment.changeFor) : null,
     }))
 
+    const walletReceipt = readWalletPaymentSnapshot(
+      (createdOrder.snapshot as { totals?: unknown } | null)?.totals,
+      createdOrder.totalPrice
+    )
     const orderReceipt = await OrderTemplate.render({
       storeName: store?.name,
       displayId: createdOrder.displayId,
@@ -201,7 +249,9 @@ export const createOrder = async (newOrder: NewOrder) => {
       orderType: createdOrder.type,
       posCounterName: createdOrder.posCounterName,
       items: receiptItems,
-      totalPrice: getValueFromCurrencyString(createdOrder.totalPrice),
+      totalPrice: Number(createdOrder.totalPrice),
+      cashbackApplied: walletReceipt.cashbackApplied,
+      amountDue: walletReceipt.amountDue,
       payments: receiptPayments,
     })
 
@@ -215,7 +265,8 @@ export const createOrder = async (newOrder: NewOrder) => {
 }
 
 export const listOrders = async (storeId: number): Promise<any[]> => {
-  await validateUserPermissionsForStore(storeId, 'orders.manage')
+  const { storePermissions } = await validateUserPermissionsForStore(storeId, 'orders.manage')
+  const canCancelCompleted = roleHasStorePermission(storePermissions.role, 'orders.completed.cancel')
 
   const orders = await db.query.ordersTable.findMany({
     where: eq(ordersTable.storeId, storeId),
@@ -251,13 +302,19 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
     actors.map(actor => [actor.id, actor.name || 'Equipe da loja'])
   )
 
-  return orders.map(order => ({
+  return orders.map(order => {
+    const snapshot = order.snapshot as { totals?: unknown } | null
+    const walletPayment = readWalletPaymentSnapshot(snapshot?.totals, order.totalPrice)
+    return {
     id: order.id,
     displayId: order.displayId,
     status: order.status,
     salesChannel: order.salesChannel,
     type: order.type,
     totalPrice: order.totalPrice,
+    canCancelCompleted,
+    cashbackApplied: walletPayment.cashbackApplied,
+    amountDue: walletPayment.amountDue,
     customerName: order.customerName,
     customerPhone: order.customerPhone,
     orderNotes: order.orderNotes,
@@ -307,7 +364,8 @@ export const listOrders = async (storeId: number): Promise<any[]> => {
               ? actorNames.get(event.actorUserId) ?? 'Equipe da loja'
               : 'Equipe da loja',
     })),
-  }))
+    }
+  })
 }
 
 export const transitionOrderStatus = async (input: {
@@ -558,16 +616,16 @@ export const generateOrderReceipt = async (orderId: number) => {
   const receiptItems = order.items.map(item => ({
     itemName: item.itemName,
     quantity: Number(item.quantity),
-    unitPrice: getValueFromCurrencyString(item.price),
-    totalPrice: getValueFromCurrencyString(item.price) * Number(item.quantity) +
+    unitPrice: Number(item.price),
+    totalPrice: Number(item.price) * Number(item.quantity) +
       (item.options ?? []).reduce(
-        (sum, opt) => sum + getValueFromCurrencyString(opt.price ?? '0') * Number(opt.quantity),
+        (sum, opt) => sum + Number(opt.price ?? '0') * Number(opt.quantity),
         0
       ) * Number(item.quantity),
     options: (item.options ?? []).map(opt => ({
       optionName: opt.optionName,
       optionQuantity: Number(opt.quantity),
-      optionPrice: opt.price ? getValueFromCurrencyString(opt.price) : undefined,
+      optionPrice: opt.price ? Number(opt.price) : undefined,
     })),
     comment: item.comment,
   }))
@@ -575,11 +633,15 @@ export const generateOrderReceipt = async (orderId: number) => {
   // Transform order payments to receipt format
   const receiptPayments = order.payments.map(payment => ({
     method: payment.method,
-    value: getValueFromCurrencyString(payment.value),
-    changeFor: payment.changeFor ? getValueFromCurrencyString(payment.changeFor) : null,
+    value: Number(payment.value),
+    changeFor: payment.changeFor ? Number(payment.changeFor) : null,
   }))
 
   // Generate receipt SVG
+  const walletReceipt = readWalletPaymentSnapshot(
+    (order.snapshot as { totals?: unknown } | null)?.totals,
+    order.totalPrice
+  )
   const receiptSvg = await OrderTemplate.render({
     storeName: store?.name,
     displayId: order.displayId,
@@ -587,7 +649,9 @@ export const generateOrderReceipt = async (orderId: number) => {
     orderType: order.type,
     posCounterName: order.posCounterName,
     items: receiptItems,
-    totalPrice: getValueFromCurrencyString(order.totalPrice),
+    totalPrice: Number(order.totalPrice),
+    cashbackApplied: walletReceipt.cashbackApplied,
+    amountDue: walletReceipt.amountDue,
     payments: receiptPayments,
     customerName: order.customerName,
     customerPhone: order.customerPhone,

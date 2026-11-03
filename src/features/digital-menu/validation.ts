@@ -156,6 +156,7 @@ export const submitDigitalMenuOrderSchema = z
       .max(40)
       .transform(value => sanitizePublicText(value, 40).toUpperCase())
       .optional(),
+    cashbackAmount: z.string().regex(/^\d{1,12}\.\d{2}$/).optional(),
     items: z.array(cartItemSchema).min(1).max(80),
   })
   .superRefine((value, ctx) => {

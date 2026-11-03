@@ -223,6 +223,7 @@ export type DigitalMenuSubmitInput = {
     needsChange?: boolean
   }
   couponCode?: string
+  cashbackAmount?: string
   items: DigitalMenuCartItemInput[]
 }
 
@@ -283,6 +284,8 @@ export type DigitalMenuSubmissionResult =
       requestId: string
       status: string
       total: string
+      cashbackApplied?: string
+      amountDue?: string
       reused: boolean
       trackingToken?: string
     }
@@ -308,6 +311,8 @@ export type PublicOrderTrackingDto = {
   status: string
   orderType: 'DELIVERY' | 'TAKEOUT'
   total: string
+  cashbackApplied?: string
+  amountDue?: string
   payment: {
     label: string
     status: string | null

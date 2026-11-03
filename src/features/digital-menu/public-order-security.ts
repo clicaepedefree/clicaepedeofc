@@ -6,6 +6,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto'
+import { readWalletPaymentSnapshot } from '@/features/benefit-programs/wallet-payment-policy'
 
 export const PUBLIC_ORDER_TRACKING_TTL_MS = 30 * 24 * 60 * 60 * 1000
 export const PUBLIC_ORDER_RATE_LIMIT = {
@@ -200,7 +201,7 @@ export const buildPublicOrderTrackingDto = (
     storeName: order.storeName,
     status: order.status,
     orderType: order.orderType,
-    total: order.total,
+    ...readWalletPaymentSnapshot(order.paymentSnapshot, order.total),
     payment: payment
       ? {
           label:
