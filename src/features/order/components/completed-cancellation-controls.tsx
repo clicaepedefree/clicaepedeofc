@@ -105,6 +105,10 @@ export function CompletedCancellationControls({
                     : 'Sem pagamentos registrados'}
               </p>
               <p className="text-muted-foreground">{record.financialNotice}</p>
+              <dl className="space-y-1">
+                <div className="flex justify-between gap-3"><dt>Pre-pago registrado</dt><dd>{Number(record.prepaidRecordedAmount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                <div className="flex justify-between gap-3"><dt>Pendente de recebimento</dt><dd>{Number(record.pendingNotReceivedAmount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+              </dl>
               <p>Nao houve reposicao automatica de estoque.</p>
               {record.reviewStatus === 'manual_review_pending' && (
                 <Button

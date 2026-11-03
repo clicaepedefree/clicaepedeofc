@@ -1,6 +1,7 @@
 'use client'
 
 import { getPublicOrderTracking } from '@/features/digital-menu/api'
+import { publicTrackingRefetchInterval } from '@/features/digital-menu/tracking-polling'
 import {
   getPublicOrderProgressStatuses,
   getPublicOrderStatusCopy,
@@ -68,8 +69,6 @@ function normalizeTracking(data: PublicOrderTrackingDto): TrackingView {
   }
 }
 
-const isTerminal = (status: string) => ['CANCELLED', 'REJECTED', 'EXPIRED'].includes(status)
-
 export function PublicOrderTracking({ token }: { token: string }) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null)
   const query = useQuery({
@@ -77,7 +76,7 @@ export function PublicOrderTracking({ token }: { token: string }) {
     queryFn: () => getPublicOrderTracking(token),
     refetchInterval: query => {
       const data = query.state.data
-      return data && isTerminal(normalizeTracking(data).status) ? false : 15_000
+      return publicTrackingRefetchInterval(data, query.state.status === 'success')
     },
     retry: (count, error) => {
       const message = error instanceof Error ? error.message.toLowerCase() : ''
