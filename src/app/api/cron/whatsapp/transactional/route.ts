@@ -35,8 +35,8 @@ export async function GET(request: Request) {
 }
 
 async function executeWhatsappJob() {
-  const execution = await withScheduledJobLock('whatsapp', async () => {
-    const result = await processWhatsappTransactionalQueue({ limit: 5 })
+  const execution = await withScheduledJobLock('whatsapp', async context => {
+    const result = await processWhatsappTransactionalQueue({ limit: 5, correlationId: context?.runId })
 
     return Response.json({
       ok: result.discarded === 0 && result.failed === 0,

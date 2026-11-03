@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import type { DbSession } from '@/services/db/types'
 
+mock.module('server-only', () => ({}))
 mock.module('@/services/db', () => ({ db: {} }))
 const { enqueueWhatsappTransactionalMessage } = await import('./db')
 const originalMode = process.env.WHATSAPP_BOT_ROLLOUT_MODE
