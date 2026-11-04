@@ -100,7 +100,7 @@ describe('benefit programs settings controls', () => {
       output.includes(
         'Configuração de regras. Concessão e resgate ainda indisponíveis.'
       )
-    ).toBe(true)
+    ).toBe(false)
     expect(output.includes('Ganhos disponíveis')).toBe(false)
     expect(output.includes('Mudanças valem para novos pedidos')).toBe(false)
   })

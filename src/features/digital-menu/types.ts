@@ -224,6 +224,7 @@ export type DigitalMenuSubmitInput = {
   }
   couponCode?: string
   cashbackAmount?: string
+  productRewardId?: string
   items: DigitalMenuCartItemInput[]
 }
 

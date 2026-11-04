@@ -60,6 +60,7 @@ import {
   Clock3,
   Copy,
   HandPlatter,
+  Gift,
   Minus,
   Pencil,
   Plus,
@@ -303,6 +304,7 @@ export const DigitalMenuClient = ({
   const [changeFor, setChangeFor] = useState('')
   const [couponCode, setCouponCode] = useState('')
   const [cashbackAmount, setCashbackAmount] = useState('0.00')
+  const [productRewardId, setProductRewardId] = useState<string | null>(null)
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(
     null
   )
@@ -943,6 +945,7 @@ export const DigitalMenuClient = ({
       },
       couponCode: appliedCouponCode ?? undefined,
       cashbackAmount: cashbackAmount !== '0.00' ? cashbackAmount : undefined,
+      productRewardId: productRewardId ?? undefined,
       scheduledFor: scheduledDate ? scheduledDate.toISOString() : undefined,
       items: cart.map(item => ({
         itemOfferingId: item.itemOfferingId,
@@ -1000,6 +1003,7 @@ export const DigitalMenuClient = ({
       })
       setCart([])
       setCashbackAmount('0.00')
+      setProductRewardId(null)
       try {
         window.sessionStorage.removeItem(draftStorageKey)
         window.sessionStorage.removeItem(attributionStorageKey)
@@ -1135,6 +1139,9 @@ export const DigitalMenuClient = ({
           )}
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-4">
+          <Button type="button" variant="outline" size="sm" disabled={previewMode} onClick={() => { setIsCartOpen(true); setCheckoutStep(true) }}>
+            <Gift className="size-4" />Meus beneficios
+          </Button>
           <Badge
             className={cn(
               'border',
@@ -1521,6 +1528,8 @@ export const DigitalMenuClient = ({
                 storeSlug={menu.store.subdomain}
                 cashbackAmount={cashbackAmount}
                 setCashbackAmount={setCashbackAmount}
+                productRewardId={productRewardId}
+                setProductRewardId={setProductRewardId}
                 customerName={customerName}
                 customerPhone={customerPhone}
                 customerDocument={customerDocument}
@@ -1833,6 +1842,8 @@ const CheckoutForm = ({
   storeSlug,
   cashbackAmount,
   setCashbackAmount,
+  productRewardId,
+  setProductRewardId,
   customerName,
   customerPhone,
   customerDocument,
@@ -1905,6 +1916,8 @@ const CheckoutForm = ({
   storeSlug: string
   cashbackAmount: string
   setCashbackAmount: (amount: string) => void
+  productRewardId: string | null
+  setProductRewardId: (id: string | null) => void
   customerName: string
   customerPhone: string
   customerDocument: string
@@ -2078,7 +2091,7 @@ const CheckoutForm = ({
         ? 'Complete a verificacao para enviar o pedido.'
         : null,
   }
-  const hasFieldErrors = Object.values(fieldErrors).some(Boolean)
+  const hasFieldErrors = Object.values(fieldErrors).some(Boolean) || (!cart.length && !productRewardId)
   const selectedOrderTypeControl =
     orderType === 'DELIVERY'
       ? orderTypeControls.delivery
@@ -2590,7 +2603,7 @@ const CheckoutForm = ({
               )}
             </div>
           )}
-      </div> : <p className="border-y py-4 text-sm font-medium">Pedido coberto pelo cashback. Nenhum pagamento adicional.</p>}
+                          </div> : <p className="border-y py-4 text-sm font-medium">Este pedido nao exige pagamento adicional.</p>}
 
       <section className="rounded-lg border bg-card p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -2634,7 +2647,7 @@ const CheckoutForm = ({
         )}
       </section>
 
-      <CheckoutWallet storeSlug={storeSlug} phone={customerPhone} total={checkoutTotal.toFixed(2)} value={cashbackAmount} onChange={setCashbackAmount} />
+      <CheckoutWallet storeSlug={storeSlug} phone={customerPhone} total={checkoutTotal.toFixed(2)} value={cashbackAmount} onChange={setCashbackAmount} productRewardId={productRewardId} onProductRewardChange={setProductRewardId} />
 
       <section className="rounded-lg border bg-card p-4 text-sm">
         <h3 className="mb-3 font-medium">Resumo do pedido</h3>

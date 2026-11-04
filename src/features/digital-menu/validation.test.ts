@@ -21,6 +21,25 @@ const basePayload = {
 }
 
 describe('submitDigitalMenuOrderSchema', () => {
+  test('allows a product reward without requiring a paid cart, but never an empty order', () => {
+    expect(
+      submitDigitalMenuOrderSchema.safeParse({ ...basePayload, items: [] })
+        .success
+    ).toBe(false)
+    expect(
+      submitDigitalMenuOrderSchema.safeParse({
+        ...basePayload,
+        items: [],
+        productRewardId: 'c01392e4-b240-4585-b1ca-dfa604cfe5cd',
+      }).success
+    ).toBe(true)
+    expect(
+      submitDigitalMenuOrderSchema.safeParse({
+        ...basePayload,
+        productRewardId: '12345',
+      }).success
+    ).toBe(false)
+  })
   test('aceita os metodos de pagamento do cardapio digital', () => {
     const methods = [
       'CASH',

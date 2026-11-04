@@ -12,13 +12,19 @@ import {
   benefitEventsTable as events,
   benefitGrantsTable as grants,
   benefitLotsTable as lots,
-  itemsTable,
+  benefitProductRedemptionsTable as productRedemptions,
   ordersTable,
   storeBenefitProgramVersionsTable as versions,
   type SelectOrder,
 } from '@/services/db/schema'
 import type { OrderBenefitNotificationGrant } from '@/features/order/benefit-notifications'
 import { getBenefitModules } from './db'
+import { productRewardVoucherCode } from './product-rewards-policy'
+import {
+  completeProductRewardForOrder,
+  getProductRewardCatalogAvailability,
+  refundProductRewardForOrder,
+} from './product-rewards'
 import {
   benefitBase,
   benefitExpiry,
@@ -309,6 +315,22 @@ export async function captureOrderBenefits(
   // then capture in the same creation transaction, never supply client benefits.
   const spent = debit?.amount ?? '0.00'
   const base = benefitBase(stored.totalPrice, stored.deliveryFee, spent)
+  // Redeeming a free product is not another purchase. Even N=1/minimum=0
+  // cannot turn a zero-paid reward-only order into an endless reward cycle.
+  const [productRedemption] = new Decimal(base).isZero()
+    ? await tx
+        .select({ id: productRedemptions.id })
+        .from(productRedemptions)
+        .where(
+          and(
+            eq(productRedemptions.orderId, stored.id),
+            eq(productRedemptions.accountId, account.id),
+            eq(productRedemptions.storeId, stored.storeId)
+          )
+        )
+    : []
+  const loyaltyEnabled =
+    modules.loyalty && current.loyaltyEnabled && !productRedemption
   await tx.insert(captures).values({
     orderId: stored.id,
     ...scope(account),
@@ -316,7 +338,7 @@ export async function captureOrderBenefits(
     baseAmount: base,
     cashbackSpent: spent,
     cashbackEnabled: modules.cashback && current.cashbackEnabled,
-    loyaltyEnabled: modules.loyalty && current.loyaltyEnabled,
+    loyaltyEnabled,
   })
   await event(account, `capture:${stored.id}`, 'capture', tx, {
     orderId: stored.id,
@@ -351,7 +373,7 @@ export async function captureOrderBenefits(
       })
     }
   }
-  if (modules.loyalty && current.loyaltyEnabled) {
+  if (loyaltyEnabled) {
     const reservation = await reserveCycle(account, current, base, tx)
     if (reservation) {
       const [grant] = await tx
@@ -511,6 +533,9 @@ export async function settleOrderBenefits(
 ): Promise<void> {
   const stored = await lockOrder(order, tx)
   if (!['COMPLETED', 'CANCELLED', 'REJECTED'].includes(stored.status)) return
+  if (stored.status === 'COMPLETED')
+    await completeProductRewardForOrder(stored, tx)
+  else await refundProductRewardForOrder(stored, tx)
   const account = await capturedAccount(stored, tx)
   if (!account) {
     // No backfill. A future checkout debit may exist without an earning capture.
@@ -564,6 +589,15 @@ export async function settleOrderBenefits(
   }
   await reconcileCycles(account, stored, at, tx)
   if (stored.status !== 'COMPLETED') await refundOrderBenefitBalance(stored, tx)
+}
+
+// Internal transaction primitives shared with product rewards. Mutating callers
+// must acquire the order lock before the account lock, including on replay.
+export {
+  now as benefitLedgerNow,
+  lockOrder as lockBenefitOrder,
+  lockAccount as lockBenefitAccount,
+  event as appendBenefitEvent,
 }
 
 async function summary(account: Account, at: Date, tx: DbTransaction) {
@@ -686,25 +720,20 @@ export async function getOrderBenefitNotificationData(
         nextRewardDescription: null,
       })
     } else if (grant.rewardItemId && grant.expiresAt && grant.expiresAt > at) {
-      const [item] = await tx
-        .select({ id: itemsTable.id })
-        .from(itemsTable)
-        .where(
-          and(
-            eq(itemsTable.id, grant.rewardItemId),
-            eq(itemsTable.storeId, storeId),
-            eq(itemsTable.name, grant.rewardItemName!)
-          )
-        )
-      if (item)
-        result.push({
-          type: 'loyalty',
-          grantId: grant.id,
-          earnedPoints: 0,
-          balancePoints: 0,
-          nextRewardDescription: grant.rewardItemName,
-          expiresAt: grant.expiresAt.toISOString(),
-        })
+      const availability = await getProductRewardCatalogAvailability(
+        storeId,
+        [grant.rewardItemId],
+        tx
+      )
+      if (availability.get(grant.rewardItemId)?.availability !== 'available')
+        continue
+      result.push({
+        type: 'product_reward',
+        grantId: grant.id,
+        productName: grant.rewardItemName!,
+        voucherCode: productRewardVoucherCode(grant.id),
+        expiresAt: grant.expiresAt.toISOString(),
+      })
     }
   }
   return result.length ? { customerPhone: account.phone, grants: result } : null

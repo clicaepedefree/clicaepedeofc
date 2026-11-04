@@ -156,10 +156,21 @@ export const submitDigitalMenuOrderSchema = z
       .max(40)
       .transform(value => sanitizePublicText(value, 40).toUpperCase())
       .optional(),
-    cashbackAmount: z.string().regex(/^\d{1,12}\.\d{2}$/).optional(),
-    items: z.array(cartItemSchema).min(1).max(80),
+    cashbackAmount: z
+      .string()
+      .regex(/^\d{1,12}\.\d{2}$/)
+      .optional(),
+    productRewardId: z.string().uuid().optional(),
+    items: z.array(cartItemSchema).max(80),
   })
   .superRefine((value, ctx) => {
+    if (!value.items.length && !value.productRewardId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['items'],
+        message: 'Escolha um produto ou premio para o pedido.',
+      })
+    }
     if (value.orderType === 'DELIVERY') {
       const postalCode = sanitizePublicText(value.address?.postalCode, 16)
       const street = sanitizePublicText(value.address?.street, 160)

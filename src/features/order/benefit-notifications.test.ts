@@ -16,6 +16,49 @@ const baseInput = {
 }
 
 describe('order benefit whatsapp notifications', () => {
+  test('announces an issued product reward rather than inventing points or a monetary balance', () => {
+    const snapshot = {
+      benefits: {
+        grants: [
+          {
+            type: 'product_reward',
+            grantId: 'reward-fixture',
+            productName: 'X-salada',
+            voucherCode: 'FID-fixture',
+            expiresAt: '2026-12-03T12:00:00Z',
+          },
+        ],
+      },
+    }
+    const [result] = buildOrderBenefitWhatsappNotifications({
+      ...baseInput,
+      snapshot,
+    })
+    expect(result.eventType).toBe('loyalty')
+    expect(result.eventId).toBe(
+      'order:123:benefit:product_reward:reward-fixture'
+    )
+    expect(result.text).toContain('1 X-salada')
+    expect(result.text).toContain('FID-fixture')
+    expect(result.text).not.toContain('pontos')
+    expect(
+      buildOrderBenefitWhatsappNotifications({
+        ...baseInput,
+        snapshot,
+        orderStatus: 'PENDING',
+      })
+    ).toEqual([])
+    expect(
+      buildOrderBenefitWhatsappNotifications({
+        ...baseInput,
+        snapshot: {
+          benefits: {
+            grants: [{ ...snapshot.benefits.grants[0], expiresAt: 'invalid' }],
+          },
+        },
+      })
+    ).toEqual([])
+  })
   test.each([undefined, null, '', 'invalid-date', new Date(NaN)])(
     'omits invalid or absent cashback validity: %s',
     expiresAt => {

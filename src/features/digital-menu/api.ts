@@ -40,6 +40,8 @@ import Decimal from 'decimal.js'
 import { captureOrderBenefits, debitOrderBenefitBalance, settleOrderBenefits } from '@/features/benefit-programs/ledger'
 import { walletPaymentAmounts, readWalletPaymentSnapshot } from '@/features/benefit-programs/wallet-payment-policy'
 import { requireWalletIdentity } from '@/features/benefit-programs/wallet-auth'
+import { reserveProductRewardForOrder } from '@/features/benefit-programs/product-rewards'
+import { getProductRewardCheckoutItem } from '@/features/benefit-programs/product-reward-checkout'
 import { and, asc, count, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
@@ -1344,6 +1346,7 @@ export const submitDigitalMenuOrder = async (
     ...(new Decimal(walletPayment.cashbackApplied).gt(0)
       ? { cashbackAmount: walletPayment.cashbackApplied }
       : {}),
+    ...(payload.productRewardId ? { productRewardId: payload.productRewardId } : {}),
     items: cartItemsForValidation,
     attribution: orderAttribution,
   })
@@ -1363,11 +1366,11 @@ export const submitDigitalMenuOrder = async (
 
   try {
     const result = await db.transaction(async tx => {
-      if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
+      if (new Decimal(walletPayment.cashbackApplied).gt(0) || payload.productRewardId) {
         try {
           await requireWalletIdentity(menu.store.id, payload.customerPhone, tx)
         } catch {
-          throw new DigitalMenuOrderDomainError('Confirme seu telefone para usar o cashback.')
+          throw new DigitalMenuOrderDomainError('Confirme seu telefone para usar os beneficios.')
         }
       }
       const existing = await tx.query.publicOrderSubmissionsTable.findFirst({
@@ -1674,7 +1677,15 @@ export const submitDigitalMenuOrder = async (
         captureBenefits: false,
       })
 
+      let productRewardItem: Awaited<ReturnType<typeof getProductRewardCheckoutItem>> | null = null
       try {
+        if (payload.productRewardId) {
+          const reward = await reserveProductRewardForOrder({ storeId: menu.store.id, phone: payload.customerPhone, orderId: createdOrder.id, rewardId: payload.productRewardId }, tx)
+          productRewardItem = await getProductRewardCheckoutItem(menu.store.id, reward.itemId, validatedCart.items.length, tx)
+          const cartWithReward = [...validatedCart.items, productRewardItem]
+          await tx.update(ordersTable).set({ snapshot: toJsonSnapshot({ ...(createdOrder.snapshot as Record<string, unknown>), cart: cartWithReward, productReward: { rewardId: payload.productRewardId, itemId: reward.itemId } }) }).where(and(eq(ordersTable.id, createdOrder.id), eq(ordersTable.storeId, menu.store.id)))
+          await tx.update(publicOrderSubmissionsTable).set({ cartSnapshot: toJsonSnapshot(cartWithReward) }).where(eq(publicOrderSubmissionsTable.id, created.id))
+        }
         if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
           await debitOrderBenefitBalance(createdOrder, payload.customerPhone, walletPayment.cashbackApplied, tx)
         }
@@ -1710,7 +1721,7 @@ export const submitDigitalMenuOrder = async (
         },
       })
 
-      for (const item of validatedCart.items) {
+      for (const item of [...validatedCart.items, ...(productRewardItem ? [productRewardItem] : [])]) {
         const wasInventoryUpdated = await updateOrderItemInventoryOnDb({
           itemId: item.itemId,
           storeId: menu.store.id,
@@ -1909,7 +1920,7 @@ export const submitDigitalMenuOrder = async (
     ) {
       try {
         return await db.transaction(async tx => {
-          if (new Decimal(walletPayment.cashbackApplied).gt(0)) {
+          if (new Decimal(walletPayment.cashbackApplied).gt(0) || payload.productRewardId) {
             await requireWalletIdentity(menu.store.id, payload.customerPhone, tx)
           }
       const existing = await tx.query.publicOrderSubmissionsTable.findFirst({

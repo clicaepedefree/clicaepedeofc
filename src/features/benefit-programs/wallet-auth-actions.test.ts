@@ -114,6 +114,15 @@ mock.module('./ledger', () => ({
     return { availableAmount: '12.34', pendingAmount: '5.67' }
   },
 }))
+mock.module('./product-rewards', () => ({
+  listAvailableProductRewards: async (storeId: number, phone: string, transaction: unknown) => {
+    events.push('rewards')
+    expect(storeId).toBe(9)
+    expect(phone).toBe('5511900000001')
+    expect(transaction).toBe(tx)
+    return [{ rewardId: 'reward-fixture', itemName: 'X-salada', voucherCode: 'FID-fixture', expiresAt: new Date('2026-12-03T12:00:00Z'), state: 'available', canReserve: true, availability: 'available' }]
+  },
+}))
 const a = await import('./wallet-auth-actions')
 const input = { storeSlug: 'fixture', phone: '(11) 90000-0001' }
 const fixtureWalletHmac = 'a'.repeat(64)
@@ -211,12 +220,15 @@ describe('wallet public action contracts (mock DB and transport; zero real sends
       ok: true,
       availableAmount: '12.34',
       pendingAmount: '5.67',
+      productRewards: [{ id: 'reward-fixture', productName: 'X-salada', voucherCode: 'FID-fixture', expiresAt: '2026-12-03T12:00:00.000Z', state: 'available', isAvailable: true }],
     })
     expect(events.indexOf('identity')).toBeLessThan(events.indexOf('balance'))
+    expect(events.indexOf('identity')).toBeLessThan(events.indexOf('rewards'))
     events.length = 0
     authenticated = false
     expect((await a.getWalletBalance(input)).ok).toBe(false)
     expect(events).not.toContain('balance')
+    expect(events).not.toContain('rewards')
   })
   test('logout invalidates DB session and challenges before expiring cookie', async () => {
     jar.set('__Host-wallet-browser', 'b'.repeat(64))
