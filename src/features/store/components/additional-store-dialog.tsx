@@ -118,7 +118,7 @@ export const AdditionalStoreDialog = () => {
           variant="outline"
           size="sm"
           aria-label="Adicionar loja"
-          className="h-9 border-primary/20 bg-primary/5 px-3 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/30 dark:bg-primary/10"
+          className="h-9 shrink-0 border-primary/20 bg-primary/5 px-3 text-primary hover:bg-primary/10 hover:text-primary dark:border-primary/30 dark:bg-primary/10"
         >
           <Plus className="h-4 w-4" />
           <span className="hidden lg:inline">Adicionar loja</span>

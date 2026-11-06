@@ -48,6 +48,7 @@ type ComboboxProps<T extends object = ComboboxBaseOption> = {
   customIcon?: React.ElementType
   contentClassName?: string
   hideOptionsOnEmptyInput?: boolean
+  truncateLabel?: boolean
 }
 
 export const Combobox = <T extends object = ComboboxBaseOption>({
@@ -68,6 +69,7 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
   onInputValueChange,
   contentClassName,
   hideOptionsOnEmptyInput = false,
+  truncateLabel = false,
 }: ComboboxProps<T>) => {
   const [open, setOpen] = React.useState(false)
   const [defaultInputValue, setDefaultInputValue] = React.useState('')
@@ -110,9 +112,24 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {value && selectedOption
-            ? getOptionBaseFields(selectedOption).label
-            : placeholder}
+          {truncateLabel ? (
+            <span
+              className="min-w-0 flex-1 truncate text-left"
+              title={
+                selectedOption
+                  ? getOptionBaseFields(selectedOption).label
+                  : placeholder
+              }
+            >
+              {selectedOption
+                ? getOptionBaseFields(selectedOption).label
+                : placeholder}
+            </span>
+          ) : value && selectedOption ? (
+            getOptionBaseFields(selectedOption).label
+          ) : (
+            placeholder
+          )}
           <Icon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
