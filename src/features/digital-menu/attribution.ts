@@ -4,6 +4,7 @@ export type DigitalMenuAttribution = {
   campaign: 'digital_menu_cta'
   conversationId: string
   messageId?: string
+  visitId?: string
   entryUrl?: string
 }
 
@@ -13,6 +14,7 @@ export type DigitalMenuAttributionInput = {
   campaign?: string
   conversationId?: string
   messageId?: string
+  visitId?: string
   entryUrl?: string
 }
 
@@ -28,7 +30,13 @@ const cleanEntryUrl = (value: unknown) => {
 
   try {
     const url = new URL(rawValue)
-    return url.toString()
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      url.username ||
+      url.password
+    )
+      return undefined
+    return `${url.origin}${url.pathname}`
   } catch {
     return undefined
   }
@@ -54,6 +62,8 @@ export const normalizeDigitalMenuAttribution = (
   }
 
   const messageId = cleanText(input.messageId, 160)
+  const visitId = cleanText(input.visitId, 80)
+  if (input.visitId !== undefined && !uuidPattern.test(visitId)) return null
   const entryUrl = cleanEntryUrl(input.entryUrl)
 
   return {
@@ -62,6 +72,7 @@ export const normalizeDigitalMenuAttribution = (
     campaign,
     conversationId,
     ...(messageId ? { messageId } : {}),
+    ...(visitId ? { visitId: visitId.toLowerCase() } : {}),
     ...(entryUrl ? { entryUrl } : {}),
   }
 }

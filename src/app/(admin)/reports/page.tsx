@@ -6,6 +6,7 @@ import { RevenueMultilineChart } from '@/features/reports/components/revenue-mul
 import { SalesChannelBreakdown } from '@/features/reports/components/sales-channel-breakdown'
 import { StoreAdoptionMetrics } from '@/features/reports/components/store-adoption-metrics'
 import { TopSellingProducts } from '@/features/reports/components/top-selling-products'
+import { WhatsappCtaAttribution } from '@/features/reports/components/whatsapp-cta-attribution'
 import type { ReportPeriodSelection } from '@/features/reports/form-validation/report-period'
 import { useRevenueSummary } from '@/features/reports/hooks/use-revenue-report'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/card'
@@ -56,6 +57,12 @@ export default function Page() {
               className="mb-4"
             />
           )}
+        {!isLoading && isEnabled && period.isRangeValid && (
+          <WhatsappCtaAttribution
+            metrics={revenueSummary?.whatsappCtaMetrics}
+            className="mb-4"
+          />
+        )}
         {!!revenueSummary?.totalOrders && (
           <>
             <div className="grid auto-rows-min gap-4 md:grid-cols-3 mb-4">

@@ -28,8 +28,7 @@ describe('digital menu attribution', () => {
       campaign: 'digital_menu_cta',
       conversationId,
       messageId: 'assistant:inbound-message-id',
-      entryUrl:
-        'https://clicaepedeofc.vercel.app/cardapio/ccocobongo?utm_source=whatsapp_bot&utm_medium=assistant&utm_campaign=digital_menu_cta&wa_conversation=6b9d2c6c-bda3-4b90-aab3-2081d80a23d9&wa_message=assistant%3Ainbound-message-id',
+      entryUrl: 'https://clicaepedeofc.vercel.app/cardapio/ccocobongo',
     })
   })
 

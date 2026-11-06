@@ -68,6 +68,16 @@ const cartItemSchema = z.object({
   options: z.array(cartOptionSchema).max(80).default([]),
 })
 
+export const digitalMenuAttributionSchema = z.object({
+  source: z.literal('whatsapp_bot').optional(),
+  medium: z.literal('assistant').optional(),
+  campaign: z.literal('digital_menu_cta').optional(),
+  conversationId: z.string().uuid().optional(),
+  messageId: z.string().trim().max(160).optional(),
+  visitId: z.string().uuid().optional(),
+  entryUrl: z.string().trim().url().max(500).optional(),
+})
+
 export const submitDigitalMenuOrderSchema = z
   .object({
     storeSlug: z.string().min(1).max(80).transform(normalizeStoreSlug),
@@ -75,16 +85,7 @@ export const submitDigitalMenuOrderSchema = z
     deviceId: z.string().trim().min(16).max(120).optional(),
     captchaToken: z.string().trim().min(10).max(2048).optional(),
     trackingToken: z.string().trim().max(240).optional(),
-    attribution: z
-      .object({
-        source: z.literal('whatsapp_bot').optional(),
-        medium: z.literal('assistant').optional(),
-        campaign: z.literal('digital_menu_cta').optional(),
-        conversationId: z.string().uuid().optional(),
-        messageId: z.string().trim().max(160).optional(),
-        entryUrl: z.string().trim().url().max(500).optional(),
-      })
-      .optional(),
+    attribution: digitalMenuAttributionSchema.optional(),
     customerName: z
       .string()
       .max(120)

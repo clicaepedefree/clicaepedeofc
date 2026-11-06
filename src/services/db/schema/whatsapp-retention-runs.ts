@@ -9,6 +9,7 @@ export type WhatsappRetentionPolicySnapshot = {
   deliveryAttemptDays: 180
   inactiveContactDays: 365
   expiredQrCodeMinutes: 15
+  digitalMenuAttributionDays?: 30
 }
 
 export type WhatsappRetentionRunCounts = {
@@ -18,6 +19,7 @@ export type WhatsappRetentionRunCounts = {
   deletedMessages: number
   deletedConversations: number
   deletedContacts: number
+  deletedAttributionAccesses?: number
 }
 
 export const whatsappRetentionRunsTable = pgTable(
@@ -32,7 +34,7 @@ export const whatsappRetentionRunsTable = pgTable(
       enum: ['whatsapp-transactional-retention'],
     }).notNull(),
     policyVersion: text('policy_version', {
-      enum: ['2026-10-08.v1'],
+      enum: ['2026-10-08.v1', '2026-11-04.v2'],
     }).notNull(),
     policySnapshot: jsonb('policy_snapshot')
       .$type<WhatsappRetentionPolicySnapshot>()

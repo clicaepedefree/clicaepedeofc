@@ -10,6 +10,7 @@ export type RetentionCounts = {
   deletedMessages: number
   deletedConversations: number
   deletedContacts: number
+  deletedAttributionAccesses: number
 }
 
 export const emptyRetentionCounts = (): RetentionCounts => ({
@@ -19,6 +20,7 @@ export const emptyRetentionCounts = (): RetentionCounts => ({
   deletedMessages: 0,
   deletedConversations: 0,
   deletedContacts: 0,
+  deletedAttributionAccesses: 0,
 })
 
 export function retentionScope(
