@@ -11,6 +11,7 @@ import {
   whatsappBotSessionsTable as sessions,
   whatsappBotTransactionalEventsTable as events,
   whatsappRetentionRunsTable as runs,
+  digitalMenuAttributionAccessesTable as attributionAccesses,
 } from '@/services/db/schema'
 import {
   getWhatsappRetentionCutoffs,
@@ -38,7 +39,7 @@ function completed(row: Run): RetentionCounts {
   if (row.status === 'failed') throw failed()
   if (row.status === 'running' || !row.counts)
     throw new Error('Retention outcome is not confirmed')
-  return row.counts as RetentionCounts
+  return { ...emptyRetentionCounts(), ...(row.counts as RetentionCounts) }
 }
 
 /** No network, human actor or raw error metadata; audit and deletion share a commit. */
@@ -60,7 +61,7 @@ export async function pruneWhatsappBotRetainedHistory(
       storeIds,
       actorId: 'system:whatsapp-retention',
       jobName: 'whatsapp-transactional-retention',
-      policyVersion: '2026-10-08.v1',
+      policyVersion: '2026-11-04.v2',
       effectiveAt: now,
       policySnapshot: { ...WHATSAPP_BOT_RETENTION_POLICY },
     })
@@ -190,6 +191,24 @@ export async function pruneWhatsappBotRetainedHistory(
               )
             )
             .returning({ id: events.id })
+        ).length
+        counts.deletedAttributionAccesses = (
+          await tx
+            .delete(attributionAccesses)
+            .where(
+              and(
+                scope(attributionAccesses.storeId),
+                lt(
+                  attributionAccesses.createdAt,
+                  new Date(
+                    at.getTime() -
+                      WHATSAPP_BOT_RETENTION_POLICY.digitalMenuAttributionDays *
+                        86400_000
+                  )
+                )
+              )
+            )
+            .returning({ id: attributionAccesses.id })
         ).length
         counts.deletedMessages = (
           await tx

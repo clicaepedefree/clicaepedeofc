@@ -41,7 +41,7 @@ describe('retention audit boundaries', () => {
     const a = emptyRetentionCounts(),
       b = emptyRetentionCounts()
     a.deletedContacts = 3
-    expect(Object.values(b)).toEqual([0, 0, 0, 0, 0, 0])
-    expect(Object.keys(b)).toHaveLength(6)
+    expect(Object.values(b)).toEqual([0, 0, 0, 0, 0, 0, 0])
+    expect(Object.keys(b)).toHaveLength(7)
   })
 })

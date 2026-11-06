@@ -33,7 +33,6 @@ import {
   storePaymentMethodsTable,
   storeSpecialHoursTable,
   storesTable,
-  whatsappBotConversationsTable,
 } from '@/services/db/schema'
 import { getValueFromCurrencyString } from '@/shared/formatters/currency'
 import Decimal from 'decimal.js'
@@ -45,7 +44,7 @@ import { getProductRewardCheckoutItem } from '@/features/benefit-programs/produc
 import { and, asc, count, desc, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { unstable_noStore as noStore } from 'next/cache'
-import { createHash, createHmac } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 import { headers } from 'next/headers'
 import { z } from 'zod'
 import {
@@ -83,6 +82,7 @@ import {
   normalizeStoreSlug,
   sanitizePublicText,
   submitDigitalMenuOrderSchema,
+  digitalMenuAttributionSchema,
 } from './validation'
 import { getTurnstileSiteKey, verifyTurnstileToken } from './turnstile'
 import { mapDbPromotionToPublic, normalizeCouponCode } from './promotions'
@@ -90,10 +90,9 @@ import {
   DigitalMenuOrderDomainError,
   getDigitalMenuOrderDomainFailure,
 } from './submission-errors'
-import {
-  normalizeDigitalMenuAttribution,
-  type DigitalMenuAttribution,
-} from './attribution'
+import { recordDigitalMenuAttributionAccess, validateDigitalMenuAttribution } from './attribution-events'
+import { normalizeDigitalMenuAttribution } from './attribution'
+import { createPublicOrderRequestHash, matchesPublicOrderRequestHash } from './order-request-hash'
 
 const DEFAULT_DIGITAL_MENU_SETTINGS = {
   logoImageUrl: null,
@@ -233,36 +232,8 @@ const paymentMethodLabels: Record<DigitalMenuPaymentMethod['method'], string> =
     ONLINE: 'Pagamento online',
   }
 
-const createRequestHash = (value: unknown) => {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
-}
-
 const toJsonSnapshot = <T>(value: T): T =>
   JSON.parse(JSON.stringify(value)) as T
-
-const resolveDigitalMenuAttribution = async ({
-  storeId,
-  attribution,
-}: {
-  storeId: number
-  attribution?: DigitalMenuSubmitInput['attribution'] | null
-}): Promise<DigitalMenuAttribution | null> => {
-  const normalizedAttribution = normalizeDigitalMenuAttribution(attribution)
-  if (!normalizedAttribution) return null
-
-  const conversation = await db.query.whatsappBotConversationsTable.findFirst({
-    where: and(
-      eq(
-        whatsappBotConversationsTable.id,
-        normalizedAttribution.conversationId
-      ),
-      eq(whatsappBotConversationsTable.storeId, storeId)
-    ),
-    columns: { id: true },
-  })
-
-  return conversation ? normalizedAttribution : null
-}
 
 const normalizeOptionalMoney = (value: string | undefined) => {
   const sanitized = sanitizePublicText(value, 40)
@@ -1033,10 +1004,10 @@ export const submitDigitalMenuOrder = async (
     return { ok: false, message: 'Loja nao encontrada.' }
   }
 
-  const orderAttribution = await resolveDigitalMenuAttribution({
-    storeId: menu.store.id,
-    attribution: payload.attribution,
-  })
+  // Attribution is optional analytics, never authority to place an order.
+  const orderAttribution = await validateDigitalMenuAttribution(
+    menu.store.id, payload.attribution
+  ).catch(() => null)
   const publicOrderSource = orderAttribution?.source ?? 'public_digital_menu'
   const orderOrigin = orderAttribution
     ? 'whatsapp-bot-digital-menu-cta'
@@ -1331,7 +1302,7 @@ export const submitDigitalMenuOrder = async (
   const trackingExpiresAt = new Date(
     submittedAt.getTime() + PUBLIC_ORDER_TRACKING_TTL_MS
   )
-  const requestHash = createRequestHash({
+  const requestHashInput = {
     storeSlug: payload.storeSlug,
     customerName: payload.customerName,
     customerPhone: payload.customerPhone,
@@ -1348,8 +1319,11 @@ export const submitDigitalMenuOrder = async (
       : {}),
     ...(payload.productRewardId ? { productRewardId: payload.productRewardId } : {}),
     items: cartItemsForValidation,
-    attribution: orderAttribution,
-  })
+  }
+  const requestHash = createPublicOrderRequestHash(requestHashInput)
+  const matchesExistingRequest = (existing: { requestHash: string; customerSnapshot: unknown }) =>
+    matchesPublicOrderRequestHash({ input: requestHashInput, existingHash: existing.requestHash,
+      existingAttribution: (existing.customerSnapshot as { attribution?: unknown } | null)?.attribution })
   const addressSnapshot =
     payload.orderType === 'DELIVERY'
       ? {
@@ -1382,6 +1356,7 @@ export const submitDigitalMenuOrder = async (
           id: true,
           requestId: true,
           requestHash: true,
+          customerSnapshot: true,
           status: true,
           totalsSnapshot: true,
           trackingTokenHash: true,
@@ -1391,7 +1366,7 @@ export const submitDigitalMenuOrder = async (
       })
 
       if (existing) {
-        if (existing.requestHash !== requestHash) {
+        if (!matchesExistingRequest(existing)) {
           return {
             ok: false as const,
             message:
@@ -1933,6 +1908,7 @@ export const submitDigitalMenuOrder = async (
           requestId: true,
           requestHash: true,
           status: true,
+          customerSnapshot: true,
           totalsSnapshot: true,
           trackingTokenHash: true,
           trackingTokenEncrypted: true,
@@ -1940,7 +1916,7 @@ export const submitDigitalMenuOrder = async (
         },
       })
 
-      if (existing?.requestHash === requestHash) {
+      if (existing && matchesExistingRequest(existing)) {
         const totals = existing.totalsSnapshot as { total?: string }
         const now = new Date()
         const reusableTrackingToken =
@@ -2137,6 +2113,41 @@ export const quoteDigitalMenuCoupon = async (input: {
 
 export const getDigitalMenuBySlug = async (rawStoreSlug: string) =>
   getDigitalMenuBySlugInternal(rawStoreSlug)
+
+const attributionEventSchema = z.object({
+  storeSlug: z.string().min(1).max(80).transform(normalizeStoreSlug),
+  attribution: digitalMenuAttributionSchema,
+  visitId: z.string().uuid(),
+  stage: z.enum(['access', 'cart']),
+  consent: z.literal(true),
+})
+
+export const recordDigitalMenuAttributionEvent = async (input: unknown) => {
+  const parsed = attributionEventSchema.safeParse(input)
+  if (!parsed.success) return { ok: false as const }
+  const attribution = normalizeDigitalMenuAttribution(parsed.data.attribution)
+  if (!attribution) return { ok: false as const }
+  try {
+    const h = await headers()
+    if (h.get('sec-gpc') === '1' || h.get('dnt') === '1')
+      return { ok: false as const }
+    const [store] = await db.select({ id: storesTable.id }).from(storesTable)
+      .innerJoin(storeDigitalMenuSettingsTable, eq(storeDigitalMenuSettingsTable.storeId, storesTable.id))
+      .where(and(eq(storesTable.subdomain, parsed.data.storeSlug),
+        eq(storesTable.status, 'active'), eq(storeDigitalMenuSettingsTable.publicationStatus, 'PUBLISHED'),
+        eq(storeDigitalMenuSettingsTable.isDigitalMenuEnabled, true))).limit(1)
+    if (!store) return { ok: false as const }
+    const visitId = await recordDigitalMenuAttributionAccess({
+      storeId: store.id,
+      attribution,
+      visitId: parsed.data.visitId,
+      stage: parsed.data.stage,
+    })
+    return visitId ? { ok: true as const, visitId } : { ok: false as const }
+  } catch {
+    return { ok: false as const }
+  }
+}
 
 export const getDigitalMenuPreviewBySlug = async (rawStoreSlug: string) => {
   const storeSlug = normalizeStoreSlug(rawStoreSlug)

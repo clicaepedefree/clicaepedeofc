@@ -7,6 +7,7 @@ export const WHATSAPP_BOT_RETENTION_POLICY = {
   deliveryAttemptDays: 180,
   inactiveContactDays: 365,
   expiredQrCodeMinutes: 15,
+  digitalMenuAttributionDays: 30,
 } as const
 
 export type WhatsappNotificationCategory = 'transactional' | 'promotional'

@@ -10,6 +10,7 @@ import {
 import { getTableColumns, getTableName, type SQL } from 'drizzle-orm'
 import { PgDialect, type PgTable } from 'drizzle-orm/pg-core'
 import {
+  digitalMenuAttributionAccessesTable,
   whatsappBotContactsTable,
   whatsappBotConversationsTable,
   whatsappBotDeliveryAttemptsTable,
@@ -43,6 +44,7 @@ type RetentionRow = {
   metadata?: Record<string, unknown>
   qrCodeExpiresAt?: Date | null
   attemptedAt?: Date
+  createdAt?: Date
   updatedAt?: Date
   occurredAt?: Date
   lastContactAt?: Date
@@ -74,6 +76,13 @@ const retentionDefinitions = [
     status: 'sent',
   },
   {
+    table: digitalMenuAttributionAccessesTable,
+    key: 'createdAt',
+    column: 'created_at',
+    cutoff: 'attributionAccessBefore',
+    status: undefined,
+  },
+  {
     table: whatsappBotMessagesTable,
     key: 'occurredAt',
     column: 'occurred_at',
@@ -95,6 +104,13 @@ const retentionDefinitions = [
     status: undefined,
   },
 ] as const
+
+function retentionCutoffs() {
+  return {
+    ...getWhatsappRetentionCutoffs(now),
+    attributionAccessBefore: new Date(now.getTime() - 30 * 24 * 60 * 60_000),
+  }
+}
 
 beforeEach(() => {
   setSystemTime(now)
@@ -290,7 +306,7 @@ function createDatabaseContract(
       Number(query.sql.split(dateClause)[1].match(/^\d+/)?.[0]) - 1
     const expiresBefore = new Date(query.params[dateIndex] as string)
     expect(expiresBefore).toEqual(
-      getWhatsappRetentionCutoffs(now)[definition.cutoff]
+      retentionCutoffs()[definition.cutoff]
     )
     const ref = (table: PgTable, key: string) =>
       `"${getTableName(table)}"."${key}"`
@@ -342,7 +358,7 @@ function createDatabaseContract(
       `${ref(table, definition.column)} < $${expectedParams.length + 1}`
     )
     expectedParams.push(
-      getWhatsappRetentionCutoffs(now)[definition.cutoff].toISOString()
+      retentionCutoffs()[definition.cutoff].toISOString()
     )
     const lockedTable =
       table === whatsappBotDeliveryAttemptsTable
@@ -363,7 +379,9 @@ function createDatabaseContract(
       expectedParams.push(...lockedIds)
     }
     clauses.push(...guards)
-    expect(query.sql.replace(/\s+/g, ' ')).toBe(`(${clauses.join(' and ')})`)
+    expect(query.sql.replace(/\s+/g, ' ')).toBe(
+      clauses.length === 1 ? clauses[0] : `(${clauses.join(' and ')})`
+    )
     expect(query.params).toEqual(expectedParams)
 
     const related = (
@@ -780,14 +798,14 @@ describe('transactional recovery database contract', () => {
     }
   )
   test.each(['pilot', 'all'] as const)(
-    '%s applies retention to its scope across all six queries and preserves other history',
+    '%s applies retention to its scope across all seven queries and preserves other history',
     async mode => {
       process.env.WHATSAPP_BOT_ROLLOUT_MODE = mode
       process.env.WHATSAPP_BOT_PILOT_STORE_IDS = '9'
       const retained = new Map<PgTable, RetentionRow[]>()
       const originals = new Map<PgTable, RetentionRow[]>()
       for (const definition of retentionDefinitions) {
-        const boundary = getWhatsappRetentionCutoffs(now)[definition.cutoff]
+        const boundary = retentionCutoffs()[definition.cutoff]
         const fixtures = [
           {
             id: 'qa-expired',
@@ -802,6 +820,7 @@ describe('transactional recovery database contract', () => {
           { id: 'qa-fresh', storeId: 9, timestamp: now },
           { id: 'non-qa-fresh', storeId: 10, timestamp: now },
           { id: 'qa-boundary', storeId: 9, timestamp: boundary },
+          { id: 'non-qa-boundary', storeId: 10, timestamp: boundary },
         ].map(({ timestamp, ...row }) => ({
           ...row,
           status: definition.status,
@@ -844,6 +863,7 @@ describe('transactional recovery database contract', () => {
           deletedMessages: 2,
           deletedConversations: 2,
           deletedContacts: 2,
+          deletedAttributionAccesses: 2,
         })
       }
 
@@ -866,6 +886,16 @@ describe('transactional recovery database contract', () => {
           status: 'succeeded',
           storeIds: mode === 'pilot' ? [9] : null,
           effectiveAt: now,
+          policyVersion: '2026-11-04.v2',
+          policySnapshot: {
+            openConversationDays: 90,
+            closedConversationDays: 30,
+            transactionalEventDays: 180,
+            deliveryAttemptDays: 180,
+            inactiveContactDays: 365,
+            expiredQrCodeMinutes: 15,
+            digitalMenuAttributionDays: 30,
+          },
           counts: {
             expiredQrSessions: mode === 'pilot' ? 1 : 2,
             deletedDeliveryAttempts: mode === 'pilot' ? 1 : 2,
@@ -873,6 +903,7 @@ describe('transactional recovery database contract', () => {
             deletedMessages: mode === 'pilot' ? 1 : 2,
             deletedConversations: mode === 'pilot' ? 1 : 2,
             deletedContacts: mode === 'pilot' ? 1 : 2,
+            deletedAttributionAccesses: mode === 'pilot' ? 1 : 2,
           },
         }),
       ])
@@ -924,6 +955,7 @@ describe('transactional recovery database contract', () => {
       deletedMessages: 0,
       deletedConversations: 0,
       deletedContacts: 0,
+      deletedAttributionAccesses: 0,
     })
     expect(
       contract.lockedParentIds.get(whatsappBotTransactionalEventsTable)
@@ -970,6 +1002,7 @@ describe('transactional recovery database contract', () => {
       deletedMessages: 0,
       deletedConversations: 0,
       deletedContacts: 0,
+      deletedAttributionAccesses: 0,
     })
     expect([...contract.lockedParentIds.values()]).toEqual([[], [], []])
     for (const table of [
@@ -1098,6 +1131,7 @@ describe('transactional recovery database contract', () => {
       deletedMessages: 0,
       deletedConversations: 0,
       deletedContacts: 0,
+      deletedAttributionAccesses: 0,
     })
     expect(
       retentionDefinitions.map(({ table }) => retained.get(table))

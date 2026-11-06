@@ -1,6 +1,7 @@
 'use server'
 
 import { validateUserPermissionsForStore } from '@/features/store/api'
+import { readWhatsappCtaMetrics } from '@/features/digital-menu/attribution-events'
 import { db } from '@/services/db'
 import { categoriesTable } from '@/services/db/schema/categories'
 import { itemOfferingsTable } from '@/services/db/schema/item-offerings'
@@ -270,6 +271,11 @@ export const getRevenueSummary = async (
     lastAccessAt: lastAccessRow?.lastAccessAt ?? null,
   })
 
+  // Optional analytics must not hide the established financial report on failure.
+  const whatsappCtaMetrics = await readWhatsappCtaMetrics(storeId, {
+    startDate, endDate, timeZone,
+  }).catch(() => null)
+
   return {
     ...revenueSummary,
     totalOrders: operationalSummary.totalOrders,
@@ -279,6 +285,7 @@ export const getRevenueSummary = async (
     channelBreakdowns: operationalSummary.channelBreakdowns,
     topSellingProducts,
     adoptionMetrics,
+    whatsappCtaMetrics,
     classificationNote: operationalSummary.classificationNote,
     revenueTreatmentNote: operationalSummary.revenueTreatmentNote,
     periodPreset,

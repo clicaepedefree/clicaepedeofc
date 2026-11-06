@@ -27,11 +27,8 @@ import {
   canSubmitDigitalMenuCheckout,
   canValidateDigitalMenuCheckout,
 } from '@/features/digital-menu/checkout-readiness'
-import {
-  normalizeDigitalMenuAttribution,
-  parseDigitalMenuAttributionSearchParams,
-  type DigitalMenuAttribution,
-} from '@/features/digital-menu/attribution'
+import { useMenuAttribution } from '@/features/digital-menu/hooks/use-menu-attribution'
+import { AttributionConsent } from './attribution-consent'
 import { isValidCpf } from '@/features/digital-menu/validation'
 import {
   DigitalMenuCategory,
@@ -334,17 +331,13 @@ export const DigitalMenuClient = ({
   const [trackingLinkMessage, setTrackingLinkMessage] = useState<string | null>(
     null
   )
-  const [digitalMenuAttribution, setDigitalMenuAttribution] =
-    useState<DigitalMenuAttribution | null>(null)
+  const menuAttribution = useMenuAttribution(menu.store.subdomain, cart.length > 0, previewMode)
+  const digitalMenuAttribution = menuAttribution.attribution
   const [isPending, startTransition] = useTransition()
   const [isApplyingCoupon, startCouponTransition] = useTransition()
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
   const draftStorageKey = useMemo(
     () => buildDigitalMenuDraftStorageKey(menu.store.subdomain),
-    [menu.store.subdomain]
-  )
-  const attributionStorageKey = useMemo(
-    () => `clica-digital-menu-attribution:${menu.store.subdomain}`,
     [menu.store.subdomain]
   )
 
@@ -355,33 +348,6 @@ export const DigitalMenuClient = ({
     if (!stored) window.localStorage.setItem(storageKey, value)
     setDeviceId(value)
   }, [])
-
-  useEffect(() => {
-    try {
-      const urlAttribution = parseDigitalMenuAttributionSearchParams(
-        new URLSearchParams(window.location.search),
-        window.location.href
-      )
-
-      if (urlAttribution) {
-        window.sessionStorage.setItem(
-          attributionStorageKey,
-          JSON.stringify(urlAttribution)
-        )
-        setDigitalMenuAttribution(urlAttribution)
-        return
-      }
-
-      const storedAttribution = normalizeDigitalMenuAttribution(
-        JSON.parse(
-          window.sessionStorage.getItem(attributionStorageKey) ?? 'null'
-        )
-      )
-      setDigitalMenuAttribution(storedAttribution)
-    } catch {
-      setDigitalMenuAttribution(null)
-    }
-  }, [attributionStorageKey])
 
   useEffect(() => {
     let draft = null
@@ -1006,10 +972,10 @@ export const DigitalMenuClient = ({
       setProductRewardId(null)
       try {
         window.sessionStorage.removeItem(draftStorageKey)
-        window.sessionStorage.removeItem(attributionStorageKey)
       } catch {
         // Ignore unavailable storage after successful order submission.
       }
+      menuAttribution.clear()
       setCaptchaToken(null)
       setChallengeSiteKey(null)
       setRetryAfterSeconds(0)
@@ -1142,6 +1108,11 @@ export const DigitalMenuClient = ({
           <Button type="button" variant="outline" size="sm" disabled={previewMode} onClick={() => { setIsCartOpen(true); setCheckoutStep(true) }}>
             <Gift className="size-4" />Meus beneficios
           </Button>
+          {menuAttribution.canManageConsent && !menuAttribution.askConsent && (
+            <Button type="button" variant="ghost" size="sm" onClick={menuAttribution.manageConsent}>
+              Privacidade da origem
+            </Button>
+          )}
           <Badge
             className={cn(
               'border',
@@ -1164,6 +1135,12 @@ export const DigitalMenuClient = ({
           )}
         </div>
       </header>
+
+      {menuAttribution.askConsent && (
+        <div className="mx-auto max-w-6xl px-4">
+          <AttributionConsent onAccept={menuAttribution.accept} onDecline={menuAttribution.decline} busy={menuAttribution.busy} />
+        </div>
+      )}
 
       <div className="mx-auto grid w-full max-w-6xl min-w-0 grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="min-w-0 lg:sticky lg:top-5 lg:h-fit">

@@ -191,6 +191,7 @@ export type DigitalMenuSubmitInput = {
     campaign?: string
     conversationId?: string
     messageId?: string
+    visitId?: string
     entryUrl?: string
   }
   customerName: string
