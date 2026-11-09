@@ -45,4 +45,20 @@ describe('Combobox bounded label', () => {
     expect(html).not.toContain('min-w-0 flex-1 truncate text-left')
     expect(html).not.toContain(`title="${longName}"`)
   })
+
+  test('dialog containment is safe before the trigger is mounted', () => {
+    const html = renderToStaticMarkup(
+      <Combobox
+        options={options}
+        value="1"
+        onChange={() => {}}
+        truncateLabel
+        portalInDialog
+      />
+    )
+    expect(html).toContain('role="combobox"')
+    expect(html).toContain(`title="${longName}"`)
+    expect(html).not.toContain('portalInDialog')
+    expect(html).not.toContain('portalContainer')
+  })
 })

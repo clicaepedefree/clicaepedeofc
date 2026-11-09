@@ -5,11 +5,15 @@ import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+function Popover({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+function PopoverTrigger({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
@@ -17,10 +21,15 @@ function PopoverContent({
   className,
   align = 'center',
   sideOffset = 4,
+  portalContainer,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  portalContainer?: React.ComponentProps<
+    typeof PopoverPrimitive.Portal
+  >['container']
+}) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={portalContainer}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
@@ -35,7 +44,9 @@ function PopoverContent({
   )
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+function PopoverAnchor({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
 

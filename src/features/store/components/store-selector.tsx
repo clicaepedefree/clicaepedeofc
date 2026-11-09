@@ -42,6 +42,7 @@ export const StoreSelector = () => {
           disabled={isLoading}
           disableUnselectingOption
           truncateLabel
+          portalInDialog
           contentClassName="w-72 max-w-[calc(100vw-2rem)]"
           customOptionLabelComponent={option => (
             <>
