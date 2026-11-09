@@ -72,6 +72,21 @@ class MaintainTests(unittest.TestCase):
                 return data, types.SimpleNamespace(**values)
 
             self.enterContext(patch.object(maintain, 'read_snapshot', side_effect=windows_snapshot))
+        else:
+            read_snapshot = maintain.read_snapshot
+
+            def canonical_fixture_snapshot(path):
+                data, metadata = read_snapshot(path)
+                if path == self.canonical / 'stack.yaml':
+                    # Offline fixtures are owned by the CI user, not VPS root.
+                    values = {name: getattr(metadata, name) for name in dir(metadata)
+                              if name.startswith('st_')}
+                    values['st_uid'] = 0
+                    metadata = types.SimpleNamespace(**values)
+                return data, metadata
+
+            self.enterContext(patch.object(maintain, 'read_snapshot',
+                                           side_effect=canonical_fixture_snapshot))
         self.enterContext(patch.object(maintain, 'ROOT', self.root / 'runs'))
         self.process = self.enterContext(patch.object(
             maintain.subprocess, 'run', side_effect=AssertionError('Unexpected subprocess')))
@@ -122,6 +137,27 @@ class MaintainTests(unittest.TestCase):
     def write_file(self, path, data):
         self.assertTrue(path.resolve().is_relative_to(self.root))
         path.write_bytes(data)
+
+    def test_untrusted_canonical_file_owner_or_permissions_rejected_before_backup(self):
+        snapshot = maintain.read_snapshot
+        for field, value in [('st_uid', 1001), ('st_mode', 0o100666)]:
+            with self.subTest(field=field):
+                def untrusted(path):
+                    data, metadata = snapshot(path)
+                    if path == self.canonical / 'stack.yaml':
+                        values = {name: getattr(metadata, name) for name in dir(metadata)
+                                  if name.startswith('st_')}
+                        values[field] = value
+                        metadata = types.SimpleNamespace(**values)
+                    return data, metadata
+                with patch.object(maintain, 'preflight', return_value=(self.before, self.container)), \
+                     patch.object(maintain, 'read_snapshot', side_effect=untrusted), \
+                     patch.object(maintain, 'backup') as backup, \
+                     patch.object(maintain, 'compare_and_swap_config') as cas:
+                    with self.assertRaises(AssertionError):
+                        maintain.apply(self.payload, self.source, self.run)
+                    backup.assert_not_called()
+                    cas.assert_not_called()
 
     def test_approval_and_canonical_hash_drift_fail_before_backup_or_update(self):
         for field, value in [('restartApproved', False),
