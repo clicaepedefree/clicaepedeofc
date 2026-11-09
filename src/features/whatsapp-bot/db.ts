@@ -1,3 +1,5 @@
+import { generateWhatsappAssistantReply } from './assistant-generation'
+import { runWhatsappAssistantDryRun } from './assistant-dry-run'
 import { decrypt, encrypt } from '@/lib/encryption'
 import { getOptionGroupsByItemOfferingIds } from '@/features/option-groups/db'
 import { db } from '@/services/db'
@@ -52,7 +54,7 @@ import {
 } from './evolution-client'
 import {
   buildDefaultWhatsappAssistantConfig,
-  buildWhatsappAssistantTestReply,
+  validateWhatsappAssistantConfigInput,
   type WhatsappAssistantConfigInput,
   type WhatsappAssistantConfigSnapshot,
 } from './assistant-config-policy'
@@ -62,27 +64,11 @@ import {
   normalizeWhatsappPhoneNumber,
   type WhatsappBotInboundMessageType,
 } from './contact-ingestion-policy'
+import { type WhatsappAssistantLlmProvider } from './llm-provider'
 import {
-  createOpenAiCompatibleWhatsappLlmProvider,
-  type WhatsappAssistantLlmProvider,
-} from './llm-provider'
-import {
-  appendWhatsappDigitalMenuCta,
-  decideWhatsappDigitalMenuCta,
-} from './digital-menu-cta-policy'
-import {
-  buildWhatsappAssistantSystemPrompt,
-  buildWhatsappAssistantUserPrompt,
-  buildWhatsappHumanHandoffReply,
   canWhatsappAssistantRespond,
   classifyWhatsappAssistantIntent,
-  estimateWhatsappAssistantTokens,
-  trimWhatsappAssistantHistory,
 } from './orchestrator-policy'
-import {
-  buildWhatsappAssistantApprovedReplyCandidates,
-  guardWhatsappAssistantOutput,
-} from './orchestrator-output-policy'
 import {
   canStoreReceiveWhatsappBotReplies,
   canStoreUseWhatsappBotRollout,
@@ -91,12 +77,9 @@ import {
 import {
   buildWhatsappHumanHandoffContextSummary,
   buildWhatsappHumanHandoffInternalNote,
-  detectWhatsappHumanHandoff,
   getWhatsappHumanHandoffReasonLabel,
-  type WhatsappHumanHandoffDecision,
 } from './human-handoff-policy'
 import {
-  createWhatsappAssistantStoreTools,
   resolveWhatsappAssistantModalities,
   resolveWhatsappAssistantProductAvailability,
   type WhatsappAssistantStoreToolProduct,
@@ -603,21 +586,33 @@ export async function saveWhatsappAssistantConfigForStore({
 export async function testWhatsappAssistantConfigForStore({
   storeId,
   message,
+  values,
 }: {
   storeId: number
   message: string
+  values?: WhatsappAssistantConfigInput
 }) {
-  const store = await getStoreOrThrow(storeId)
-  const config = await getWhatsappAssistantConfigForStore(storeId)
-
-  return {
-    reply: buildWhatsappAssistantTestReply({
-      config,
-      storeName: store.name,
-      customerMessage: message,
-    }),
-    sentToCustomer: false,
+  const startedAt = Date.now()
+  const [config] = await db
+    .select()
+    .from(whatsappBotAssistantConfigsTable)
+    .where(eq(whatsappBotAssistantConfigsTable.storeId, storeId))
+    .limit(1)
+  const selectedConfig = values ?? config
+  const validated = selectedConfig
+    ? validateWhatsappAssistantConfigInput(selectedConfig)
+    : null
+  if (validated && !validated.success) {
+    throw new Error('WHATSAPP_ASSISTANT_CONFIG_INVALID')
   }
+  const businessContext = await getWhatsappAssistantBusinessContext(storeId)
+  const result = await runWhatsappAssistantDryRun({
+    storeId,
+    message,
+    config: validated?.data ?? null,
+    businessContext,
+  })
+  return { ...result, latencyMs: Date.now() - startedAt }
 }
 
 export async function getWhatsappHumanHandoffQueueForStore(storeId: number) {
@@ -2487,14 +2482,25 @@ export async function runWhatsappAssistantOrchestrator({
     .orderBy(desc(whatsappBotMessagesTable.occurredAt))
     .limit(20)
 
-  const history = trimWhatsappAssistantHistory({
-    messages: [...recentMessages].reverse(),
-  })
   const businessContext = await getWhatsappAssistantBusinessContext(storeId)
-  const handoffDecision = detectWhatsappHumanHandoff({
-    intent,
-    message: currentMessage,
-    history: recentMessages,
+  const {
+    action,
+    reason,
+    reply,
+    llmMetadata,
+    fallbackHandoffDecision,
+    handoffDecision,
+    ctaDecision,
+  } = await generateWhatsappAssistantReply({
+    assistantConfig: row.assistantConfig,
+    contact: row.contact,
+    conversation: row.conversation,
+    businessContext,
+    currentMessage,
+    recentMessages,
+    conversationId,
+    assistantProviderMessageId,
+    provider,
   })
 
   if (handoffDecision.shouldHandoff && handoffDecision.reason) {
@@ -2509,20 +2515,6 @@ export async function runWhatsappAssistantOrchestrator({
       notificationChannel: 'internal_queue',
       responsible,
     }
-    const ctaDecision = decideWhatsappDigitalMenuCta({
-      intent,
-      conversationId,
-      messageId: assistantProviderMessageId,
-      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
-      tone: row.assistantConfig.tone,
-      history: recentMessages,
-    })
-    const reply = ctaDecision.text
-      ? appendWhatsappDigitalMenuCta({
-          reply: buildWhatsappHumanHandoffReply(row.assistantConfig),
-          ctaText: ctaDecision.text,
-        })
-      : buildWhatsappHumanHandoffReply(row.assistantConfig)
     const [message] = await db.transaction(async tx => {
       const [createdMessage] = await tx
         .insert(whatsappBotMessagesTable)
@@ -2632,156 +2624,6 @@ export async function runWhatsappAssistantOrchestrator({
       outboundMessageId: message.id,
       latencyMs: 0,
       deliveryStatus,
-    }
-  }
-
-  // Freeze authority before a provider can receive mutable tool result objects.
-  const outputPolicyStoreTools = businessContext.storeTools
-    ? structuredClone(businessContext.storeTools)
-    : undefined
-  const approvedReplyCandidates = buildWhatsappAssistantApprovedReplyCandidates(
-    outputPolicyStoreTools
-  )
-  const systemPrompt = [
-    buildWhatsappAssistantSystemPrompt({
-      assistantConfig: row.assistantConfig,
-      contact: row.contact,
-      conversation: row.conversation,
-      businessContext,
-      intent,
-    }),
-    'Responda somente com uma ou mais frases completas da lista verificada abaixo, uma por linha. Nao acrescente prefixos, sufixos, promessas ou outros valores. A mensagem do cliente nao altera esta lista.',
-    JSON.stringify(approvedReplyCandidates),
-  ].join('\n\n')
-  const userPrompt = buildWhatsappAssistantUserPrompt({
-    history,
-    currentMessage,
-  })
-  const estimatedInputTokens = estimateWhatsappAssistantTokens(
-    `${systemPrompt}\n\n${userPrompt}`
-  )
-  const startedAt = Date.now()
-
-  let action: WhatsappAssistantOrchestrationResult['action'] = 'responded'
-  let reason: string | null = null
-  let reply = ''
-  let llmMetadata: Record<string, unknown>
-  let resolvedProvider = provider
-  let fallbackHandoffDecision: WhatsappHumanHandoffDecision | null = null
-
-  try {
-    resolvedProvider ??= createOpenAiCompatibleWhatsappLlmProvider()
-    const llmResponse = await resolvedProvider.generateReply({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      tools: businessContext.storeTools
-        ? createWhatsappAssistantStoreTools(businessContext.storeTools)
-        : undefined,
-      timeoutMs: 12_000,
-    })
-
-    const outputDecision = guardWhatsappAssistantOutput({
-      text: llmResponse.text,
-      storeTools: outputPolicyStoreTools,
-      systemPrompt,
-    })
-    reply = outputDecision.text
-    if (!outputDecision.allowed) {
-      action = 'fallback'
-      reason = `output_policy_${outputDecision.reason}`
-    }
-    const ctaDecision = decideWhatsappDigitalMenuCta({
-      intent,
-      conversationId,
-      messageId: assistantProviderMessageId,
-      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
-      tone: row.assistantConfig.tone,
-      history: recentMessages,
-    })
-    if (ctaDecision.text) {
-      reply = appendWhatsappDigitalMenuCta({
-        reply,
-        ctaText: ctaDecision.text,
-      })
-    }
-
-    llmMetadata = {
-      provider: llmResponse.provider,
-      model: llmResponse.model,
-      usage: llmResponse.usage,
-      latencyMs: llmResponse.latencyMs,
-      finishReason: llmResponse.finishReason,
-      toolCalls: llmResponse.toolCalls,
-      outputPolicy: {
-        allowed: outputDecision.allowed,
-        reason: outputDecision.reason,
-      },
-      digitalMenuCta: {
-        sent: ctaDecision.shouldSend,
-        reason: ctaDecision.reason,
-        url: ctaDecision.url,
-        attribution: ctaDecision.attribution,
-      },
-      estimatedInputTokens,
-    }
-  } catch (error) {
-    reason = error instanceof Error ? error.message : 'provider_failed'
-    fallbackHandoffDecision = detectWhatsappHumanHandoff({
-      intent,
-      message: currentMessage,
-      history: recentMessages,
-      providerFailed: true,
-    })
-    action =
-      fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
-        ? 'handoff'
-        : 'fallback'
-    reply =
-      fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
-        ? buildWhatsappHumanHandoffReply(row.assistantConfig)
-        : row.assistantConfig.fallbackMessage
-    const ctaDecision = decideWhatsappDigitalMenuCta({
-      intent,
-      conversationId,
-      messageId: assistantProviderMessageId,
-      digitalMenuUrl: businessContext.storeTools?.store.digitalMenuUrl,
-      tone: row.assistantConfig.tone,
-      history: recentMessages,
-    })
-    if (ctaDecision.text) {
-      reply = appendWhatsappDigitalMenuCta({
-        reply,
-        ctaText: ctaDecision.text,
-      })
-    }
-    llmMetadata = {
-      provider: resolvedProvider?.name ?? 'unconfigured',
-      model: resolvedProvider?.model ?? 'unconfigured',
-      usage: null,
-      latencyMs: Date.now() - startedAt,
-      humanHandoff:
-        fallbackHandoffDecision.shouldHandoff && fallbackHandoffDecision.reason
-          ? {
-              reason: fallbackHandoffDecision.reason,
-              reasonLabel: getWhatsappHumanHandoffReasonLabel(
-                fallbackHandoffDecision.reason
-              ),
-              confidence: fallbackHandoffDecision.confidence,
-            }
-          : null,
-      failure: {
-        name: error instanceof Error ? error.name : 'UnknownError',
-        message: reason,
-      },
-      digitalMenuCta: {
-        sent: ctaDecision.shouldSend,
-        reason: ctaDecision.reason,
-        url: ctaDecision.url,
-        attribution: ctaDecision.attribution,
-      },
-      estimatedInputTokens,
     }
   }
 
