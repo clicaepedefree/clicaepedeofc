@@ -35,7 +35,7 @@
         "AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES":"false", "DEL_INSTANCE":"false", "LOG_LEVEL":"ERROR,WARN", "LOG_BAILEYS":"error", "TELEMETRY_ENABLED":"false", "EVENT_EMITTER_MAX_LISTENERS":"50", "NODE_OPTIONS":"--max-old-space-size=768", "WEBHOOK_GLOBAL_ENABLED":"false", "CONFIG_SESSION_PHONE_NAME":"Clica e Pede QA", "CONFIG_SESSION_PHONE_CLIENT":"Chrome", "QRCODE_LIMIT":"5"
       },
       "secrets": ["api_key", "pg_app_password", "redis_password"],
-      "configs": [{"source":"evolution_entrypoint_v1", "target":"/run/configs/evolution-entrypoint.sh"}, {"source":"evolution_logs_v3", "target":"/run/configs/start-redacted.cjs"}],
+      "configs": [{"source":"evolution_entrypoint_v1", "target":"/run/configs/evolution-entrypoint.sh"}, {"source":"evolution_logs_v4_privacy", "target":"/run/configs/start-redacted.cjs"}],
       "volumes": ["evolution_instances:/evolution/instances"],
       "networks": ["internal", "proxy"],
       "healthcheck": {"test":["CMD", "node", "-e", "const fs=require('fs');fetch('http://127.0.0.1:8080/instance/fetchInstances',{headers:{apikey:fs.readFileSync('/run/secrets/api_key','utf8').trim()},signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], "interval":"20s", "timeout":"6s", "retries":5, "start_period":"180s"},
@@ -50,6 +50,6 @@
     "redis_password":{"external":true,"name":"kan132_redis_v1"}, "api_key":{"external":true,"name":"kan132_api_v1"}
   },
   "configs": {
-    "postgres_init_v2":{"file":"./postgres-init.sh"}, "redis_entrypoint_v1":{"file":"./redis-entrypoint.sh"}, "evolution_entrypoint_v1":{"file":"./evolution-entrypoint.sh"}, "evolution_logs_v3":{"file":"./start-redacted.cjs"}
+    "postgres_init_v2":{"file":"./postgres-init.sh"}, "redis_entrypoint_v1":{"file":"./redis-entrypoint.sh"}, "evolution_entrypoint_v1":{"file":"./evolution-entrypoint.sh"}, "evolution_logs_v4_privacy":{"file":"./start-redacted.cjs"}
   }
 }

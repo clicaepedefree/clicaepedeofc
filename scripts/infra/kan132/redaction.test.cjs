@@ -30,6 +30,15 @@ test('long lines, adjacent secrets, UTF-8 and slow output remain intact', async 
   for (let offset=0; offset<input.length; offset+=4096) chunks.push(input.subarray(offset,offset+4096));
   assert.equal(await render(chunks,secrets), prefix + '[REDACTED][REDACTED]\u00e7-end');
 });
+test('legacy secrets remain invariant with adjacent values and one-byte UTF-8 chunks', async () => {
+  const secrets = ['synthetic-secret-one', 'synthetic-secret-two'];
+  const input = Buffer.from('before\u00e7:' + secrets.join('') + ':after\n');
+  const expected = 'before\u00e7:[REDACTED][REDACTED]:after\n';
+  for (let split = 0; split <= input.length; split++) {
+    assert.equal(await render([input.subarray(0, split), input.subarray(split)], secrets), expected);
+  }
+  assert.equal(await render([...input].map(byte => Buffer.from([byte])), secrets), expected);
+});
 test('pipeline failure remains exit code 1 after terminating the child', () => {
   const child = new EventEmitter();
   child.pid = 123;
@@ -39,10 +48,11 @@ test('pipeline failure remains exit code 1 after terminating the child', () => {
   const process = {argv:['node','supervisor','command'], stdout:{}, stderr:{},
     on() {}, kill() {}, exit() {throw new Error('Unexpected exit');}};
   function mockedRequire(name) {
+    if (name === 'node:crypto') return require(name);
     if (name === 'node:fs') return {readFileSync:() => 'synthetic'.repeat(8)};
     if (name === 'node:child_process') return {spawn:() => child};
     if (name === 'node:stream') return {Transform:require('node:stream').Transform,
-      pipeline(input, transform, output, callback) {callback(new Error('Synthetic output failure'));}};
+      pipeline(...args) {args.at(-1)(new Error('Synthetic output failure'));}};
     throw new Error('Unexpected dependency');
   }
   mockedRequire.main = module;
