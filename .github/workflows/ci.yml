@@ -30,6 +30,7 @@ jobs:
             sudo python3 "scripts/infra/kan133/$suite.test.py"
           done
           python3 -B scripts/infra/kan135/test_scheduler.py
+          python3 -B -m unittest discover -s scripts/infra/kan151 -p 'test_*.py'
 
   test-and-build:
     name: Testes e build
