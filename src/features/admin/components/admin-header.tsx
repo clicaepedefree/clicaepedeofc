@@ -17,12 +17,12 @@ import { SignInButton, SignUpButton, SignedOut } from '@clerk/nextjs'
 export const AdminHeader = () => {
   return (
     <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b bg-background/95 px-4 backdrop-blur">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem className="hidden md:block">
+        <Breadcrumb className="min-w-0">
+          <BreadcrumbList className="flex-nowrap">
+            <BreadcrumbItem className="hidden min-w-0 md:block">
               <StoreSelector />
             </BreadcrumbItem>
             <BreadcrumbSeparator className="hidden md:block" />
@@ -30,7 +30,7 @@ export const AdminHeader = () => {
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <DarkModeToggle />
         <SignedOut>
           <SignInButton>

@@ -6,6 +6,7 @@ import { selectedStoreIdAtom } from '@/features/store/state'
 import { Combobox } from '@/shared/combobox'
 import { Skeleton } from '@/shared/skeleton'
 import { useAtom } from 'jotai'
+import { Check } from 'lucide-react'
 
 export const StoreSelector = () => {
   const { stores, isLoading } = useAvailableStores()
@@ -29,8 +30,8 @@ export const StoreSelector = () => {
   if (!storesOptions?.length) return null
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="min-w-36 max-w-52">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
+      <div className="w-52 min-w-0 max-w-full flex-1">
         <Combobox
           options={storesOptions}
           value={selectedStoreIdAsString}
@@ -40,7 +41,20 @@ export const StoreSelector = () => {
           noResultMessage="Nenhuma loja encontrada"
           disabled={isLoading}
           disableUnselectingOption
-          contentClassName="min-w-fit"
+          truncateLabel
+          portalInDialog
+          contentClassName="w-72 max-w-[calc(100vw-2rem)]"
+          customOptionLabelComponent={option => (
+            <>
+              <Check
+                aria-hidden="true"
+                className={`mr-2 h-4 w-4 shrink-0 ${option.value === selectedStoreIdAsString ? 'opacity-100' : 'opacity-0'}`}
+              />
+              <span className="min-w-0 whitespace-normal break-all">
+                {option.label}
+              </span>
+            </>
+          )}
         />
       </div>
       <AdditionalStoreDialog />

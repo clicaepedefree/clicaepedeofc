@@ -48,6 +48,8 @@ type ComboboxProps<T extends object = ComboboxBaseOption> = {
   customIcon?: React.ElementType
   contentClassName?: string
   hideOptionsOnEmptyInput?: boolean
+  truncateLabel?: boolean
+  portalInDialog?: boolean
 }
 
 export const Combobox = <T extends object = ComboboxBaseOption>({
@@ -68,8 +70,12 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
   onInputValueChange,
   contentClassName,
   hideOptionsOnEmptyInput = false,
+  truncateLabel = false,
+  portalInDialog = false,
 }: ComboboxProps<T>) => {
   const [open, setOpen] = React.useState(false)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
+  const [portalContainer, setPortalContainer] = React.useState<HTMLElement>()
   const [defaultInputValue, setDefaultInputValue] = React.useState('')
 
   const getOptionBaseFields = (option: T) => {
@@ -102,21 +108,51 @@ export const Combobox = <T extends object = ComboboxBaseOption>({
   const canDisplayOptions =
     !hideOptionsOnEmptyInput || (inputValueToUse && inputValueToUse.length > 0)
   return (
-    <Popover open={open} onOpenChange={setOpen} modal>
+    <Popover
+      open={open}
+      onOpenChange={nextOpen => {
+        if (nextOpen && portalInDialog) {
+          // Keep the mobile selector inside its drawer's focus boundary.
+          setPortalContainer(
+            triggerRef.current?.closest<HTMLElement>('[role="dialog"]') ??
+              undefined
+          )
+        }
+        setOpen(nextOpen)
+      }}
+      modal
+    >
       <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           variant="outline"
           role="combobox"
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {value && selectedOption
-            ? getOptionBaseFields(selectedOption).label
-            : placeholder}
+          {truncateLabel ? (
+            <span
+              className="min-w-0 flex-1 truncate text-left"
+              title={
+                selectedOption
+                  ? getOptionBaseFields(selectedOption).label
+                  : placeholder
+              }
+            >
+              {selectedOption
+                ? getOptionBaseFields(selectedOption).label
+                : placeholder}
+            </span>
+          ) : value && selectedOption ? (
+            getOptionBaseFields(selectedOption).label
+          ) : (
+            placeholder
+          )}
           <Icon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        portalContainer={portalContainer}
         className={cn(
           'p-0 w-[var(--radix-popper-anchor-width)] -translate-y-10',
           contentClassName
