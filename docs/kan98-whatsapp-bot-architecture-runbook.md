@@ -37,8 +37,25 @@ Fora do MVP atual:
 - gateway de pagamento do SaaS;
 - campanhas promocionais completas;
 - painel avancado de SLA por atendente;
-- scheduler recorrente curto para fila transacional em Vercel Hobby. A rota
-  existe, mas a decisao de agendamento ficou registrada na KAN-125.
+- aceite de respostas reais da LLM e controle global do orcamento de testes;
+- isolamento completo entre QA e producao (KAN-155).
+
+## Ambientes e estado operacional
+
+| Componente | Arranjo do piloto |
+| --- | --- |
+| App e endpoints | Vercel; a VPS nao executa Next.js |
+| Dados do app | Supabase comercial compartilhado pelo piloto; escopo por loja nao e isolamento de ambientes |
+| Evolution | Instancia de QA na VPS, com PostgreSQL e Redis proprios da Evolution |
+| Scheduler | VPS Hostinger, via systemd; faz POST no app Vercel, que processa a fila no Supabase e chama a Evolution |
+| Billing | Cron GET diario na Vercel; billing VPS desabilitado |
+
+A KAN-125 foi concluida com o scheduler da KAN-135: o timer canonico roda
+a cada minuto **quando habilitado**, sem nova assinatura fixa para o
+scheduler. Isso nao significa que esteja ligado agora. O piloto foi pausado:
+preserve webhook, sessao, assistente e worker nos estados aprovados. Antes de
+qualquer intervencao confira o estado atual; este guia nao autoriza reativar.
+Nao trate hostname de QA como fronteira de dados, identidade ou segredos.
 
 ## Arquitetura de alto nivel
 
@@ -75,11 +92,13 @@ Fluxo transacional:
 1. Algum evento do produto chama `enqueueWhatsappTransactionalMessage`.
 2. A fila grava `whatsapp_bot_transactional_events` com chave idempotente por
    loja.
-3. `GET /api/cron/whatsapp/transactional` processa eventos vencidos.
+3. A VPS chama `POST /api/cron/whatsapp/transactional` para processar eventos
+   vencidos (lote de ate cinco). O lease no PostgreSQL impede sobreposicao
+   com outra invocacao, inclusive pelo GET legado.
 4. O envio usa a sessao conectada da loja e registra tentativas em
    `whatsapp_bot_delivery_attempts`.
-5. Falhas temporarias sao reagendadas com backoff; falhas permanentes sao
-   descartadas.
+5. Falhas conhecidas elegiveis sao reagendadas com backoff. Resultado
+   desconhecido vai para quarentena, sem reenvio automatico.
 
 ## Entidades e estados
 
@@ -96,6 +115,7 @@ nas relacoes filhas para impedir cruzamento entre lojas.
 | `whatsapp_bot_messages` | Mensagens inbound, outbound e internas | `received`, `queued`, `sent`, `delivered`, `read`, `failed`, `skipped` |
 | `whatsapp_bot_transactional_events` | Fila idempotente de notificacoes | `queued`, `processing`, `sent`, `failed`, `discarded` |
 | `whatsapp_bot_delivery_attempts` | Tentativas de entrega da fila | `attempted`, `succeeded`, `failed`, `skipped` |
+| `whatsapp_retention_runs` | Auditoria privada de retencao automatica, por execucao e correlacao | `running`, `succeeded`, `noop`, `failed` |
 
 Eventos transacionais aceitos:
 
@@ -151,18 +171,16 @@ ou metadados sensiveis.
 
 ### Fila transacional
 
-Rota: `GET /api/cron/whatsapp/transactional`.
+| Caminho | Autenticacao | Uso |
+| --- | --- | --- |
+| `POST /api/cron/whatsapp/transactional` | `Authorization: Bearer <WHATSAPP_WORKER_SECRET>` | Scheduler canonico, corpo vazio |
+| `GET /api/cron/whatsapp/transactional` | `Authorization: Bearer <CRON_SECRET>` | Compatibilidade legada, nao agendar em paralelo |
 
-Autenticacao:
-
-- `Authorization: Bearer <CRON_SECRET>`.
-
-Observacao operacional:
-
-- a rota esta pronta;
-- em Vercel Hobby nao ha cron subdiario;
-- ate a KAN-125, o acionamento curto deve ser manual ou por scheduler externo
-  autenticado.
+Ambas as rotas executam trabalho e podem enviar mensagens; nenhuma e probe
+de saude. POST nao aceita a credencial legada como fallback. HTTP 409 com
+`job_already_running` significa execucao pulada, nao sucesso de entrega.
+HTTP 2xx com `ok: false` exige leitura dos contadores; nao repetir a chamada
+por conta propria. Veja [scheduler KAN-135](kan135-vps-scheduler.md).
 
 ## Variaveis de ambiente
 
@@ -177,7 +195,8 @@ Observacao operacional:
 | `WHATSAPP_ASSISTANT_LLM_MODEL` | respostas automaticas com LLM | modelo usado pelo assistente |
 | `WHATSAPP_BOT_ROLLOUT_MODE` | rollout controlado | `off`, `pilot` ou `all`; ausente/invalido preserva `all` |
 | `WHATSAPP_BOT_PILOT_STORE_IDS` | modo `pilot` | lista de lojas liberadas, ex.: `9,12` |
-| `CRON_SECRET` | rodar fila transacional | protege rotas cron |
+| `WHATSAPP_WORKER_SECRET` | worker POST | segredo dedicado, pareado com o arquivo privado `whatsapp.token` da VPS |
+| `CRON_SECRET` | GET legado e cron billing Vercel | nao autentica o POST do worker |
 | `NEXT_PUBLIC_APP_URL`, `APP_URL` ou `NEXT_PUBLIC_APP_DOMAIN` | gerar links publicos e webhook | base publica usada em URL do app, cardapio e webhook |
 | `IFOOD_TOKEN_ENCRYPTION_KEY` | criptografia server-side atual | chave usada pela camada generica de criptografia tambem reaproveitada para metadata sensivel |
 
@@ -201,7 +220,7 @@ casos comuns. A separacao de responsabilidade e:
 | Ver diagnostico de sessao, mensagens e fila | App: card de diagnostico operacional do WhatsApp | Operacao da loja ou suporte Clica e Pede |
 | Confirmar rollout por loja | Vercel env vars ou runbook de rollout KAN-97 | Suporte tecnico/ops com acesso a Vercel |
 | Confirmar LLM configurada | Vercel env vars, sem revelar valores | Suporte tecnico/ops com acesso a Vercel |
-| Acionar fila transacional manualmente | Cliente HTTP seguro usando `CRON_SECRET`, sem colar segredo em Jira/chat | Suporte tecnico/ops com acesso ao segredo |
+| Conferir scheduler e atraso | Estado dos timers, contadores do worker e alertas sanitizados KAN-135 | Suporte tecnico/ops autorizado na VPS |
 | Investigar dado inconsistente no banco | Supabase com consulta somente leitura quando possivel | Suporte tecnico/ops autorizado |
 | Alterar schema, migration ou codigo | Repo/PR | Desenvolvimento |
 
@@ -220,6 +239,17 @@ Provider:
 - `max_output_tokens` de 450;
 - temperatura 0.3;
 - ate 4 chamadas de ferramenta por resposta.
+
+O adaptador existir nao prova que um modelo esteja autorizado ou homologado.
+Na aba **Personalidade**, **Testar rascunho** usa o rascunho validado e
+contexto da loja sem salvar, enviar, enfileirar ou alterar a conversa/sessao.
+A KAN-153 compartilha o nucleo de geracao com o atendimento real, mas o
+teste publico bloqueia chamadas pagas: sem configuracao mostra
+`provider_not_configured`; se houver configuracao, sem controle aprovado
+mostra `budget_not_configured`. Nao confundir contingencia ou teste de
+contrato com geracao real. O teto inicial e US$ 10 **globais**, nao mensal
+nem por loja. A meta de cinco segundos ainda exige medicao ponta a ponta;
+o timeout de 12 segundos do adaptador nao comprova essa meta.
 
 Ferramentas internas disponiveis para a LLM:
 
@@ -302,11 +332,14 @@ digital, nas modalidades `DELIVERY` e `TAKEOUT`, quando ha telefone do cliente.
 
 ### Cashback e fidelidade
 
-Eventos `cashback` e `loyalty` existem na fila transacional para mensagens
-operacionais futuras. Eles devem respeitar opt-out quando forem promocionais.
-Mensagens diretamente ligadas a pedido podem ser transacionais. Para evitar
-promessa indevida, beneficios devem ser comunicados apenas quando confirmados no
-snapshot/resultado do pedido.
+O formatador le concessoes confirmadas do snapshot de pedido `COMPLETED`
+com telefone. Gera `cashback` para credito confirmado e `loyalty` para
+pontos ou voucher de produto (produto, codigo e validade obrigatorios).
+A chave inclui pedido, tipo e concessao para evitar duplicidade. A carteira
+e a fidelidade sao calculadas pelo app, nao pelo modelo; nao prometer saldo,
+estorno ou premio sem confirmacao. Opt-out bloqueia promocao, nao aviso
+transacional vinculado ao pedido. Nao usar evento manual para contornar
+classificacao ou consentimento.
 
 ### Opt-out
 
@@ -317,6 +350,10 @@ contato e deve ser preservada por loja.
 ## Conexao, reconexao, pausa e desconexao
 
 ### Conectar uma loja
+
+**Fluxo com efeitos reais, somente em janela autorizada.** Para homologar o
+guia enquanto o piloto esta pausado, use o roteiro somente leitura abaixo.
+Nao use o numero pessoal nem leia um novo QR para provar que o guia funciona.
 
 1. Confirmar que a loja tem modulo WhatsApp habilitado e permissao
    `integrations.manage`.
@@ -352,7 +389,8 @@ Pausa esperada:
 Efeito esperado:
 
 - novas respostas automaticas nao devem ser enviadas;
-- mensagens recebidas continuam rastreaveis;
+- mensagens recebidas so continuam rastreaveis se o webhook permanecer
+  habilitado; no piloto pausado ele pode estar desabilitado de proposito;
 - dados de contato, conversa e auditoria permanecem.
 
 ### Desconectar robo
@@ -400,13 +438,24 @@ Indicadores esperados:
 Retencao e auditoria esperadas:
 
 - QR Code expirado: limpeza apos 15 minutos quando nao conectado;
-- conversas abertas: 90 dias;
-- conversas fechadas ou bloqueadas: 30 dias;
+- mensagens fora da fila: 90 dias, respeitando as referencias protegidas;
+- conversas fechadas ou bloqueadas: 30 dias, apenas sem mensagens ou eventos restantes;
+- acessos de atribuicao do cardapio: 30 dias;
 - eventos transacionais e tentativas: 180 dias;
 - contatos inativos sem pendencia: 365 dias;
 - auditoria em `internal_operation_audit_logs` para conectar, renovar QR,
-  pausar, desconectar, atualizar configuracao, devolver conversa ao robo e
-  pruning.
+  pausar, desconectar, atualizar configuracao e devolver conversa ao robo;
+- retencao automatica na trilha separada `whatsapp_retention_runs` (KAN-154),
+  com identidade tecnica, escopo, politica, correlacao e contagens. A limpeza
+  e a confirmacao sao atomicas. `running` antigo nao prova limpeza;
+  `noop` e conclusao sem alteracao; `failed` nao e sucesso parcial.
+  Correlacione com o lease do job sem executar retencao para diagnosticar.
+
+Logs Evolution (KAN-151): conferir a amostra do container atual separadamente
+do historico. O filtro pseudonimiza JIDs e campos de telefone reconhecidos
+em stdout/stderr; nao torna texto livre anonimo. Historico antigo nao foi
+saneado retroativamente. Acesso restrito, rotacao por tamanho e somente
+contagens/codigos sanitizados em evidencias.
 
 Para diagnosticar uma loja, confirmar nesta ordem:
 
@@ -438,11 +487,12 @@ Sintomas:
 Acoes:
 
 1. Conferir painel de conexao.
-2. Se `pending_qr`, renovar QR Code e pedir leitura pela loja.
-3. Se `connecting`, aguardar reconexao dentro do cooldown.
-4. Se `error`, verificar erro sanitizado no diagnostico.
-5. Pausar robo se houver risco de resposta parcial.
-6. Validar com mensagem externa depois de reconectar.
+2. Se a leitura falhar, tratar como **estado desconhecido**, nao como
+   desconectado. Nao renovar QR, desconectar ou criar instancia com base nisso.
+3. Se `pending_qr` confirmado e expirado, renovar apenas em janela autorizada.
+4. Se `connecting`, aguardar reconexao dentro do cooldown.
+5. Se `error`, verificar erro sanitizado no diagnostico.
+6. Se ja estiver pausado, preservar a pausa. Teste externo exige autorizacao.
 
 ### Fila transacional parada
 
@@ -454,15 +504,23 @@ Sintomas:
 
 Acoes:
 
-1. Conferir se `CRON_SECRET` existe.
-2. Acionar `GET /api/cron/whatsapp/transactional` com `Authorization: Bearer`
-   usando ferramenta interna/cliente HTTP seguro. Nunca colar o valor do
-   segredo em Jira, comentario de PR, chat ou screenshot.
-3. Verificar resposta da rota com contadores `sent`, `failed` e `discarded`.
-4. Se Vercel Hobby, lembrar que cron subdiario nao roda automaticamente.
-5. Se falha for temporaria, aguardar backoff de 1, 5, 15 ou 60 minutos.
-6. Se falha for permanente, revisar payload, telefone e sessao.
-7. Abrir bug se evento valido ficar preso apos tentativas.
+1. Conferir se a pausa e intencional. Ler `systemctl list-timers 'kan135-*'`,
+   status das units e ultimo resultado sanitizado; nao chamar a rota.
+2. Conferir origem exata da Vercel, presenca do segredo POST e flags privadas
+   com Ops; nao abrir o arquivo de token nem exportar o config inteiro.
+3. Distinguir atraso do scheduler de retry de mensagens: 401/403 bloqueia
+   novas janelas; 409 indica lease ocupado; timeout/resultado incerto nao e
+   autorizacao para repetir. Veja [politica e reset KAN-135](kan135-vps-scheduler.md).
+4. Verificar contadores `sent`, `failed`, `discarded` e lease pelo ID
+   tecnico. Itens antigos em `processing` vao para quarentena
+   `delivery_outcome_unknown`; nao resetar estado nem reenviar cegamente.
+5. Cutover autorizado: confirmar deploy e lease, parar o dono anterior,
+   aguardar execucao em curso e so entao liberar o timer VPS com origem e
+   segredo dedicados. Validar uma janela controlada, sem ativar billing VPS.
+6. Rollback autorizado: parar/desabilitar o timer WhatsApp, preservar
+   `whatsapp_enabled=false`, aguardar o job ativo e reconciliar lease e itens
+   desconhecidos. Restaurar o alvo anterior apenas se aprovado; nunca manter
+   dois donos nem usar GET para furar a pausa. Nao apagar filas ou evidencias.
 
 ### Falha do provedor Evolution
 
@@ -477,7 +535,8 @@ Acoes:
 1. Confirmar se o problema e pontual ou recorrente.
 2. Revisar status da sessao.
 3. Evitar reenviar manualmente mensagem nao idempotente.
-4. Deixar fila aplicar retry.
+4. Deixar a fila aplicar retry somente nos casos classificados como seguros.
+   Resultado desconhecido requer reconciliacao com o provedor, nao reenvio.
 5. Pausar rollout se muitas lojas forem afetadas.
 6. Registrar bug com horario, loja, evento e erro sanitizado.
 
@@ -518,13 +577,14 @@ Acoes:
 
 ## Exemplos seguros
 
-Mensagem inbound ficticia:
+Mensagem inbound ficticia (ilustrativa, nao enviar):
 
 ```json
 {
+  "event": "messages.upsert",
   "instance": "clica-store-999-wa-123",
   "data": {
-    "key": { "id": "MSG_EXEMPLO_001", "fromMe": false },
+    "key": { "id": "MSG_EXEMPLO_001", "fromMe": false, "remoteJid": "<JID_QA_AUTORIZADO>" },
     "message": { "conversation": "Oi, quais lanches tem hoje?" },
     "pushName": "Cliente Exemplo",
     "messageTimestamp": 1760000000
@@ -538,7 +598,7 @@ Evento transacional ficticio:
 {
   "eventType": "order_status",
   "eventId": "pedido-exemplo-123",
-  "recipientPhone": "5511999999999",
+  "recipientPhone": "<TELEFONE_QA_AUTORIZADO>",
   "payload": {
     "text": "Seu pedido foi recebido e esta em preparo."
   }
@@ -581,7 +641,35 @@ Nao usar em exemplos:
 
 ## Checklist operacional de aceite
 
-Antes de considerar uma loja pronta:
+### Homologacao do guia sem apoio de desenvolvimento
+
+Operador de suporte, com acesso autorizado, registra versao, horario, ambiente,
+loja de QA e resultado por passo. Use somente leitura no piloto pausado.
+
+1. Selecione a loja de QA e abra **Configuracoes > Integracoes >
+   Atendimento automatizado > Conexao**. Localize o estado da sessao e os
+   controles, sem clicar em conectar, renovar QR, pausar ou desconectar.
+2. Em **Diagnostico**, encontre estado da fila, falha sanitizada e handoffs.
+   Explique a diferenca entre pausado, desconectado e leitura indisponivel.
+   Se a consulta falhar, registre bloqueio em vez de assumir desconexao.
+3. Em loja isolada com configuracao de assistente ja existente, abra
+   **Personalidade** e execute **Testar rascunho**, sem salvar. Confirme o
+   aviso de IA indisponivel e que nenhuma conversa real mudou. Sem essa
+   precondicao, registre o passo como bloqueado.
+4. Com Ops, compare o estado dos timers e o ultimo resultado sanitizado ao
+   estado esperado de pausa. Classifique em exemplos ficticios: sessao caiu,
+   fila atrasada, 401/403 e resultado de entrega desconhecido.
+5. Anexe capturas sanitizadas e liste duvidas e pontos de escalada. Registre
+   `passou`, `falhou` ou `bloqueado` por passo. Nao publique telefone, QR,
+   corpo de conversa, token, config privada ou log bruto.
+
+Localizar controles em modo leitura nao prova conexao nova. O aceite da
+conexao sem desenvolvedor exige que o operador execute o fluxo de conexao
+acima com numero e janela autorizados, registre as evidencias e restaure a
+pausa aprovada. Nao marcar esse aceite apenas com leitura do guia, CI,
+ensaio anterior de infraestrutura ou roteiro simulado.
+
+### Antes de considerar uma loja pronta
 
 - [ ] Modulo WhatsApp habilitado para a loja.
 - [ ] Numero conectado e sessao `connected`.
@@ -596,8 +684,9 @@ Antes de considerar uma loja pronta:
 
 ## Decisoes pendentes
 
-- KAN-125: escolher scheduler recorrente para a fila transacional.
-- Definir provedor/modelo final da LLM para producao.
+- KAN-153: aprovar provedor/modelo, implementar controle global de consumo e
+  validar respostas, identidade, personalidade, custo e latencia reais.
+- KAN-155: separar QA de producao antes de atender clientes reais.
 - Definir SLA de atendimento humano e responsaveis por loja.
 - Definir politica comercial para mensagens promocionais alem do opt-out.
 - Definir painel avancado de metricas e alertas.

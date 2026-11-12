@@ -40,7 +40,14 @@ describe('KAN-98 whatsapp bot operations documentation', () => {
       'whatsapp_bot_transactional_events',
       'whatsapp_bot_delivery_attempts',
       'POST /api/webhooks/whatsapp/evolution',
+      'POST /api/cron/whatsapp/transactional',
       'GET /api/cron/whatsapp/transactional',
+      'WHATSAPP_WORKER_SECRET',
+      'job_already_running',
+      'delivery_outcome_unknown',
+      'whatsapp_retention_runs',
+      'running`, `succeeded`, `noop`, `failed',
+      'Homologacao do guia sem apoio de desenvolvimento',
       'WHATSAPP_EVOLUTION_WEBHOOK_SECRET',
       'WHATSAPP_ASSISTANT_LLM_MODEL',
       'WHATSAPP_BOT_ROLLOUT_MODE',
@@ -66,14 +73,14 @@ describe('KAN-98 whatsapp bot operations documentation', () => {
 
   test('uses only fictitious examples and does not expose obvious sensitive values', () => {
     expect(doc).toContain('Cliente Exemplo')
-    expect(doc).toContain('5511999999999')
-    expect(doc).not.toContain('+55 (11) 900000001')
+    expect(doc).toContain('<TELEFONE_QA_AUTORIZADO>')
+    expect(doc).not.toMatch(/\b55\d{10,11}\b/)
     expect(doc).not.toContain('qaclicapede+clerk_test@gmail.com')
     expect(doc).not.toMatch(/0x4[A-Za-z0-9_-]{20,}/)
     expect(doc).not.toMatch(/\bsk-[A-Za-z0-9_-]{16,}/)
     expect(doc).not.toMatch(/Bearer\s+(?!<)[A-Za-z0-9._-]{10,}/)
     expect(doc).not.toMatch(
-      /(WHATSAPP_EVOLUTION_API_KEY|WHATSAPP_EVOLUTION_WEBHOOK_SECRET|WHATSAPP_ASSISTANT_LLM_API_KEY|OPENAI_API_KEY|CRON_SECRET)\s*=\s*["']?[A-Za-z0-9._:/+=-]{8,}/
+      /(WHATSAPP_EVOLUTION_API_KEY|WHATSAPP_EVOLUTION_WEBHOOK_SECRET|WHATSAPP_ASSISTANT_LLM_API_KEY|WHATSAPP_WORKER_SECRET|OPENAI_API_KEY|CRON_SECRET)\s*=\s*["']?[A-Za-z0-9._:/+=-]{8,}/
     )
     expect(doc).not.toMatch(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/)
     expect(doc).not.toMatch(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/)
