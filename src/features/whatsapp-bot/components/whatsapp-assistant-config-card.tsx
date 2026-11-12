@@ -7,6 +7,7 @@ import {
   type WhatsappAssistantConfigInput,
 } from '@/features/whatsapp-bot/assistant-config-policy'
 import { useWhatsappAssistantConfig } from '@/features/whatsapp-bot/hooks/use-whatsapp-assistant-config'
+import { WhatsappAssistantTestResult } from './whatsapp-assistant-test-result'
 import { selectedStoreIdAtom } from '@/features/store/state'
 import { IntegrationUnavailable } from '@/features/integrations/components/integration-unavailable'
 import { Badge } from '@/shared/badge'
@@ -20,7 +21,13 @@ import { Textarea } from '@/shared/textarea'
 import { Body } from '@/shared/typography/body'
 import { Headline } from '@/shared/typography/headline'
 import { useAtomValue } from 'jotai'
-import { Bot, MessageSquareText, RotateCcw, Save, Send } from 'lucide-react'
+import {
+  Bot,
+  MessageSquareText,
+  RotateCcw,
+  Save,
+  FlaskConical,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -100,6 +107,7 @@ function SegmentedOptions<T extends string>({
         <button
           key={option.value}
           type="button"
+          aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
             'rounded-md border bg-background p-3 text-left transition-colors hover:border-primary/60',
@@ -119,6 +127,19 @@ function SegmentedOptions<T extends string>({
 
 export function WhatsappAssistantConfigCard() {
   const selectedStoreId = useAtomValue(selectedStoreIdAtom)
+  return (
+    <WhatsappAssistantConfigForm
+      key={selectedStoreId ?? 'none'}
+      selectedStoreId={selectedStoreId}
+    />
+  )
+}
+
+function WhatsappAssistantConfigForm({
+  selectedStoreId,
+}: {
+  selectedStoreId: number | null
+}) {
   const [form, setForm] =
     useState<WhatsappAssistantConfigInput>(createInitialForm)
   const [testMessage, setTestMessage] = useState(
@@ -134,6 +155,8 @@ export function WhatsappAssistantConfigCard() {
     testAssistant,
     testResult,
     isTesting,
+    resetTest,
+    testError,
   } = useWhatsappAssistantConfig(selectedStoreId)
 
   useEffect(() => {
@@ -150,7 +173,8 @@ export function WhatsappAssistantConfigCard() {
       testModeEnabled: config.testModeEnabled,
     })
     setInlineError(null)
-  }, [config])
+    resetTest()
+  }, [config, resetTest])
 
   const hasChanges = useMemo(() => {
     if (!config) return false
@@ -173,6 +197,7 @@ export function WhatsappAssistantConfigCard() {
     value: WhatsappAssistantConfigInput[K]
   ) => {
     setInlineError(null)
+    resetTest()
     setForm(current => ({ ...current, [field]: value }))
   }
 
@@ -191,18 +216,27 @@ export function WhatsappAssistantConfigCard() {
     if (!selectedStoreId || isLoading || error) return
     if (!validateForm()) return
 
-    await saveConfig(form)
+    try {
+      await saveConfig(form)
+    } catch {
+      // The hook reports save failures through the shared toast.
+    }
   }
 
   const handleTest = async () => {
-    if (!selectedStoreId || isLoading || error) return
+    if (!selectedStoreId || isLoading || error || isTesting || isSaving) return
     if (!validateForm()) return
 
-    await saveConfig(form)
-    await testAssistant(testMessage)
+    if (
+      !testMessage.trim() ||
+      testMessage.length > assistantConfigLimits.testMessage
+    )
+      return
+    await testAssistant({ message: testMessage, values: { ...form } })
   }
 
   const handleRestoreDefault = () => {
+    resetTest()
     setForm(buildDefaultWhatsappAssistantConfig(config?.storeName ?? 'loja'))
     setInlineError(null)
     toast.info('Padrao restaurado no formulario. Salve para aplicar.')
@@ -213,21 +247,31 @@ export function WhatsappAssistantConfigCard() {
     : config?.status === 'active'
       ? 'Ativo'
       : 'Pronto para ativar'
+  const isFormValid = validateWhatsappAssistantConfigInput(form).success
+  const canTest =
+    isFormValid &&
+    !!testMessage.trim() &&
+    testMessage.length <= assistantConfigLimits.testMessage
 
-  if (error) return <IntegrationUnavailable name="Personalidade do assistente" />
+  if (error)
+    return <IntegrationUnavailable name="Personalidade do assistente" />
   if (!selectedStoreId || isLoading) {
-    return <div role="status" className="p-4 text-sm text-muted-foreground">Carregando configuracao do assistente...</div>
+    return (
+      <div role="status" className="p-4 text-sm text-muted-foreground">
+        Carregando configuracao do assistente...
+      </div>
+    )
   }
 
   return (
-    <div className="rounded-lg border bg-card p-4 text-card-foreground">
+    <div className="min-w-0 rounded-lg border bg-card p-4 text-card-foreground">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-background">
               <MessageSquareText className="h-5 w-5 text-primary" />
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Headline variant={500}>Personalidade do assistente</Headline>
                 <Badge
@@ -290,6 +334,7 @@ export function WhatsappAssistantConfigCard() {
               </p>
             </div>
             <Switch
+              aria-label="Modo de teste"
               checked={form.testModeEnabled}
               onCheckedChange={checked =>
                 setField('testModeEnabled', Boolean(checked))
@@ -380,23 +425,27 @@ export function WhatsappAssistantConfigCard() {
           />
         </Label>
 
-        <div className="rounded-md border bg-background/60 p-3">
-          <div className="mb-3 flex items-center gap-2">
-            <Bot className="h-4 w-4 text-primary" />
-            <p className="text-sm font-medium">Teste interno</p>
-            <Badge variant="secondary">
-              Nenhum cliente recebe esta mensagem
-            </Badge>
+        <section
+          aria-label="Teste do rascunho"
+          className="min-w-0 space-y-3 border-t pt-4"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Bot aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-medium">Teste do rascunho</p>
+            <Badge variant="outline">Sem envio ao cliente</Badge>
           </div>
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-            <Label>
+            <Label className="min-w-0">
               <span className="text-sm font-medium">Mensagem de teste</span>
               <Textarea
                 rows={2}
                 value={testMessage}
                 maxLength={assistantConfigLimits.testMessage}
-                onChange={event => setTestMessage(event.target.value)}
-                disabled={isTesting || isSaving}
+                onChange={event => {
+                  resetTest()
+                  setTestMessage(event.target.value)
+                }}
+                disabled={isSaving}
               />
               <CharacterCounter
                 value={testMessage}
@@ -405,26 +454,28 @@ export function WhatsappAssistantConfigCard() {
             </Label>
             <Button
               onClick={handleTest}
-              disabled={isTesting || isSaving || isLoading}
-              isLoading={isTesting || isSaving}
+              type="button"
+              disabled={isTesting || isSaving || isLoading || !canTest}
+              isLoading={isTesting}
               className="w-full md:w-auto"
             >
-              <Send className="h-4 w-4" />
-              Salvar e testar
+              <FlaskConical aria-hidden="true" className="h-4 w-4" />
+              Testar rascunho
             </Button>
           </div>
 
-          {testResult?.reply && (
-            <div className="mt-3 space-y-2">
-              <div className="ml-auto max-w-[85%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
-                {testMessage}
-              </div>
-              <div className="max-w-[85%] whitespace-pre-line rounded-lg rounded-bl-sm border bg-card px-3 py-2 text-sm text-card-foreground">
-                {testResult.reply}
-              </div>
-            </div>
+          {isTesting && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Testando rascunho...
+            </p>
           )}
-        </div>
+          {testError && (
+            <p role="alert" className="text-sm text-destructive">
+              {testError}
+            </p>
+          )}
+          {testResult && <WhatsappAssistantTestResult result={testResult} />}
+        </section>
 
         <div className="flex flex-col-reverse gap-2 border-t pt-4 md:flex-row md:justify-between">
           <Button

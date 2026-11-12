@@ -129,16 +129,29 @@ export async function saveWhatsappAssistantConfig(input: {
 export async function testWhatsappAssistantConfig(input: {
   storeId: number
   message: string
+  values?: WhatsappAssistantConfigInput
 }) {
+  if (!Number.isSafeInteger(input?.storeId) || input.storeId <= 0) {
+    throw new Error('Loja invalida.')
+  }
   await validateUserPermissionsForStore(input.storeId, 'integrations.manage')
 
+  if (typeof input.message !== 'string') {
+    throw new Error('Informe uma mensagem de teste.')
+  }
   const message = input.message.trim()
+  if (!message) throw new Error('Informe uma mensagem de teste.')
   if (message.length > assistantConfigLimits.testMessage) {
     throw new Error('Mensagem de teste muito longa.')
   }
+  const parsed = input.values === undefined
+    ? undefined
+    : validateWhatsappAssistantConfigInput(input.values)
+  if (parsed && !parsed.success) throw new Error(parsed.error)
 
   return await testWhatsappAssistantConfigForStore({
     storeId: input.storeId,
     message,
+    values: parsed?.success ? parsed.data : undefined,
   })
 }
