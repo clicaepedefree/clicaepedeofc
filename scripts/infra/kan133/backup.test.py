@@ -653,7 +653,7 @@ class OwnershipBackupTests(unittest.TestCase):
 
     def setUp(self):
         BackupTests.setUp(self)
-        self.owner = {'generation': 7, 'project': 'clica-qa',
+        self.owner = {'generation': 7, 'project': 'clica-qa', 'runtime': 'compose',
                       'source': {'sha256': 'a' * 64}}
         patch = mock.patch.object(b.runtime, 'load', return_value=self.owner)
         self.load_owner = patch.start()
@@ -686,7 +686,8 @@ class OwnershipBackupTests(unittest.TestCase):
     def test_compose_pause_persists_exact_id_before_stop(self):
         active = self.executor.active_runtime()
         binding = active.marker_binding()
-        with mock.patch.object(active, 'legacy_running', return_value=False), \
+        with mock.patch.object(active, 'other_runtime_running', return_value=False), \
+                mock.patch.object(active, 'writable_mounts'), \
                 mock.patch.object(active, 'containers', return_value=[{'Id': 'b' * 64}]), \
                 mock.patch.object(self.executor, 'replicas', return_value=1), \
                 mock.patch.object(self.executor, 'wait'), \
@@ -723,6 +724,145 @@ class OwnershipBackupTests(unittest.TestCase):
         self.assertIn('config/kan140/ownership.json', paths)
         self.assertIn('config/kan140/managed', paths)
         self.assertIn('config/kan140/configs', paths)
+
+
+class SwarmBackupTests(unittest.TestCase):
+    marker = BackupTests.marker
+
+    def setUp(self):
+        BackupTests.setUp(self)
+        self.sid = 's' * 25
+        self.owner = {'runtime': 'swarm', 'generation': 8, 'project': b.runtime.SWARM_PROJECT,
+                      'source': {'path': str(b.runtime.ROOT / 'swarm.json'), 'sha256': 'a' * 64},
+                      'swarm_services': {'evolution': {'service_id': self.sid}},
+                      'volumes': b.runtime.SWARM_VOLUMES.copy(),
+                      'handoff': {'path': str(b.runtime.ROOT / 'compose-disabled.json')}}
+        patch = mock.patch.object(b.runtime, 'load', return_value=self.owner)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.active = self.executor.active_runtime()
+
+    def test_pause_and_normal_recover_recreated_app_without_container_id_lease(self):
+        state = {'replicas': 1, 'id': 'a' * 64}
+
+        def mutate(running, identity):
+            self.assertEqual(identity, self.sid)
+            self.assertTrue(self.executor.marker.exists())
+            state.update(replicas=int(running), id='b' * 64)
+
+        with mock.patch.object(self.active, 'other_runtime_running', return_value=False), \
+                mock.patch.object(self.active, 'writable_mounts'), \
+                mock.patch.object(self.active, 'mutate_app', side_effect=mutate), \
+                mock.patch.object(self.active, 'service', side_effect=lambda role: {
+                    'Spec': {'Mode': {'Replicated': {'Replicas': state['replicas']}}}}), \
+                mock.patch.object(self.active, 'tasks', side_effect=lambda role: [
+                    {'Status': {'State': 'running'}, 'DesiredState': 'running', 'NodeID': 'node'}
+                ] if state['replicas'] else []), \
+                mock.patch.object(self.active, 'running_ids', side_effect=lambda role:
+                                  {state['id']} if state['replicas'] else set()), \
+                mock.patch.object(self.active, 'containers', side_effect=lambda role: [
+                    {'Id': state['id'], 'State': {'Running': True, 'Health': {'Status': 'healthy'}}}
+                ] if state['replicas'] else []), \
+                mock.patch.object(self.executor, 'run', return_value='node'):
+            self.executor.pause()
+            marker = json.loads(self.executor.marker.read_text())
+            self.assertEqual(marker['service_id'], self.sid)
+            self.assertNotIn('container_id', marker)
+            self.assertEqual(marker['ownership']['runtime'], 'swarm')
+            self.assertEqual(state['replicas'], 0)
+            self.executor.recover(interrupted=False)
+            self.assertEqual(state, {'replicas': 1, 'id': 'b' * 64})
+            self.assertFalse(self.executor.marker.exists())
+
+    def test_stale_backend_generation_source_service_or_container_marker_never_scales(self):
+        binding = self.active.marker_binding()
+        cases = [dict(ownership=dict(binding, **{key: value}), service_id=self.sid)
+                 for key, value in (('runtime', 'compose'), ('generation', 7),
+                                    ('source_sha256', 'b' * 64), ('project', 'other'))]
+        cases += [dict(ownership=binding, service_id='z' * 25),
+                  dict(ownership=binding, container_id='a' * 64)]
+        for change in cases:
+            self.marker(**change)
+            with self.subTest(change=change), mock.patch.object(self.executor, 'scale') as scale:
+                with self.assertRaises(b.StageFailure):
+                    self.executor.recover()
+                scale.assert_not_called()
+                self.assertTrue(self.executor.marker.exists())
+
+    def test_pending_or_unhealthy_tasks_not_settled_and_scale_rejects_invalid_replicas(self):
+        self.marker(ownership=self.active.marker_binding(), service_id=self.sid)
+        with mock.patch.object(self.active, 'tasks', return_value=[
+                {'Status': {'State': 'pending'}, 'DesiredState': 'running', 'NodeID': ''}]), \
+                mock.patch.object(self.active, 'containers', return_value=[]), \
+                mock.patch.object(self.executor, 'replicas', return_value=1), \
+                mock.patch.object(self.executor, 'run', return_value='node'):
+            self.assertFalse(self.executor.settled(1))
+            self.assertFalse(self.executor.settled(0))
+        for replicas in (-1, 2, True, '1'):
+            with self.assertRaises(b.Failure):
+                self.executor.scale(replicas)
+
+    def test_terminal_task_with_lingering_running_container_not_settled_zero(self):
+        self.marker(ownership=self.active.marker_binding(), service_id=self.sid)
+        with mock.patch.object(self.active, 'tasks', return_value=[]), \
+                mock.patch.object(self.active, 'containers', return_value=[]), \
+                mock.patch.object(self.active, 'running_ids', return_value={'a' * 64}), \
+                mock.patch.object(self.executor, 'replicas', return_value=0), \
+                mock.patch.object(self.executor, 'run', return_value='node'):
+            self.assertFalse(self.executor.settled(0))
+
+    def test_sessions_uses_new_volume_and_checks_writers(self):
+        name = self.owner['volumes']['evolution']
+        path = Path('/var/lib/docker/volumes') / name / '_data'
+        with mock.patch.object(self.active, 'other_runtime_running', return_value=False), \
+                mock.patch.object(self.active, 'writable_mounts') as writers, \
+                mock.patch.object(self.active, 'containers', return_value=[]), \
+                mock.patch.object(self.executor, 'docker_json', return_value=[{
+                    'Name': name, 'Driver': 'local', 'Options': None, 'Mountpoint': str(path)}]), \
+                mock.patch.object(Path, 'resolve', return_value=path):
+            self.assertEqual(self.executor.sessions(), path)
+            writers.assert_called_once()
+
+    def test_swarm_archive_synthetic_roots_and_canonical_keys_without_compose_mounts(self):
+        roots = {key: self.root / key for key in b.DEFAULT_ARCHIVE_ROOTS}
+        self.executor.archive_roots = roots
+        with mock.patch.object(self.executor, 'pg_dump'), \
+                mock.patch.object(self.executor, 'redis_dump'), \
+                mock.patch.object(self.executor, 'sessions', return_value=self.root / 'sessions'), \
+                mock.patch.object(self.executor, 'add_tree') as add:
+            self.executor.capture(self.root)
+        paths = {call.args[2]: call.args[1] for call in add.call_args_list}
+        self.assertEqual(paths['config/kan132/stack.yaml'], roots['canonical_stack'])
+        self.assertEqual(paths['config/kan140/legacy-stack.yaml'], roots['canonical_stack'])
+        self.assertEqual(paths['config/easypanel'], roots['easypanel'])
+        self.assertEqual(paths['config/evolution-qa'], roots['evolution_qa'])
+        self.assertIn('config/kan140/swarm.json', paths)
+        self.assertIn('config/kan140/compose-disabled.json', paths)
+        self.assertNotIn('config/kan140/compose.json', paths)
+        self.assertNotIn('config/kan140/configs', paths)
+        self.assertNotIn('config/kan140/mount-secrets', paths)
+
+    def test_archive_override_programmatic_and_exact(self):
+        roots = {key: self.root / key for key in b.DEFAULT_ARCHIVE_ROOTS}
+        executor = b.Executor(self.root, archive_roots=roots)
+        self.assertEqual(executor.archive_roots, roots)
+        with self.assertRaises(b.Failure):
+            b.Executor(self.root, archive_roots={})
+        with self.assertRaises(b.Failure):
+            b.Executor(self.root, archive_roots=dict(roots, kan132=Path('relative')))
+
+    def test_legacy_fixture_namespace_never_uses_real_service_filter(self):
+        with mock.patch.object(b.runtime, 'load', return_value=None), \
+                mock.patch.object(b.runtime, 'SWARM_PROJECT', 'owned-fixture'), \
+                mock.patch.object(self.executor, 'run', return_value='') as run, \
+                mock.patch.object(self.executor, 'docker_json', return_value=[{
+                    'Spec': {'Mode': {'Replicated': {'Replicas': 1}}}}]) as inspect:
+            self.executor._runtime = None
+            self.assertEqual(self.executor.replicas(), 1)
+            self.assertEqual(self.executor.containers(b.PG), [])
+            inspect.assert_called_once_with('service', 'inspect', 'owned-fixture_evolution')
+            self.assertIn('label=com.docker.swarm.service.name=owned-fixture_postgres',
+                          run.call_args.args[0])
 
 
 if __name__ == '__main__':

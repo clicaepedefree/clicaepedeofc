@@ -16,7 +16,7 @@ except ImportError:
 
 ROOT = Path('/var/lib/clicaepede/kan133')
 CONFIG = Path('/etc/clicaepede/kan133/config.json')
-SERVICES = ['clica-evolution-qa_evolution', 'clica-evolution-qa_postgres', 'clica-evolution-qa_redis', 'easypanel', 'easypanel-traefik']
+SERVICES = [runtime.SWARM_PROJECT + '_' + role for role in ('evolution', 'postgres', 'redis')] + ['easypanel', 'easypanel-traefik']
 
 class DeliveryFailed(Exception):
     def __init__(self,retry_after=0):
@@ -96,13 +96,23 @@ def runtime_observation():
     try:
         active = runtime.Runtime(DockerObserver())
         if active.owner is None:
-            return SERVICES, tasks, unhealthy, oom
-        if active.legacy_running():
+            services = [runtime.SWARM_PROJECT + '_' + role for role in ('evolution', 'postgres', 'redis')]
+            return services + SERVICES[3:], tasks, unhealthy, oom
+        if active.other_runtime_running():
             unhealthy.append('legacy-runtime-running')
+        active.writable_mounts()
         for role in runtime.ROLES:
-            service = 'compose-' + role
+            service = active.owner['runtime'] + '-' + role
             try:
-                item = active.containers(role)[0]
+                items = active.containers(role)
+                runtime.require(len(items) == 1)
+                if active.owner['runtime'] == 'swarm':
+                    runtime.require(active.service(role)['Spec']['Mode']['Replicated']['Replicas'] == 1)
+                    live = active.tasks(role)
+                    runtime.require(len(live) == 1 and live[0]['Status']['State'] == 'running'
+                                    and live[0]['DesiredState'] == 'running')
+                    runtime.require(active.running_ids(role) == {items[0]['Id']})
+                item = items[0]
                 tasks[service] = [item['Id']]
                 if (not item['State']['Running'] or
                         item['State'].get('Health', {}).get('Status') != 'healthy'):

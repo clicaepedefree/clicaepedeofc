@@ -56,6 +56,33 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(event['next'],81000)
 
 class RuntimeMonitorTests(unittest.TestCase):
+    def test_swarm_health_desired_replicas_and_opposite_backend(self):
+        active = Mock(owner={'runtime': 'swarm'})
+        active.other_runtime_running.return_value = True
+        active.containers.return_value = [{'Id': 'a' * 64, 'State': {
+            'Running': True, 'Health': {'Status': 'healthy'}}}]
+        active.service.side_effect = [
+            {'Spec': {'Mode': {'Replicated': {'Replicas': n}}}} for n in (1, 0, 1)]
+        active.tasks.return_value = [{'Status': {'State': 'running'}, 'DesiredState': 'running'}]
+        active.running_ids.return_value = {'a' * 64}
+        with patch.object(m.runtime, 'Runtime', return_value=active):
+            services, tasks, unhealthy, oom = m.runtime_observation()
+        self.assertEqual(services, m.SERVICES[3:])
+        self.assertEqual(set(tasks), {'swarm-postgres', 'swarm-evolution'})
+        self.assertEqual(set(unhealthy), {'legacy-runtime-running', 'swarm-redis'})
+        self.assertFalse(oom)
+        active.mutate_app.assert_not_called()
+
+    def test_swarm_foreign_writer_fails_closed(self):
+        active = Mock(owner={'runtime': 'swarm'})
+        active.other_runtime_running.return_value = False
+        active.writable_mounts.side_effect = m.runtime.OwnershipError
+        with patch.object(m.runtime, 'Runtime', return_value=active):
+            _, tasks, unhealthy, _ = m.runtime_observation()
+        self.assertEqual(unhealthy, ['runtime-ownership-invalid'])
+        self.assertFalse(tasks)
+        active.containers.assert_not_called()
+
     def test_legacy_defaults_preserved(self):
         with patch.object(m.runtime, 'load', return_value=None):
             self.assertEqual(m.runtime_observation(), (m.SERVICES, {}, [], []))
@@ -69,8 +96,8 @@ class RuntimeMonitorTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_compose_exact_health_and_running_legacy_are_observed(self):
-        active = Mock(owner={'generation': 1})
-        active.legacy_running.return_value = True
+        active = Mock(owner={'generation': 1, 'runtime': 'compose'})
+        active.other_runtime_running.return_value = True
         active.containers.side_effect = [
             [{'Id': 'a' * 64, 'State': {'Running': True, 'Health': {'Status': 'healthy'}}}],
             [{'Id': 'b' * 64, 'State': {'Running': False, 'OOMKilled': True}}],
@@ -84,8 +111,8 @@ class RuntimeMonitorTests(unittest.TestCase):
         active.mutate_app.assert_not_called()
 
     def test_missing_compose_container_does_not_query_swarm(self):
-        active = Mock(owner={'generation': 1})
-        active.legacy_running.return_value = False
+        active = Mock(owner={'generation': 1, 'runtime': 'compose'})
+        active.other_runtime_running.return_value = False
         active.containers.side_effect = m.runtime.OwnershipError
         with patch.object(m.runtime, 'Runtime', return_value=active):
             services, tasks, unhealthy, oom = m.runtime_observation()

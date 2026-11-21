@@ -26,7 +26,7 @@ jobs:
       - name: Testar infraestrutura sem credenciais ou rede
         run: |
           set -e
-          for suite in runtime backup restore monitor retention restore-recover restore-offsite; do
+          for suite in runtime backup restore monitor retention restore-recover restore-offsite data-snapshot; do
             sudo python3 "scripts/infra/kan133/$suite.test.py"
           done
           python3 -B scripts/infra/kan135/test_scheduler.py

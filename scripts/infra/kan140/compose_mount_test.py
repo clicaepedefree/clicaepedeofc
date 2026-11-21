@@ -6,10 +6,14 @@ from pathlib import Path
 import secrets
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'kan133'))
+import data_snapshot
 
 ENABLED = (os.name == 'posix' and os.environ.get('KAN140_COMPOSE_MOUNT_INTEGRATION') == 'true')
 LABEL = 'clicaepede.kan140.mount-probe'
@@ -37,10 +41,10 @@ class NativeMountTests(unittest.TestCase):
             root = Path(directory)
             root.chmod(0o700)
 
-            def docker(*args, check=True):
+            def docker(*args, check=True, stdin=None):
                 result = subprocess.run(
                     ['docker', '--host', 'unix:///var/run/docker.sock', '--config', str(root), *args],
-                    capture_output=True, timeout=30)
+                    capture_output=True, timeout=75 if stdin is not None else 30, input=stdin)
                 if check and result.returncode:
                     raise AssertionError('native-docker-command-rejected')
                 return result
@@ -119,6 +123,30 @@ class NativeMountTests(unittest.TestCase):
                        'test ! -w /run/secrets/pg_app_password && '
                        'test -r /docker-entrypoint-initdb.d/kan132-init.sh')
                 role_check()
+                def pg(sql):
+                    return docker('exec', '-i', owner, 'psql', '-X', '-qAt',
+                                  '-U', 'evolution_admin', '-d', 'evolution',
+                                  '-v', 'ON_ERROR_STOP=1', stdin=sql.encode()).stdout.decode()
+
+                pg('CREATE TABLE public."kan140 probe" (id bigint GENERATED ALWAYS AS IDENTITY, value text, payload jsonb);'
+                   'INSERT INTO public."kan140 probe" (value) VALUES (\'fixture-v1\');')
+                baseline = data_snapshot.collect(pg)
+                pg('UPDATE public."kan140 probe" SET payload=\'null\'::jsonb WHERE id=1;')
+                json_null = data_snapshot.collect(pg)
+                self.assertEqual(baseline['tables']['kan140 probe']['rows'],
+                                 json_null['tables']['kan140 probe']['rows'])
+                self.assertNotEqual(baseline['tables']['kan140 probe']['sha256'],
+                                    json_null['tables']['kan140 probe']['sha256'])
+                pg('UPDATE public."kan140 probe" SET value=\'fixture-v2\' WHERE id=1;')
+                changed = data_snapshot.collect(pg)
+                self.assertEqual(baseline['tables']['kan140 probe']['rows'],
+                                 changed['tables']['kan140 probe']['rows'])
+                self.assertNotEqual(baseline['tables']['kan140 probe']['sha256'],
+                                    changed['tables']['kan140 probe']['sha256'])
+                pg('SELECT nextval(pg_get_serial_sequence(\'public."kan140 probe"\',\'id\'));')
+                advanced = data_snapshot.collect(pg)
+                self.assertEqual(advanced['tables'], changed['tables'])
+                self.assertNotEqual(advanced['sequences'], changed['sequences'])
                 denied = subprocess.run(['test', '-r', str(root / 'pg_app')],
                                         user=65534, group=65534, extra_groups=[],
                                         capture_output=True, timeout=5)
@@ -127,6 +155,40 @@ class NativeMountTests(unittest.TestCase):
                 docker('start', owner)
                 ready()
                 role_check()
+                self.assertEqual(data_snapshot.collect(pg), advanced)
+                pg('INSERT INTO public."kan140 probe" (value) VALUES (repeat(\'x\',4*1024*1024));')
+                self.assertEqual(pg('SELECT pg_column_size(value)<octet_length(value) '
+                                    'FROM public."kan140 probe" WHERE id>1;').strip(), 't')
+                rejected = docker('exec', '-i', owner, 'psql', '-X', '-qAt', '-U',
+                                  'evolution_admin', '-d', 'evolution', '-v', 'ON_ERROR_STOP=1',
+                                  stdin=data_snapshot.SQL.encode(), check=False)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(b'division by zero', rejected.stderr)
+                pg('DELETE FROM public."kan140 probe" WHERE id>1;')
+                for expression in ("'{\"n\":1e100000}'::jsonb", "'1e100000'::jsonb",
+                                   "('{\"n\":0.' || repeat('0',10000) || '}')::jsonb"):
+                    pg('UPDATE public."kan140 probe" SET payload=' + expression + ' WHERE id=1;')
+                    rejected = docker('exec', '-i', owner, 'psql', '-X', '-qAt', '-U',
+                                      'evolution_admin', '-d', 'evolution', '-v', 'ON_ERROR_STOP=1',
+                                      stdin=data_snapshot.SQL.encode(), check=False)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn(b'division by zero', rejected.stderr)
+                pg('UPDATE public."kan140 probe" SET payload=\'{"n":[1,2.5,{"z":0}]}\'::jsonb WHERE id=1;')
+                self.assertEqual(data_snapshot.collect(pg)['tables']['kan140 probe']['rows'], 1)
+                pg('CREATE TABLE public.alias_probe (t text, value text);'
+                   "INSERT INTO public.alias_probe VALUES ('fixture-same', 'first');")
+                first_alias = data_snapshot.collect(pg)['tables']['alias_probe']
+                pg("UPDATE public.alias_probe SET value='second';")
+                self.assertNotEqual(first_alias, data_snapshot.collect(pg)['tables']['alias_probe'])
+                pg('CREATE FUNCTION public.octet_length(varchar) RETURNS integer '
+                   'LANGUAGE sql IMMUTABLE AS $$ SELECT 0 $$;'
+                   'CREATE TABLE public.overload_probe (value varchar);'
+                   "INSERT INTO public.overload_probe VALUES (repeat('x',4*1024*1024));")
+                rejected = docker('exec', '-i', owner, 'psql', '-X', '-qAt', '-U',
+                                  'evolution_admin', '-d', 'evolution', '-v', 'ON_ERROR_STOP=1',
+                                  stdin=data_snapshot.SQL.encode(), check=False)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn(b'division by zero', rejected.stderr)
             finally:
                 if inspect('container', owner) is not None:
                     docker('container', 'rm', '--force', owner)

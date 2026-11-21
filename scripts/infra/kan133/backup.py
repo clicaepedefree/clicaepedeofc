@@ -33,10 +33,10 @@ except ImportError:  # Importable for mocked tests on Windows; execution is Linu
 
 ROOT = Path('/var/lib/clicaepede/kan133')
 CONFIG = Path('/etc/clicaepede/kan133/config.json')
-APP = 'clica-evolution-qa_evolution'
-PG = 'clica-evolution-qa_postgres'
-REDIS = 'clica-evolution-qa_redis'
-VOLUME = 'clica-evolution-qa_evolution_instances'
+APP = runtime.SWARM_PROJECT + '_evolution'
+PG = runtime.SWARM_PROJECT + '_postgres'
+REDIS = runtime.SWARM_PROJECT + '_redis'
+VOLUME = runtime.SWARM_PROJECT + '_evolution_instances'
 BUCKET = 'infra-backups-qa'
 SUPABASE_HOST = 'kktmjjmkbbtbibzbpcqj.supabase.co'
 PREFIX = 'kan133/evolution-qa/'
@@ -48,6 +48,12 @@ SCRIPTS = ('stack.yaml', 'deploy.sh', 'verify.sh', 'postgres-init.sh',
            'redis-entrypoint.sh', 'evolution-entrypoint.sh', 'start-redacted.cjs',
            'publish-route.py', 'public-test.py', 'check-logs.py', 'api-test.cjs',
            'redis-dependency.cjs')
+DEFAULT_ARCHIVE_ROOTS = {
+    'easypanel': Path('/etc/easypanel'),
+    'evolution_qa': Path('/etc/clicaepede/evolution-qa'),
+    'kan132': Path('/home/brunoops/kan132'),
+    'canonical_stack': Path('/opt/clicaepede/kan132/stack.yaml'),
+}
 
 
 class Failure(Exception):
@@ -208,11 +214,15 @@ def config():
 
 
 class Executor:
-    def __init__(self, root=ROOT):
+    def __init__(self, root=ROOT, *, archive_roots=None):
         self.root = Path(root)
         self.marker = self.root / 'maintenance.json'
         self.deadline = None
         self._runtime = None
+        self.archive_roots = dict(DEFAULT_ARCHIVE_ROOTS if archive_roots is None else archive_roots)
+        require(set(self.archive_roots) == set(DEFAULT_ARCHIVE_ROOTS))
+        if archive_roots is not None:
+            require(all(isinstance(p, Path) and p.is_absolute() for p in self.archive_roots.values()))
 
     def active_runtime(self):
         if self._runtime is None:
@@ -232,7 +242,7 @@ class Executor:
         if args and args[0] == 'docker':
             self.active_runtime().revalidate(mutation=(len(args) > 1 and args[1] in {
                 'exec', 'start', 'stop', 'cp', 'service'} and not
-                (args[1] == 'service' and len(args) > 2 and args[2] in {'inspect', 'ps'})))
+                (args[1] == 'service' and len(args) > 2 and args[2] in {'inspect', 'ps', 'ls'})))
         result = subprocess.run(args, stdin=subprocess.DEVNULL,
                                 stdout=output if output else subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, check=True,
@@ -247,29 +257,34 @@ class Executor:
     def replicas(self):
         active = self.active_runtime()
         if active.owner is not None:
+            if active.owner['runtime'] == 'swarm':
+                return active.service('evolution')['Spec']['Mode']['Replicated']['Replicas']
             return int(active.containers('evolution')[0]['State']['Running'])
-        value = self.docker_json('service', 'inspect', APP)[0]
+        value = self.docker_json('service', 'inspect', runtime.SWARM_PROJECT + '_evolution')[0]
         replicas = value['Spec']['Mode']['Replicated']['Replicas']
         require(type(replicas) is int and replicas in (0, 1))
         return replicas
 
     def scale(self, replicas):
+        require(type(replicas) is int and replicas in (0, 1))
         active = self.active_runtime()
         if active.owner is not None:
             marker = read_json(self.marker)
             require(marker['ownership'] == active.marker_binding())
-            active.mutate_app(bool(replicas), marker['container_id'])
+            active.mutate_app(bool(replicas), marker[self.identity_field(active)])
             return
         active.revalidate(mutation=True)
-        self.run(['docker', 'service', 'scale', '--detach=true', f'{APP}={replicas}'])
+        self.run(['docker', 'service', 'scale', '--detach=true',
+                  f'{runtime.SWARM_PROJECT}_evolution={replicas}'])
 
     def containers(self, service):
         active = self.active_runtime()
         if active.owner is not None:
             require(service in (APP, PG, REDIS))
             return active.containers({APP: 'evolution', PG: 'postgres', REDIS: 'redis'}[service])
+        role = {APP: 'evolution', PG: 'postgres', REDIS: 'redis'}[service]
         ids = self.run(['docker', 'ps', '-aq', '--filter',
-                        f'label=com.docker.swarm.service.name={service}']).split()
+                        f'label=com.docker.swarm.service.name={runtime.SWARM_PROJECT}_{role}']).split()
         require(all(re.fullmatch(r'[a-f0-9]{12,64}', cid) for cid in ids))
         return self.docker_json('inspect', *ids) if ids else []
 
@@ -280,6 +295,21 @@ class Executor:
 
     def settled(self, replicas):
         active = self.active_runtime()
+        if active.owner is not None and active.owner['runtime'] == 'swarm':
+            marker = read_json(self.marker)
+            require(marker['ownership'] == active.marker_binding()
+                    and marker['service_id'] == active.owner['swarm_services']['evolution']['service_id'])
+            tasks = active.tasks('evolution')
+            containers = active.containers('evolution')
+            local = self.run(['docker', 'info', '--format', '{{.Swarm.NodeID}}']).strip()
+            return (self.replicas() == replicas and len(tasks) == replicas
+                    and len(containers) == replicas
+                    and active.running_ids('evolution') == {c['Id'] for c in containers}
+                    and all(t['Status']['State'] == 'running' and t['DesiredState'] == 'running'
+                            and t['NodeID'] == local for t in tasks)
+                    and all(c['State']['Running'] and
+                            c['State'].get('Health', {}).get('Status') == 'healthy'
+                            for c in containers))
         if active.owner is not None:
             item = active.containers('evolution')[0]
             marker = read_json(self.marker)
@@ -287,7 +317,8 @@ class Executor:
                     and item['Id'] == marker['container_id'])
             return (item['State']['Running'] is bool(replicas) and
                     (not replicas or item['State'].get('Health', {}).get('Status') == 'healthy'))
-        ids = self.run(['docker', 'service', 'ps', '-q', '--no-trunc', APP]).split()
+        ids = self.run(['docker', 'service', 'ps', '-q', '--no-trunc',
+                        runtime.SWARM_PROJECT + '_evolution']).split()
         require(all(re.fullmatch(r'[a-z0-9]{25}', task) for task in ids))
         tasks = self.docker_json('inspect', '--type', 'task', *ids) if ids else []
         terminal = {'complete', 'shutdown', 'failed', 'rejected', 'remove'}
@@ -344,12 +375,16 @@ class Executor:
         marker = read_json(self.marker)
         fields = {'service', 'original_replicas', 'started_at', 'deadline'}
         if active.owner is not None:
-            fields |= {'ownership', 'container_id'}
+            fields |= {'ownership', self.identity_field(active)}
         require(isinstance(marker, dict) and set(marker) == fields)
         if active.owner is not None:
+            field = self.identity_field(active)
             require(marker['ownership'] == active.marker_binding()
-                    and isinstance(marker['container_id'], str)
-                    and re.fullmatch(r'[a-f0-9]{64}', marker['container_id']))
+                    and isinstance(marker[field], str)
+                    and re.fullmatch(r'[a-z0-9]{25}' if field == 'service_id' else r'[a-f0-9]{64}',
+                                     marker[field]))
+            if field == 'service_id':
+                require(marker[field] == active.owner['swarm_services']['evolution']['service_id'])
         require(marker['service'] == APP and type(marker['original_replicas']) is int
                 and marker['original_replicas'] in (0, 1))
         started, deadline = marker['started_at'], marker['deadline']
@@ -368,18 +403,25 @@ class Executor:
     def pause(self):
         active = self.active_runtime()
         if active.owner is not None:
-            require(not active.legacy_running())
+            require(not active.other_runtime_running())
+            active.writable_mounts()
         original = self.replicas()
         started = int(time.time())
         marker = {'service': APP, 'original_replicas': original,
                   'started_at': started, 'deadline': started + 180}
         if active.owner is not None:
-            marker.update(ownership=active.marker_binding(),
-                          container_id=active.containers('evolution')[0]['Id'])
+            field = self.identity_field(active)
+            identity = (active.owner['swarm_services']['evolution']['service_id']
+                        if field == 'service_id' else active.containers('evolution')[0]['Id'])
+            marker.update(ownership=active.marker_binding(), **{field: identity})
         atomic_json(self.marker, marker)
         self.deadline = time.monotonic() + 179
         self.scale(0)
         self.wait(0)
+
+    @staticmethod
+    def identity_field(active):
+        return 'service_id' if active.owner['runtime'] == 'swarm' else 'container_id'
 
     @gate('pg_dump')
     def pg_dump(self, stage):
@@ -431,8 +473,11 @@ class Executor:
     @gate('session_volume')
     def sessions(self):
         active = self.active_runtime()
-        name = runtime.VOLUMES['evolution'] if active.owner is not None else VOLUME
+        name = (active.owner['volumes']['evolution'] if active.owner is not None
+                else runtime.SWARM_PROJECT + '_evolution_instances')
         if active.owner is not None:
+            require(not active.other_runtime_running())
+            active.writable_mounts()
             active.containers('evolution')
         volume = self.docker_json('volume', 'inspect', name)[0]
         path = Path(volume['Mountpoint'])
@@ -486,26 +531,30 @@ class Executor:
             for filename in ('postgres.dump', 'redis.rdb'):
                 self.add_tree(archive, stage / filename, filename)
             self.add_tree(archive, self.sessions(), 'evolution-instances')
-            self.add_tree(archive, Path('/etc/easypanel'), 'config/easypanel')
-            self.add_tree(archive, Path('/etc/clicaepede/evolution-qa'), 'config/evolution-qa')
+            self.add_tree(archive, self.archive_roots['easypanel'], 'config/easypanel')
+            self.add_tree(archive, self.archive_roots['evolution_qa'], 'config/evolution-qa')
             self.add_tree(archive, CONFIG, 'config/kan133/config.json')
             for filename in SCRIPTS:
-                source = (Path('/opt/clicaepede/kan132/stack.yaml')
+                source = (self.archive_roots['canonical_stack']
                           if active.owner is not None and filename == 'stack.yaml'
-                          else Path('/home/brunoops/kan132') / filename)
+                          else self.archive_roots['kan132'] / filename)
                 self.add_tree(archive, source,
                               'config/kan132/' + filename)
             if active.owner is not None:
                 active.revalidate()
                 # Preserve the old isolated validator's canonical stack contract.
-                self.add_tree(archive, Path('/opt/clicaepede/kan132/stack.yaml'),
+                self.add_tree(archive, self.archive_roots['canonical_stack'],
                               'config/kan140/legacy-stack.yaml')
                 self.add_tree(archive, runtime.MANIFEST, 'config/kan140/ownership.json')
                 self.add_tree(archive, runtime.SENTINEL, 'config/kan140/managed')
                 self.add_tree(archive, Path(active.owner['source']['path']),
-                              'config/kan140/compose.json')
-                self.add_tree(archive, runtime.ROOT / 'configs', 'config/kan140/configs')
-                self.add_tree(archive, runtime.ROOT / 'mount-secrets', 'config/kan140/mount-secrets')
+                              'config/kan140/' + Path(active.owner['source']['path']).name)
+                if active.owner['runtime'] == 'compose':
+                    self.add_tree(archive, runtime.ROOT / 'configs', 'config/kan140/configs')
+                    self.add_tree(archive, runtime.ROOT / 'mount-secrets', 'config/kan140/mount-secrets')
+                else:
+                    self.add_tree(archive, Path(active.owner['handoff']['path']),
+                                  'config/kan140/compose-disabled.json')
         self.remaining()
         return captured_at
 
