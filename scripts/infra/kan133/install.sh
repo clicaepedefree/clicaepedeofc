@@ -70,7 +70,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /opt/clicaepede/kan133/backup.py recover
-ExecStartPost=/bin/sh -c 'for f in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do if test -e "$f" || test -L "$f"; then exit 0; fi; done; exec /usr/bin/python3 /opt/clicaepede/kan133/restore-recover.py'
+ExecStartPost=/usr/bin/python3 /opt/clicaepede/kan133/restore-recover.py
 TimeoutStartSec=240
 UMask=0077
 NoNewPrivileges=true
