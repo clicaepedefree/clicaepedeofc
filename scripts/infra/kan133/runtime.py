@@ -1,5 +1,6 @@
 """Fail-closed ownership contract. No deployment; private bytes never logged."""
 import contextlib
+import copy
 import hashlib
 import json
 import os
@@ -11,6 +12,10 @@ ROOT = Path('/etc/clicaepede/kan140')
 MANIFEST = ROOT / 'ownership.json'
 SENTINEL = ROOT / 'managed'
 ROLES = ('postgres', 'redis', 'evolution')
+SWARM_PROJECT = 'clica-evolution-qa'
+SWARM_VOLUMES = dict(zip(ROLES, ('kan140_rollback_postgres_data',
+                               'kan140_rollback_redis_data',
+                               'kan140_rollback_evolution_instances')))
 VOLUMES = dict(zip(ROLES, ('kan140_qa_postgres_data', 'kan140_qa_redis_data',
                           'kan140_qa_evolution_instances')))
 TARGETS = dict(zip(ROLES, ('/var/lib/postgresql/data', '/data', '/evolution/instances')))
@@ -78,6 +83,88 @@ def json_object(raw):
     return json.loads(raw, object_pairs_hook=unique)
 
 
+def spec_hash(spec):
+    """Canonical Docker ContainerSpec digest used by the installer contract."""
+    return hashlib.sha256(json.dumps(spec, sort_keys=True, separators=(',', ':'),
+                                     ensure_ascii=True).encode('ascii')).hexdigest()
+
+
+def normalized_task_spec(spec):
+    """Docker can omit these exact defaults when materializing a service task."""
+    require(isinstance(spec, dict) and isinstance(spec.get('ContainerSpec'), dict))
+    normalized = copy.deepcopy(spec)
+    normalized.setdefault('Runtime', 'container')
+    require(normalized['Runtime'] == 'container')
+    normalized.setdefault('RestartPolicy', {'Condition': 'any', 'Delay': 5000000000,
+                                            'MaxAttempts': 0})
+    restart = normalized['RestartPolicy']
+    require(isinstance(restart, dict) and restart.get('Condition') in ('none', 'any', 'on-failure'))
+    for key in ('Delay', 'MaxAttempts', 'Window'):
+        require(key not in restart or (type(restart[key]) is int and restart[key] >= 0))
+    container = normalized['ContainerSpec']
+    container.setdefault('DNSConfig', {})
+    container.setdefault('StopGracePeriod', 10000000000)
+    require(isinstance(container['DNSConfig'], dict)
+            and type(container['StopGracePeriod']) is int and container['StopGracePeriod'] >= 0)
+    return normalized
+
+
+def swarm_source(owner):
+    raw = trusted_bytes(owner['source']['path'])
+    require(hashlib.sha256(raw).hexdigest() == owner['source']['sha256'])
+    source = json_object(raw)
+    require(isinstance(source, dict) and set(source) == {'project', 'services'}
+            and source['project'] == SWARM_PROJECT
+            and set(source['services']) == set(ROLES))
+    require(set(owner['swarm_services']) == set(ROLES) and owner['mount_hashes'] == {})
+    ids = set()
+    for role in ROLES:
+        pin = owner['swarm_services'][role]
+        require(isinstance(pin, dict) and set(pin) == {'service_id', 'container_spec_sha256'}
+                and re.fullmatch(r'[a-z0-9]{25}', pin['service_id'])
+                and re.fullmatch(r'[a-f0-9]{64}', pin['container_spec_sha256'])
+                and pin['service_id'] not in ids)
+        ids.add(pin['service_id'])
+        entry = source['services'][role]
+        require(set(entry) == {'service_id', 'spec'} and entry['service_id'] == pin['service_id'])
+        spec = entry['spec']
+        require(spec['Name'] == SWARM_PROJECT + '_' + role
+                and spec['Labels']['com.docker.stack.namespace'] == SWARM_PROJECT
+                and set(spec['Mode']) == {'Replicated'}
+                and set(spec['Mode']['Replicated']) == {'Replicas'}
+                and type(spec['Mode']['Replicated']['Replicas']) is int
+                and spec['Mode']['Replicated']['Replicas'] in (0, 1))
+        container = spec['TaskTemplate']['ContainerSpec']
+        require(spec_hash(container) == pin['container_spec_sha256']
+                and container['Image'] == owner['services'][role])
+        mounts = container['Mounts']
+        require(isinstance(mounts, list) and len(mounts) == 1
+                and mounts[0]['Type'] == 'volume' and mounts[0]['Source'] == SWARM_VOLUMES[role]
+                and mounts[0]['Target'] == TARGETS[role] and mounts[0].get('ReadOnly', False) is False)
+        for kind, key in (('Secrets', 'SecretID'), ('Configs', 'ConfigID')):
+            refs = container.get(kind, [])
+            require(isinstance(refs, list))
+            for ref in refs:
+                require(re.fullmatch(r'[a-z0-9]{25}', ref[key]) is not None)
+    return source
+
+
+def validate_handoff(owner):
+    pin = owner['handoff']
+    require(isinstance(pin, dict) and set(pin) == {'path', 'sha256'}
+            and pin['path'] == str(ROOT / 'compose-disabled.json')
+            and re.fullmatch(r'[a-f0-9]{64}', pin['sha256']))
+    raw = trusted_bytes(pin['path'])
+    require(hashlib.sha256(raw).hexdigest() == pin['sha256'])
+    receipt = json_object(raw)
+    require(type(receipt.get('schema')) is int and type(receipt.get('generation')) is int
+            and receipt.get('compose_controller_disabled') is True)
+    require(receipt == {
+        'schema': 1, 'generation': owner['generation'], 'runtime': 'swarm',
+        'project': owner['project'], 'source_sha256': owner['source']['sha256'],
+        'compose_controller_disabled': True})
+
+
 def load():
     """None means legacy has never been fenced; all other invalid states reject."""
     try:
@@ -86,24 +173,35 @@ def load():
         sentinel = json_object(trusted_bytes(SENTINEL))
         raw = trusted_bytes(MANIFEST)
         value = json_object(raw)
-        require(isinstance(value, dict) and set(value) == {
+        require(isinstance(value, dict))
+        fields = {
             'schema', 'state', 'runtime', 'generation', 'project', 'source',
-            'services', 'volumes', 'mount_hashes'})
+            'services', 'volumes', 'mount_hashes'}
+        if value.get('runtime') == 'swarm':
+            fields |= {'swarm_services', 'handoff'}
+        require(set(value) == fields)
         require(type(value['schema']) is int and value['schema'] == 1
-                and value['state'] == 'active' and value['runtime'] == 'compose')
+                and value['state'] == 'active' and value['runtime'] in ('compose', 'swarm'))
         require(type(value['generation']) is int and 1 <= value['generation'] <= 2147483647)
         require(isinstance(sentinel, dict) and type(sentinel.get('schema')) is int
                 and type(sentinel.get('generation')) is int
                 and sentinel == {'schema': 1, 'generation': value['generation']})
         require(isinstance(value['project'], str) and
                 re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,62}', value['project']))
-        require(value['volumes'] == VOLUMES and set(value['services']) == set(ROLES))
+        swarm = value['runtime'] == 'swarm'
+        require(value['volumes'] == (SWARM_VOLUMES if swarm else VOLUMES)
+                and set(value['services']) == set(ROLES))
         for image in value['services'].values():
             require(isinstance(image, str) and re.fullmatch(r'[^\s@$]+@sha256:[a-f0-9]{64}', image))
         source = value['source']
         require(isinstance(source, dict) and set(source) == {'path', 'sha256'})
-        require(source['path'] == str(ROOT / 'compose.json') and
+        require(source['path'] == str(ROOT / ('swarm.json' if swarm else 'compose.json')) and
                 re.fullmatch(r'[a-f0-9]{64}', source['sha256']))
+        if swarm:
+            require(value['project'] == SWARM_PROJECT)
+            swarm_source(value)
+            validate_handoff(value)
+            return value
         source_raw = trusted_bytes(source['path'])
         require(hashlib.sha256(source_raw).hexdigest() == source['sha256'])
         compose = json_object(source_raw)
@@ -157,12 +255,107 @@ class Runtime:
     def marker_binding(self):
         self.revalidate()
         require(self.owner is not None)
-        return {'generation': self.owner['generation'], 'project': self.owner['project'],
+        return {'generation': self.owner['generation'], 'runtime': self.owner['runtime'],
+                'project': self.owner['project'],
                 'source_sha256': self.owner['source']['sha256']}
+
+    def service(self, role):
+        self.revalidate()
+        require(self.owner is not None and self.owner['runtime'] == 'swarm' and role in ROLES)
+        entry = swarm_source(self.owner)['services'][role]
+        items = self.executor.docker_json('service', 'inspect', entry['service_id'])
+        require(len(items) == 1 and items[0]['ID'] == entry['service_id'])
+        actual = copy.deepcopy(items[0]['Spec'])
+        replicas = actual['Mode']['Replicated']['Replicas']
+        require(type(replicas) is int and replicas in (0, 1))
+        expected = copy.deepcopy(entry['spec'])
+        expected['Mode']['Replicated']['Replicas'] = replicas
+        require(actual == expected)
+        return items[0]
+
+    def tasks(self, role):
+        service = self.service(role)
+        ids = self.executor.run(['docker', 'service', 'ps', '-q', '--no-trunc', service['ID']]).split()
+        require(len(ids) == len(set(ids)) and all(re.fullmatch(r'[a-z0-9]{25}', x) for x in ids))
+        items = self.executor.docker_json('inspect', '--type', 'task', *ids) if ids else []
+        require(len(items) == len(ids) and {t['ID'] for t in items} == set(ids))
+        terminal = {'complete', 'shutdown', 'failed', 'rejected', 'remove', 'orphaned'}
+        for task in items:
+            require(task['ServiceID'] == service['ID'])
+            if task['Status']['State'] not in terminal and task['DesiredState'] == 'running':
+                require(normalized_task_spec(task['Spec']) ==
+                        normalized_task_spec(service['Spec']['TaskTemplate']))
+        return [t for t in items if t['Status']['State'] not in terminal]
+
+    def running_ids(self, role):
+        service = self.service(role)
+        ids = self.executor.run(['docker', 'ps', '-q', '--no-trunc', '--filter',
+                                'label=com.docker.swarm.service.id=' + service['ID']]).split()
+        require(len(ids) == len(set(ids)) and all(re.fullmatch(r'[a-f0-9]{64}', cid) for cid in ids))
+        return set(ids)
+
+    def writable_mounts(self):
+        """No foreign writable attachment, including a stopped auto-restart writer."""
+        self.revalidate()
+        require(self.owner is not None)
+        for role, volume in self.owner['volumes'].items():
+            ids = self.executor.run(['docker', 'ps', '-aq', '--no-trunc', '--filter',
+                                     'volume=' + volume]).split()
+            require(all(re.fullmatch(r'[a-f0-9]{64}', cid) for cid in ids))
+            items = self.executor.docker_json('inspect', *ids) if ids else []
+            require(len(items) == len(ids))
+            writers = []
+            for item in items:
+                if not any(m.get('Name') == volume and m.get('RW') is True
+                           for m in item['Mounts']):
+                    continue
+                if not (item['State']['Running'] or item['State'].get('Restarting')
+                        or item['HostConfig']['RestartPolicy']['Name'] != 'no'):
+                    continue
+                labels = item['Config']['Labels']
+                if self.owner['runtime'] == 'swarm':
+                    require(labels.get('com.docker.swarm.service.id') ==
+                            self.owner['swarm_services'][role]['service_id'])
+                else:
+                    require(labels.get('com.docker.compose.project') == self.owner['project']
+                            and labels.get('com.docker.compose.service') == role)
+                writers.append(item['Id'])
+            require(len(writers) <= 1)
+        self.revalidate()
 
     def containers(self, role):
         self.revalidate()
         require(self.owner is not None and role in ROLES)
+        if self.owner['runtime'] == 'swarm':
+            tasks = self.tasks(role)
+            local = self.executor.run(['docker', 'info', '--format', '{{.Swarm.NodeID}}']).strip()
+            result = []
+            for task in tasks:
+                if task['DesiredState'] != 'running':
+                    continue
+                cid = task['Status'].get('ContainerStatus', {}).get('ContainerID')
+                if not cid:
+                    require(task['Status']['State'] != 'running')
+                    continue
+                require(task['NodeID'] == local)
+                require(re.fullmatch(r'[a-f0-9]{64}', cid))
+                items = self.executor.docker_json('inspect', cid)
+                require(len(items) == 1)
+                item = items[0]
+                labels = item['Config']['Labels']
+                require(item['Id'] == cid and item['Config']['Image'] == self.owner['services'][role]
+                        and labels.get('com.docker.swarm.service.id') == task['ServiceID']
+                        and labels.get('com.docker.swarm.task.id') == task['ID']
+                        and labels.get('com.docker.stack.namespace') == SWARM_PROJECT
+                        and not labels.get('com.docker.compose.project'))
+                mounts = [m for m in item['Mounts'] if m['Destination'] == TARGETS[role]]
+                require(len(mounts) == 1 and mounts[0]['Type'] == 'volume'
+                        and mounts[0]['Name'] == SWARM_VOLUMES[role] and mounts[0].get('RW') is True)
+                require(not any(m.get('RW') and m['Destination'] != TARGETS[role]
+                                and m['Type'] in ('bind', 'volume') for m in item['Mounts']))
+                result.append(item)
+            require(len(result) <= 1)
+            return result
         ids = self.executor.run(['docker', 'ps', '-aq', '--no-trunc', '--filter',
                                 'label=com.docker.compose.project=' + self.owner['project'],
                                 '--filter', 'label=com.docker.compose.service=' + role]).split()
@@ -186,8 +379,8 @@ class Runtime:
     def legacy_running(self):
         names = self.executor.run([
             'docker', 'service', 'ls', '--filter',
-            'label=com.docker.stack.namespace=clica-evolution-qa', '--format', '{{.Name}}']).split()
-        expected = {'clica-evolution-qa_' + role for role in ROLES}
+            'label=com.docker.stack.namespace=' + SWARM_PROJECT, '--format', '{{.Name}}']).split()
+        expected = {SWARM_PROJECT + '_' + role for role in ROLES}
         require(len(names) == len(set(names)) and set(names) <= expected)
         desired = False
         if names:
@@ -204,12 +397,34 @@ class Runtime:
                 require(type(replicas) is int and replicas >= 0)
                 desired = desired or replicas > 0
         ids = self.executor.run(['docker', 'ps', '-q', '--filter',
-                                'label=com.docker.stack.namespace=clica-evolution-qa']).split()
+                                'label=com.docker.stack.namespace=' + SWARM_PROJECT]).split()
         return desired or bool(ids)
+
+    def other_runtime_running(self):
+        self.revalidate()
+        if self.owner['runtime'] == 'compose':
+            return self.legacy_running()
+        validate_handoff(self.owner)
+        ids = self.executor.run(['docker', 'ps', '-aq', '--no-trunc', '--filter',
+                                'label=clicaepede.owner=easypanel-compose-qa']).split()
+        require(all(re.fullmatch(r'[a-f0-9]{64}', cid) for cid in ids))
+        items = self.executor.docker_json('inspect', *ids) if ids else []
+        require(len(items) == len(ids))
+        return any(item['State']['Running'] or item['State'].get('Restarting')
+                   or item['HostConfig']['RestartPolicy']['Name'] != 'no' for item in items)
 
     def mutate_app(self, running, container_id):
         self.revalidate(mutation=True)
-        require(not self.legacy_running())
+        require(type(running) is bool and not self.other_runtime_running())
+        if self.owner['runtime'] == 'swarm':
+            service = self.service('evolution')
+            require(container_id == service['ID'])
+            self.writable_mounts()
+            self.revalidate(mutation=True)
+            self.executor.run(['docker', 'service', 'scale', '--detach=true',
+                               service['ID'] + '=' + str(int(running))])
+            return
+        self.writable_mounts()
         item = self.containers('evolution')[0]
         require(item['Id'] == container_id)
         self.revalidate(mutation=True)
@@ -220,16 +435,20 @@ def publish(value):
     """Future reviewed installer only: sentinel first, durable, never removed.
 
     A failed publication deliberately leaves a fence. No runtime deployment here.
-    Caller holds backup.lock and has staged root-only compose.json/configs first.
+    Caller holds backup.lock and has staged the trusted backend source first.
     """
     require(_lock_depth > 0 and os.geteuid() == 0)
-    require(type(value.get('generation')) is int and value['generation'] > 0)
+    require(type(value.get('generation')) is int and 1 <= value['generation'] <= 2147483647)
     for directory in (ROOT, *ROOT.parents):
         info = directory.lstat()
         require(directory.resolve(strict=True) == directory and stat.S_ISDIR(info.st_mode)
                 and info.st_uid == 0 and not info.st_mode & 0o022)
+    require(not os.path.lexists(MANIFEST) or os.path.lexists(SENTINEL))
     if os.path.lexists(SENTINEL):
         previous = json_object(trusted_bytes(SENTINEL))
+        require(isinstance(previous, dict) and set(previous) == {'schema', 'generation'}
+                and type(previous['schema']) is int and previous['schema'] == 1
+                and type(previous['generation']) is int and previous['generation'] > 0)
         require(value['generation'] > previous['generation'])
     import tempfile
     for path, data in ((SENTINEL, {'schema': 1, 'generation': value['generation']}),

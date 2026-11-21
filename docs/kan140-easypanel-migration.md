@@ -2,6 +2,54 @@
 
 ## Atualizacao de 21/11/2026
 
+### Pos-merge PR177 e novo gate de retorno
+
+PR177 mergeado em 36887b8. Os adaptadores aprovados foram instalados com
+backup de codigo, verificacao dos hashes anteriores e backup.lock exclusivo.
+Nenhuma propriedade ativa foi publicada e nenhum cutover foi executado.
+O backup oficial posterior (15:49:51 UTC) e o restore offsite passaram:
+46.021s, PostgreSQL 37 tabelas/1242 linhas, Redis AOF, instancia/sessao
+armazenada e limpeza isolada. O restore continua sendo o validador oficial
+existente; nao comprova o startup completo das tres aplicacoes em Compose.
+
+O retorno passa a ter ownership explicito runtime=swarm, state=active e
+geracao nova. Nao remover managed/ownership para voltar ao legado. Publicar
+swarm.json com IDs completos e ServiceSpecs exatos, ContainerSpec SHA-256,
+volumes kan140_rollback_* e recibo compose-disabled.json vinculado a geracao
+e hash da fonte. O recibo so pode ser emitido APOS desabilitar o controlador
+Compose via API suportada e provar ausencia de escritor concorrente. Ele
+nao substitui essa acao. Os markers usam service_id no Swarm e container_id
+no Compose; nunca aceitar marker de geracao/backend anterior. Fonte e
+ServiceSpec permanecem exatos; somente omissoes dos defaults Docker conhecidos
+sao equivalentes no TaskSpec (runtime, DNS vazio, grace 10s e restart padrao).
+
+swarm_control_test.py e opt-in: cria tres sleepers sinteticos com imagem PG,
+volumes separados, namespace privado e limites pequenos. Valida pausa/retorno
+com novo container, marker obsoleto recusado e controlador oposto bloqueado.
+Nao testa Evolution/Redis como aplicacoes, dados reais ou um corte completo.
+As tentativas com falhas de fixture/defaults/cleanup foram preservadas.
+
+data_snapshot.py e um oracle read-only de ensaio, ainda NAO integrado ao
+arquivo de backup nem ao restore oficial. Compara hashes das linhas completas,
+duplicatas, SQL NULL versus JSON null e estado exato de sequencias. Identificadores
+sao cotados no servidor e search_path restrito a pg_catalog. Exige quiescencia
+externa para comparar sequencias, que nao sao transacionais. Limites:
+512 tabelas/sequencias, 100000 linhas/tabela, resposta 512KiB, linha estimada
+1MiB, statement 8s/transaction 60s. Tipos nao suportados nao nulos, JSONB
+comprimido/grande ou numeros extremos falham fechado; nao emitir comparacao
+parcial como aceite. PG nativo isolado passou em 24.168s, incluindo coluna
+chamada t, overload em public, TOAST e numericos JSONB adversariais.
+
+Firewall Hostinger 369765 sincronizado e associado a VPS2017403: SSH somente
+origem /32 autorizada, HTTP/HTTPS liberados, sem regra para 3000. IPv6 externo
+chegou ao 443 e recebeu 418; 3000 expirou. Loopback/global IPv6 tambem negados
+no proxy. Isso e evidencia de acesso, nao prova que a migracao aconteceu.
+
+Ainda faltam ensaio conjunto com dados reais isolados, gestao UI, dominio
+nativo Evolution, transferencia unica de ownership e rollback de dados.
+Bot e worker permanecem desligados. Nao mover KAN-140 para Teste/Done por
+terem passado os probes sinteticos.
+
 KAN-161 encerrada apos PR176 mergeado e restore **canonico** offsite PASS
 em 43.294s. Hash, descriptografia, PostgreSQL (37 tabelas/1241 linhas),
 Redis apos reinicio AOF, instancia/sessao armazenada e cleanup aprovados.
@@ -104,7 +152,8 @@ Compose, migracao completa ou teste de toda a aplicacao.
 
 ## Contrato preparatorio de ownership
 
-runtime.py e os adaptadores desta etapa ainda nao foram instalados na VPS.
+Os adaptadores Compose do PR177 ja foram instalados conforme a atualizacao
+acima. A extensao de retorno Swarm desta etapa ainda e candidata em revisao.
 Os testes offline nao substituem aceite nativo do backup/monitor com Compose.
 Nao escrever um manifesto ativo apenas para ultrapassar os gates.
 
