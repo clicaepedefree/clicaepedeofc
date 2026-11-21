@@ -1,5 +1,6 @@
 """Controlled QA log-config rollout. Called with a reviewed payload over nominal SSH."""
 import base64
+import contextlib
 import fcntl
 import hashlib
 import http.client
@@ -25,6 +26,48 @@ IMAGE = 'localhost:5001/clicaepede/evolution-api:2.3.7-node24.22.1-security20261
 LEGACY_DEPLOY_IMAGE = 'evoapicloud/evolution-api:v2.3.7@sha256:1bd8afc4a6cf48822e6cf02469aeae7bd35a12a6b616eacd1291926307f4d339'
 SNAPSHOT_LIMIT = 1024 * 1024
 JID = re.compile(rb'(?i)\b[0-9]{5,20}(?:[-:][0-9]{1,20})?@(?:s\.whatsapp\.net|c\.us|lid|g\.us)\b')
+_shared_depth = 0
+
+
+def ownership_guard():
+    if any(os.path.lexists('/etc/clicaepede/kan140/' + name)
+           for name in ('ownership.json', 'managed')):
+        raise RuntimeError('ownership-rejected')
+
+
+@contextlib.contextmanager
+def shared_mutation():
+    """Serialize rollout/publication with ownership handoff, not backup waits."""
+    global _shared_depth
+    ownership_guard()
+    if _shared_depth:
+        yield
+        return
+    if os.geteuid() != 0:
+        raise RuntimeError('ownership-rejected')
+    root = Path('/var/lib/clicaepede/kan133')
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if root.resolve() != root or stat.S_IMODE(root.stat().st_mode) != 0o700:
+        raise RuntimeError('ownership-rejected')
+    for parent in (root, *root.parents):
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise RuntimeError('ownership-rejected')
+    fd = os.open(root / 'backup.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+            raise RuntimeError('ownership-rejected')
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        ownership_guard()
+        _shared_depth += 1
+        try:
+            yield
+        finally:
+            _shared_depth -= 1
+    finally:
+        os.close(fd)
 
 
 def digest(value):
@@ -32,6 +75,7 @@ def digest(value):
 
 
 def command(args, timeout=60):
+    ownership_guard()
     result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             timeout=timeout, check=True)
     return result.stdout
@@ -53,6 +97,12 @@ class DockerConnection(http.client.HTTPConnection):
 
 
 def compare_and_swap_config(service, new_config_id, new_name):
+    with shared_mutation():
+        return _compare_and_swap_config(service, new_config_id, new_name)
+
+
+def _compare_and_swap_config(service, new_config_id, new_name):
+    ownership_guard()
     version = service['Version']['Index']
     assert isinstance(version, int) and version >= 0
     service_id = service['ID']
@@ -102,6 +152,14 @@ def recheck_snapshots(snapshots):
 
 
 def atomic_file(path, data):
+    scope = shared_mutation() if path.parent in (CANONICAL, DEPLOY_SOURCE) else contextlib.nullcontext()
+    with scope:
+        return _atomic_file(path, data)
+
+
+def _atomic_file(path, data):
+    if path.parent in (CANONICAL, DEPLOY_SOURCE):
+        ownership_guard()
     assert path.parent.is_dir() and path.parent.resolve() == path.parent
     temporary = path.with_name(path.name + '.kan151-' + str(uuid.uuid4()))
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -167,6 +225,7 @@ def converge(expected_sha):
 
 
 def preflight():
+    ownership_guard()
     assert os.geteuid() == 0
     for directory in [CANONICAL, CANONICAL.parent, CANONICAL.parent.parent]:
         assert directory.resolve(strict=True) == directory
@@ -220,6 +279,7 @@ def probe(source, fixture, run):
 
 
 def apply(payload, source, run):
+    ownership_guard()
     assert payload.get('restartApproved') is True
     before, container = preflight()
     assert spec_digest(before['Spec']['TaskTemplate']['ContainerSpec']) == payload['expectedContainerSpecSha256']
@@ -256,42 +316,41 @@ def apply(payload, source, run):
     atomic_file(run / 'source-before.cjs', old_source)
     recheck_snapshots(snapshots)
     backup()
-    recheck_snapshots(snapshots)
-    converge(digest(old_source))
-    current, _ = preflight()
-    assert current['Spec'] == before['Spec']
-    recheck_snapshots(snapshots)
-    name = 'clica-evolution-qa_' + NEW
-    existing = subprocess.run(['docker', 'config', 'inspect', name], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, timeout=30)
-    if existing.returncode == 0:
-        assert digest(base64.b64decode(json.loads(existing.stdout)[0]['Spec']['Data'])) == digest(source)
-    else:
-        staged = run / 'source-reviewed.cjs'
-        atomic_file(staged, source)
-        command(['docker', 'config', 'create', name, str(staged)])
-    new_config = inspect(['docker', 'config', 'inspect', name])[0]
-    assert digest(base64.b64decode(new_config['Spec']['Data'])) == digest(source)
-    # Re-check all inputs immediately before the version-CAS update.
-    checked, _ = preflight()
-    assert checked['Version']['Index'] == current['Version']['Index']
-    assert checked['Spec'] == current['Spec']
-    atomic_file(run / 'rollout-intent.json', json.dumps({'service': SERVICE, 'config': name,
-                                                      'sourceSha256': digest(source)}).encode())
-    recheck_snapshots(snapshots)
-    compare_and_swap_config(checked, new_config['ID'], name)
-    recheck_snapshots(snapshots)
-    # Root-managed publication: deploy.sh and backup run as root. Never promote
-    # the user-writable deploy tree to a trusted reference for nonlogging fields.
-    atomic_file(source_path, source)
-    updated_stack = (json.dumps(stack, indent=2) + '\n').encode()
-    atomic_file(deploy_stack_path, updated_stack)
-    atomic_file(stack_path, updated_stack)
-    after, active, pause = converge(digest(source))
-    protected_before = dict(before['Spec']['TaskTemplate']['ContainerSpec'])
-    protected_after = dict(after['Spec']['TaskTemplate']['ContainerSpec'])
-    protected_before.pop('Configs'); protected_after.pop('Configs')
-    assert protected_before == protected_after
+    with shared_mutation():
+        recheck_snapshots(snapshots)
+        converge(digest(old_source))
+        current, _ = preflight()
+        assert current['Spec'] == before['Spec']
+        recheck_snapshots(snapshots)
+        name = 'clica-evolution-qa_' + NEW
+        existing = subprocess.run(['docker', 'config', 'inspect', name], stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, timeout=30)
+        if existing.returncode == 0:
+            assert digest(base64.b64decode(json.loads(existing.stdout)[0]['Spec']['Data'])) == digest(source)
+        else:
+            staged = run / 'source-reviewed.cjs'
+            atomic_file(staged, source)
+            command(['docker', 'config', 'create', name, str(staged)])
+        new_config = inspect(['docker', 'config', 'inspect', name])[0]
+        assert digest(base64.b64decode(new_config['Spec']['Data'])) == digest(source)
+        # Re-check all inputs immediately before the version-CAS update.
+        checked, _ = preflight()
+        assert checked['Version']['Index'] == current['Version']['Index']
+        assert checked['Spec'] == current['Spec']
+        atomic_file(run / 'rollout-intent.json', json.dumps({'service': SERVICE, 'config': name,
+                                                          'sourceSha256': digest(source)}).encode())
+        recheck_snapshots(snapshots)
+        compare_and_swap_config(checked, new_config['ID'], name)
+        recheck_snapshots(snapshots)
+        atomic_file(source_path, source)
+        updated_stack = (json.dumps(stack, indent=2) + '\n').encode()
+        atomic_file(deploy_stack_path, updated_stack)
+        atomic_file(stack_path, updated_stack)
+        after, active, pause = converge(digest(source))
+        protected_before = dict(before['Spec']['TaskTemplate']['ContainerSpec'])
+        protected_after = dict(after['Spec']['TaskTemplate']['ContainerSpec'])
+        protected_before.pop('Configs'); protected_after.pop('Configs')
+        assert protected_before == protected_after
     backup()
     after, active, pause = converge(digest(source))
     logs = subprocess.run(['docker', 'logs', '--tail', '10000', active['Id']],
@@ -305,6 +364,7 @@ def apply(payload, source, run):
 
 
 def run_payload(payload):
+    ownership_guard()
     os.umask(0o077)
     ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     run = ROOT / str(uuid.uuid4())

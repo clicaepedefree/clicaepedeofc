@@ -24,6 +24,7 @@ import urllib.parse
 import urllib.error
 import urllib.request
 import uuid
+import runtime
 
 try:
     import fcntl
@@ -167,7 +168,8 @@ def locked(root):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise LockBusy() from None
-        yield
+        with runtime.mutation_scope():
+            yield
     finally:
         os.close(fd)
 
@@ -210,6 +212,13 @@ class Executor:
         self.root = Path(root)
         self.marker = self.root / 'maintenance.json'
         self.deadline = None
+        self._runtime = None
+
+    def active_runtime(self):
+        if self._runtime is None:
+            self._runtime = runtime.Runtime(self)
+        self._runtime.revalidate()
+        return self._runtime
 
     def remaining(self):
         if self.deadline is None:
@@ -219,6 +228,11 @@ class Executor:
         return left
 
     def run(self, args, output=None):
+        # Docker exec can mutate persistence (BGSAVE); fence every Docker command.
+        if args and args[0] == 'docker':
+            self.active_runtime().revalidate(mutation=(len(args) > 1 and args[1] in {
+                'exec', 'start', 'stop', 'cp', 'service'} and not
+                (args[1] == 'service' and len(args) > 2 and args[2] in {'inspect', 'ps'})))
         result = subprocess.run(args, stdin=subprocess.DEVNULL,
                                 stdout=output if output else subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, check=True,
@@ -231,15 +245,29 @@ class Executor:
         return json.loads(self.run(['docker', *args]))
 
     def replicas(self):
+        active = self.active_runtime()
+        if active.owner is not None:
+            return int(active.containers('evolution')[0]['State']['Running'])
         value = self.docker_json('service', 'inspect', APP)[0]
         replicas = value['Spec']['Mode']['Replicated']['Replicas']
         require(type(replicas) is int and replicas in (0, 1))
         return replicas
 
     def scale(self, replicas):
+        active = self.active_runtime()
+        if active.owner is not None:
+            marker = read_json(self.marker)
+            require(marker['ownership'] == active.marker_binding())
+            active.mutate_app(bool(replicas), marker['container_id'])
+            return
+        active.revalidate(mutation=True)
         self.run(['docker', 'service', 'scale', '--detach=true', f'{APP}={replicas}'])
 
     def containers(self, service):
+        active = self.active_runtime()
+        if active.owner is not None:
+            require(service in (APP, PG, REDIS))
+            return active.containers({APP: 'evolution', PG: 'postgres', REDIS: 'redis'}[service])
         ids = self.run(['docker', 'ps', '-aq', '--filter',
                         f'label=com.docker.swarm.service.name={service}']).split()
         require(all(re.fullmatch(r'[a-f0-9]{12,64}', cid) for cid in ids))
@@ -251,6 +279,14 @@ class Executor:
         return running[0]['Id']
 
     def settled(self, replicas):
+        active = self.active_runtime()
+        if active.owner is not None:
+            item = active.containers('evolution')[0]
+            marker = read_json(self.marker)
+            require(marker['ownership'] == active.marker_binding()
+                    and item['Id'] == marker['container_id'])
+            return (item['State']['Running'] is bool(replicas) and
+                    (not replicas or item['State'].get('Health', {}).get('Status') == 'healthy'))
         ids = self.run(['docker', 'service', 'ps', '-q', '--no-trunc', APP]).split()
         require(all(re.fullmatch(r'[a-z0-9]{25}', task) for task in ids))
         tasks = self.docker_json('inspect', '--type', 'task', *ids) if ids else []
@@ -298,6 +334,7 @@ class Executor:
 
     @gate('recover')
     def recover(self, interrupted=True):
+        active = self.active_runtime()
         if not os.path.lexists(self.marker):
             if interrupted:
                 self.cleanup_orphans()
@@ -305,8 +342,14 @@ class Executor:
         if interrupted:
             self.record_failure()
         marker = read_json(self.marker)
-        require(isinstance(marker, dict) and set(marker) == {
-            'service', 'original_replicas', 'started_at', 'deadline'})
+        fields = {'service', 'original_replicas', 'started_at', 'deadline'}
+        if active.owner is not None:
+            fields |= {'ownership', 'container_id'}
+        require(isinstance(marker, dict) and set(marker) == fields)
+        if active.owner is not None:
+            require(marker['ownership'] == active.marker_binding()
+                    and isinstance(marker['container_id'], str)
+                    and re.fullmatch(r'[a-f0-9]{64}', marker['container_id']))
         require(marker['service'] == APP and type(marker['original_replicas']) is int
                 and marker['original_replicas'] in (0, 1))
         started, deadline = marker['started_at'], marker['deadline']
@@ -323,10 +366,17 @@ class Executor:
 
     @gate('pause')
     def pause(self):
+        active = self.active_runtime()
+        if active.owner is not None:
+            require(not active.legacy_running())
         original = self.replicas()
         started = int(time.time())
-        atomic_json(self.marker, {'service': APP, 'original_replicas': original,
-                                 'started_at': started, 'deadline': started + 180})
+        marker = {'service': APP, 'original_replicas': original,
+                  'started_at': started, 'deadline': started + 180}
+        if active.owner is not None:
+            marker.update(ownership=active.marker_binding(),
+                          container_id=active.containers('evolution')[0]['Id'])
+        atomic_json(self.marker, marker)
         self.deadline = time.monotonic() + 179
         self.scale(0)
         self.wait(0)
@@ -380,11 +430,15 @@ class Executor:
 
     @gate('session_volume')
     def sessions(self):
-        volume = self.docker_json('volume', 'inspect', VOLUME)[0]
+        active = self.active_runtime()
+        name = runtime.VOLUMES['evolution'] if active.owner is not None else VOLUME
+        if active.owner is not None:
+            active.containers('evolution')
+        volume = self.docker_json('volume', 'inspect', name)[0]
         path = Path(volume['Mountpoint'])
-        require(volume['Name'] == VOLUME and volume['Driver'] == 'local'
+        require(volume['Name'] == name and volume['Driver'] == 'local'
                 and not volume.get('Options')
-                and path == Path('/var/lib/docker/volumes') / VOLUME / '_data'
+                and path == Path('/var/lib/docker/volumes') / name / '_data'
                 and path.resolve() == path)
         return path
 
@@ -424,6 +478,7 @@ class Executor:
 
     @gate('archive')
     def capture(self, stage):
+        active = self.active_runtime()
         captured_at = stamp()
         self.pg_dump(stage)
         self.redis_dump(stage)
@@ -435,8 +490,22 @@ class Executor:
             self.add_tree(archive, Path('/etc/clicaepede/evolution-qa'), 'config/evolution-qa')
             self.add_tree(archive, CONFIG, 'config/kan133/config.json')
             for filename in SCRIPTS:
-                self.add_tree(archive, Path('/home/brunoops/kan132') / filename,
+                source = (Path('/opt/clicaepede/kan132/stack.yaml')
+                          if active.owner is not None and filename == 'stack.yaml'
+                          else Path('/home/brunoops/kan132') / filename)
+                self.add_tree(archive, source,
                               'config/kan132/' + filename)
+            if active.owner is not None:
+                active.revalidate()
+                # Preserve the old isolated validator's canonical stack contract.
+                self.add_tree(archive, Path('/opt/clicaepede/kan132/stack.yaml'),
+                              'config/kan140/legacy-stack.yaml')
+                self.add_tree(archive, runtime.MANIFEST, 'config/kan140/ownership.json')
+                self.add_tree(archive, runtime.SENTINEL, 'config/kan140/managed')
+                self.add_tree(archive, Path(active.owner['source']['path']),
+                              'config/kan140/compose.json')
+                self.add_tree(archive, runtime.ROOT / 'configs', 'config/kan140/configs')
+                self.add_tree(archive, runtime.ROOT / 'mount-secrets', 'config/kan140/mount-secrets')
         self.remaining()
         return captured_at
 

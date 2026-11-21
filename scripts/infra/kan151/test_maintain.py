@@ -5,13 +5,14 @@ import importlib.util
 import io
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import types
 import unittest
-from contextlib import redirect_stdout
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from unittest.mock import MagicMock, call, patch
 
 
@@ -53,6 +54,7 @@ class MaintainTests(unittest.TestCase):
         self.run.mkdir()
         self.enterContext(patch.object(maintain, 'CANONICAL', self.canonical))
         self.enterContext(patch.object(maintain, 'DEPLOY_SOURCE', self.deploy))
+        self.enterContext(patch.object(maintain, 'shared_mutation', side_effect=lambda: nullcontext()))
         if os.name == 'nt':
             self.enterContext(patch.object(maintain.os, 'O_NOFOLLOW', 0, create=True))
             self.enterContext(patch.object(maintain.os, 'O_NONBLOCK', 0, create=True))
@@ -451,6 +453,50 @@ class MaintainTests(unittest.TestCase):
             events.attach_mock(mock, name)
         return events, command, backup, cas
 
+    def test_rollout_shared_lock_excludes_both_synchronous_backups(self):
+        _, _, backup, cas = self.apply_mocks()
+        held = [False]
+
+        @contextmanager
+        def scope():
+            self.assertFalse(held[0])
+            held[0] = True
+            try:
+                yield
+            finally:
+                held[0] = False
+
+        backup.side_effect = lambda: self.assertFalse(held[0], 'backup must acquire its own lock')
+        cas.side_effect = lambda *args: self.assertTrue(held[0])
+        write = maintain.atomic_file
+
+        def guarded_write(path, data):
+            if path.parent in (self.canonical, self.deploy):
+                self.assertTrue(held[0])
+            return write(path, data)
+
+        with patch.object(maintain, 'shared_mutation', side_effect=scope), \
+                patch.object(maintain, 'atomic_file', side_effect=guarded_write):
+            maintain.apply(self.payload, self.source, self.run)
+        self.assertEqual(backup.call_count, 2)
+        self.assertEqual(cas.call_count, 1)
+        self.assertFalse(held[0])
+
+    def test_handoff_after_backup_prevents_rollout_mutations(self):
+        _, _, backup, cas = self.apply_mocks()
+
+        @contextmanager
+        def rejected_scope():
+            raise RuntimeError('ownership-rejected')
+            yield
+
+        with patch.object(maintain, 'shared_mutation', side_effect=rejected_scope):
+            with self.assertRaisesRegex(RuntimeError, 'ownership-rejected'):
+                maintain.apply(self.payload, self.source, self.run)
+        backup.assert_called_once()
+        cas.assert_not_called()
+        self.assertEqual((self.canonical / 'stack.yaml').read_bytes(), self.old_stack)
+
     def test_apply_preserves_unrelated_config_and_spec_with_two_backups(self):
         events, command, backup, cas = self.apply_mocks()
         result = maintain.apply(self.payload, self.source, self.run)
@@ -549,6 +595,76 @@ class MaintainTests(unittest.TestCase):
                     connection.close.assert_called_once()
                     command.assert_called_once_with(['docker', 'version', '--format', '{{.Server.APIVersion}}'])
                 self.assertEqual(self.before, original)
+
+
+class OwnershipFenceTests(unittest.TestCase):
+    @contextmanager
+    def lock_fixture(self):
+        root = Path('/var/lib/clicaepede/kan133')
+        directory = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=0)
+        regular = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_nlink=1)
+        with patch.object(maintain, 'ownership_guard') as guard, \
+                patch.object(maintain.os, 'geteuid', return_value=0, create=True), \
+                patch.object(Path, 'mkdir'), patch.object(Path, 'resolve', return_value=root), \
+                patch.object(Path, 'stat', return_value=directory), \
+                patch.object(Path, 'lstat', return_value=directory), \
+                patch.object(maintain.os, 'O_NOFOLLOW', 0, create=True), \
+                patch.object(maintain.os, 'open', return_value=5) as opened, \
+                patch.object(maintain.os, 'fstat', return_value=regular), \
+                patch.object(maintain.os, 'close') as closed, \
+                patch.object(maintain.fcntl, 'flock') as flock:
+            yield guard, opened, closed, flock
+
+    def test_shared_lock_rechecks_fence_after_acquisition(self):
+        with self.lock_fixture() as (guard, opened, closed, flock):
+            guard.side_effect = [None, RuntimeError('ownership-rejected')]
+            with self.assertRaisesRegex(RuntimeError, 'ownership-rejected'):
+                with maintain.shared_mutation():
+                    self.fail('fence must reject before mutation')
+            opened.assert_called_once()
+            flock.assert_called_once()
+            closed.assert_called_once_with(5)
+        self.assertEqual(maintain._shared_depth, 0)
+
+    def test_shared_lock_is_reentrant_for_inner_cas_and_publication(self):
+        with self.lock_fixture() as (_, opened, closed, flock):
+            with maintain.shared_mutation():
+                with maintain.shared_mutation():
+                    self.assertEqual(maintain._shared_depth, 1)
+            opened.assert_called_once()
+            flock.assert_called_once()
+            closed.assert_called_once_with(5)
+        self.assertEqual(maintain._shared_depth, 0)
+
+    def test_shared_lock_busy_never_yields(self):
+        with self.lock_fixture() as (_, opened, closed, flock):
+            flock.side_effect = BlockingIOError()
+            with self.assertRaises(BlockingIOError):
+                with maintain.shared_mutation():
+                    self.fail('busy lock must reject')
+            closed.assert_called_once_with(5)
+
+    def test_all_maintenance_entrypoints_refuse_fence_before_work(self):
+        for name in ('ownership.json', 'managed'):
+            with self.subTest(fence=name), \
+                    patch.object(maintain.os.path, 'lexists', side_effect=lambda p: p.endswith('/' + name)), \
+                    patch.object(maintain, 'preflight') as preflight, \
+                    patch.object(maintain, 'command') as command, \
+                    patch.object(maintain, 'atomic_file') as write:
+                with self.assertRaisesRegex(RuntimeError, 'ownership-rejected'):
+                    maintain.apply({}, b'', Path('/unused'))
+                with self.assertRaisesRegex(RuntimeError, 'ownership-rejected'):
+                    maintain.run_payload({})
+                preflight.assert_not_called()
+                command.assert_not_called()
+                write.assert_not_called()
+
+    def test_command_fenced_before_any_subprocess(self):
+        with patch.object(maintain.os.path, 'lexists', return_value=True), \
+                patch.object(maintain.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'ownership-rejected'):
+                maintain.command(['docker', 'config', 'create'])
+        run.assert_not_called()
 
 
 if __name__ == '__main__':
