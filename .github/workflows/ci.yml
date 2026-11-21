@@ -32,6 +32,13 @@ jobs:
           python3 -B scripts/infra/kan135/test_scheduler.py
           python3 -B -m unittest discover -s scripts/infra/kan140 -p '*_test.py'
           python3 -B -m unittest discover -s scripts/infra/kan151 -p 'test_*.py'
+          python3 -B scripts/infra/kan133/redis-fingerprint.test.py
+      - name: Regressao Redis com dados sinteticos isolados
+        run: |
+          set -e
+          image="$(python3 -c 'import json; print(json.load(open("scripts/infra/kan132/stack.yaml"))["services"]["redis"]["image"])')"
+          docker pull "$image"
+          sudo env KAN161_REDIS_INTEGRATION=true python3 -B scripts/infra/kan133/redis-fingerprint.test.py
 
   test-and-build:
     name: Testes e build
