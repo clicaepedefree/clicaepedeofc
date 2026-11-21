@@ -4,6 +4,32 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+import fcntl
+import stat
+
+def ownership_guard():
+    if any(os.path.lexists('/etc/clicaepede/kan140/' + name)
+           for name in ('ownership.json', 'managed')):
+        raise SystemExit('ownership-rejected')
+
+ownership_guard()
+os.umask(0o077)
+if os.geteuid() != 0:
+    raise SystemExit('ownership-rejected')
+lock_root = Path('/var/lib/clicaepede/kan133')
+lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+metadata = lock_root.lstat()
+if (lock_root.resolve() != lock_root or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o700):
+    raise SystemExit('ownership-rejected')
+lock_fd = os.open('/var/lib/clicaepede/kan133/backup.lock',
+                  os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+metadata = os.fstat(lock_fd)
+if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_nlink != 1):
+    raise SystemExit('ownership-rejected')
+fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+ownership_guard()
 
 path = Path('/etc/easypanel/traefik/config/kan131-qa.yaml')
 config = json.loads(path.read_text())

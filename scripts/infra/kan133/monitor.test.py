@@ -2,7 +2,7 @@ import importlib.util
 import io
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 import urllib.error
 spec=importlib.util.spec_from_file_location('monitor',Path(__file__).with_name('monitor.py'))
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -54,5 +54,44 @@ class MonitorTests(unittest.TestCase):
         event={'attempts':4,'next':0}
         m.failed_delivery(event,1000,80000)
         self.assertEqual(event['next'],81000)
+
+class RuntimeMonitorTests(unittest.TestCase):
+    def test_legacy_defaults_preserved(self):
+        with patch.object(m.runtime, 'load', return_value=None):
+            self.assertEqual(m.runtime_observation(), (m.SERVICES, {}, [], []))
+
+    def test_invalid_ownership_reports_unavailable_without_legacy_fallback(self):
+        with patch.object(m.runtime, 'load', side_effect=m.runtime.OwnershipError), \
+                patch.object(m.subprocess, 'run') as run:
+            services, tasks, unhealthy, oom = m.runtime_observation()
+        self.assertEqual(services, m.SERVICES[3:])
+        self.assertIn('runtime-ownership-invalid', unhealthy)
+        run.assert_not_called()
+
+    def test_compose_exact_health_and_running_legacy_are_observed(self):
+        active = Mock(owner={'generation': 1})
+        active.legacy_running.return_value = True
+        active.containers.side_effect = [
+            [{'Id': 'a' * 64, 'State': {'Running': True, 'Health': {'Status': 'healthy'}}}],
+            [{'Id': 'b' * 64, 'State': {'Running': False, 'OOMKilled': True}}],
+            [{'Id': 'c' * 64, 'State': {'Running': True, 'Health': {'Status': 'unhealthy'}}}]]
+        with patch.object(m.runtime, 'Runtime', return_value=active):
+            services, tasks, unhealthy, oom = m.runtime_observation()
+        self.assertEqual(services, m.SERVICES[3:])
+        self.assertEqual(set(tasks), {'compose-postgres', 'compose-redis', 'compose-evolution'})
+        self.assertEqual(set(unhealthy), {'legacy-runtime-running', 'compose-redis', 'compose-evolution'})
+        self.assertEqual(oom, ['b' * 64])
+        active.mutate_app.assert_not_called()
+
+    def test_missing_compose_container_does_not_query_swarm(self):
+        active = Mock(owner={'generation': 1})
+        active.legacy_running.return_value = False
+        active.containers.side_effect = m.runtime.OwnershipError
+        with patch.object(m.runtime, 'Runtime', return_value=active):
+            services, tasks, unhealthy, oom = m.runtime_observation()
+        self.assertEqual(len(unhealthy), 3)
+        self.assertFalse(tasks)
+        active.mutate_app.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()

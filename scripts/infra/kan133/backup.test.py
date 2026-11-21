@@ -648,5 +648,82 @@ class LinuxRootTests(unittest.TestCase):
                 self.assertTrue(outside.exists())
 
 
+class OwnershipBackupTests(unittest.TestCase):
+    marker = BackupTests.marker
+
+    def setUp(self):
+        BackupTests.setUp(self)
+        self.owner = {'generation': 7, 'project': 'clica-qa',
+                      'source': {'sha256': 'a' * 64}}
+        patch = mock.patch.object(b.runtime, 'load', return_value=self.owner)
+        self.load_owner = patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_old_marker_cannot_recover_after_switch(self):
+        self.marker()
+        with mock.patch.object(self.executor, 'scale') as scale:
+            with self.assertRaises(b.StageFailure):
+                self.executor.recover()
+        scale.assert_not_called()
+        self.assertTrue(self.executor.marker.exists())
+
+    def test_generation_bound_marker_rejects_stale_generation(self):
+        self.marker(ownership={'generation': 6, 'project': 'clica-qa',
+                               'source_sha256': 'a' * 64}, container_id='b' * 64)
+        with mock.patch.object(self.executor, 'scale') as scale:
+            with self.assertRaises(b.StageFailure):
+                self.executor.recover()
+        scale.assert_not_called()
+
+    def test_compose_marker_rejected_in_legacy(self):
+        self.load_owner.return_value = None
+        self.marker(ownership={'generation': 7}, container_id='a' * 64)
+        with mock.patch.object(self.executor, 'scale') as scale:
+            with self.assertRaises(b.StageFailure):
+                self.executor.recover()
+        scale.assert_not_called()
+
+    def test_compose_pause_persists_exact_id_before_stop(self):
+        active = self.executor.active_runtime()
+        binding = active.marker_binding()
+        with mock.patch.object(active, 'legacy_running', return_value=False), \
+                mock.patch.object(active, 'containers', return_value=[{'Id': 'b' * 64}]), \
+                mock.patch.object(self.executor, 'replicas', return_value=1), \
+                mock.patch.object(self.executor, 'wait'), \
+                mock.patch.object(self.executor, 'scale') as scale:
+            self.executor.pause()
+        saved = json.loads(self.executor.marker.read_text())
+        self.assertEqual(saved['ownership'], binding)
+        self.assertEqual(saved['container_id'], 'b' * 64)
+        scale.assert_called_once_with(0)
+
+    def test_compose_scale_uses_marker_id_only(self):
+        active = self.executor.active_runtime()
+        self.marker(ownership=active.marker_binding(), container_id='b' * 64)
+        with mock.patch.object(active, 'mutate_app') as mutate:
+            self.executor.scale(1)
+        mutate.assert_called_once_with(True, 'b' * 64)
+
+    def test_ownership_invalid_even_without_maintenance_marker(self):
+        self.load_owner.side_effect = b.runtime.OwnershipError
+        with self.assertRaises(b.StageFailure):
+            self.executor.recover()
+
+    def test_compose_capture_contains_both_runtime_contracts(self):
+        active = self.executor.active_runtime()
+        active.owner['source']['path'] = '/etc/clicaepede/kan140/compose.json'
+        with mock.patch.object(self.executor, 'pg_dump'), \
+                mock.patch.object(self.executor, 'redis_dump'), \
+                mock.patch.object(self.executor, 'sessions', return_value=Path('/sessions')), \
+                mock.patch.object(self.executor, 'add_tree') as add:
+            self.executor.capture(self.root)
+        paths = {call.args[2]: call.args[1] for call in add.call_args_list}
+        self.assertEqual(paths['config/kan132/stack.yaml'], Path('/opt/clicaepede/kan132/stack.yaml'))
+        self.assertIn('config/kan140/compose.json', paths)
+        self.assertIn('config/kan140/ownership.json', paths)
+        self.assertIn('config/kan140/managed', paths)
+        self.assertIn('config/kan140/configs', paths)
+
+
 if __name__ == '__main__':
     unittest.main()

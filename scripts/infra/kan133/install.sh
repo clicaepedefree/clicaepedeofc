@@ -2,11 +2,29 @@
 set -eu
 umask 077
 test "$(id -u)" = 0
+# Fence before reading config or overwriting any installed runtime adapter.
+for fence in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do
+  if test -e "$fence" || test -L "$fence"; then
+    echo 'ownership-rejected' >&2; exit 1
+  fi
+done
+install -d -m 700 /var/lib/clicaepede/kan133
+test "$(readlink -f /var/lib/clicaepede/kan133)" = /var/lib/clicaepede/kan133
+test "$(stat -c '%u %a' /var/lib/clicaepede/kan133)" = '0 700'
+test ! -L /var/lib/clicaepede/kan133/backup.lock
+exec 9>/var/lib/clicaepede/kan133/backup.lock
+test "$(stat -Lc '%u %a %h' /proc/self/fd/9)" = '0 600 1'
+flock -n 9
+for fence in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do
+  if test -e "$fence" || test -L "$fence"; then
+    echo 'ownership-rejected' >&2; exit 1
+  fi
+done
 source_dir=${1:?Provide uploaded script directory}
 test -f "$source_dir/backup.py"
 test -f "$source_dir/restore.py"
 install -d -m 700 /opt/clicaepede/kan133 /var/lib/clicaepede/kan133 /etc/clicaepede/kan133
-for file in backup.py restore.py restore-offsite.py restore-recover.py monitor.py retention.py; do
+for file in runtime.py backup.py restore.py restore-offsite.py restore-recover.py monitor.py retention.py; do
   install -o root -g root -m 700 "$source_dir/$file" "/opt/clicaepede/kan133/$file"
 done
 install -d -m 700 /opt/clicaepede/kan132
@@ -52,7 +70,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 /opt/clicaepede/kan133/backup.py recover
-ExecStartPost=/usr/bin/python3 /opt/clicaepede/kan133/restore-recover.py
+ExecStartPost=/bin/sh -c 'for f in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do if test -e "$f" || test -L "$f"; then exit 0; fi; done; exec /usr/bin/python3 /opt/clicaepede/kan133/restore-recover.py'
 TimeoutStartSec=240
 UMask=0077
 NoNewPrivileges=true

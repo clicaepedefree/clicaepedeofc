@@ -8,6 +8,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
+import runtime
 try:
     import fcntl
 except ImportError:
@@ -79,6 +80,42 @@ def failed_delivery(event,now,retry_after=0):
     if event['attempts']>=5:
         event['next']=max(event['next'],now+6*3600)
 
+
+class DockerObserver:
+    def run(self, args):
+        return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              check=True, timeout=8).stdout.decode()
+
+    def docker_json(self, *args):
+        return json.loads(self.run(['docker', *args]))
+
+
+def runtime_observation():
+    """Return only allowlisted health/task data; never mutate Docker state."""
+    tasks, unhealthy, oom = {}, [], []
+    try:
+        active = runtime.Runtime(DockerObserver())
+        if active.owner is None:
+            return SERVICES, tasks, unhealthy, oom
+        if active.legacy_running():
+            unhealthy.append('legacy-runtime-running')
+        for role in runtime.ROLES:
+            service = 'compose-' + role
+            try:
+                item = active.containers(role)[0]
+                tasks[service] = [item['Id']]
+                if (not item['State']['Running'] or
+                        item['State'].get('Health', {}).get('Status') != 'healthy'):
+                    unhealthy.append(service)
+                if item['State'].get('OOMKilled'):
+                    oom.append(item['Id'])
+            except Exception:
+                unhealthy.append(service)
+        active.revalidate()
+    except Exception:
+        unhealthy.append('runtime-ownership-invalid')
+    return SERVICES[3:], tasks, unhealthy, oom
+
 def collect(previous):
     cpu = [int(x) for x in Path('/proc/stat').read_text().splitlines()[0].split()[1:]]
     old = previous.get('cpu_ticks', cpu)
@@ -88,13 +125,12 @@ def collect(previous):
     ram = round(100*(1-memory['MemAvailable']/memory['MemTotal']),2)
     disk = os.statvfs('/')
     disk_percent = round(100*(1-disk.f_bavail/disk.f_blocks),2)
+    observed, tasks, unhealthy, oom_ids = runtime_observation()
     result = subprocess.run(['docker','service','ls','--format','{{json .}}'],capture_output=True,check=True,timeout=8)
     services = [json.loads(line) for line in result.stdout.decode().splitlines()]
-    replica = {s['Name']:s['Replicas'] for s in services if s['Name'] in SERVICES}
-    unhealthy = [name for name in SERVICES if replica.get(name) != '1/1']
-    tasks = {}
-    oom_ids=[]
-    for service in SERVICES:
+    replica = {s['Name']:s['Replicas'] for s in services if s['Name'] in observed}
+    unhealthy.extend(name for name in observed if replica.get(name) != '1/1')
+    for service in observed:
         ids = subprocess.run(['docker','ps','-q','--filter','label=com.docker.swarm.service.name='+service],capture_output=True,check=True,timeout=8).stdout.decode().split()
         tasks[service] = ids
         history=subprocess.run(['docker','ps','-aq','--filter','label=com.docker.swarm.service.name='+service],capture_output=True,check=True,timeout=8).stdout.decode().split()

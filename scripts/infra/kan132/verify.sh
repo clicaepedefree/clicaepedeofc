@@ -1,6 +1,20 @@
 #!/bin/bash
 set -euo pipefail
+umask 077
+for fence in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do
+  if [[ -e "$fence" || -L "$fence" ]]; then echo 'ownership-rejected' >&2; exit 1; fi
+done
 [[ "$(id -u)" == 0 ]] || { echo 'Run as root on the QA VPS.' >&2; exit 1; }
+install -d -m 700 /var/lib/clicaepede/kan133
+[[ "$(readlink -f /var/lib/clicaepede/kan133)" == /var/lib/clicaepede/kan133 ]]
+[[ "$(stat -c '%u %a' /var/lib/clicaepede/kan133)" == '0 700' ]]
+[[ ! -L /var/lib/clicaepede/kan133/backup.lock ]]
+exec 9>/var/lib/clicaepede/kan133/backup.lock
+[[ "$(stat -Lc '%u %a %h' /proc/self/fd/9)" == '0 600 1' ]]
+flock -n 9
+for fence in /etc/clicaepede/kan140/ownership.json /etc/clicaepede/kan140/managed; do
+  if [[ -e "$fence" || -L "$fence" ]]; then echo 'ownership-rejected' >&2; exit 1; fi
+done
 cd "$(dirname "$0")"
 STACK=clica-evolution-qa
 container() { docker ps -q --filter "label=com.docker.swarm.service.name=${STACK}_$1"; }

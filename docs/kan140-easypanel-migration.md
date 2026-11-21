@@ -1,5 +1,164 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Atualizacao de 21/11/2026
+
+KAN-161 encerrada apos PR176 mergeado e restore **canonico** offsite PASS
+em 43.294s. Hash, descriptografia, PostgreSQL (37 tabelas/1241 linhas),
+Redis apos reinicio AOF, instancia/sessao armazenada e cleanup aprovados.
+Isso libera a preparacao da migracao, nao significa que ela aconteceu.
+
+O administrador autorizou explicitamente recriacao controlada em Compose,
+com breve indisponibilidade da Evolution QA, preservando identidade, dados,
+versoes e bot desligado. Tambem aprovou a diferenca de secrets: arquivos
+root-only montados somente para leitura substituem secrets do Swarm.
+Essa alternativa nao tem a mesma protecao em repouso do secret Swarm.
+
+Estado atual:
+
+- DNS painel.clicaepede.com.br aponta para a VPS Hostinger; nameservers
+  continuam no provedor autoritativo existente, sem alteracao de MX/app.
+- HTTPS nativo EasyPanel ativo, HTTP redireciona 301 e serveOnIp=false.
+- Politica deny-only no proxy restringe origem IPv4 administrativa /32,
+  bloqueia hostname alternativo e preserva o login proprio do EasyPanel.
+- Chrome real isolado: pagina HTTPS, login e logout passaram. Origem
+  diferente e X-Forwarded-For falsificado receberam 418. API listProjects
+  sem autenticacao recebeu 401; getUser pode retornar null/200 e nao e
+  oracle de autorizacao. Evolution segue HTTPS 200. Porta publica 3000
+  nao respondeu dentro do timeout, nao usar isso como teste de todas as portas.
+- Projeto vazio clica-qa criado e confirmado por API suportada. Ainda nao
+  existem Evolution/PostgreSQL/Redis gerenciados por esse projeto.
+- Plano Compose validado pelo Docker Compose 5.5.1 instalado, somente
+  config --quiet --no-interpolate, sem iniciar recursos. Nao e ensaio
+  funcional de Compose nem prova de migracao/persistencia/rollback.
+- Stack Swarm original continua saudavel e permanece unica escritora.
+  Worker desabilitado, timer inactive/disabled, sem novo QR/envio.
+
+## Operacao do painel
+
+URL diaria: https://painel.clicaepede.com.br. Cada operador deve usar conta
+nominal e origem aprovada. As credenciais locais e recibos administrativos
+permanecem fora do Git/Jira em diretorio privado. MFA nao foi comprovado;
+nao declarar configurado. O controle de acesso aqui e origem restrita mais
+login proprio, nao apenas URL oculta.
+
+Se o IP administrativo mudar, acessar pelo tunel SSH nominal de recuperacao
+e atualizar a politica via setCustomConfig. Nao abrir 3000. Adicionar o novo
+IP antes de remover o anterior apenas durante janela autorizada; verificar
+o acesso e revogar a origem/conta que nao deve mais operar. O teste de
+origem usa ClientIP, nunca cabeçalhos X-Forwarded-For enviados pelo cliente.
+IPv6 nao integra a allowlist; antes de adicionar um operador IPv6, revisar
+a politica e comprovar negação/aceite reais, sem liberar redes amplas.
+
+O tunel e encaminhamento local para o servidor remoto, nao hospedagem no
+computador do operador. Continuar usando a chave nominal e known_hosts
+previamente aprovados; nao resetar senha novamente para automacao.
+
+TLS e dominio pertencem ao mecanismo nativo setPanelDomain do EasyPanel.
+Preservar o resolver ACME e monitorar validade/erros de renovacao. Os guards
+nao criam backend nem emitem certificados; apenas negam acessos.
+Rollback de acesso: pelo tunel, restaurar via APIs suportadas os valores
+anteriores de setPanelDomain/setCustomConfig guardados nos recibos privados,
+mantendo guards existentes e porta publica 3000 fechada. Nao copiar um
+snapshot antigo de /etc/easypanel sobre o banco atual do painel.
+
+## Plano Compose sem efeito colateral
+
+scripts/infra/kan140/compose_plan.py recebe bytes JSON do stack canonico,
+SHA-256 previamente aprovado e uma geracao inteira positiva. Nao faz I/O,
+nao le segredos, nao cria containers e retorna deployment_permitted=false.
+O hash deve vir do baseline revisado, nao ser recalculado cegamente depois
+de uma alteracao nao aprovada. O ensaio atual conferiu o baseline canonico
+03f48f5cd3d1a11ea766754bb369d72ceff4e6524bff46263298a6bd652d28d1.
+
+A traducao preserva digests, entrypoints/redator, healthchecks, env nao
+secreto, logging 10m/3, limites CPU/RAM e reserva de memoria. Remove politicas
+exclusivas de Swarm (placement/update) e usa restart unless-stopped. O delay
+de restart e a reserva de CPU do scheduler Swarm nao sao garantidos por
+essa traducao Compose. A rede bridge interna isola bancos; somente Evolution
+integra a rede proxy existente e attachable. Nenhuma porta e publicada.
+
+Os tres volumes externos kan140_qa_* devem existir e conter dados validados
+antes de criar o servico; external=true impede criacao silenciosa pelo
+Compose. Nao compartilhar os volumes ativos clica-evolution-qa_*.
+Configs sao copias root-owned em /etc/clicaepede/kan140/configs; secrets
+referenciam copias dedicadas em /etc/clicaepede/kan140/mount-secrets.
+Ambos os diretorios devem ser root:root 0700, com arquivos 0444 montados
+readonly para permitir leitura pelos UIDs dos containers. A travessia dos
+diretorios continua proibida aos outros usuarios do host. Os originais de
+recuperacao em /etc/clicaepede/evolution-qa/secrets continuam 0600, inalterados.
+O manifesto privado exige hashes revisados das oito copias. A sintaxe Compose
+nao prova permissoes efetivas: testar init fresco, volume restaurado, UID
+PostgreSQL, healthchecks e negacao de travessia no host antes de ativar.
+O plano nao comprova que arquivos, permissoes, volumes e dados existem;
+esses sao gates independentes do corte.
+
+Ensaio nativo sintetico compose_mount_test.py: PASS em 11.177s na VPS,
+com PostgreSQL 17.11 fixado, network none, sem portas e limite 256MB/0.25CPU.
+Comprovou init fresco/role restrita, leitura pelo UID postgres, binds readonly,
+negacao de travessia pelo UID 65534 no host, reinicio com persistencia e
+cleanup exato de container/volume. Nao usou credenciais, banco ou sessao reais.
+A primeira tentativa falhou na fixture (senha sintetica sem newline para
+read -r) e no diagnostico de ausencia do Docker; foi preservada, corrigida
+e repetida em novo diretorio. Nao representa restore de dados reais para
+Compose, migracao completa ou teste de toda a aplicacao.
+
+## Contrato preparatorio de ownership
+
+runtime.py e os adaptadores desta etapa ainda nao foram instalados na VPS.
+Os testes offline nao substituem aceite nativo do backup/monitor com Compose.
+Nao escrever um manifesto ativo apenas para ultrapassar os gates.
+
+O controle privado usa /etc/clicaepede/kan140/managed (sentinela duravel) e
+ownership.json, ambos root-owned 0600. O manifesto schema=1 associa runtime
+compose, state active, generation inteira, projeto Compose real, imagens por
+role, volumes explicitos, source.path/source.sha256 de compose.json e
+mount_hashes das quatro configs e quatro copias de secrets. O nome do projeto
+Docker deve ser observado na implantacao gerenciada; nao assumir que coincide
+com o nome do projeto exibido na UI.
+
+Sem ambos os arquivos, somente o legado anterior a migracao e permitido.
+Se existe qualquer um, ausencia do outro, estado de transicao/bloqueio,
+hash/permissao incorreta ou geracao divergente rejeitam a operacao sem fallback
+para Swarm. Uma falha apos publicar a sentinela deixa a barreira instalada;
+nao remove-la automaticamente para fazer scripts antigos voltarem a funcionar.
+
+O backup usa o lock estavel /var/lib/clicaepede/kan133/backup.lock e vincula
+o marker de manutencao a geracao/projeto/hash da fonte e ID exato do container.
+O adaptador somente para/inicia container existente validado; nao executa
+compose up para recuperar um container ausente. O arquivo canonico KAN132
+continua no backup para manter compativel o verificador isolado existente,
+junto com o novo manifesto, fonte, configs e copias de montagem criptografados.
+
+A barreira e cooperativa entre scripts revisados, nao impede um root de
+executar docker diretamente. A janela de corte precisa impedir redeploys na
+UI e reconciliar operacoes em curso; as travas e os markers devem ser testados
+com falhas e reinicio antes de se declarar ownership transferido.
+
+## Gates pendentes antes do corte
+
+O PR desta etapa prepara acesso/plano/fencing. Nao marcar a tarefa inteira
+como Teste/Done antes do corte e dos aceites abaixo.
+
+1. Instalar somente codigo revisado/mergeado, com backup de recuperacao.
+2. Adaptar e validar backup, monitor e recovery ao manifesto de recursos,
+   geracao e ownership. Nunca inferir backend pela ausencia de container.
+3. Cercar todos os mutadores legados: KAN132 deploy/publish/verify restart
+   e cleanup, KAN133 backup/recover/install e KAN151 maintain apply.
+   Reconciliar markers pendentes e controlar retries/boot; parar so o
+   backup.timer nao impede recovery ou um deploy manual antigo.
+4. Ensaiar restauracao e rollback com dados em ambiente isolado sem egress,
+   incluindo contrato de novos recursos no backup criptografado.
+5. Executar parada controlada com lock unico e writers legados ausentes;
+   criar servico Compose por API suportada, sem edicao LMDB/labels falsas.
+6. Validar API autenticada, dados, dependencia PG/Redis, pareamento e
+   persistencia; confirmar UI gerenciavel e dominio Evolution nativo sem
+   rota legada concorrente. Teste de transporte requer autorizacao separada.
+7. Desativar antigos somente apos aceite, preservando volumes/secrets e
+   rollback. Nenhum prune automatico, reativacao do bot ou migracao do app.
+
+As secoes historicas abaixo registram o baseline anterior; os bloqueios
+DNS/login/KAN161 foram resolvidos conforme os recibos desta atualizacao.
+
 ## Estado em 19/11/2026
 
 Retomada apos suspensao da VPS. Nao houve cutover, nova stack, alteracao de
