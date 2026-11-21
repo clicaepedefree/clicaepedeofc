@@ -228,15 +228,87 @@ walk(root); console.log(JSON.stringify(entries.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0
 '''
 
 REDIS_FINGERPRINT = r'''
+-- DUMP is not canonical for unordered objects: dictionary order changes on reload.
+-- All output is aggregate-only; unknown types and bounded work failures fail closed.
+local function fingerprint()
+local total_bytes=0
+local elements=0
+local horizon=tonumber(ARGV[2]) or 0
+local function reject(code) error(code,0) end
+local function frame(value)
+ if type(value)~='string' then reject('redis-fingerprint-unavailable') end
+ total_bytes=total_bytes+#value
+ elements=elements+1
+ if total_bytes>16777216 or elements>100000 then reject('redis-fingerprint-limit') end
+ return tostring(#value)..':'..value
+end
+local function deadline(value)
+ if type(value)~='number' or value%1~=0 or value>9007199254740991 or value< -2 then
+  reject('redis-expiry-range')
+ end
+ if value==-2 then reject('redis-fingerprint-unavailable') end
+ if value>=0 and value<=horizon then reject('redis-expiry-window') end
+ return frame(string.format('%.0f',value))
+end
 local cursor='0'
 local items={}
+local key_count=0
+local pages=0
 repeat
- local page=redis.call('SCAN',cursor,'COUNT',1000)
+ pages=pages+1
+ if pages>10000 then reject('redis-fingerprint-limit') end
+ local page=redis.call('SCAN',cursor,'COUNT',128)
  cursor=page[1]
  for _,key in ipairs(page[2]) do
-  if key~=ARGV[1] then
-   local value=redis.call('DUMP',key)
-   if value then items[redis.sha1hex(key)]=redis.sha1hex(value) end
+  if not (ARGV[3]~='0' and key==ARGV[1]) and items[key]==nil then
+   local kind=redis.call('TYPE',key).ok
+   if kind~='none' then
+    key_count=key_count+1
+    if key_count>10000 then reject('redis-fingerprint-limit') end
+    local sizes={hash='HLEN',set='SCARD',list='LLEN',zset='ZCARD',stream='XLEN'}
+    if sizes[kind] then
+     if redis.call(sizes[kind],key)>10000 then reject('redis-fingerprint-limit') end
+    elseif kind~='string' then reject('redis-unsupported-type') end
+    -- Exact sampling bounds bytes before any whole-collection Lua allocation.
+    if redis.call('MEMORY','USAGE',key,'SAMPLES',0)>16777216-total_bytes then
+     reject('redis-fingerprint-limit')
+    end
+    local parts={frame(kind),deadline(redis.call('PEXPIRETIME',key))}
+    local function add(value) table.insert(parts,frame(value)) end
+    if kind=='string' then
+     if redis.call('STRLEN',key)>16777216-total_bytes then reject('redis-fingerprint-limit') end
+     add(redis.call('GET',key))
+    elseif kind=='hash' then
+     if redis.call('HLEN',key)>10000 then reject('redis-fingerprint-limit') end
+     local fields=redis.call('HKEYS',key)
+     table.sort(fields)
+     add(tostring(#fields))
+     for _,field in ipairs(fields) do
+      add(field)
+      add(redis.call('HGET',key,field))
+      table.insert(parts,deadline(redis.call('HPEXPIRETIME',key,'FIELDS',1,field)[1]))
+     end
+    elseif kind=='set' then
+     if redis.call('SCARD',key)>10000 then reject('redis-fingerprint-limit') end
+     local members=redis.call('SMEMBERS',key)
+     table.sort(members)
+     add(tostring(#members))
+     for _,member in ipairs(members) do add(member) end
+    elseif kind=='list' or kind=='zset' then
+     local size=redis.call(kind=='list' and 'LLEN' or 'ZCARD',key)
+     if size>10000 then reject('redis-fingerprint-limit') end
+     local values
+     if kind=='list' then values=redis.call('LRANGE',key,0,-1)
+     else values=redis.call('ZRANGE',key,0,-1,'WITHSCORES') end
+     add(tostring(#values))
+     for _,value in ipairs(values) do add(value) end
+    elseif kind=='stream' then
+     -- Retain the strict binary contract for stream metadata and pending delivery state.
+     if redis.call('MEMORY','USAGE',key)>16777216-total_bytes then reject('redis-fingerprint-limit') end
+     add(redis.call('DUMP',key))
+    else reject('redis-unsupported-type') end
+    items[key]=redis.sha1hex(table.concat(parts))
+   end
   end
  end
 until cursor=='0'
@@ -244,8 +316,14 @@ local keys={}
 for key,_ in pairs(items) do table.insert(keys,key) end
 table.sort(keys)
 local material={}
-for _,key in ipairs(keys) do table.insert(material,key..items[key]) end
+for _,key in ipairs(keys) do table.insert(material,frame(key)..items[key]) end
 return {#keys,redis.sha1hex(table.concat(material))}
+end
+local ok,result=pcall(fingerprint)
+if ok then return result end
+local codes={['redis-fingerprint-limit']=true,['redis-expiry-window']=true,
+ ['redis-expiry-range']=true,['redis-unsupported-type']=true}
+return {-1,codes[result] and result or 'redis-fingerprint-unavailable'}
 '''
 
 
@@ -357,8 +435,15 @@ class Validator:
                 databases.add(int(line.split(":", 1)[0][2:]))
         snapshot = {}
         for database in sorted(databases):
-            result = json.loads(self.redis("-n", str(database), "--json", "EVAL", REDIS_FINGERPRINT, "0", exclude))
-            require(isinstance(result, list) and len(result) == 2 and isinstance(result[0], int) and
+            horizon = int((time.time() + max(0, self.work_end - time.monotonic())) * 1000)
+            result = json.loads(self.redis("-n", str(database), "--json", "EVAL", REDIS_FINGERPRINT,
+                                           "0", exclude, str(horizon), '1' if database == 0 else '0'))
+            if isinstance(result, list) and len(result) == 2 and result[0] == -1:
+                require(False, result[1] if isinstance(result[1], str) and result[1] in {
+                    'redis-fingerprint-limit', 'redis-expiry-window', 'redis-expiry-range', 'redis-unsupported-type'
+                } else 'redis-fingerprint-unavailable')
+            require(isinstance(result, list) and len(result) == 2 and type(result[0]) is int and
+                    0 <= result[0] <= 10000 and isinstance(result[1], str) and
                     re.fullmatch(r"[a-f0-9]{40}", result[1]), "redis-data-fingerprint")
             snapshot[str(database)] = result
         return snapshot
@@ -495,6 +580,7 @@ class Validator:
         require(self.pg_snapshot() == baseline, "evolution-mutated-restored-schema-or-sessions")
         self.isolation()
         self.evidence.update({"postgres": {k: v for k, v in baseline.items() if k != "counts"}, "redis_keys": key_count,
+                              "redis_fingerprint_policy": "semantic-v1; streams-strict-dump; bounded-expiry-window",
                               "redis_aof_restart_verified": True, "evolution": api,
                               "redis_databases": redis_baseline,
                               "session_files": len(manifest), "isolated": True})
