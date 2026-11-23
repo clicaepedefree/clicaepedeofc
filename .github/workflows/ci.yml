@@ -47,6 +47,10 @@ jobs:
           image="$(python3 -c 'import json; print(json.load(open("scripts/infra/kan132/stack.yaml"))["services"]["postgres"]["image"])')"
           docker pull "$image"
           sudo env KAN140_COMPOSE_MOUNT_INTEGRATION=true python3 -B scripts/infra/kan140/compose_mount_test.py
+      - name: Ensaiar copia e retorno de dados sinteticos recentes
+        run: |
+          set -e
+          sudo python3 -B scripts/infra/kan140/volume_transfer_native.py --run-native-fixtures
 
   test-and-build:
     name: Testes e build
