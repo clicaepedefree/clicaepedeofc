@@ -68,7 +68,8 @@ def main():
                 mode = data['mode']
                 if mode == 'inspect':
                     project = api.call('inspectProject', panel_client.project_payload())
-                    out = {'project': summarize(project)}
+                    domains = api.call('listDomains', {})
+                    out = {'project': summarize(project), 'domains':summarize(domains)}
                     if isinstance(project, dict) and project.get('services'):
                         native = api.call('inspectComposeService', panel_client.service_payload())
                         out['native'] = summarize(native)

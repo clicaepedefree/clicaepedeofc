@@ -226,6 +226,13 @@ class ClientTests(unittest.TestCase):
         for value in ('', '../other', 'id&projectName=other'):
             with self.assertRaises(p.PanelError):p.action_payload(value)
 
+    def test_domain_inventory_is_exhaustive_read_only_not_filterable(self):
+        client=self.login()
+        self.connection.getresponse.return_value=Response([])
+        self.assertEqual(client.call('listDomains',{}),[])
+        with self.assertRaises(p.PanelError):
+            client.call('listDomains',{'projectName':'other'})
+
     def test_transport_failure_during_login_drops_credentials(self):
         client = p.Client('fixture@example.invalid', 'fixture-password')
         self.connection.request.side_effect = OSError('fixture-password')

@@ -1,5 +1,85 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Engine nativo e roteamento: retomada apos PR180
+
+PR180 mergeado em 499a1d2. A Evolution real ainda esta no Swarm original,
+saudavel, com worker/timer e webhook pausados. Nenhum ownership foi ativado.
+O aplicativo confirmou numero inactive, sessao paused e assistente paused.
+
+### Provas novas executadas em 23/11/2026
+
+- Docker Engine29.8.2/API1.56. Adaptador stdlib pelo socket Unix fixo,
+  requests/responses limitados, deadline por chamada e global, sem retry.
+  Atualizacoes enviam o ServiceSpec inteiro e versao CAS; somente replicas
+  e rebind para volumes fixos de rollback sao permitidos.
+- Fixture nativa unica, imagem PG fixada, rede interna, tmpfs no destino
+  PG, sem dados reais ou portas: replicas0->1(healthy)->0, ServiceSpec
+  preservado e snapshot obsoleto rejeitado localmente. Nao alegar que foi
+  exercitado um conflito CAS no daemon. Attempt3a87530776ed4730878ee719fd553ebe,
+  cleanup_verified=true; inventario posterior sem servico/rede/container
+  com o label da tentativa. Registro running antes das mutacoes e reserva
+  de cleanup independente; create ambiguo ausente nao vira limpeza PASS.
+- Prisma somente leitura: todos os57 nomes/checksums do container corrente
+  correspondem ao historico aplicado. A origem pristine ainda nao estava
+  comprovada nessa primeira observacao; recibo sem image_origin_verified
+  nao libera startup/corte. Nenhuma migracao pendente/incompleta
+  nao revertida. Sem DDL ou reparo. SHA do historico
+  8f07210a99d89311a0cddb4847e627795bca488d3e6aae65b831770e409022fb.
+  Este resultado precisa ser revalidado dentro da janela real de corte.
+- Observacao FINAL pristine aprovada e executada: fixture
+  kan140-prisma-fixture-d49cb6c1c77d433b940fe104c0fea7a3; imagem/ID4303...
+  fixados, sem app/healthcheck/rede/secrets, rootfs readonly e tmpfs impedindo
+  volume anonimo. Manifesto53684b792cae57f2575607c0c059136e7a98315be0862e50c2600b662b3d314e
+  vincula os57 arquivos originais ao observer read-only do PG, com timeout
+  SQL5s/lock2s e snapshot repeatable-read. image_origin_verified=true e
+  pristine_cleanup_verified=true. Nenhuma migracao pendente/incompleta.
+
+### Coordenacao e roteamento preparados, nao aplicados
+
+O retorno permanece fenced enquanto os tres servicos Swarm ainda nao
+estao saudaveis. Somente depois publica ownership ativo. Intents de rebind
+e a autoridade dos dados ficam duraveis antes de qualquer mutacao.
+O callback de configuracao efetiva confere entrypoint/comando, env da imagem
+mais overrides, healthcheck, recursos, logs, redes, aliases e portas.
+Essas verificacoes de workloads finais ainda nao foram executadas nativamente.
+
+O dominio nativo deve ser registrado DEPOIS de parar/copiar os escritores
+antigos e materializar a fonte, mas ANTES do primeiro deploy: o EasyPanel
+gera aliases do proxy a partir dos dominios nesse momento. Registro, corte
+das duas rotas legadas e verificacao externa sao etapas separadas, com
+intents e CAS. Antes do corte, o gate usa API DIRETA do novo backend401/200,
+alias/config do proxy, saude e ownership. HTTPS publico atribuido ao nativo
+so pode passar APOS retirar a rota concorrente; nao criar um gate circular.
+
+O arquivo kan131-qa.yaml real tem SOMENTE quatro routers: dois blockers
+priority3 e dois da Evolution priority100. A politica administrativa esta
+no custom.yaml separado. Nao exigir guards inexistentes no primeiro arquivo,
+nao sobrescrever custom.yaml e nao recriar prioridades para forcar o teste.
+ListDomains sem filtros retornou uma lista vazia, por leitura autenticada.
+Nenhum dominio novo foi criado nem rota removida nesta etapa.
+
+### Bloqueios reais para o corte
+
+Recuperacao parcial ainda exige reconciliador operacional: o lifecycle
+recusa replay de rebind/copia/publicacao ambiguos. A autoridade legacy
+permite APENAS copiar dados originais ATUAIS para rollback NOVO quando
+nunca houve possivel escrita managed; jamais retomar um snapshot antigo.
+Depois da fronteira managed-may-have-written, o retorno usa dados managed.
+
+O ensaio integrado PG/Redis/sessao com escritas recentes e retorno precisa
+de extensao da lease e do recuperador SIGKILL para seus recursos dinamicos.
+O candidato nao foi publicado no repo nem executado: mocks ou uma simples
+lista em memoria nao comprovam recuperacao. Nao aplicar o corte enquanto
+esses gates estiverem abertos. KAN140 continua sem aceite final. Jira nesta
+sessao exige reautenticacao; evidencias locais nao sao anexos publicados.
+
+Revisao independente tambem fechou regressao de containment: o teste completo
+de conformidade nao bloqueia parar um container comprovadamente nosso.
+Redis com entrypoint explicito nao herda CMD da imagem; Labels nulos e
+StartInterval zero/default sao tratados, sem aceitar seccomp/ExtraHosts/DNS
+inesperados. Timeout de createDomain com inventario vazio permanece resultado
+desconhecido, nunca rollback concluido; nao repetir POST para destravar.
+
 ## Atualizacao de 23/11/2026
 
 PR179 mergeado em d36cdb1. Executor instalado nos caminhos canonicos com
