@@ -161,13 +161,18 @@ class Coordinator:
     gates is a callable rechecking operator evidence, not a deployment flag.
     """
     def __init__(self, *, api, engine, backup, runtime, stage, transfer, fixture,
-                 gates, files=None, seconds=600, monotonic=time.monotonic, sleep=time.sleep):
+                 gates, files=None, before_deploy=None, workload_check=None, seconds=600,
+                 monotonic=time.monotonic, sleep=time.sleep):
         require(type(seconds) in (int, float) and 0 < seconds <= 900, 'deadline-policy')
         self.api, self.engine, self.backup, self.runtime = api, engine, backup, runtime
         self.stage, self.transfer, self.fixture, self.gates = stage, transfer, fixture, gates
         self.files = files or Files(backup, runtime)
         self.clock, self.sleep, self.seconds = monotonic, sleep, seconds
         self.state = None
+        require(before_deploy is None or callable(before_deploy), 'before-deploy-hook')
+        self.before_deploy = before_deploy
+        require(workload_check is None or callable(workload_check), 'workload-check-hook')
+        self.workload_check = workload_check
 
     def checkpoint(self, phase, **values):
         self.state.update(values)
@@ -254,14 +259,14 @@ class Coordinator:
                 if item['Id'] == self.state.get('fixture_id'):
                     require(container_pin(item) == self.state['fixture_pin'], 'fixture-container-drift')
                 else:
-                    self.validate_managed(item)
+                    self.validate_managed(item, conformance=False)
                 self.mutate('stop-' + item['Id'], lambda cid=item['Id'], pin=container_pin(item):
                             self.engine.stop(cid, pin))
         self.quiescent(set(self.runtime.VOLUMES.values()))
         self.idle()
         require(self.native().get('enabled') is False, 'controller-reenabled')
 
-    def validate_managed(self, item):
+    def validate_managed(self, item, *, conformance=True):
         """Validate immutable workload identity even when not yet running."""
         labels = item['Config']['Labels']
         role = labels.get('com.docker.compose.service')
@@ -286,6 +291,8 @@ class Coordinator:
         require(len(binds) == len(expected) and
                 {(m['Source'], m['Destination']) for m in binds} == expected and
                 all(m['RW'] is False for m in binds), 'compose-bind-mounts')
+        if conformance and self.workload_check is not None:
+            self.workload_check(item)
 
     def verify_compose(self):
         self.validate_stage()
@@ -324,6 +331,55 @@ class Coordinator:
                     type(row['bytes']) is int and row['bytes'] >= 0, 'transfer-evidence')
         self.checkpoint('copied-' + phase, **{phase + '_copy': result})
 
+    def rollback_service(self, role, records):
+        saved = records[role]
+        actual = self.engine.service(saved['service_id'])
+        expected = copy.deepcopy(saved['spec'])
+        replicas = actual['Spec']['Mode']['Replicated']['Replicas']
+        require(type(replicas) is int and replicas in (0, 1), 'rollback-replicas')
+        expected['Mode']['Replicated']['Replicas'] = replicas
+        require(actual['ID'] == saved['service_id'] and actual['Spec'] == expected,
+                'rollback-service-drift')
+        mounts = expected['TaskTemplate']['ContainerSpec']['Mounts']
+        require(len(mounts) == 1 and mounts[0]['Type'] == 'volume'
+                and mounts[0]['Source'] == self.runtime.SWARM_VOLUMES[role]
+                and mounts[0]['Target'] == managed.DESTINATIONS[role]
+                and mounts[0].get('ReadOnly', False) is False, 'rollback-mount-shape')
+        return actual
+
+    def rollback_healthy(self, records, roles=ROLES):
+        services = {r: self.rollback_service(r, records) for r in ROLES}
+        rows = self.engine.inventory()
+        ready = True
+        for role in ROLES:
+            service = services[role]
+            writers = []
+            for item in rows:
+                state = item['State']
+                live = state['Running'] or state['Restarting']
+                attached = any(m.get('Name') == self.runtime.SWARM_VOLUMES[role]
+                               and m.get('RW') is True for m in item['Mounts'])
+                owned = item['Config']['Labels'].get('com.docker.swarm.service.id') == service['ID']
+                if attached and (live or item['HostConfig']['RestartPolicy']['Name'] != 'no'):
+                    require(owned, 'rollback-foreign-writer')
+                if not owned or not live:
+                    continue
+                require(item['Config']['Image'] == service['Spec']['TaskTemplate']['ContainerSpec']['Image'],
+                        'rollback-container-identity')
+                require(len(item['Mounts']) == 1 and attached
+                        and item['Mounts'][0]['Type'] == 'volume'
+                        and item['Mounts'][0]['Destination'] == managed.DESTINATIONS[role],
+                        'rollback-container-mount')
+                writers.append(item)
+            require(len(writers) <= 1, 'rollback-container-count')
+            if role in roles:
+                ready &= (service['Spec']['Mode']['Replicated']['Replicas'] == 1
+                          and len(writers) == 1 and writers[0]['State']['Running'] is True
+                          and writers[0]['State']['Restarting'] is False
+                          and not writers[0]['State'].get('OOMKilled', False)
+                          and writers[0]['State'].get('Health', {}).get('Status') == 'healthy')
+        return ready
+
     def contain(self):
         # Never resume old volumes, even if deploy's response was ambiguous.
         previous_end = self.end
@@ -353,7 +409,11 @@ class Coordinator:
             self.preflight()
             require(not self.files.exists('lifecycle.json') and self.runtime.load() is None,
                     'replay-or-existing-owner')
-            self.state = {'schema': 1, 'phase': 'initial', 'project': PROJECT}
+            self.state = {'schema': 1, 'phase': 'initial', 'project': PROJECT,
+                          'data_authority': 'legacy',
+                          'recovery_policy': {
+                              'legacy': 'manual: original CURRENT data to FRESH rollback volumes; never staged copies',
+                              'managed-may-have-written': 'current managed data only; partial rollback requires manual reconciliation'}}
             self.checkpoint('initial')
             try:
                 require(self.fixture is not None, 'existing-fixture-required')
@@ -383,6 +443,9 @@ class Coordinator:
                 preparation.source_matches(self.native(), stage['compose'])
                 require(self.native().get('enabled') is False, 'controller-enabled-before-deploy')
                 self.idle()
+                if self.before_deploy is not None:
+                    self.mutate('register-native-domain', self.before_deploy)
+                self.checkpoint('managed-write-boundary', data_authority='managed-may-have-written')
                 self.api_mutation('deploy-once', 'deployComposeService', panel.deploy_compose_payload())
                 self.idle()
                 # Read-only polling never reissues deploy/create/start.
@@ -413,13 +476,22 @@ class Coordinator:
             self.end = self.clock() + self.seconds
             self.preflight()
             self.state = self.files.read('lifecycle.json')
-            require(self.state.get('schema') == 1 and self.state.get('project') == PROJECT
-                    and 'cutover_copy' in self.state and not self.state.get('rollback_started'),
-                    'manual-reconciliation-required')
+            recoverable = (self.state.get('schema') == 1 and self.state.get('project') == PROJECT
+                    and 'cutover_copy' in self.state and not self.state.get('rollback_started')
+                    and self.state.get('data_authority') == 'managed-may-have-written')
+            if not recoverable:
+                error = Rejected('manual-reconciliation-required')
+                error.recovery_state = copy.deepcopy(self.state)
+                error.allowable_recovery = self.state.get('recovery_policy', {}).get(
+                    self.state.get('data_authority'), 'manual: establish current data authority before any copy or start')
+                raise error
             self.validate_stage()
             require(self.files.exists('managed'), 'fence-missing')
             self.checkpoint('rollback-starting', rollback_started=True)
             try:
+                # Invalidate any previous active owner without removing its durable fence.
+                self.mutate('fence-rollback', lambda: self.files.write('ownership.json',
+                    {'schema': 1, 'state': 'recovering', 'generation': 3}))
                 self.contain()
                 self.wait(self.swarm_zero)
                 self.copy_data('rollback')  # CURRENT managed -> FRESH fixed rollback volumes.
@@ -431,8 +503,11 @@ class Coordinator:
                     require(len(mounts) == 1 and mounts[0]['Source'] == managed.OLD_VOLUMES[role]
                             and mounts[0]['Target'] == managed.DESTINATIONS[role], 'rollback-mount-shape')
                     mounts[0]['Source'] = self.runtime.SWARM_VOLUMES[role]
-                    self.mutate('rebind-' + role, lambda b=before, s=spec: self.engine.update(b, s))
                     records[role] = {'service_id': before['ID'], 'spec': spec}
+                    self.checkpoint('rollback-rebind-planned-' + role,
+                                    rollback_services=copy.deepcopy(records))
+                    self.mutate('rebind-' + role, lambda b=before, s=spec: self.engine.update(b, s))
+                    self.checkpoint('rollback-rebound-' + role, rollback_services=copy.deepcopy(records))
                 source = {'project': self.runtime.SWARM_PROJECT, 'services': records}
                 pin = {'path': str(self.runtime.ROOT / 'swarm.json'), 'sha256': digest(source)}
                 receipt = {'schema': 1, 'generation': 3, 'runtime': 'swarm',
@@ -447,26 +522,20 @@ class Coordinator:
                          'swarm_services': {r: {'service_id': records[r]['service_id'],
                              'container_spec_sha256': self.runtime.spec_hash(records[r]['spec']['TaskTemplate']['ContainerSpec'])} for r in ROLES},
                          'handoff': {'path': str(self.runtime.ROOT / 'compose-disabled.json'), 'sha256': digest(receipt)}}
-                self.mutate('publish-swarm', lambda: self.runtime.publish(owner))
-                require(self.runtime.load() == owner, 'rollback-owner-unproven')
-                # Only the newly published fixed rollback sources may be resumed.
-                active = self.runtime.Runtime(self.backup.Executor())
+                # Read the exact newly rebound specs directly; canonical consumers stay fenced.
                 for role in ('postgres', 'redis', 'evolution'):
-                    service = active.service(role)
+                    self.rollback_healthy(records, roles=())
+                    service = self.rollback_service(role, records)
                     spec = copy.deepcopy(service['Spec'])
                     spec['Mode']['Replicated']['Replicas'] = 1
                     self.mutate('resume-' + role, lambda b=service, s=spec: self.engine.update(b, s))
-                    def healthy(role=role):
-                        active.revalidate()
-                        items = active.containers(role)
-                        return (active.service(role)['Spec']['Mode']['Replicated']['Replicas'] == 1
-                                and len(items) == 1 and items[0]['State']['Running'] is True
-                                and items[0]['State'].get('Health', {}).get('Status') == 'healthy')
-                    self.wait(healthy)
+                    self.wait(lambda role=role: self.rollback_healthy(records, roles=(role,)))
                 self.quiescent(set(self.runtime.VOLUMES.values()))
                 require(self.native().get('enabled') is False, 'controller-reenabled')
                 self.idle()
-                active.writable_mounts()
+                self.wait(lambda: self.rollback_healthy(records))
+                self.mutate('publish-swarm', lambda: self.runtime.publish(owner))
+                require(self.runtime.load() == owner, 'rollback-owner-unproven')
                 self.checkpoint('swarm-active-route-gated')
                 return {'runtime': 'swarm', 'generation': 3, 'routing_included': False}
             except BaseException:

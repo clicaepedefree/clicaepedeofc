@@ -188,7 +188,11 @@ class Harness:
     def publish(self, owner):
         self.files.mutation()
         assert owner['generation'] > self.files.read('managed')['generation']
+        if owner['runtime'] == 'swarm':
+            assert self.files.read('ownership.json')['state'] == 'recovering'
+            assert self.c.rollback_healthy(self.c.state['rollback_services'])
         self.files.write('managed', {'schema': 1, 'generation': owner['generation']})
+        self.files.write('ownership.json', owner)
         self.owner = copy.deepcopy(owner)
 
     def deploy(self):
@@ -214,6 +218,7 @@ class Harness:
             self.source = json.loads(payload['content'])
         elif operation == 'deployComposeService':
             assert self.enabled is False and self.source == self.compose
+            assert self.files.read('lifecycle.json')['data_authority'] == 'managed-may-have-written'
             self.deploy()
         elif operation == 'startComposeService':
             assert self.c.verify_compose() and self.c.swarm_zero()
@@ -237,6 +242,110 @@ class Harness:
 
 
 class LifecycleTests(unittest.TestCase):
+    def test_before_deploy_hook_locked_after_source_and_before_single_deploy(self):
+        h = Harness()
+        def register():
+            h.files.mutation()
+            self.assertEqual(h.files.events[-1], 'register-native-domain-intent')
+            self.assertEqual(h.source, h.compose)
+            self.assertFalse(h.enabled)
+            self.assertNotIn('deployComposeService', h.calls)
+            self.assertEqual(h.files.read('lifecycle.json')['data_authority'], 'legacy')
+        h.c.before_deploy = register
+        h.c.cutover()
+        self.assertEqual(h.calls.count('deployComposeService'), 1)
+        self.assertLess(h.files.events.index('register-native-domain-done'),
+                        h.files.events.index('deploy-once-intent'))
+
+    def test_hook_failure_keeps_legacy_authority_and_reports_manual_recovery(self):
+        h = Harness()
+        def fail():
+            raise lifecycle.Rejected('registration-failed')
+        h.c.before_deploy = fail
+        with self.assertRaisesRegex(lifecycle.Rejected, 'registration-failed'):
+            h.c.cutover()
+        self.assertNotIn('deployComposeService', h.calls)
+        with self.assertRaisesRegex(lifecycle.Rejected, 'manual-reconciliation-required') as caught:
+            h.c.recover()
+        self.assertEqual(caught.exception.recovery_state, h.files.read('lifecycle.json'))
+        self.assertEqual(caught.exception.recovery_state['data_authority'], 'legacy')
+        self.assertIn('original CURRENT', caught.exception.allowable_recovery)
+        self.assertNotIn('rollback', h.copies)
+
+    def test_workload_callback_pending_and_rejection_propagates_after_base_validation(self):
+        h = self.ready_poll()
+        seen = []
+        h.c.workload_check = lambda item: seen.append(item['Id'])
+        item = next(c for c in h.sdk.items.values()
+                    if c['Config']['Labels'].get('com.docker.compose.project') == lifecycle.PROJECT)
+        item['State']['Health']['Status'] = 'starting'
+        self.assertFalse(h.c.verify_compose())
+        self.assertEqual(len(seen), 3)
+        def reject(item):
+            raise lifecycle.Rejected('workload-contract')
+        h.c.workload_check = reject
+        with self.assertRaisesRegex(lifecycle.Rejected, 'workload-contract'):
+            h.c.verify_compose()
+        item['Config']['Image'] = 'foreign'
+        with self.assertRaisesRegex(lifecycle.Rejected, 'compose-identity'):
+            h.c.validate_managed(item)
+
+    def test_rollback_publication_waits_for_all_roles_without_canonical_runtime(self):
+        h = Harness()
+        h.c.cutover()
+        h.runtime.Runtime = lambda executor: self.fail('canonical Runtime used before publication')
+        original = h.c.sleep
+        delayed = []
+        def settle(seconds):
+            self.assertEqual(h.owner['runtime'], 'compose')
+            self.assertEqual(h.files.read('ownership.json')['state'], 'recovering')
+            delayed.append(True)
+            for item in h.sdk.items.values():
+                if item['Mounts'] and item['Mounts'][0].get('Name', '').startswith('kan140_rollback_'):
+                    item['State']['Health']['Status'] = 'healthy'
+            original(seconds)
+        post = h.sdk._post_json
+        def starting(url, params, data):
+            result = post(url, params, data)
+            if data['Mode']['Replicated']['Replicas']:
+                for item in h.sdk.items.values():
+                    if item['State']['Running']:
+                        item['State']['Health']['Status'] = 'starting'
+            return result
+        h.sdk._post_json = starting
+        h.c.sleep = settle
+        h.c.recover()
+        self.assertEqual(len(delayed), 3)
+        self.assertEqual(h.owner['runtime'], 'swarm')
+        self.assertLess(h.files.events.index('resume-evolution-done'), h.files.events.index('publish-swarm-intent'))
+
+    def test_rollback_timeout_or_identity_fault_never_publishes_good_owner(self):
+        for fault in ('health', 'image', 'mount', 'spec'):
+            with self.subTest(fault=fault):
+                h = Harness()
+                h.c.cutover()
+                post = h.sdk._post_json
+                def corrupt(url, params, data):
+                    result = post(url, params, data)
+                    if data['Mode']['Replicated']['Replicas']:
+                        item = next(c for c in h.sdk.items.values() if c['State']['Running'])
+                        if fault == 'health':
+                            item['State']['Health']['Status'] = 'starting'
+                        elif fault == 'image':
+                            item['Config']['Image'] = 'foreign'
+                        elif fault == 'mount':
+                            item['Mounts'][0]['Name'] = 'stale-original'
+                        else:
+                            h.sdk.services[url.split('/')[2]]['Spec']['EndpointSpec']['Mode'] = 'dnsrr'
+                    return result
+                h.sdk._post_json = corrupt
+                with self.assertRaises(lifecycle.Rejected):
+                    h.c.recover()
+                self.assertEqual(h.owner['runtime'], 'compose')
+                self.assertEqual(h.files.read('ownership.json')['state'], 'recovering')
+                self.assertEqual(h.files.read('managed')['generation'], 2)
+                self.assertNotIn('publish-swarm-intent', h.files.events)
+
     def test_cutover_order_void_ack_and_generation(self):
         h = Harness()
         self.assertEqual(h.c.cutover(), {'runtime': 'compose', 'generation': 2, 'routing_included': False})
@@ -446,6 +555,17 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(h.calls, before)
         self.assertEqual(h.sdk.stopped, [])
 
+    def test_failed_conformance_does_not_disable_owned_containment(self):
+        h=Harness()
+        h.c.cutover()
+        def reject(item):raise lifecycle.Rejected('fixture-invalid-conformance')
+        h.c.workload_check=reject
+        with self.assertRaisesRegex(lifecycle.Rejected,'fixture-invalid-conformance'):
+            h.c.verify_compose()
+        with h.backup.locked(h.backup.ROOT):h.c.contain()
+        self.assertEqual(len(h.sdk.stopped),3)
+        self.assertFalse(h.enabled)
+
     def test_native_serialization_and_real_runtime_load_agree_on_rollback(self):
         base = Path(__file__).resolve().parents[1] / 'kan133'
         def load(name, filename):
@@ -478,6 +598,10 @@ class LifecycleTests(unittest.TestCase):
                 for name, pin in (('swarm.json', owner['source']['sha256']),
                                   ('compose-disabled.json', owner['handoff']['sha256'])):
                     self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(), pin)
+                files.write('ownership.json', {'schema': 1, 'state': 'recovering', 'generation': 3})
+                files.write('managed', {'schema': 1, 'generation': 2})
+                with self.assertRaises(runtime.OwnershipError):
+                    runtime.load()
                 files.write('ownership.json', owner)
                 files.write('managed', {'schema':1,'generation':3})
                 self.assertEqual(runtime.load(), owner)

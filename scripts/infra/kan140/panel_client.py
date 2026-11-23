@@ -83,6 +83,7 @@ MAX_RESPONSE = 2 * 1024 * 1024
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_SOURCE = 1024 * 1024
 OPERATIONS = MappingProxyType({
+    'listDomains': ('GET', 'listDomains'),
     'getAction': ('GET', 'getAction'),
     'listActions': ('GET', 'listActions'),
     'inspectProject': ('GET', 'inspectProject'),
@@ -188,7 +189,9 @@ def destroy_domain_payload(inspected_domain):
 
 def _validate(operation, payload, trusted_source):
     _require(type(payload) is dict)
-    if operation == 'getAction':
+    if operation == 'listDomains':
+        expected = {}
+    elif operation == 'getAction':
         expected = action_payload(payload.get('id'))
     elif operation == 'listActions':
         expected = actions_payload()
