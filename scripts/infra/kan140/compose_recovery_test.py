@@ -381,7 +381,13 @@ class Contracts(unittest.TestCase):
     def test_sha_pins_match_repository_sources(self):
         base = Path(__file__).resolve().parent.parent / 'kan133'
         for name, digest in PINS.items():
-            self.assertEqual(hashlib.sha256((base / name).read_bytes()).hexdigest(), digest)
+            # Installed historical files have exact CRLF pins; Git's Linux
+            # checkout is LF. This test checks source equivalence only;
+            # verify_sources() still requires exact installed bytes.
+            raw = (base / name).read_bytes()
+            lf = raw.replace(b'\r\n', b'\n')
+            variants = (raw, lf, lf.replace(b'\n', b'\r\n'))
+            self.assertIn(digest, {hashlib.sha256(value).hexdigest() for value in variants})
         image = json.loads((base.parent / 'kan132' / 'stack.yaml').read_text())['services']['postgres']['image']
         self.assertEqual(image, PG_IMAGE)
 
