@@ -65,8 +65,11 @@ somente depois da verificacao. Retorno explicito copia dados atuais para
 volumes de rollback novos e publica geracao/ServiceSpec completos antes
 de retomar os servicos. Nao remove o fence nem reproduz mutacoes ambiguas.
 Falhas ou interrupcoes de rollback parcial exigem reconciliacao manual.
-Treze testes offline cobrem ordem, falhas antes/depois das mutacoes,
+Dezesseis testes offline cobrem ordem, falhas antes/depois das mutacoes,
 polling transitorio, colisao de identidade e preservacao dos dados atuais.
+Regressoes usam o atomic writer e runtime.load reais para validar os pins
+do rollback, reservam prazo independente para containment apos timeout e
+recusam fonte estrangeira antes de desabilitar o controlador.
 Isso nao comprova operacao real: a integracao do SDK Engine full-ServiceSpec
 e os gates externos continuam explicitamente bloqueados por padrao.
 

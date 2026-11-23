@@ -3,7 +3,9 @@ import copy
 from contextlib import contextmanager
 import importlib.util
 import json
+import hashlib
 from pathlib import Path, PurePosixPath
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -154,7 +156,8 @@ class Harness:
             SWARM_PROJECT='clica-evolution-qa', spec_hash=lifecycle.digest,
             trusted_bytes=lambda *args, **kwargs: b'', load=lambda: copy.deepcopy(self.owner),
             publish=self.publish, Runtime=lambda executor: self.active())
-        fixture = SimpleNamespace(reconcile=self.reconcile, wait_container=lambda: copy.deepcopy(self.dummy))
+        fixture = SimpleNamespace(reconcile=self.reconcile, wait_container=lambda: copy.deepcopy(self.dummy),
+                                  source={'dummy': True})
         self.c = lifecycle.Coordinator(api=self, engine=lifecycle.Engine(self.sdk, full_spec_reviewed=True),
             backup=self.backup, runtime=self.runtime, stage=self.staging, transfer=self.transfer,
             fixture=fixture, gates=lambda: lifecycle.REQUIRED_GATES, files=self.files,
@@ -420,6 +423,64 @@ class LifecycleTests(unittest.TestCase):
         spec.loader.exec_module(module)
         for name in ('service', 'containers', 'revalidate', 'writable_mounts'):
             self.assertTrue(callable(getattr(module.Runtime, name)))
+
+    def test_containment_has_separate_budget_after_deadline(self):
+        h = Harness()
+        h.c.cutover()
+        h.now = 10
+        old_end = h.c.end
+        with h.backup.locked(h.backup.ROOT):
+            h.c.contain()
+        self.assertEqual(h.c.end, old_end)
+        self.assertEqual(len(h.sdk.stopped), 3)
+        self.assertFalse(h.enabled)
+        self.assertTrue(all(not item['State']['Running'] for item in h.sdk.items.values()))
+
+    def test_containment_never_stops_foreign_inline_source(self):
+        h = Harness()
+        h.c.cutover()
+        h.source = {'foreign':'unrelated-controller'}
+        before = list(h.calls)
+        with h.backup.locked(h.backup.ROOT), self.assertRaisesRegex(lifecycle.Rejected, 'contain-source-drift'):
+            h.c.contain()
+        self.assertEqual(h.calls, before)
+        self.assertEqual(h.sdk.stopped, [])
+
+    def test_native_serialization_and_real_runtime_load_agree_on_rollback(self):
+        base = Path(__file__).resolve().parents[1] / 'kan133'
+        def load(name, filename):
+            spec = importlib.util.spec_from_file_location(name, base / filename)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+        runtime = load('lifecycle_real_runtime', 'runtime.py')
+        with patch.dict('sys.modules', {'runtime':runtime}):
+            backup = load('lifecycle_real_backup', 'backup.py')
+        h = Harness()
+        h.c.cutover()
+        h.c.recover()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            owner = copy.deepcopy(h.owner)
+            source = h.files.read('swarm.json')
+            owner['source']['path'] = str(root / 'swarm.json')
+            receipt = h.files.read('compose-disabled.json')
+            owner['handoff']['path'] = str(root / 'compose-disabled.json')
+            # Permissions/trusted-root checks are covered by runtime's own suite;
+            # this test uses the ACTUAL atomic writer and ACTUAL owner validator.
+            with patch.object(runtime, 'ROOT', root), patch.object(runtime, 'MANIFEST', root/'ownership.json'), \
+                 patch.object(runtime, 'SENTINEL', root/'managed'), \
+                 patch.object(runtime, 'trusted_bytes', side_effect=lambda path,**kw:Path(path).read_bytes()), \
+                 patch.object(backup.os, 'fchmod', create=True), patch.object(backup, 'sync_dir'):
+                files = lifecycle.Files(backup, runtime)
+                files.write('swarm.json', source)
+                files.write('compose-disabled.json', receipt)
+                for name, pin in (('swarm.json', owner['source']['sha256']),
+                                  ('compose-disabled.json', owner['handoff']['sha256'])):
+                    self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(), pin)
+                files.write('ownership.json', owner)
+                files.write('managed', {'schema':1,'generation':3})
+                self.assertEqual(runtime.load(), owner)
 
     def test_signal_baseexception_unwinds_and_restores_handlers(self):
         handlers = {}

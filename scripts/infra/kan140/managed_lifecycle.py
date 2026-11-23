@@ -93,7 +93,8 @@ class Files:
         path = self.runtime.ROOT / name
         if self.exists(name):
             self.runtime.trusted_bytes(path)
-        self.backup.atomic_json(path, value)
+        # Keep the native writer's insertion order equal to digest()'s bytes.
+        self.backup.atomic_json(path, json.loads(encoded(value)))
 
 
 class Engine:
@@ -325,9 +326,26 @@ class Coordinator:
 
     def contain(self):
         # Never resume old volumes, even if deploy's response was ambiguous.
-        self.api_mutation('contain-disable', 'stopComposeService', panel.service_payload())
-        require(self.native().get('enabled') is False, 'controller-not-disabled')
-        self.stop_new()
+        previous_end = self.end
+        self.end = self.clock() + 90
+        try:
+            record = self.native()
+            spec = record.get('source')
+            require(isinstance(spec, dict) and spec.get('type') == 'inline'
+                    and isinstance(spec.get('content'), str), 'contain-source-unproven')
+            try:
+                source = json.loads(spec['content'])
+            except (TypeError, ValueError):
+                raise Rejected('contain-source-unproven') from None
+            allowed = [self.state['stage']['compose']]
+            if 'fixture_source' in self.state:
+                allowed.append(self.state['fixture_source'])
+            require(source in allowed, 'contain-source-drift')
+            self.api_mutation('contain-disable', 'stopComposeService', panel.service_payload())
+            require(self.native().get('enabled') is False, 'controller-not-disabled')
+            self.stop_new()
+        finally:
+            self.end = previous_end
 
     def cutover(self):
         with self.backup.locked(self.backup.ROOT):
@@ -343,7 +361,10 @@ class Coordinator:
                 item = self.fixture.wait_container()
                 require(item['Config']['Labels'].get('com.docker.compose.project') == PROJECT,
                         'fixture-project-unproven')
-                self.checkpoint('fixture-pinned', fixture_id=item['Id'], fixture_pin=container_pin(item))
+                fixture_source = self.fixture.source
+                preparation.source_matches(self.native(), fixture_source)
+                self.checkpoint('fixture-pinned', fixture_id=item['Id'], fixture_pin=container_pin(item),
+                                fixture_source=copy.deepcopy(fixture_source))
                 stage = self.mutate('stage', self.stage)
                 self.checkpoint('staged', stage=stage)
                 self.validate_stage()
