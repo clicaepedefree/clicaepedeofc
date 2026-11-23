@@ -1,5 +1,86 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Atualizacao de 23/11/2026
+
+PR179 mergeado em d36cdb1. Executor instalado nos caminhos canonicos com
+hashes conferidos. Restore Compose pos-merge PASS61.017s, tentativa
+d7c2505299824a388cf2cd491741900f: 37 tabelas/1243 linhas, uma instancia e
+sessao, conexoes PG/Redis reais, reinicio, integridade e cleanup. Recibo
+oficial anterior preservado. Nenhum corte de producao foi realizado.
+
+### Controlador nativo: ensaio com arquivos ficticios
+
+Projeto clica-qa ja existia vazio. Criado um unico controller evolution-qa
+com servico sintetico: imagem PG fixada, sem servidor PostgreSQL iniciado,
+sem rede, portas ou volumes reais. Dois arquivos ficticios iguais sob
+diretorio root0700 foram montados somente para leitura. O comando efetivo
+confere acesso e igualdade desses arquivos. Container inspecionado com
+binds, imagem, entrada e comando exatos; exit0 e sem OOM.
+
+A primeira tentativa falhou antes de criar containers. EasyPanel2.38.1
+createComposeService armazena source inline, mas o deploy automatico nao
+encontrou code/docker-compose.override.yml: o diretorio de codigo ainda
+nao existia. Confirmado no codigo instalado, por leitura: o endpoint
+suportado updateComposeSourceInline materializa docker-compose.yml.
+Usar esse endpoint com a fonte exata e depois deploy resolveu o ensaio.
+Nao criar arquivos internos do painel manualmente, nao montar a arvore
+de segredos no manager nem reiniciar o EasyPanel para contornar isso.
+
+Materializacao passou: projeto Docker Compose clica-qa_evolution-qa,
+dois binds de host lidos e controller enabled=false apos stop e readback.
+Jobs terminais conferidos. Nao repetir create. Intento persistido antes
+da materializacao impede retentativa entre processos; container anterior
+com o mesmo nonce rejeita a prova. Resultado ambiguo exige inspect/reconcile,
+nao repeticao automatica de deploy. SIGTERM/SIGINT fazem unwind e cleanup;
+SIGKILL/perda do processo exige reconciliacao manual pelos registros.
+
+HTTP200 vazio em mutacoes void e um ACK valido do painel, nao uma prova de
+estado. Reads vazios continuam rejeitados. Token de login chega somente
+em memoria por SSH/stdin; logout revoga a sessao. Nenhuma credencial, fonte
+privada ou log bruto e emitido em diagnosticos.
+
+### Transferencia fisica: ensaio independente
+
+volume_transfer.py oferece transferencia offline com destinos novos e
+quiescencia de escritores, manifestos TAR limitados e hashes de conteudo,
+UID/GID, modos e diretorios. Recusa links e tipos especiais. O rollback
+copia os dados ATUAIS gerenciados para volumes de retorno novos; nunca
+sobrescreve o volume legado com um snapshot antigo.
+
+Ensaio nativo com tres volumes aleatorios passou sob backup.lock: copia
+inicial (10bytes/3entradas), escrita nova somente no destino e retorno
+(27bytes/4entradas), com bytes e metadados conferidos por oracle separado.
+Fonte inicial preservada e cleanup_verified=true. Todos os helpers sem
+rede/portas, rootfs readonly, imagem exata e capacidades restritas.
+Sinais controlados percorrem cleanup; SIGKILL nao oferece essa garantia.
+Esse ensaio nao inicia banco nem comprova consistencia transacional ou
+rollback do controlador real: complementa, nao substitui, o restore acima.
+
+### Estado e limites
+
+managed_lifecycle.py e uma biblioteca sem CLI de ativacao. Sob backup.lock,
+registra intents antes das mutacoes, publica fence antes da parada, exige
+desired=0 e ausencia de escritores, usa destinos novos e emite ownership
+somente depois da verificacao. Retorno explicito copia dados atuais para
+volumes de rollback novos e publica geracao/ServiceSpec completos antes
+de retomar os servicos. Nao remove o fence nem reproduz mutacoes ambiguas.
+Falhas ou interrupcoes de rollback parcial exigem reconciliacao manual.
+Treze testes offline cobrem ordem, falhas antes/depois das mutacoes,
+polling transitorio, colisao de identidade e preservacao dos dados atuais.
+Isso nao comprova operacao real: a integracao do SDK Engine full-ServiceSpec
+e os gates externos continuam explicitamente bloqueados por padrao.
+
+Swarm original permanece unico runtime real, com tres servicos saudaveis
+e volumes originais. Nenhum ownership/fence ativo, rota alterada, mensagem,
+QR ou reconexao. Worker OFF e timer inactive/disabled. Controller do painel
+contem APENAS fixture desabilitada, nao a Evolution real administravel.
+
+Faltam corte com dados reais, dominio nativo sem rota concorrente,
+rollback operacional e aceite do backup/monitoramento no runtime final.
+Nao mover KAN140 para Teste/Done por esses ensaios. Conector Jira nesta
+retomada pediu reautenticacao; evidencias locais nao equivalem a anexos
+publicados no Jira.
+
 ## Atualizacao de 22/11/2026
 
 PR178 mergeado em d406b9a. runtime.py, backup.py e monitor.py aprovados
