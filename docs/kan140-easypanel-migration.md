@@ -1,5 +1,75 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Atualizacao de 22/11/2026
+
+PR178 mergeado em d406b9a. runtime.py, backup.py e monitor.py aprovados
+instalados na VPS sob backup.lock, com hashes anteriores conferidos e
+backup de codigo. Sem manifesto ativo, reinicio de servico ou cutover.
+Bot permanece explicitamente pausado no aplicativo, webhook e worker.
+
+Novo backup oficial e restore offsite apos instalacao: PASS em 52.406s
+(validador49.139s), 37 tabelas/1243 linhas, 13 chaves Redis com AOF e uma
+instancia/sessao. EVO_START inicia o servidor REAL: no digest instalado,
+db:generate gera o cliente Prisma e start:prod executa node dist/main.
+Nao executar deploy_database.sh/migracoes no ensaio de recuperacao.
+
+### Ensaio integrado Compose
+
+compose_restore.py reutiliza o validador oficial por uma classe separada:
+recursos novos, volumes externos rotulados e um unico bridge internal com
+gateway modes isolated. Sem rede do proxy, portas, DNS externo, bot/worker,
+downloads/builds, endpoints de connect/send/QR/logout ou ownership de producao.
+O servidor real, dependencias e dados restaurados sao usados; nao e um stub.
+Healthchecks da imagem sao desabilitados somente no ensaio e substituidos
+por readiness/API explicitos. Isso NAO comprova os healthchecks do cutover.
+
+Compose cria um servico selecionado por vez, sem depends_on/links/build.
+Na versao5.5.1 instalada, create nao oferece --no-deps; usar --no-build
+--pull never. Valores literais sao escapados para impedir interpolacao de
+$ em JS/shell/env. Secret copies ficam readonly sob pai root0700; JSON
+gerado e env vazio sao600. O rollback/fencing canonico nao e alterado.
+
+O ensaio compara todas as linhas/sequencias pelo oracle limitado antes do
+startup e com Evolution parada apos o startup. Depois reinicia PG/Redis e
+Evolution e repete integridade/API/dependencias. Conexoes reais sao atribuidas
+ao IP do container Evolution em pg_stat_activity e CLIENT LIST, excluindo
+probes/loopback/ping; nao basta o script conseguir conectar aos bancos.
+Arquivos de sessao sao comparados quiescidos antes/depois do reinicio por
+stream TAR sem extracao, com limite total72MiB, dados64MiB, 10000 entradas
+incluindo diretorios e deadline. Links e tipos especiais sao rejeitados.
+
+rehearsal_offsite.py e opt-in Linux/root. Confere hashes dos modulos canonicos,
+carrega caminhos exatos e rejeita caches de modulo. Usa o downloader/offsite
+canonico sem editar seus arquivos, chaves ou recibo oficial. Identidade age
+somente por stdin. O resultado separado last_compose_rehearsal.json usa UUID
+de tentativa e running/finalizing antes de PASS; erros nao reaproveitam PASS
+antigo. PASS exige limpeza booleana verdadeira, plaintext removido, recibo
+persistido e lease liberado. Saida publica so contem contagens, flags e digest.
+Consumidores devem usar o attempt do resultado da execucao, nao apenas um
+recibo historico. Falha anterior ao inicio validado nao atualiza o recibo.
+
+### Evidencias desta etapa
+
+- Probe nativo SIGKILL sintetico: PASS2.707s, recuperador canonico removeu
+  tres recursos e dois diretorios, lease ausente e IDs ativos inalterados.
+  O container fixture nunca iniciou e nao tinha credenciais/dados reais.
+- Ensaio Compose com backup REAL de QA: PASS66.754s, 37 tabelas/1243 linhas,
+  uma instancia/sessao; PG semantic rows/sequences, Redis AOF, API401/200,
+  dependencias reais e reinicio dos tres componentes validados. Arquivos
+  de sessao e cleanup confirmados. Sem mensagens nem reconexao fisica provada.
+- Tentativa4b951b5ef51a47969a9b0f2b26d03b7c; fingerprint do PG
+  4a59ced2be36573caa78fd194e962b40872cbe0443586545632740519ffd4ce3.
+- 377 testes locais:352 PASS/25 SKIP. Skips nao contam como aceite executado.
+- Falhas de fixture/pacote e flags CLI foram preservadas, nao convertidas
+  em sucesso. A tentativa real A falhou antes de iniciar os servicos por
+  representar CapDrop como CAP_NET_RAW; o teste agora aceita somente essa
+  grafia ou NET_RAW e continua rejeitando ausencia/CapAdd. Cleanup confirmado.
+
+O ensaio prova restauracao integrada em Compose, NAO administracao dos tres
+servicos pelo EasyPanel, transferencia de rota, corte/rollback de dados em
+producao ou notificacao WhatsApp. Esses itens seguem pendentes. KAN140 fica
+Em andamento e9/19; nao mover para Teste/Done por este resultado isolado.
+
 ## Atualizacao de 21/11/2026
 
 ### Pos-merge PR177 e novo gate de retorno
