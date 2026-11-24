@@ -14,6 +14,17 @@ from managed_lifecycle_test import Harness, container
 
 
 class PartialRecoveryTests(unittest.TestCase):
+    def test_cutover_without_either_recovery_verifier_is_blocked_before_first_mutation(self):
+        for name, reason in [('source_freshness', 'rollback-freshness-unavailable'),
+                             ('target_continuity', 'rollback-target-proof-unavailable')]:
+            h = Harness()
+            setattr(h.c, name, None)
+            with self.assertRaisesRegex(lifecycle.Rejected, reason):
+                h.c.cutover()
+            self.assertEqual(h.files.values, {})
+            self.assertEqual(h.sdk.updates, [])
+            self.assertEqual(h.calls, [])
+
     def test_fresh_coordinator_after_each_real_publication_write_validates_files_and_runtime(self):
         def load(name, file):
             spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / 'kan133' / file)
@@ -78,6 +89,7 @@ class PartialRecoveryTests(unittest.TestCase):
                                 transfer=lambda phase: self.fail('recopied'), fixture=None,
                                 gates=lambda: lifecycle.REQUIRED_GATES, files=files,
                                 rollback_freshness=h.c.source_freshness,
+                                rollback_targets=h.c.target_continuity,
                                 monotonic=lambda: h.now, sleep=h.sleep, seconds=2)
                         with patch.object(os, 'replace', replace), self.assertRaises(lifecycle.Interrupted):
                             fresh().reconcile_partial()
@@ -189,6 +201,31 @@ class PartialRecoveryTests(unittest.TestCase):
         # Container state is quiescent now, but newer managed bytes exist.
         h.data = 'new-write-after-copy-and-after-writer-stopped-again'
         self.unchanged_after_rejection(h, 'rollback-source-diverged')
+
+    def test_recreated_rollback_target_blocks_even_when_managed_source_still_matches_copy(self):
+        h = self.interrupted('rebind-redis')
+        h.rollback_epoch += 1  # Replacement data/volume at the same canonical name.
+        self.unchanged_after_rejection(h, 'rollback-target-replaced')
+
+    def test_old_journal_without_target_pin_or_checker_is_not_backfilled(self):
+        h = self.interrupted('rebind-redis')
+        del h.files.values['lifecycle.json']['rollback_targets']
+        self.unchanged_after_rejection(h, 'rollback-targets-unproven')
+        h = self.interrupted('rebind-redis')
+        h.c.target_continuity = None
+        self.unchanged_after_rejection(h, 'rollback-target-proof-unavailable')
+
+    def test_interruption_between_copy_and_target_pin_cannot_infer_continuity(self):
+        h = Harness()
+        h.c.cutover()
+        def interrupted(expected, **kwargs):
+            raise lifecycle.Interrupted()
+        h.c.target_continuity.capture = interrupted
+        with self.assertRaises(lifecycle.Interrupted):
+            h.c.recover()
+        self.assertIn('rollback_copy', h.files.read('lifecycle.json'))
+        self.assertNotIn('rollback_targets', h.files.read('lifecycle.json'))
+        self.unchanged_after_rejection(h, 'rollback-targets-unproven')
 
     def test_missing_or_truthy_freshness_is_not_accepted_as_content_proof(self):
         for callback in (None, lambda expected, **kw: True):

@@ -5,7 +5,7 @@ network client/daemon is constructed here. backup.lock covers even staging and
 failure containment. SIGTERM callers must use interruption_handlers(). SIGKILL
 leaves the durable fence and intent for manual reconciliation.
 
-Unimplemented gates: installed Engine SDK full-ServiceSpec transport review,
+External gates: installed Engine SDK full-ServiceSpec transport review,
 exclusive daemon-mutator exclusion, worker/instance-webhook pause evidence,
 backup/restore rehearsal approval, and final domain/routing gate. They cannot be
 inferred from this offline suite. No automatic replay of ambiguous mutations.
@@ -168,7 +168,8 @@ class Coordinator:
     gates is a callable rechecking operator evidence, not a deployment flag.
     """
     def __init__(self, *, api, engine, backup, runtime, stage, transfer, fixture,
-                 gates, files=None, before_deploy=None, workload_check=None, rollback_freshness=None, seconds=600,
+                 gates, files=None, before_deploy=None, workload_check=None, rollback_freshness=None,
+                 rollback_targets=None, seconds=600,
                  monotonic=time.monotonic, sleep=time.sleep):
         require(type(seconds) in (int, float) and 0 < seconds <= 900, 'deadline-policy')
         self.api, self.engine, self.backup, self.runtime = api, engine, backup, runtime
@@ -182,6 +183,7 @@ class Coordinator:
         self.workload_check = workload_check
         require(rollback_freshness is None or callable(rollback_freshness), 'rollback-freshness-hook')
         self.source_freshness = rollback_freshness
+        self.target_continuity = rollback_targets
 
     def checkpoint(self, phase, **values):
         self.state.update(values)
@@ -214,6 +216,8 @@ class Coordinator:
     def preflight(self):
         require(self.gates() == REQUIRED_GATES, 'external-gates-unproven')
         self.engine.ready()
+        require(callable(self.source_freshness), 'rollback-freshness-unavailable')
+        self.rollback_targets_ready()
         require(not any((self.backup.ROOT / name).exists() for name in
                         ('maintenance.json', 'restore_lease.json')), 'maintenance-pending')
 
@@ -361,6 +365,28 @@ class Coordinator:
         require(self.clock() < self.end, 'rollback-freshness-deadline')
         require(same(current, expected), 'rollback-source-diverged')
 
+    def rollback_targets_ready(self):
+        require(self.target_continuity is not None and
+                callable(getattr(self.target_continuity, 'capture', None)) and
+                callable(getattr(self.target_continuity, 'verify', None)), 'rollback-target-proof-unavailable')
+
+    def target_receipt(self):
+        value = self.state.get('rollback_targets')
+        require(isinstance(value, (list, tuple)) and len(value) == 3 and
+                all(isinstance(row, dict) and row for row in value), 'rollback-targets-unproven')
+        return copy.deepcopy(value)
+
+    def verify_rollback_targets(self):
+        self.rollback_targets_ready()
+        receipt = self.target_receipt()
+        require(self.clock() < self.end, 'rollback-target-deadline')
+        try:
+            verified = self.target_continuity.verify(receipt, deadline=self.end)
+        except Exception:
+            raise Rejected('rollback-target-continuity-unproven') from None
+        require(verified is True, 'rollback-target-replaced')
+        require(self.clock() < self.end, 'rollback-target-deadline')
+
     def rollback_documents(self, records):
         source = {'project': self.runtime.SWARM_PROJECT, 'services': records}
         pin = {'path': str(self.runtime.ROOT / 'swarm.json'), 'sha256': digest(source)}
@@ -418,8 +444,8 @@ class Coordinator:
         require(self.native().get('enabled') is False, 'controller-reenabled')
         self.idle()
         self.wait(lambda: self.rollback_healthy(records))
-        if reconciled:
-            self.verify_rollback_freshness()
+        self.verify_rollback_freshness()
+        self.verify_rollback_targets()
         require(same(self.files.read('managed'), sentinel) and same(self.files.read('ownership.json'), manifest),
                 'rollback-publication-concurrent-change')
         if not same(manifest, owner):
@@ -444,7 +470,8 @@ class Coordinator:
             self.end = self.clock() + self.seconds
             self.preflight()
             self.state = self.files.read('lifecycle.json')
-            require(self.state.get('schema') == 1 and self.state.get('project') == PROJECT and
+            require(type(self.state.get('schema')) is int and self.state.get('schema') == 1 and
+                    self.state.get('project') == PROJECT and
                     self.state.get('rollback_started') is True and
                     self.state.get('data_authority') == 'managed-may-have-written',
                     'partial-recovery-unproven')
@@ -452,6 +479,7 @@ class Coordinator:
                     'partial-recovery-unproven')
             self.copy_proven(self.state.get('cutover_copy'))
             self.copy_proven(self.state.get('rollback_copy'))
+            self.target_receipt()
             self.validate_stage()
             require(self.files.exists('managed'), 'fence-missing')
             native = self.native()
@@ -506,6 +534,7 @@ class Coordinator:
             for name, value in zip(('swarm.json', 'compose-disabled.json'), self.rollback_documents(records)[:2]):
                 require(not self.files.exists(name) or same(self.files.read(name), value), 'rollback-artifact-drift')
             self.verify_rollback_freshness()
+            self.verify_rollback_targets()
             self.checkpoint('partial-recovery-plan', rollback_services=copy.deepcopy(records))
             for role in ROLES:
                 if not plan[role]['rebound']:
@@ -673,6 +702,7 @@ class Coordinator:
                 raise error
             self.validate_stage()
             require(self.files.exists('managed'), 'fence-missing')
+            self.rollback_targets_ready()
             self.checkpoint('rollback-starting', rollback_started=True)
             try:
                 # Invalidate any previous active owner without removing its durable fence.
@@ -681,6 +711,10 @@ class Coordinator:
                 self.contain()
                 self.wait(self.swarm_zero)
                 self.copy_data('rollback')  # CURRENT managed -> FRESH fixed rollback volumes.
+                self.verify_rollback_freshness()
+                targets = self.target_continuity.capture(copy.deepcopy(self.state['rollback_copy']), deadline=self.end)
+                self.checkpoint('rollback-targets-pinned', rollback_targets=targets)
+                self.verify_rollback_targets()
                 records = {}
                 for role in ROLES:
                     before = self.service(role)

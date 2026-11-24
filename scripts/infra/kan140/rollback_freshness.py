@@ -12,6 +12,7 @@ and cannot defeat an adversarial root administrator or writes after return.
 No fallback, helpers, containers, copies, creates, logs, or filesystem writes.
 """
 from contextlib import contextmanager
+import ctypes
 import hashlib
 import json
 import math
@@ -31,6 +32,9 @@ MAX_CONTROL = 2 * 1024 ** 2
 VOLUMES = dict(zip(managed.ROLES, ('kan140_qa_postgres_data',
                                   'kan140_qa_redis_data',
                                   'kan140_qa_evolution_instances')))
+TARGET_VOLUMES = dict(zip(managed.ROLES, ('kan140_rollback_postgres_data',
+                                         'kan140_rollback_redis_data',
+                                         'kan140_rollback_evolution_instances')))
 
 
 class FreshnessError(Exception):
@@ -325,3 +329,212 @@ class RollbackFreshness:
             raise
         except Exception:
             raise FreshnessError('freshness-unavailable') from None
+
+
+class _StatxTimestamp(ctypes.Structure):
+    _fields_ = [('sec', ctypes.c_int64), ('nsec', ctypes.c_uint32),
+                ('reserved', ctypes.c_int32)]
+
+
+class _Statx(ctypes.Structure):
+    # Linux UAPI: fixed 256-byte buffer, btime at 0x50, device IDs at 0x88.
+    # Reserve all fields beyond 0x90; newer kernels may fill them without
+    # changing the ABI. Never substitute platform-dependent struct stat.
+    _fields_ = [('mask', ctypes.c_uint32), ('blksize', ctypes.c_uint32),
+                ('attributes', ctypes.c_uint64), ('nlink', ctypes.c_uint32),
+                ('uid', ctypes.c_uint32), ('gid', ctypes.c_uint32),
+                ('mode', ctypes.c_uint16), ('spare0', ctypes.c_uint16),
+                ('ino', ctypes.c_uint64), ('size', ctypes.c_uint64),
+                ('blocks', ctypes.c_uint64), ('attributes_mask', ctypes.c_uint64),
+                ('atime', _StatxTimestamp), ('btime', _StatxTimestamp),
+                ('ctime', _StatxTimestamp), ('mtime', _StatxTimestamp),
+                ('rdev_major', ctypes.c_uint32), ('rdev_minor', ctypes.c_uint32),
+                ('dev_major', ctypes.c_uint32), ('dev_minor', ctypes.c_uint32),
+                ('reserved', ctypes.c_uint64 * 14)]
+
+
+def _libc_statx():
+    try:
+        _require(ctypes.sizeof(_Statx) == 256 and _Statx.btime.offset == 80 and
+                 _Statx.dev_major.offset == 136, 'freshness-target-btime-unavailable')
+        function = ctypes.CDLL(None, use_errno=True).statx
+        function.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                             ctypes.c_uint, ctypes.POINTER(_Statx))
+        function.restype = ctypes.c_int
+        return function
+    except Exception:
+        raise FreshnessError('freshness-target-btime-unavailable') from None
+
+
+def _birth_identity(fd, deadline):
+    """Mandatory descriptor statx birth time; independent of mutable data metadata."""
+    _tick(deadline)
+    before = os.fstat(fd)
+    result = _Statx()
+    function = _libc_statx()
+    # AT_EMPTY_PATH on our already no-follow-opened directory, STATX_BASIC_STATS
+    # | STATX_BTIME. No pathname or architecture-specific raw syscall fallback.
+    status = function(fd, b'', 0x1000, 0x0fff, ctypes.byref(result))
+    _tick(deadline)
+    _require(status == 0 and result.mask & 0x0901 == 0x0901 and
+             0 <= result.btime.nsec < 1_000_000_000 and result.btime.sec >= 0 and
+             result.btime.sec * 1_000_000_000 + result.btime.nsec > 0,
+             'freshness-target-btime-unavailable')
+    after = os.fstat(fd)
+    _require(stat.S_ISDIR(before.st_mode) and stat.S_ISDIR(after.st_mode) and
+             stat.S_ISDIR(result.mode) and before.st_dev == after.st_dev and
+             before.st_ino == after.st_ino == result.ino and
+             os.major(before.st_dev) == result.dev_major and
+             os.minor(before.st_dev) == result.dev_minor,
+             'freshness-target-changed')
+    return {'device': before.st_dev, 'inode': result.ino,
+            'birth_ns': result.btime.sec * 1_000_000_000 + result.btime.nsec}
+
+
+@contextmanager
+def _target_data(parent, deadline):
+    """Check immutable identity and the name binding; allow chmod/chown/writes."""
+    _tick(deadline)
+    before = os.stat('_data', dir_fd=parent, follow_symlinks=False)
+    _require(stat.S_ISDIR(before.st_mode), 'freshness-type')
+    flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open('_data', flags, dir_fd=parent)
+    try:
+        identity = _birth_identity(fd, deadline)
+        _require((before.st_dev, before.st_ino) ==
+                 (identity['device'], identity['inode']), 'freshness-target-changed')
+        yield fd, identity
+        _require(_birth_identity(fd, deadline) == identity, 'freshness-target-changed')
+        # Reopen the directory entry, not merely the potentially unlinked old FD.
+        current = os.stat('_data', dir_fd=parent, follow_symlinks=False)
+        _require(stat.S_ISDIR(current.st_mode), 'freshness-type')
+        rebound = os.open('_data', flags, dir_fd=parent)
+        try:
+            _require(_birth_identity(rebound, deadline) == identity and
+                     (current.st_dev, current.st_ino) ==
+                     (identity['device'], identity['inode']), 'freshness-target-changed')
+        finally:
+            os.close(rebound)
+    finally:
+        os.close(fd)
+
+
+def _target_pins(value):
+    _require(type(value) in (tuple, list) and len(value) == 3,
+             'freshness-target-unproven')
+    pins = []
+    for role, pin in zip(managed.ROLES, value):
+        _require(type(pin) is dict and set(pin) ==
+                 {'schema', 'name', 'metadata_digest', 'device', 'inode', 'birth_ns'},
+                 'freshness-target-unproven')
+        _require(type(pin['schema']) is int and pin['schema'] == 1 and
+                 type(pin['name']) is str and pin['name'] == TARGET_VOLUMES[role] and
+                 type(pin['metadata_digest']) is str and
+                 re.fullmatch('[a-f0-9]{64}', pin['metadata_digest']) is not None and
+                 all(type(pin[key]) is int and 0 <= pin[key] < 2 ** 64
+                     for key in ('device', 'inode')) and pin['inode'] > 0 and
+                 type(pin['birth_ns']) is int and
+                 0 < pin['birth_ns'] < 2 ** 63 * 1_000_000_000,
+                 'freshness-target-unproven')
+        pins.append(dict(pin))
+    return tuple(pins)
+
+
+class RollbackTargets:
+    """Durable target continuity, not data freshness after writers resume.
+
+    capture(expected_copy, *, deadline=None) -> three opaque JSON-safe dict pins.
+    Call immediately after a complete copy under exclusive backup.lock, before
+    any rebind/resume, and durably store ALL pins. Missing pins are manual-only.
+    verify(pins, *, deadline=None) -> True; metadata only, allowing child writes
+    and _data ownership/mode changes. No pins are ever used as filesystem paths.
+    Requires libc.statx and filesystem STATX_BTIME; absence is a hard rejection.
+    """
+    def __init__(self, docker, runtime, *, timeout=120):
+        _require(type(timeout) in (int, float) and math.isfinite(timeout) and
+                 0 < timeout <= 120, 'freshness-policy')
+        self.docker, self.runtime, self.timeout = docker, runtime, timeout
+
+    def capture(self, expected_copy, *, deadline=None):
+        try:
+            return self._collect(_receipts(expected_copy), None, deadline)
+        except FreshnessError:
+            raise
+        except Exception:
+            raise FreshnessError('freshness-target-unavailable') from None
+
+    def verify(self, pins, *, deadline=None):
+        try:
+            self._collect(None, _target_pins(pins), deadline)
+            return True
+        except FreshnessError:
+            raise
+        except Exception:
+            raise FreshnessError('freshness-target-unavailable') from None
+
+    def _collect(self, expected, pins, deadline):
+        _linux()
+        _require(os.geteuid() == 0, 'freshness-root-required')
+        _require(type(self.runtime.SWARM_VOLUMES) is dict and
+                 self.runtime.SWARM_VOLUMES == TARGET_VOLUMES, 'freshness-target-policy')
+        now = time.monotonic()
+        if deadline is not None:
+            _require(type(deadline) in (int, float) and math.isfinite(deadline) and
+                     deadline > now, 'freshness-deadline')
+        end = min(now + self.timeout, deadline) if deadline is not None else now + self.timeout
+
+        def execute(args):
+            _tick(end)
+            output = self.docker.execute(args, end)
+            _tick(end)
+            _require(type(output) is bytes and len(output) <= MAX_CONTROL,
+                     'freshness-docker-response')
+            return output
+
+        root_path = execute(('info', '--format', '{{.DockerRootDir}}')).decode('utf-8', 'strict')
+        if root_path.endswith('\n'):
+            root_path = root_path[:-1]
+        _require('\n' not in root_path and '\r' not in root_path, 'freshness-root-path')
+
+        def metadata(name):
+            rows = json.loads(execute(('volume', 'inspect', name)))
+            _require(type(rows) is list and len(rows) == 1 and type(rows[0]) is dict,
+                     'freshness-volume-inspect')
+            volume = rows[0]
+            labels = volume.get('Labels')
+            _require(volume.get('Name') == name and volume.get('Driver') == 'local' and
+                     volume.get('Scope') == 'local' and 'Options' in volume and
+                     volume['Options'] in (None, {}) and
+                     volume.get('Mountpoint') == root_path + '/volumes/' + name + '/_data' and
+                     type(volume.get('CreatedAt')) is str and
+                     0 < len(volume['CreatedAt']) <= 128 and
+                     type(labels) is dict and set(labels) ==
+                     {volume_transfer.OWNER_LABEL, volume_transfer.PHASE_LABEL} and
+                     type(labels[volume_transfer.OWNER_LABEL]) is str and
+                     re.fullmatch('[a-f0-9]{32}', labels[volume_transfer.OWNER_LABEL]) is not None and
+                     labels[volume_transfer.PHASE_LABEL] == 'rollback',
+                     'freshness-target-policy')
+            immutable = {key: volume[key] for key in
+                         ('Name', 'Driver', 'Scope', 'Options', 'Mountpoint', 'CreatedAt', 'Labels')}
+            digest = hashlib.sha256(json.dumps(immutable, sort_keys=True, ensure_ascii=True,
+                                               separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+            return digest
+
+        current = []
+        with _absolute(root_path, end, trusted=True) as docker_root:
+            with _child(docker_root, 'volumes', end, trusted=True) as volumes:
+                for index, role in enumerate(managed.ROLES):
+                    name = TARGET_VOLUMES[role]
+                    digest = metadata(name)
+                    with _child(volumes, name, end, trusted=True) as named:
+                        with _target_data(named, end) as (data, identity):
+                            pin = {'schema': 1, 'name': name, 'metadata_digest': digest, **identity}
+                            if expected is not None:
+                                _require(_manifest(data, end, MAX_BYTES, MAX_ENTRIES) == expected[index],
+                                         'freshness-target-mismatch')
+                            else:
+                                _require(pin == pins[index], 'freshness-target-changed')
+                        _require(metadata(name) == digest, 'freshness-target-changed')
+                    current.append(pin)
+        _tick(end)
+        return tuple(current)

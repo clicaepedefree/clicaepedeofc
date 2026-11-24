@@ -17,6 +17,15 @@ e compara seus manifestos com a copia duravel antes de rebinds e antes de
 publicar ownership. Nenhum helper/container/copia e criado por essa leitura;
 o prazo inclui o deadline do coordenador. Divergencia bloqueia, nunca recopia.
 
+Tambem e obrigatorio RollbackTargets: captura os destinos imediatamente apos
+a copia completa e antes de qualquer rebind. Confere os manifestos nessa
+captura e persiste identidade de volume e nascimento/inode do diretorio de
+dados. Na retomada verifica a identidade, sem exigir que os bytes continuem
+iguais ao snapshot: escritas legitimas no rollback devem ser preservadas.
+Remover/recriar um destino com o mesmo nome ou labels nao comprova continuidade.
+Journal antigo sem esse pin continua manualmente bloqueado. Ambos os
+verificadores precisam ser fornecidos ja no preflight do cutover.
+
 Compara os ServiceSpecs completos
 com a baseline: somente replicas e o rebind para volumes fixos de retorno
 podem diferir. Drift, escritores estrangeiros e planos conflitantes bloqueiam

@@ -1,5 +1,7 @@
 """Offline contracts and Linux temporary-tree tests. Never execute Docker/SSH."""
 from contextlib import contextmanager
+import copy
+import ctypes
 import io
 import json
 import os
@@ -504,6 +506,309 @@ class NativeCollectorTests(unittest.TestCase):
             self.docker.root = str(self.root) + suffix
             with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-root-path$'):
                 self.verifier(self.expected)
+
+
+class TargetDocker(ReadOnlyDocker):
+    def __init__(self, root='/var/lib/docker'):
+        super().__init__(root)
+        self.extra = {}
+
+    def execute(self, args, deadline):
+        if args == ('info', '--format', '{{.DockerRootDir}}'):
+            return super().execute(args, deadline)
+        args = tuple(args)
+        self.calls.append(args)
+        self.deadlines.append(deadline)
+        if args[:2] == ('volume', 'inspect') and args[2] in freshness.TARGET_VOLUMES.values():
+            name = args[2]
+            row = {'Name': name, 'Driver': 'local', 'Scope': 'local', 'Options': None,
+                   'Mountpoint': self.root + '/volumes/' + name + '/_data',
+                   'CreatedAt': '2026-11-24T12:00:00Z',
+                   'Labels': {volume_transfer.OWNER_LABEL: 'a' * 32,
+                              volume_transfer.PHASE_LABEL: 'rollback'}, **self.extra}
+            if self.change:
+                self.change(row)
+            return json.dumps([row]).encode()
+        raise AssertionError('non-readonly-command')
+
+
+def target_identity():
+    return {'device': 123, 'inode': 456, 'birth_ns': 123456789000000001}
+
+
+class TargetContracts(unittest.TestCase):
+    def setUp(self):
+        self.docker = TargetDocker()
+        self.runtime = SimpleNamespace(SWARM_VOLUMES=dict(freshness.TARGET_VOLUMES))
+        self.targets = freshness.RollbackTargets(self.docker, self.runtime)
+
+    @contextmanager
+    def collector(self, manifests=None, identity=None):
+        @contextmanager
+        def data(*args, **kwargs):
+            yield 8, dict(identity or target_identity())
+        with patch.object(freshness, '_linux'), \
+                patch.object(freshness.os, 'geteuid', return_value=0, create=True), \
+                patch.object(freshness, '_absolute', fake_directory), \
+                patch.object(freshness, '_child', fake_directory), \
+                patch.object(freshness, '_target_data', side_effect=data), \
+                patch.object(freshness, '_manifest', side_effect=manifests or receipts()) as manifest:
+            yield manifest
+
+    def pins(self):
+        with self.collector():
+            return self.targets.capture(receipts())
+
+    def test_capture_proves_copy_and_pins_json_safe_identity_in_role_order(self):
+        with self.collector() as manifest:
+            pins = self.targets.capture(list(receipts()))
+        self.assertEqual(len(pins), 3)
+        self.assertEqual(manifest.call_count, 3)
+        self.assertEqual([p['name'] for p in pins], list(freshness.TARGET_VOLUMES.values()))
+        self.assertEqual(freshness._target_pins(json.loads(json.dumps(pins))), pins)
+        self.assertNotIn('/var/lib/docker', json.dumps(pins))
+        self.assertEqual(self.docker.calls, [('info', '--format', '{{.DockerRootDir}}')] +
+                         [command for name in freshness.TARGET_VOLUMES.values()
+                          for command in [('volume', 'inspect', name)] * 2])
+
+    def test_verify_metadata_only_allows_children_to_change(self):
+        pins = self.pins()
+        with self.collector() as manifest:
+            self.assertIs(self.targets.verify(pins), True)
+            manifest.assert_not_called()
+
+    def test_dynamic_usage_and_unknown_metadata_do_not_change_identity(self):
+        self.docker.extra = {'UsageData': {'RefCount': 0, 'Size': 123}, 'future': 'before'}
+        pins = self.pins()
+        self.docker.extra = {'UsageData': {'RefCount': 3, 'Size': 456}, 'future': 'after'}
+        with self.collector() as manifest:
+            self.assertIs(self.targets.verify(pins), True)
+            manifest.assert_not_called()
+
+    def test_capture_rejects_current_target_not_equal_to_copy(self):
+        with self.collector([receipt(9), receipt(1), receipt(2)]):
+            with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-mismatch$'):
+                self.targets.capture(receipts())
+
+    def test_replacement_even_same_inode_same_createdat_and_labels_rejected_by_birth(self):
+        pins = self.pins()
+        for field in ('device', 'inode', 'birth_ns'):
+            changed = target_identity()
+            changed[field] += 1
+            with self.subTest(field=field), self.collector(identity=changed):
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+                    self.targets.verify(pins)
+
+    def test_createdat_exact_string_and_owner_changes_reject(self):
+        pins = self.pins()
+        changes = [lambda row: row.update(CreatedAt='2026-11-24T12:00:00+00:00'),
+                   lambda row: row['Labels'].update({volume_transfer.OWNER_LABEL: 'b' * 32}),
+                   lambda row: row.update(Options={})]
+        for change in changes:
+            with self.collector():
+                self.docker.change = change
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+                    self.targets.verify(pins)
+
+    def test_target_metadata_policy_is_exact(self):
+        changes = [lambda row: row.update(Name='other'), lambda row: row.update(Driver='nfs'),
+                   lambda row: row.update(Scope='global'), lambda row: row.update(Options={'type': 'none'}),
+                   lambda row: row.update(Mountpoint='/private/elsewhere'),
+                   lambda row: row.pop('CreatedAt'), lambda row: row.update(CreatedAt=''),
+                   lambda row: row.update(CreatedAt=123), lambda row: row.update(Labels=None),
+                   lambda row: row['Labels'].update({'unexpected': 'label'}),
+                   lambda row: row['Labels'].update({volume_transfer.PHASE_LABEL: 'cutover'}),
+                   lambda row: row['Labels'].update({volume_transfer.OWNER_LABEL: 'A' * 32}),
+                   lambda row: row['Labels'].update({volume_transfer.OWNER_LABEL: 'a' * 31})]
+        for change in changes:
+            self.docker.change = change
+            with self.collector() as manifest:
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-policy$'):
+                    self.targets.capture(receipts())
+                manifest.assert_not_called()
+
+    def test_metadata_rechecked_after_descriptor_operations(self):
+        counter = 0
+        def change(row):
+            nonlocal counter
+            counter += 1
+            if counter == 2:
+                row['CreatedAt'] = '2026-11-24T12:00:01Z'
+        self.docker.change = change
+        with self.collector():
+            with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+                self.targets.capture(receipts())
+
+    def test_pin_schema_typed_exact_and_never_used_for_io(self):
+        pins = self.pins()
+        self.docker.calls.clear()
+        invalid = [None, [], True, list(pins[:2]), list(pins) + [pins[0]]]
+        for key, values in [('schema', [True, 2, 1.0]), ('name', ['/private', 'wrong']),
+                            ('metadata_digest', ['g' * 64, None]), ('device', [True, -1, 2 ** 64]),
+                            ('inode', [False, 0, -1, 1.0]), ('birth_ns', [0, -1, True, 1.0])]:
+            for value in values:
+                bad = copy.deepcopy(pins)
+                bad[0][key] = value
+                invalid.append(bad)
+        bad = copy.deepcopy(pins)
+        bad[0]['root_path'] = '/private'
+        invalid.append(bad)
+        for value in invalid:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-unproven$'):
+                    self.targets.verify(value)
+        self.assertEqual(self.docker.calls, [])
+
+    def test_unproven_copy_blocks_capture_before_io(self):
+        with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-copy-unproven$'):
+            self.targets.capture(None)
+        self.assertEqual(self.docker.calls, [])
+
+    def test_runtime_guard_root_and_deadline_shared(self):
+        end = time.monotonic() + 5
+        with self.collector() as manifest:
+            pins = self.targets.capture(receipts(), deadline=end)
+        self.assertEqual(self.docker.deadlines, [end] * 7)
+        self.assertTrue(all(call.args[1] == end for call in manifest.call_args_list))
+        with self.collector():
+            self.assertTrue(self.targets.verify(pins, deadline=end))
+        self.runtime.SWARM_VOLUMES['postgres'] = 'other'
+        with self.collector():
+            with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-policy$'):
+                self.targets.verify(pins)
+
+    def test_deadline_invalid_and_unavailable_sanitized(self):
+        pins = self.pins()
+        for value in [True, -1, float('nan'), float('inf'), time.monotonic() - 1]:
+            with self.collector():
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-deadline$'):
+                    self.targets.verify(pins, deadline=value)
+        with self.collector(), patch.object(self.docker, 'execute', side_effect=OSError('/private')):
+            with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-unavailable$'):
+                self.targets.verify(pins)
+
+
+class StatxContracts(unittest.TestCase):
+    def test_stable_uapi_offsets(self):
+        self.assertEqual(ctypes.sizeof(freshness._StatxTimestamp), 16)
+        self.assertEqual(ctypes.sizeof(freshness._Statx), 256)
+        self.assertEqual(freshness._Statx.ino.offset, 32)
+        self.assertEqual(freshness._Statx.btime.offset, 80)
+        self.assertEqual(freshness._Statx.dev_major.offset, 136)
+
+    def statx(self, *, mask=0x0fff, sec=123, nsec=1, status=0, inode=456):
+        def function(fd, path, flags, requested, pointer):
+            self.assertEqual((fd, path, flags, requested), (7, b'', 0x1000, 0x0fff))
+            result = pointer._obj
+            result.mask, result.mode, result.ino = mask, stat.S_IFDIR | 0o700, inode
+            result.dev_major, result.dev_minor = 1, 2
+            result.btime.sec, result.btime.nsec = sec, nsec
+            return status
+        return function
+
+    @contextmanager
+    def native(self, function):
+        info = SimpleNamespace(st_dev=123, st_ino=456, st_mode=stat.S_IFDIR | 0o700)
+        with patch.object(freshness, '_libc_statx', return_value=function), \
+                patch.object(freshness.os, 'fstat', return_value=info), \
+                patch.object(freshness.os, 'major', return_value=1, create=True), \
+                patch.object(freshness.os, 'minor', return_value=2, create=True):
+            yield
+
+    def test_empty_path_mandatory_btime_identity(self):
+        with self.native(self.statx()):
+            self.assertEqual(freshness._birth_identity(7, time.monotonic() + 5),
+                             {'device': 123, 'inode': 456, 'birth_ns': 123000000001})
+
+    def test_no_mask_zero_birth_invalid_nsec_or_failed_syscall_blocks(self):
+        for kwargs in [dict(mask=0x07ff), dict(sec=0, nsec=0), dict(sec=-1),
+                       dict(nsec=1_000_000_000), dict(status=-1)]:
+            with self.subTest(kwargs=kwargs), self.native(self.statx(**kwargs)):
+                with self.assertRaisesRegex(freshness.FreshnessError,
+                                            '^freshness-target-btime-unavailable$'):
+                    freshness._birth_identity(7, time.monotonic() + 5)
+
+    def test_statx_and_fstat_disagreement_blocks(self):
+        with self.native(self.statx(inode=457)):
+            with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+                freshness._birth_identity(7, time.monotonic() + 5)
+
+    def test_absent_libc_symbol_fails_without_fallback(self):
+        with patch.object(freshness.ctypes, 'CDLL', return_value=SimpleNamespace()):
+            with self.assertRaisesRegex(freshness.FreshnessError,
+                                        '^freshness-target-btime-unavailable$'):
+                freshness._libc_statx()
+
+
+@unittest.skipUnless(LINUX, 'requires Linux descriptor statx birth times')
+class TargetFilesystemTests(unittest.TestCase):
+    def test_real_statx_identity_survives_child_writes_chmod_and_chown(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / '_data'
+            data.mkdir()
+            parent = os.open(temp, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with freshness._target_data(parent, time.monotonic() + 10) as (_, identity):
+                    (data / 'new').write_bytes(b'legitimate')
+                    os.chmod(data, 0o750)
+                    if ROOT:
+                        os.chown(data, 999, 999)
+                with freshness._target_data(parent, time.monotonic() + 10) as (_, after):
+                    self.assertEqual(identity, after)
+            finally:
+                os.close(parent)
+
+    def test_replacement_name_binding_and_missing_btime_reject(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = Path(temp) / '_data'
+            data.mkdir()
+            parent = os.open(temp, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+                    with freshness._target_data(parent, time.monotonic() + 10):
+                        data.rename(data.with_name('old'))
+                        data.mkdir()
+                with patch.object(freshness, '_libc_statx', return_value=lambda *args: -1):
+                    with self.assertRaisesRegex(freshness.FreshnessError,
+                                                '^freshness-target-btime-unavailable$'):
+                        with freshness._target_data(parent, time.monotonic() + 10):
+                            self.fail('missing birth time accepted')
+            finally:
+                os.close(parent)
+
+
+@unittest.skipUnless(ROOT, 'requires Linux root for trusted rollback target fixture')
+class NativeTargetTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='kan140-target-test-', dir='/')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.docker = TargetDocker(str(self.root))
+        self.targets = freshness.RollbackTargets(self.docker,
+                        SimpleNamespace(SWARM_VOLUMES=dict(freshness.TARGET_VOLUMES)))
+        self.data, self.expected = [], []
+        for name in freshness.TARGET_VOLUMES.values():
+            data = self.root / 'volumes' / name / '_data'
+            data.mkdir(parents=True)
+            (data / 'seed').write_bytes(b'OLD')
+            os.chown(data, 999, 999)
+            self.data.append(data)
+            self.expected.append(tar_evidence(data))
+
+    def test_capture_then_active_writes_then_recreation(self):
+        pins = self.targets.capture(self.expected)
+        for data in self.data:
+            (data / 'seed').write_bytes(b'NEW')
+            (data / 'new').write_bytes(b'active')
+            os.chmod(data, 0o750)
+            os.chown(data, 998, 998)
+        with patch.object(freshness, '_manifest', side_effect=AssertionError('must-not-hash')):
+            self.assertIs(self.targets.verify(pins), True)
+        data = self.data[0]
+        data.rename(data.with_name('old'))
+        data.mkdir()
+        with self.assertRaisesRegex(freshness.FreshnessError, '^freshness-target-changed$'):
+            self.targets.verify(pins)
 
 
 if __name__ == '__main__':

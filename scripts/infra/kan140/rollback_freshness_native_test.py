@@ -1,4 +1,4 @@
-"""Opt-in real Docker/filesystem freshness proof on disposable GitHub Linux CI.
+"""Opt-in source freshness and rollback target continuity on disposable CI.
 
 Requires KAN140_FRESHNESS_INTEGRATION=true, GITHUB_ACTIONS=true and Linux root.
 CI must provision /var/lib/clicaepede/kan133 as root:root 0700, with trusted
@@ -65,10 +65,11 @@ def command(args, end):
 
 class PreparationDocker:
     """Separate CLI for setup/cleanup; no collector capability is shared."""
-    def __init__(self, config, names, end):
+    def __init__(self, config, labels, end):
         self.prefix = ['docker', '--host', 'unix:///var/run/docker.sock',
                        '--config', str(config)]
-        self.names, self.end = tuple(names), end
+        self.labels, self.end = labels, end
+        self.names = tuple(labels)
 
     def run(self, *args):
         return command(self.prefix + list(args), self.end)
@@ -80,7 +81,7 @@ class PreparationDocker:
         require(rows in ([], [name]), 'fixture_name_collision')
         return bool(rows)
 
-    def owned(self, name, token, docker_root):
+    def owned(self, name, docker_root):
         require(name in self.names, 'fixture_unmanaged_name')
         rows = json.loads(self.run('volume', 'inspect', name))
         require(type(rows) is list and len(rows) == 1, 'fixture_inspect_shape')
@@ -88,7 +89,7 @@ class PreparationDocker:
         path = docker_root / 'volumes' / name / '_data'
         require(row.get('Name') == name and row.get('Driver') == 'local' and
                 row.get('Scope') == 'local' and row.get('Options') in (None, {}) and
-                row.get('Labels') == {LABEL: token} and
+                row.get('Labels') == self.labels[name] and
                 row.get('Mountpoint') == str(path), 'fixture_ownership_rejected')
         trusted(path.parent)
         info = path.lstat()
@@ -153,8 +154,10 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
             sys.path.pop(0)
 
         self.assertEqual(runtime.VOLUMES, freshness.VOLUMES)
-        names = tuple(freshness.VOLUMES.values())
-        self.assertEqual(len(set(names)), 3)
+        sources = tuple(freshness.VOLUMES.values())
+        targets = tuple(runtime.SWARM_VOLUMES[role] for role in freshness.VOLUMES)
+        names = sources + targets
+        self.assertEqual(len(set(names)), 6)
         trusted(BASE)
         self.assertEqual(stat.S_IMODE(BASE.lstat().st_mode), 0o700)
         require(shutil.rmtree.avoids_symlink_attacks, 'fixture_safe_rmtree_required')
@@ -164,7 +167,11 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
         root = None
         docker = None
         intended = []
+        attempts = []
         token = uuid.uuid4().hex
+        labels = {name: {LABEL: token} for name in sources}
+        labels.update({name: {volume_transfer.OWNER_LABEL: token,
+                              volume_transfer.PHASE_LABEL: 'rollback'} for name in targets})
         failures = []
         # The outer alarm bounds Python filesystem operations too. Cleanup gets
         # the remaining budget; subprocess calls reserve time for reaping.
@@ -176,7 +183,7 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
             root = Path(tempfile.mkdtemp(prefix='kan140-freshness-native-', dir=BASE))
             trusted(root)
             self.assertEqual(stat.S_IMODE(root.lstat().st_mode), 0o700)
-            docker = PreparationDocker(root, names, work_end)
+            docker = PreparationDocker(root, labels, work_end)
             raw_root = docker.run('info', '--format', '{{.DockerRootDir}}').decode('utf-8')
             require(raw_root.endswith('\n') and raw_root.count('\n') == 1 and
                     '\r' not in raw_root, 'fixture_invalid_docker_root')
@@ -187,19 +194,24 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
 
             # Evaluate ALL names before ANY create; a collision never enters intent.
             existing = [docker.exists(name) for name in names]
-            self.assertEqual(existing, [False, False, False], 'fixture_managed_name_exists')
-            paths = []
-            for name in names:
+            self.assertEqual(existing, [False] * 6, 'fixture_managed_name_exists')
+
+            def create_seeded(name):
                 require(not docker.exists(name), 'fixture_name_appeared_before_create')
-                intended.append(name)  # Record even a timeout/unknown create exit.
+                if name not in intended:
+                    intended.append(name)
+                attempts.append(name)  # Record even a timeout/unknown create exit.
                 with (root / 'create-intent.json').open('w', encoding='ascii') as journal:
-                    json.dump({'token': token, 'names': intended}, journal)
+                    json.dump({'token': token, 'names': intended, 'attempts': attempts,
+                               'labels': labels}, journal)
                     journal.flush()
                     os.fsync(journal.fileno())
+                label_args = [arg for key, value in labels[name].items()
+                              for arg in ('--label', key + '=' + value)]
                 self.assertEqual(docker.run('volume', 'create', '--driver', 'local',
-                                           '--label', LABEL + '=' + token, name).strip(),
+                                           *label_args, name).strip(),
                                  name.encode('ascii'))
-                path = docker.owned(name, token, docker_root)
+                path = docker.owned(name, docker_root)
                 self.assertEqual(list(path.iterdir()), [], 'fixture_volume_not_fresh')
                 # Only newly created, labelled, empty native directories are written.
                 os.chown(path, 999, 999)
@@ -212,13 +224,20 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
                 os.chown(marker, 999, 999)
                 self.assertEqual(path.lstat().st_uid, 999)
                 self.assertEqual(path.parent.lstat().st_uid, 0)
-                paths.append(path)
+                return path
+
+            all_paths = [create_seeded(name) for name in names]
+            paths, target_paths = all_paths[:3], all_paths[3:]
 
             expected = tuple(volume_transfer.tar_manifest(io.BytesIO(command(
                 ['tar', '--format=gnu', '-C', str(path), '-cf', '-', '.'], work_end)),
                 work_end) for path in paths)
             self.assertTrue(all(row['entries'] == 2 and row['bytes'] == len(OLD)
                                 for row in expected))
+            target_expected = tuple(volume_transfer.tar_manifest(io.BytesIO(command(
+                ['tar', '--format=gnu', '-C', str(path), '-cf', '-', '.'], work_end)),
+                work_end) for path in target_paths)
+            self.assertEqual(target_expected, expected)
             readonly = ReadOnlyDocker(volume_transfer.DockerProcess(root), names)
             collector = freshness.RollbackFreshness(readonly, runtime, timeout=45)
             saved = copy.deepcopy(expected)
@@ -226,12 +245,12 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
             self.assertEqual(collector(expected, deadline=work_end), expected)
             self.assertEqual(snapshot(paths), before, 'fixture_collector_wrote_data')
             allowed_call = [('info', '--format', '{{.DockerRootDir}}')] + [
-                ('volume', 'inspect', name) for name in names]
+                ('volume', 'inspect', name) for name in sources]
             self.assertEqual(readonly.calls, allowed_call)
 
             # Equal-length bytes make this a content proof, not a size-only check.
             self.assertEqual(len(OLD), len(NEW))
-            docker.owned(names[0], token, docker_root)
+            docker.owned(sources[0], docker_root)
             fd = os.open(paths[0] / MARKER, os.O_WRONLY | os.O_NOFOLLOW)
             with os.fdopen(fd, 'wb') as output:
                 output.write(NEW)
@@ -249,13 +268,65 @@ class RollbackFreshnessNativeTests(unittest.TestCase):
             self.assertEqual(changed[str(paths[0] / MARKER) + ':bytes'], NEW)
             self.assertEqual(expected, saved, 'fixture_receipt_mutated')
             self.assertEqual(readonly.calls, allowed_call * 2)
+
+            # Target continuity is independent of source freshness and uses its
+            # own audited transport. Capture must prove the original copied bytes.
+            target_readonly = ReadOnlyDocker(volume_transfer.DockerProcess(root), names)
+            continuity = freshness.RollbackTargets(target_readonly, runtime, timeout=45)
+            before_capture = snapshot(all_paths)
+            pins = continuity.capture(expected, deadline=work_end)
+            self.assertIs(type(pins), tuple)
+            self.assertEqual(len(pins), 3)
+            original_pins = copy.deepcopy(pins)
+            self.assertEqual(snapshot(all_paths), before_capture, 'fixture_capture_wrote_data')
+            self.assertIs(continuity.verify(pins, deadline=work_end), True)
+            self.assertEqual(snapshot(all_paths), before_capture, 'fixture_verify_wrote_data')
+
+            docker.owned(targets[0], docker_root)
+            fd = os.open(target_paths[0] / MARKER, os.O_WRONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, 'wb') as output:
+                output.write(NEW)
+            after_child_write = snapshot(all_paths)
+            self.assertIs(continuity.verify(pins, deadline=work_end), True)
+            self.assertEqual(snapshot(all_paths), after_child_write,
+                             'fixture_continuity_repaired_legitimate_write')
+            self.assertEqual(after_child_write[str(target_paths[0] / MARKER) + ':bytes'], NEW)
+
+            # No delay or altered labels: inode reuse and Docker CreatedAt's
+            # second precision must not let a same-name replacement retain pins.
+            docker.owned(targets[0], docker_root)
+            docker.run('volume', 'rm', targets[0])
+            self.assertFalse(docker.exists(targets[0]), 'fixture_target_remove_failed')
+            target_paths[0] = create_seeded(targets[0])
+            all_paths = paths + target_paths
+            replacement_receipt = volume_transfer.tar_manifest(io.BytesIO(command(
+                ['tar', '--format=gnu', '-C', str(target_paths[0]), '-cf', '-', '.'], work_end)),
+                work_end)
+            self.assertEqual(replacement_receipt, expected[0])
+            before_rejection = snapshot(all_paths)
+            with self.assertRaises(freshness.FreshnessError):
+                continuity.verify(pins, deadline=work_end)
+            self.assertEqual(snapshot(all_paths), before_rejection,
+                             'fixture_continuity_changed_replacement')
+            replacement_pins = continuity.capture(expected, deadline=work_end)
+            self.assertNotEqual(replacement_pins, original_pins)
+            self.assertIs(continuity.verify(replacement_pins, deadline=work_end), True)
+            self.assertEqual(snapshot(all_paths), before_rejection,
+                             'fixture_replacement_capture_wrote_data')
+            self.assertEqual(pins, original_pins, 'fixture_target_pins_mutated')
+            self.assertEqual(expected, saved, 'fixture_target_receipt_mutated')
+            inspected = {args[2] for args in target_readonly.calls
+                         if args[:2] == ('volume', 'inspect')}
+            self.assertEqual(inspected, set(targets))
+            self.assertTrue(target_readonly.calls)
+            self.assertEqual(readonly.calls, allowed_call * 2)
         finally:
             if docker is not None:
                 docker.end = cleanup_end
                 for name in reversed(intended):
                     try:
                         if docker.exists(name):
-                            docker.owned(name, token, docker_root)
+                            docker.owned(name, docker_root)
                             docker.run('volume', 'rm', name)
                         require(not docker.exists(name), 'fixture_cleanup_volume_remains')
                     except Exception:
