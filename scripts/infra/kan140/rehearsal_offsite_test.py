@@ -13,6 +13,81 @@ import rehearsal_offsite as r
 
 
 class OffsiteRehearsalTests(unittest.TestCase):
+    def test_latest_mode_rejects_older_installed_recover_before_loading_modules(self):
+        with mock.patch.object(r, 'native_enabled', return_value=True), \
+                mock.patch.dict(r.os.environ, {'KAN140_LATEST_DATA_RETURN': 'true'}), \
+                mock.patch.object(r, 'latest_recovery_pin', side_effect=ValueError('canonical-source-drift')), \
+                mock.patch.object(r, 'verified_module') as loaded, \
+                mock.patch.object(r, 'LATEST_MODE', False), \
+                self.assertRaisesRegex(ValueError, 'canonical-source-drift'):
+            r.main()
+        loaded.assert_not_called()
+
+    def test_latest_receipt_requires_every_proof_and_does_not_downgrade(self):
+        result = self.good_result()
+        with mock.patch.object(r, 'LATEST_MODE', True):
+            with self.assertRaisesRegex(ValueError, 'missing-latest-return-proof'):
+                r.public_result(result)
+            keys = ('latest_data_return_verified', 'latest_return_session_verified',
+                    'latest_return_redis_verified', 'latest_return_postgres_verified',
+                    'latest_return_old_volumes_preserved', 'latest_return_api_verified')
+            result['evidence'].update({key: True for key in keys})
+            with self.assertRaisesRegex(ValueError, 'dependencies'):
+                r.public_result(result)
+            result['evidence']['latest_return_dependencies'] = {'verified': True}
+            with self.assertRaisesRegex(ValueError, 'manifests'):
+                r.public_result(result)
+            result['evidence']['latest_return_volume_manifests'] = [
+                {'digest': 'a' * 64, 'entries': 1, 'bytes': 0} for _ in range(3)]
+            proof = r.public_result(result)
+            self.assertEqual(proof['gate'], 'isolated-compose-latest-return')
+            self.assertTrue(all(proof[key] is True for key in keys))
+            result['evidence']['latest_return_volume_manifests'][0]['bytes'] = True
+            with self.assertRaisesRegex(ValueError, 'manifest'):
+                r.public_result(result)
+
+    def test_latest_constructor_enables_real_lease_only_after_offsite_initialization(self):
+        runtime = object()
+        backup = SimpleNamespace(ROOT=Path('/fixture'), runtime=runtime,
+                                 require=lambda value: self.assertTrue(value),
+                                 locked=lambda root: contextlib.nullcontext(), atomic_json=mock.Mock())
+        original = object()
+        restore = SimpleNamespace(Validator=original)
+        adapter = SimpleNamespace(ComposeValidator=object(), restore=object())
+        lease = mock.Mock()
+        created = mock.Mock(return_value=lease)
+        class Base:
+            owner = 'fixture-owner'
+            def _lease(self):
+                return self.latest_return_lease
+        latest = SimpleNamespace(build_validator=mock.Mock(return_value=Base))
+        modules = {'runtime': runtime, 'backup': backup, 'restore': restore,
+                   'kan140_compose_adapter': adapter, 'kan140_latest_return': latest,
+                   'kan140_latest_return_lease': SimpleNamespace(Lease=created),
+                   'kan140_latest_return_transfer': object()}
+        wrapper = SimpleNamespace(restore=restore, backup=backup)
+        modules['kan140_offsite_canonical'] = wrapper
+        def invoke():
+            created.assert_not_called()
+            validator = restore.Validator()
+            self.assertIs(validator._lease(), lease)
+            self.assertIs(validator._lease(), lease)
+            created.assert_called_once_with(backup, recovery_path=r.CANONICAL / 'restore-recover.py',
+                                            recovery_sha256='a' * 64)
+            lease.enable.assert_called_once_with('fixture-owner')
+            return 0
+        wrapper.main = invoke
+        with mock.patch.object(r, 'native_enabled', return_value=True), \
+                mock.patch.dict(r.os.environ, {'KAN140_LATEST_DATA_RETURN': 'true'}), \
+                mock.patch.object(r, 'LATEST_MODE', False), \
+                mock.patch.object(r, 'latest_recovery_pin', return_value='a' * 64), \
+                mock.patch.object(r, 'trusted'), \
+                mock.patch.object(r, 'attempt_lock', return_value=contextlib.nullcontext()), \
+                mock.patch.object(r, 'verified_module', side_effect=lambda name, *args: modules[name]), \
+                mock.patch.dict(sys.modules, {'runtime': runtime}):
+            self.assertEqual(r.main(), 0)
+        self.assertIs(restore.Validator, original)
+
     def good_result(self):
         return {'status': 'pass', 'gate': 'isolated-full-restore', 'cleanup_verified': True,
                 'evidence': {'backend': 'compose', 'production_migration': False,

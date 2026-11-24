@@ -50,11 +50,13 @@ class Docker:
         kind, command = args[:2]
         if command == 'ls':
             label = any(value.startswith('label=') for value in args)
+            exact = next((value[7:-1] for value in args if value.startswith('name=^/')), None)
             rows = []
             for identity, resource in self.rows[kind].items():
                 name = resource['Name'].lstrip('/')
                 labels = resource.get('Config', {}).get('Labels', {}) if kind == 'container' else resource['Labels']
-                if (label and labels.get(r.LABEL) == OWNER) or (not label and OWNER in name):
+                if ((label and labels.get(r.LABEL) == OWNER) or
+                        (not label and (name == exact if exact else OWNER in name))):
                     rows.append(identity if label and kind != 'volume' else name)
             return '\n'.join(rows)
         if command == 'inspect':
@@ -113,6 +115,145 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(self.directory.exists())
         self.assertTrue(self.validator.exists())
         self.assertFalse(any(args[1] == 'rm' for args in self.daemon.calls))
+
+    def return_fixture(self):
+        target = OWNER + '-return-' + 'b' * 32
+        helper = 'kan140-transfer-' + 'c' * 32 + '-' + 'd' * 32
+        self.value.update(schema=r.SCHEMA, version=2, resources=[
+            {'kind': 'volume', 'name': target}, {'kind': 'container', 'name': helper}])
+        self.lease.write_text(json.dumps(self.value))
+        for volume in self.daemon.rows['volume'].values():
+            volume.update(Driver='local', Scope='local', Options=None)
+        self.daemon.rows['volume'][target] = {
+            'Name': target, 'Driver': 'local', 'Scope': 'local', 'Options': None,
+            'Labels': {r.LABEL: OWNER, r.TRANSFER_OWNER: 'c' * 32, r.TRANSFER_PHASE: 'rollback'}}
+        item = {
+            'Id': 'e' * 64, 'Name': '/' + helper,
+            'Config': {'Image': r.PG_IMAGE, 'User': '0:0', 'Labels': {
+                r.LABEL: OWNER, r.TRANSFER_OWNER: 'c' * 32, r.TRANSFER_PHASE: 'rollback'}},
+            'HostConfig': {'NetworkMode': 'none', 'RestartPolicy': {'Name': 'no'},
+                           'ReadonlyRootfs': True, 'Privileged': False,
+                           'PidsLimit': 32, 'Memory': 256 * 1024 ** 2,
+                           'MemorySwap': 256 * 1024 ** 2, 'NanoCpus': 500000000,
+                           'LogConfig': {'Type': 'none'}, 'CapDrop': ['ALL'],
+                           'CapAdd': ['DAC_OVERRIDE', 'CHOWN', 'FOWNER', 'FSETID'],
+                           'SecurityOpt': ['no-new-privileges:true'],
+                           'Tmpfs': {p: 'rw,noexec,nosuid,nodev,size=1m'
+                                     for p in ('/tmp', '/var/lib/postgresql/data')}},
+            'NetworkSettings': {'Networks': {'none': {}}},
+            'Mounts': [{'Type': 'volume', 'Name': OWNER + '-postgres-data',
+                        'Destination': '/source', 'RW': False},
+                       {'Type': 'volume', 'Name': target, 'Destination': '/target', 'RW': True}]}
+        self.daemon.rows['container'][item['Id']] = item
+        return target, helper, item
+
+    def test_v2_original_and_exact_return_resources_recovered(self):
+        self.return_fixture()
+        result = self.worker.run()
+        self.assertEqual(result['resources_removed'], 9)
+        self.assertFalse(self.lease.exists())
+        kinds = [args[0] for args in self.daemon.calls if args[1] == 'rm']
+        self.assertEqual(kinds, ['container'] * 4 + ['network'] + ['volume'] * 4)
+
+    def test_v2_intent_without_create_is_recoverable(self):
+        target, _, item = self.return_fixture()
+        del self.daemon.rows['volume'][target]
+        del self.daemon.rows['container'][item['Id']]
+        self.assertEqual(self.worker.run()['resources_removed'], 7)
+
+    def test_v2_realistic_inspect_tmpfs_entries_recovered(self):
+        _, _, item = self.return_fixture()
+        item['Mounts'].extend({'Type': 'tmpfs', 'Source': '', 'Destination': path, 'RW': True}
+                              for path in ('/tmp', '/var/lib/postgresql/data'))
+        self.assertEqual(self.worker.run()['resources_removed'], 9)
+
+    def test_v2_unapproved_tmpfs_prevents_all_removals(self):
+        _, _, item = self.return_fixture()
+        item['Mounts'].append({'Type': 'tmpfs', 'Destination': '/external', 'RW': True})
+        with self.assertRaises(r.Failure):
+            self.worker.run()
+        self.assert_untouched()
+
+    def test_v2_partial_removal_retries_exact_intents(self):
+        self.return_fixture()
+        count = 0
+
+        def interrupted(*args):
+            nonlocal count
+            if args[1] == 'rm':
+                count += 1
+                if count == 3:
+                    raise r.Failure('interrupted')
+            return self.daemon(*args)
+
+        self.worker.docker.side_effect = interrupted
+        with self.assertRaises(r.Failure):
+            self.worker.run()
+        self.assertTrue(self.lease.exists())
+        worker = r.Recovery(self.root)
+        with mock.patch.object(worker, 'docker', side_effect=self.daemon):
+            self.assertEqual(worker.run()['resources_removed'], 7)
+
+    def test_v2_missing_helper_label_found_by_exact_name_before_any_delete(self):
+        _, _, item = self.return_fixture()
+        item['Config']['Labels'].pop(r.LABEL)
+        with self.assertRaises(r.Failure):
+            self.worker.run()
+        self.assert_untouched()
+
+    def test_v2_prevalidates_all_helper_restrictions(self):
+        import copy
+        _, _, item = self.return_fixture()
+        cases = [({'NetworkMode': 'host'}, None), ({'Privileged': True}, None),
+                 ({'Binds': ['/etc:/source']}, None), ({'Devices': [{}]}, None),
+                 ({'SecurityOpt': ['seccomp=unconfined']}, None),
+                 ({'Memory': 0}, None), ({'Tmpfs': {}}, None),
+                 ({'ExtraHosts': ['host:1.2.3.4']}, None),
+                 ({}, {'Type': 'bind'}), ({}, {'Name': 'external-volume'}),
+                 ({}, {'RW': True}), ({}, {'Destination': '/etc'})]
+        original = copy.deepcopy(item)
+        for host, mount in cases:
+            with self.subTest(host=host, mount=mount):
+                item.clear()
+                item.update(copy.deepcopy(original))
+                item['HostConfig'].update(host)
+                if mount:
+                    item['Mounts'][0].update(mount)
+                with self.assertRaises(r.Failure):
+                    self.worker.run()
+                self.assert_untouched()
+                self.worker = r.Recovery(self.root)
+                self.patch(self.worker, 'docker', side_effect=self.daemon)
+
+    def test_v2_schema_limits_duplicates_and_unknowns_precede_docker(self):
+        self.return_fixture()
+        base = self.value.copy()
+        rows = base['resources']
+        cases = [{'version': True}, {'version': 1}, {'schema': 'unknown'},
+                 {'resources': rows + [rows[0]]}, {'extra': True},
+                 {'resources': [{'kind': 'network', 'name': OWNER + '-net'}]},
+                 {'resources': [{'kind': 'volume', 'name': OWNER + '-return-' + f'{n:032x}'}
+                                for n in range(4)]},
+                 {'resources': [{'kind': 'container', 'name': 'kan140-transfer-' + 'c' * 32 + '-' + f'{n:032x}'}
+                                for n in range(13)]}]
+        for changes in cases:
+            with self.subTest(changes=changes):
+                self.lease.write_text(json.dumps(dict(base, **changes)))
+                with self.assertRaises(r.Failure):
+                    self.worker.run()
+                self.assert_untouched()
+                self.assertEqual(self.daemon.calls, [])
+                self.worker = r.Recovery(self.root)
+                self.patch(self.worker, 'docker', side_effect=self.daemon)
+
+    def test_v1_never_accepts_return_name_even_with_owner_label(self):
+        target, _, item = self.return_fixture()
+        self.lease.write_text(json.dumps({key: self.value[key] for key in ('owner', 'directory')}))
+        del self.daemon.rows['container'][item['Id']]
+        with self.assertRaises(r.Failure):
+            self.worker.run()
+        self.assert_untouched()
+        self.assertIn(target, self.daemon.rows['volume'])
 
     def test_full_owned_recovery_and_order(self):
         result = self.worker.run()

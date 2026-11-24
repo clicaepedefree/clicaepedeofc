@@ -24,6 +24,14 @@ SUFFIX = r'[a-z0-9_]{8}'
 SECONDS = 60
 SERVICES = ('postgres', 'redis', 'evolution')
 SECRETS = ('pg_admin_password', 'pg_app_password', 'redis_password', 'api_key')
+SCHEMA = 'kan140-latest-return'
+MAX_LEASE = 16384
+MAX_HELPERS = 12
+HELPER = r'kan140-transfer-([a-f0-9]{32})-[a-f0-9]{32}'
+TRANSFER_OWNER = 'clicaepede.kan140.transfer-owner'
+TRANSFER_PHASE = 'clicaepede.kan140.transfer-phase'
+PG_IMAGE = ('postgres:17.11-bookworm@sha256:'
+            '3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826')
 
 
 class Failure(Exception):
@@ -58,6 +66,33 @@ class Recovery:
         self.owner = None
         self.directory = None
         self.count = self.size = 0
+        self.extra = {'container': set(), 'volume': set()}
+        self.v2 = False
+
+    def lease_schema(self, value):
+        require(isinstance(value, dict) and {'owner', 'directory'} <= set(value), 'invalid_lease')
+        base = {'owner', 'directory', 'validator_directory'}
+        extended = {'schema', 'version', 'resources'}
+        self.owner = value['owner']
+        require(isinstance(self.owner, str) and re.fullmatch(OWNER, self.owner), 'invalid_lease')
+        if not set(value) & extended:
+            require(set(value) <= base, 'invalid_lease')
+            return
+        require(set(value) <= base | extended and extended <= set(value) and
+                value['schema'] == SCHEMA and type(value['version']) is int and
+                value['version'] == 2, 'invalid_lease')
+        rows = value['resources']
+        require(isinstance(rows, list) and len(rows) <= 3 + MAX_HELPERS, 'invalid_lease')
+        for row in rows:
+            require(isinstance(row, dict) and set(row) == {'kind', 'name'}, 'invalid_lease')
+            kind, name = row['kind'], row['name']
+            require(isinstance(kind, str) and kind in self.extra and isinstance(name, str), 'invalid_lease')
+            pattern = re.escape(self.owner) + r'-return-[a-f0-9]{32}' if kind == 'volume' else HELPER
+            require(re.fullmatch(pattern, name) and name not in self.extra[kind], 'invalid_lease')
+            self.extra[kind].add(name)
+        require(len(self.extra['volume']) <= 3 and len(self.extra['container']) <= MAX_HELPERS,
+                'invalid_lease')
+        self.v2 = True
 
     def remaining(self):
         left = self.end - time.monotonic()
@@ -83,15 +118,24 @@ class Recovery:
         field = 'ID' if label and kind != 'volume' else 'Names' if kind == 'container' else 'Name'
         args.extend(['--format', '{{.' + field + '}}'])
         rows = self.docker(*args).splitlines()
-        require(len(rows) <= 7 and len(rows) == len(set(rows)), 'unexpected_resources')
+        require(len(rows) <= (22 if self.v2 else 7) and len(rows) == len(set(rows)), 'unexpected_resources')
+        if kind == 'container' and not label:
+            # Helpers do not contain the restore owner. Query each exact registered
+            # name as well, so stripping its label cannot hide an unsafe resource.
+            for name in sorted(self.extra['container']):
+                found = self.docker('container', 'ls', '--all', '--no-trunc', '--filter',
+                                    'name=^/' + name + '$', '--format', '{{.Names}}').splitlines()
+                require(not found or found == [name], 'resource_ownership')
+                rows.extend(found)
+            require(len(rows) == len(set(rows)), 'unexpected_resources')
         return rows
 
     def expected(self, kind):
         if kind == 'container':
-            return {self.owner + '-' + service for service in SERVICES}
+            return {self.owner + '-' + service for service in SERVICES} | self.extra['container']
         if kind == 'network':
             return {self.owner + '-net'}
-        return {self.owner + '-' + service + '-data' for service in SERVICES}
+        return {self.owner + '-' + service + '-data' for service in SERVICES} | self.extra['volume']
 
     def inspect(self, kind, identity):
         if kind != 'volume':
@@ -111,7 +155,80 @@ class Recovery:
                 and name in self.expected(kind), 'resource_ownership')
         if kind != 'volume':
             require(resource.get('Id') == identity, 'resource_identity')
+        if self.v2:
+            if kind == 'container':
+                self.container_policy(name, resource)
+            elif kind == 'volume':
+                require(resource.get('Driver') == 'local' and resource.get('Scope') == 'local'
+                        and not resource.get('Options'), 'unsafe_volume')
+                if name in self.extra['volume']:
+                    require(re.fullmatch(r'[a-f0-9]{32}', labels.get(TRANSFER_OWNER, '')) and
+                            labels.get(TRANSFER_PHASE) == 'rollback', 'resource_ownership')
         return name, resource
+
+    def container_policy(self, name, resource):
+        mounts = resource.get('Mounts')
+        require(isinstance(mounts, list) and len(mounts) <= 8, 'unsafe_mount')
+        helper = name in self.extra['container']
+        destinations = set()
+        volumes = []
+        for mount in mounts:
+            require(isinstance(mount, dict) and isinstance(mount.get('Destination'), str) and
+                    mount['Destination'] not in destinations, 'unsafe_mount')
+            destinations.add(mount['Destination'])
+            if helper:
+                if mount.get('Type') == 'tmpfs':
+                    require(mount['Destination'] in ('/tmp', '/var/lib/postgresql/data') and
+                            mount.get('RW') is True and not mount.get('Name') and
+                            not mount.get('Source'), 'unsafe_helper_mount')
+                    continue
+                require(mount.get('Type') == 'volume' and mount.get('Name') in self.expected('volume')
+                        and mount.get('Destination') in ('/source', '/target') and
+                        mount.get('RW') is (mount['Destination'] == '/target'), 'unsafe_helper_mount')
+                if mount['Destination'] == '/target':
+                    require(mount['Name'] in self.extra['volume'], 'unsafe_helper_mount')
+                volumes.append(mount)
+            elif mount.get('Type') == 'volume':
+                role = name.removeprefix(self.owner + '-')
+                target = {'postgres': '/var/lib/postgresql/data', 'redis': '/data',
+                          'evolution': '/evolution/instances'}[role]
+                require(mount.get('Name') in {self.owner + '-' + role + '-data'} | self.extra['volume']
+                        and mount['Destination'] == target and mount.get('RW') is True, 'unsafe_mount')
+            else:
+                require(mount.get('Type') == 'bind', 'unsafe_mount')
+        if not helper:
+            return
+        require('/source' in destinations and len(volumes) in (1, 2), 'unsafe_helper_mount')
+        if len(volumes) == 2:
+            require(volumes[0]['Name'] != volumes[1]['Name'], 'unsafe_helper_mount')
+        config, host = resource.get('Config', {}), resource.get('HostConfig', {})
+        labels = config.get('Labels', {})
+        require(labels.get(TRANSFER_OWNER) == re.fullmatch(HELPER, name).group(1) and
+                labels.get(TRANSFER_PHASE) == 'rollback', 'resource_ownership')
+        require(config.get('Image') == PG_IMAGE and config.get('User') == '0:0' and
+                host.get('NetworkMode') == 'none' and host.get('ReadonlyRootfs') is True and
+                host.get('Privileged') is False and
+                host.get('RestartPolicy', {}).get('Name') == 'no', 'unsafe_helper')
+        networks = resource.get('NetworkSettings', {}).get('Networks', {})
+        require(isinstance(networks, dict) and set(networks) <= {'none'}, 'unsafe_helper')
+        for field in ('Binds', 'Devices', 'DeviceRequests', 'VolumesFrom', 'Links',
+                      'PortBindings', 'ExtraHosts', 'Dns', 'DnsSearch', 'DnsOptions'):
+            require(not host.get(field), 'unsafe_helper')
+        for field in ('PidMode', 'IpcMode', 'UTSMode', 'UsernsMode', 'CgroupnsMode'):
+            require(host.get(field) not in ('host',) and
+                    not str(host.get(field, '')).startswith('container:'), 'unsafe_helper')
+        require(host.get('PidsLimit') == 32 and host.get('Memory') == 256 * 1024 ** 2 and
+                host.get('MemorySwap') == 256 * 1024 ** 2 and
+                host.get('NanoCpus') == 500000000 and
+                host.get('LogConfig', {}).get('Type') == 'none', 'unsafe_helper')
+        normalize = lambda items: {item.removeprefix('CAP_') for item in items}
+        require(normalize(host.get('CapDrop') or []) == {'ALL'} and
+                normalize(host.get('CapAdd') or []) == {'DAC_OVERRIDE', 'CHOWN', 'FOWNER', 'FSETID'} and
+                host.get('SecurityOpt') == ['no-new-privileges:true'], 'unsafe_helper')
+        tmpfs = host.get('Tmpfs')
+        require(isinstance(tmpfs, dict) and set(tmpfs) == {'/tmp', '/var/lib/postgresql/data'} and
+                all(set(options.split(',')) == {'rw', 'noexec', 'nosuid', 'nodev', 'size=1m'}
+                    for options in tmpfs.values()), 'unsafe_helper')
 
     def bind_directories(self, resource):
         paths = set()
@@ -155,13 +272,11 @@ class Recovery:
         if not os.path.lexists(self.lease):
             return {'status': 'ok', 'code': 'no_lease'}
         with backup.private_file(self.lease) as source:
-            raw = source.read(4097)
-        require(len(raw) <= 4096, 'invalid_lease')
+            raw = source.read(MAX_LEASE + 1)
+        require(len(raw.encode('utf-8')) <= MAX_LEASE, 'invalid_lease')
         value = json.loads(raw)
-        require(isinstance(value, dict) and {'owner', 'directory'} <= set(value)
-                and set(value) <= {'owner', 'directory', 'validator_directory'}, 'invalid_lease')
-        self.owner = value['owner']
-        require(isinstance(self.owner, str) and re.fullmatch(OWNER, self.owner), 'invalid_lease')
+        self.lease_schema(value)
+        require(self.v2 or len(raw.encode('utf-8')) <= 4096, 'invalid_lease')
         require(isinstance(value['directory'], str), 'invalid_lease')
         self.directory = Path(value['directory'])
         # Lexical equality rejects /./ and duplicate separators before Path normalizes them.
@@ -195,6 +310,8 @@ class Recovery:
             require(set(self.listing(kind, label=False)) == names, 'resource_ownership')
         for path in paths:
             self.validate_tree(path)
+        require(shutil.rmtree.avoids_symlink_attacks, 'unsafe_rmtree')
+        require(backup.read_json(self.lease) == value, 'lease_changed')
         for kind, identity in resources:  # Containers first, then network and volumes.
             self.inspect(kind, identity)
             self.docker(kind, 'rm', *(['--force'] if kind == 'container' else []), identity)

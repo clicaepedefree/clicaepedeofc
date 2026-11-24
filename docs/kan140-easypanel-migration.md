@@ -1,5 +1,35 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Retorno com dados recentes: continuidade de 24/11/2026
+
+PR181 mergeado em c660b33. A nova etapa acrescenta o registro duravel exato
+dos recursos temporarios usados no ensaio de retorno, sem alterar o runtime
+real nem habilitar o bot. Os estados historicos abaixo descrevem entregas
+anteriores, nao o aceite final da migracao.
+
+- Lease v1 continua restrita aos recursos originais. A extensao v2 registra
+  antecipadamente ate tres volumes novos e doze helpers de copia, por nome
+  exato. Labels sozinhos ou um prefixo de nome nao autorizam exclusao.
+- O recuperador valida todo o inventario e os mounts antes de remover
+  recursos. Um helper sem label ou com volume externo bloqueia a limpeza.
+  Nada e removido com prune ou varredura generica de volumes.
+- O modo KAN140_LATEST_DATA_RETURN=true do rehearsal_offsite.py exige o
+  recuperador atualizado instalado no caminho canonico, byte a byte igual
+  a fonte revisada. Sem ele, falha antes do download/restauracao e das
+  escritas sinteticas. O restore Compose padrao permanece separado.
+- O ensaio opcional restaura um backup de QA isolado, valida a aplicacao,
+  grava canarios novos em PostgreSQL, Redis e arquivos de sessao, para os
+  escritores, copia os dados atuais para volumes NOVOS e recria o conjunto.
+  O aceite exige igualdade dos dados, conexoes reais da aplicacao e cleanup.
+  Nenhum acesso connect/send/QR ou rota externa faz parte deste ensaio.
+- Testes offline e uma fixture Docker de SIGKILL nao equivalem ao aceite
+  nativo integrado com dados restaurados. Nao publicar esse aceite antes de
+  instalar o recuperador revisado e executar o modo opcional com sucesso.
+
+Continuam bloqueantes a recuperacao operacional parcial do corte real e
+os aceites de gestao UI/dominio/rollback. KAN140 permanece Em andamento,
+9/19; bot OFF. Esta entrega nao executa a migracao dos servicos reais.
+
 ## Engine nativo e roteamento: retomada apos PR180
 
 PR180 mergeado em 499a1d2. A Evolution real ainda esta no Swarm original,
