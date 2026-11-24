@@ -24,6 +24,7 @@ PINS = {
 }
 BOUND_BACKUP = None
 ATTEMPT = None
+LATEST_MODE = False
 
 
 def trusted(path, digest=None):
@@ -116,6 +117,27 @@ def public_result(result):
             raise ValueError('missing-data-proof')
         output['data_fingerprint_sha256'] = hashlib.sha256(
             json.dumps(snapshot, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if LATEST_MODE:
+            for key in ('latest_data_return_verified', 'latest_return_session_verified',
+                        'latest_return_redis_verified', 'latest_return_postgres_verified',
+                        'latest_return_old_volumes_preserved', 'latest_return_api_verified'):
+                if evidence.get(key) is not True:
+                    raise ValueError('missing-latest-return-proof')
+                output[key] = True
+            if evidence.get('latest_return_dependencies', {}).get('verified') is not True:
+                raise ValueError('missing-latest-return-dependencies')
+            manifests = evidence.get('latest_return_volume_manifests')
+            if not isinstance(manifests, (list, tuple)) or len(manifests) != 3:
+                raise ValueError('missing-latest-return-manifests')
+            for item in manifests:
+                if (not isinstance(item, dict) or set(item) != {'digest', 'entries', 'bytes'}
+                        or not isinstance(item['digest'], str) or len(item['digest']) != 64
+                        or any(c not in '0123456789abcdef' for c in item['digest'])
+                        or type(item['entries']) is not int or item['entries'] < 1
+                        or type(item['bytes']) is not int or item['bytes'] < 0):
+                    raise ValueError('invalid-latest-return-manifest')
+            output['latest_return_dependencies_verified'] = True
+            output['gate'] = 'isolated-compose-latest-return'
     return output
 
 
@@ -153,10 +175,21 @@ def native_enabled():
     return os.name == 'posix' and os.geteuid() == 0 and os.environ.get('KAN140_COMPOSE_REHEARSAL') == 'true'
 
 
+def latest_recovery_pin():
+    """Candidate and installed recovery must be byte-identical before download."""
+    source = Path(__file__).resolve().parent.parent / 'kan133' / 'restore-recover.py'
+    trusted(source)
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    trusted(CANONICAL / 'restore-recover.py', digest)
+    return digest
+
+
 def main():
-    global BOUND_BACKUP, ATTEMPT
+    global BOUND_BACKUP, ATTEMPT, LATEST_MODE
     if not native_enabled():
         raise ValueError('opt-in-linux-root-required')
+    LATEST_MODE = os.environ.get('KAN140_LATEST_DATA_RETURN') == 'true'
+    recovery_pin = latest_recovery_pin() if LATEST_MODE else None
     for filename, digest in PINS.items():
         trusted(CANONICAL / filename, digest)
     for candidate in (Path(__file__).resolve().parent / 'compose_restore.py',
@@ -173,13 +206,32 @@ def main():
     BOUND_BACKUP = backup
     ATTEMPT = uuid.uuid4().hex
     original = restore.Validator
+    constructor = adapter.ComposeValidator
+    if LATEST_MODE:
+        base = Path(__file__).resolve().parent
+        latest = verified_module('kan140_latest_return', base / 'latest_return.py')
+        lease_module = verified_module('kan140_latest_return_lease', base / 'latest_return_lease.py')
+        transfer = verified_module('kan140_latest_return_transfer', base / 'volume_transfer.py')
+        latest_base = latest.build_validator(constructor, adapter.restore, transfer)
+
+        class LatestValidator(latest_base):
+            def _lease(self):
+                # The offsite wrapper has persisted the initial lease by now.
+                if not hasattr(self, 'latest_return_lease'):
+                    self.latest_return_lease = lease_module.Lease(
+                        backup, recovery_path=CANONICAL / 'restore-recover.py',
+                        recovery_sha256=recovery_pin)
+                    self.latest_return_lease.enable(self.owner)
+                return super()._lease()
+
+        constructor = LatestValidator
     with attempt_lock(backup):
         with backup.locked(backup.ROOT):
             backup.require(not (backup.ROOT / 'restore_lease.json').exists())
             receipt({'status': 'running', 'cleanup_verified': False})
         try:
             # Process-local injection only: canonical files and official receipt stay intact.
-            restore.Validator = adapter.ComposeValidator
+            restore.Validator = constructor
             wrapper.finish = finish
             return wrapper.main()
         except BaseException:

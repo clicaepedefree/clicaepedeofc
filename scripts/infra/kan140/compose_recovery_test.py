@@ -28,7 +28,7 @@ PG_IMAGE = 'postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b3
 LABEL = 'clicaepede.kan133.restore'
 ROLES = ('postgres', 'redis', 'evolution')
 PINS = {
-    'restore-recover.py': '05ff26aec73e1cd17c49d723a817ab5d7341dac4661935a7b94e61109431087b',
+    'restore-recover.py': 'aaed3e17a38941b1f4ec6a1b93fecf3062a4eff2290128753101c3ed67041a84',
     'backup.py': '5152f3ff2d94119ce1b851ceae4a03b8d23a6ff63bdc15c724a132017d5a0308',
     'runtime.py': '41f2b899cc2e77a018ddc7e0a7fd1fcded6368209d8b299523346ada446baed3',
     'restore.py': 'ea35a72beac23c1c19b4ab936653c5ac8f50bf89e08369381bc5e224389cfe1f',
