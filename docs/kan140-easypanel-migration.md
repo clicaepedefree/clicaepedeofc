@@ -1,5 +1,75 @@
 # KAN-140 - Migracao de gestao da Evolution QA
 
+## Reconciliacao parcial apos copia comprovada
+
+A biblioteca managed_lifecycle.Coordinator oferece reconcile_partial() para
+retomar explicitamente um rollback interrompido DEPOIS de persistir os tres
+manifestos da copia completa. Nao ha CLI, retry automatico, nova copia,
+redeploy ou alteracao de rota. Empacotar rollback_plan.py junto a biblioteca.
+
+O reconciliador exige backup.lock, gates externos novamente comprovados,
+fence duravel, controller desabilitado sem jobs pendentes e ausencia de
+escritores nos volumes managed/originais. Uma copia historica e a ausencia de
+escritores AGORA nao comprovam frescor: um escritor pode ter voltado e parado.
+Por isso o callback rollback_freshness e obrigatorio. RollbackFreshness le os
+volumes managed atuais no host Linux root, por descritores sem seguir links,
+e compara seus manifestos com a copia duravel antes de rebinds e antes de
+publicar ownership. Nenhum helper/container/copia e criado por essa leitura;
+o prazo inclui o deadline do coordenador. Divergencia bloqueia, nunca recopia.
+
+Compara os ServiceSpecs completos
+com a baseline: somente replicas e o rebind para volumes fixos de retorno
+podem diferir. Drift, escritores estrangeiros e planos conflitantes bloqueiam
+antes de alterar servicos. Atualizacoes restantes usam versao CAS; operacoes
+ja observadas como aplicadas nao sao repetidas.
+
+Depois de todos os rebinds, retoma somente os servicos ainda com zero replicas,
+na ordem PostgreSQL/Redis/Evolution. Espera health dos tres antes de publicar
+controle ativo. Uma publicacao interrompida entre sentinel e manifesto so pode
+ser completada se o owner exato estiver registrado no intent duravel; nunca
+reduz a geracao nem remove o fence. Owner ja publicado exige validacao canonica
+e nao provoca novo restart/publicacao. Artefatos conflitantes nao sao sobrescritos.
+
+Esta extensao tem testes de falhas offline e ainda exige ensaio operacional
+nativo antes do corte real. Copia incompleta/sem manifesto, autoridade legacy
+e conflitos nao comprovados continuam bloqueados para reconciliacao manual.
+O resultado nativo de132.023s abaixo valida dados/retorno isolados, nao esta
+nova retomada operacional. Bot OFF; sem modificacao da instalacao real.
+
+## Resultado pos-merge PR182: 24/11/2026
+
+PR182 mergeado em 5cf27c5dbd80658b45649556f4cbcca1195a2c91. O recuperador
+v2 foi instalado no caminho canonico sob backup.lock, com copia privada da
+versao anterior, substituicao atomica e modo root0700 preservado. SHA256:
+aaed3e17a38941b1f4ec6a1b93fecf3062a4eff2290128753101c3ed67041a84.
+Smoke test canonico retornou status ok / code no_lease. Nao reinstalar
+presumindo que o recuperador antigo ainda esta no caminho canonico.
+
+O ensaio integrado REAL passou em 132.023s, gate
+isolated-compose-latest-return, tentativa f0dd43b3316f44e6b5b5e1a5b5ed14e6.
+Backup offsite real de QA, hash e decriptacao verificados; 37 tabelas,
+1247 linhas, uma instancia e uma sessao. Canarios novos de PostgreSQL,
+Redis e arquivos da sessao sobreviveram a copia fisica para volumes novos
+e a recriacao. HTTP sem chave/invalida401, valida200, leitura de sessoes
+e conexoes reais PG/Redis aprovados apos o retorno. Clone sem WAN/proxy/portas.
+
+Cleanup confirmado: lease e recursos temporarios ausentes, volumes originais
+preservados e hash do registro oficial last_restore.json igual antes/depois.
+Os tres servicos originais continuam healthy, com mesmos IDs e versoes
+1537/1537/2199. WhatsApp open, webhook/worker OFF e timer inactive/disabled.
+Nenhum envio, QR ou logout. Aplicativo permanece na Vercel.
+
+Revisao independente aprovou os recibos, bundle contra o merge e estado
+final desta etapa isolada. Relatorio portatil anexado ao
+[comentario10968 da KAN140](https://gustavosworkspace-15436204.atlassian.net/browse/KAN-140?focusedCommentId=10968).
+Este resultado substitui apenas as notas historicas de instalacao v2 e
+ensaio integrado ainda pendentes; nao repetir o ensaio sem motivo.
+
+**Ainda nao houve cutover.** Implementar/revisar reconciliacao operacional
+de estados parciais antes da migracao real e completar ownership/fencing,
+gestao UI, dominio e rollback operacional. O retorno isolado aprovado nao
+equivale ao aceite desses itens. KAN140 permanece Em andamento, 9/19; bot OFF.
+
 ## Retorno com dados recentes: continuidade de 24/11/2026
 
 PR181 mergeado em c660b33. A nova etapa acrescenta o registro duravel exato
