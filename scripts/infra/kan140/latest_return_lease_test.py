@@ -1,4 +1,4 @@
-"""Offline lease protocol tests; no Docker/SSH. Windows root metadata is mocked."""
+"""Offline lease protocol tests; fixture root metadata is mocked, no Docker/SSH."""
 import hashlib
 import importlib.util
 import json
@@ -30,19 +30,28 @@ class LeaseTests(unittest.TestCase):
         self.lease = m.Lease(self.backup, recovery_path=m.CANONICAL_RECOVERY, recovery_sha256='a' * 64)
         self.attest = mock.patch.object(self.lease, '_attest').start()
         self.addCleanup(mock.patch.stopall)
-        if os.name != 'posix':
-            real = Path.lstat
-
-            def metadata(path, *args, **kwargs):
-                info = real(path, *args, **kwargs)
-                mode = stat.S_IFDIR | 0o700 if stat.S_ISDIR(info.st_mode) else info.st_mode
-                return types.SimpleNamespace(st_mode=mode, st_uid=0, st_nlink=info.st_nlink,
-                                             st_size=info.st_size)
-
-            mock.patch.object(Path, 'lstat', metadata).start()
+        real = Path.lstat
+        def metadata(path, *args, **kwargs):
+            info = real(path, *args, **kwargs)
+            if path != self.root:
+                return info
+            return types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=0,
+                                         st_nlink=info.st_nlink, st_size=info.st_size)
+        mock.patch.object(Path, 'lstat', metadata).start()
 
     def write(self, path, value):
         path.write_text(json.dumps(value))
+
+    def test_non_root_or_writable_fixture_is_rejected_before_mutation(self):
+        original = Path.lstat
+        for uid, mode in ((1000, 0o700), (0, 0o755)):
+            def unsafe(path, *args, **kwargs):
+                if path == self.root:
+                    return types.SimpleNamespace(st_mode=stat.S_IFDIR | mode, st_uid=uid)
+                return original(path, *args, **kwargs)
+            with mock.patch.object(Path, 'lstat', unsafe), self.assertRaisesRegex(m.LeaseError, 'unsafe_root'):
+                self.lease.enable(OWNER)
+        self.backup.atomic_json.assert_not_called()
 
     def test_enable_is_explicit_durable_and_preserves_old_binding(self):
         with self.assertRaises(m.LeaseError):
