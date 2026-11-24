@@ -107,6 +107,7 @@ class Harness:
         self.copies = []
         self.data = 'legacy-data'
         self.copied = {}
+        self.rollback_epoch = 0
         self.enabled = False
         self.source = {'dummy': True}
         self.owner = None
@@ -161,7 +162,15 @@ class Harness:
         self.c = lifecycle.Coordinator(api=self, engine=lifecycle.Engine(self.sdk, full_spec_reviewed=True),
             backup=self.backup, runtime=self.runtime, stage=self.staging, transfer=self.transfer,
             fixture=fixture, gates=lambda: lifecycle.REQUIRED_GATES, files=self.files,
+            rollback_freshness=lambda expected, **kw: copy.deepcopy(expected) if
+                self.data == self.copied.get('rollback') else [dict(row, digest='f' * 64) for row in expected],
+            rollback_targets=SimpleNamespace(capture=lambda expected, **kw: self.target_snapshot(),
+                verify=lambda receipt, **kw: lifecycle.same(receipt, self.target_snapshot())),
             monotonic=lambda: self.now, sleep=self.sleep, seconds=2)
+
+    def target_snapshot(self):
+        assert 'rollback' in self.copied
+        return tuple({'role': r, 'epoch': self.rollback_epoch} for r in lifecycle.ROLES)
 
     def sleep(self, seconds):
         self.now += max(0.01, seconds)
@@ -183,6 +192,8 @@ class Harness:
         assert phase not in self.copied, 'fresh volumes only'
         self.copies.append(phase)
         self.copied[phase] = self.data
+        if phase == 'rollback':
+            self.rollback_epoch += 1
         return tuple({'digest': 'b' * 64, 'entries': 1, 'bytes': len(self.data)} for _ in range(3))
 
     def publish(self, owner):

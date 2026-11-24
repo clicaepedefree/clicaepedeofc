@@ -5,11 +5,12 @@ network client/daemon is constructed here. backup.lock covers even staging and
 failure containment. SIGTERM callers must use interruption_handlers(). SIGKILL
 leaves the durable fence and intent for manual reconciliation.
 
-Unimplemented gates: installed Engine SDK full-ServiceSpec transport review,
+External gates: installed Engine SDK full-ServiceSpec transport review,
 exclusive daemon-mutator exclusion, worker/instance-webhook pause evidence,
 backup/restore rehearsal approval, and final domain/routing gate. They cannot be
-inferred from this offline suite. No automatic replay of ambiguous mutations or
-partially completed rollback; no fallback to original source volumes.
+inferred from this offline suite. No automatic replay of ambiguous mutations.
+Explicit reconcile_partial() covers only a durably verified rollback copy;
+incomplete copies and legacy authority remain blocked. No original-volume fallback.
 """
 import copy
 from contextlib import contextmanager
@@ -23,6 +24,7 @@ import managed_cutover as managed
 import panel_client as panel
 import panel_preparation as preparation
 import volume_transfer
+import rollback_plan
 
 PROJECT = 'clica-qa_evolution-qa'
 ROLES = managed.ROLES
@@ -50,6 +52,11 @@ def encoded(value):
 
 def digest(value):
     return hashlib.sha256(encoded(value)).hexdigest()
+
+
+def same(left, right):
+    # Durable state must not equate JSON true/1 or 1/1.0 as Python equality does.
+    return encoded(left) == encoded(right)
 
 
 def container_pin(item):
@@ -161,7 +168,8 @@ class Coordinator:
     gates is a callable rechecking operator evidence, not a deployment flag.
     """
     def __init__(self, *, api, engine, backup, runtime, stage, transfer, fixture,
-                 gates, files=None, before_deploy=None, workload_check=None, seconds=600,
+                 gates, files=None, before_deploy=None, workload_check=None, rollback_freshness=None,
+                 rollback_targets=None, seconds=600,
                  monotonic=time.monotonic, sleep=time.sleep):
         require(type(seconds) in (int, float) and 0 < seconds <= 900, 'deadline-policy')
         self.api, self.engine, self.backup, self.runtime = api, engine, backup, runtime
@@ -173,6 +181,9 @@ class Coordinator:
         self.before_deploy = before_deploy
         require(workload_check is None or callable(workload_check), 'workload-check-hook')
         self.workload_check = workload_check
+        require(rollback_freshness is None or callable(rollback_freshness), 'rollback-freshness-hook')
+        self.source_freshness = rollback_freshness
+        self.target_continuity = rollback_targets
 
     def checkpoint(self, phase, **values):
         self.state.update(values)
@@ -205,6 +216,8 @@ class Coordinator:
     def preflight(self):
         require(self.gates() == REQUIRED_GATES, 'external-gates-unproven')
         self.engine.ready()
+        require(callable(self.source_freshness), 'rollback-freshness-unavailable')
+        self.rollback_targets_ready()
         require(not any((self.backup.ROOT / name).exists() for name in
                         ('maintenance.json', 'restore_lease.json')), 'maintenance-pending')
 
@@ -331,6 +344,205 @@ class Coordinator:
                     type(row['bytes']) is int and row['bytes'] >= 0, 'transfer-evidence')
         self.checkpoint('copied-' + phase, **{phase + '_copy': result})
 
+    def copy_proven(self, value):
+        require(isinstance(value, (tuple, list)) and len(value) == 3, 'rollback-copy-unproven')
+        for row in value:
+            require(isinstance(row, dict) and set(row) == {'digest', 'entries', 'bytes'} and
+                    isinstance(row['digest'], str) and re.fullmatch(r'[a-f0-9]{64}', row['digest']) and
+                    type(row['entries']) is int and row['entries'] > 0 and
+                    type(row['bytes']) is int and row['bytes'] >= 0, 'rollback-copy-unproven')
+
+    def verify_rollback_freshness(self):
+        expected = self.state['rollback_copy']
+        self.copy_proven(expected)
+        require(callable(self.source_freshness), 'rollback-freshness-unavailable')
+        require(self.clock() < self.end, 'rollback-freshness-deadline')
+        try:
+            current = self.source_freshness(copy.deepcopy(expected), deadline=self.end)
+        except Exception:
+            raise Rejected('rollback-source-freshness-unproven') from None
+        self.copy_proven(current)
+        require(self.clock() < self.end, 'rollback-freshness-deadline')
+        require(same(current, expected), 'rollback-source-diverged')
+
+    def rollback_targets_ready(self):
+        require(self.target_continuity is not None and
+                callable(getattr(self.target_continuity, 'capture', None)) and
+                callable(getattr(self.target_continuity, 'verify', None)), 'rollback-target-proof-unavailable')
+
+    def target_receipt(self):
+        value = self.state.get('rollback_targets')
+        require(isinstance(value, (list, tuple)) and len(value) == 3 and
+                all(isinstance(row, dict) and row for row in value), 'rollback-targets-unproven')
+        return copy.deepcopy(value)
+
+    def verify_rollback_targets(self):
+        self.rollback_targets_ready()
+        receipt = self.target_receipt()
+        require(self.clock() < self.end, 'rollback-target-deadline')
+        try:
+            verified = self.target_continuity.verify(receipt, deadline=self.end)
+        except Exception:
+            raise Rejected('rollback-target-continuity-unproven') from None
+        require(verified is True, 'rollback-target-replaced')
+        require(self.clock() < self.end, 'rollback-target-deadline')
+
+    def rollback_documents(self, records):
+        source = {'project': self.runtime.SWARM_PROJECT, 'services': records}
+        pin = {'path': str(self.runtime.ROOT / 'swarm.json'), 'sha256': digest(source)}
+        receipt = {'schema': 1, 'generation': 3, 'runtime': 'swarm',
+                   'project': self.runtime.SWARM_PROJECT, 'source_sha256': pin['sha256'],
+                   'compose_controller_disabled': True}
+        owner = {'schema': 1, 'state': 'active', 'runtime': 'swarm', 'generation': 3,
+                 'project': self.runtime.SWARM_PROJECT, 'source': pin, 'mount_hashes': {},
+                 'services': {r: records[r]['spec']['TaskTemplate']['ContainerSpec']['Image'] for r in ROLES},
+                 'volumes': self.runtime.SWARM_VOLUMES,
+                 'swarm_services': {r: {'service_id': records[r]['service_id'],
+                     'container_spec_sha256': self.runtime.spec_hash(records[r]['spec']['TaskTemplate']['ContainerSpec'])} for r in ROLES},
+                 'handoff': {'path': str(self.runtime.ROOT / 'compose-disabled.json'), 'sha256': digest(receipt)}}
+        return source, receipt, owner
+
+    def rollback_file(self, name, value, phase):
+        if self.files.exists(name):
+            require(same(self.files.read(name), value), 'rollback-artifact-drift')
+        else:
+            self.mutate(phase, lambda: self.files.write(name, value))
+
+    def finish_rollback(self, records, *, reconciled=False):
+        source, receipt, owner = self.rollback_documents(records)
+        sentinel = self.files.read('managed')
+        recovering = {'schema': 1, 'state': 'recovering', 'generation': 3}
+        manifest = self.files.read('ownership.json')
+        require(any(same(sentinel, {'schema': 1, 'generation': n}) for n in (1, 2, 3)), 'rollback-fence-drift')
+        require(same(manifest, recovering) or same(manifest, owner), 'rollback-owner-drift')
+        pending = self.state.get('rollback_publication')
+        if 'rollback_publication' in self.state:
+            require(same(pending, owner), 'rollback-publication-drift')
+        if sentinel['generation'] == 3 and same(manifest, recovering):
+            require(reconciled and same(pending, owner), 'rollback-publication-unproven')
+        if same(manifest, owner):
+            require(sentinel['generation'] == 3, 'rollback-fence-drift')
+            require(all(self.files.exists(n) for n in ('swarm.json', 'compose-disabled.json')) and
+                    same(self.runtime.load(), owner), 'rollback-owner-unproven')
+        for name, value in (('swarm.json', source), ('compose-disabled.json', receipt)):
+            require(not self.files.exists(name) or same(self.files.read(name), value), 'rollback-artifact-drift')
+        self.rollback_file('swarm.json', source, 'write-swarm-source')
+        self.rollback_file('compose-disabled.json', receipt, 'write-disabled-receipt')
+        for role in ROLES:
+            self.rollback_healthy(records, roles=())
+            require(self.native().get('enabled') is False, 'controller-reenabled')
+            self.quiescent(set(self.runtime.VOLUMES.values()) | set(managed.OLD_VOLUMES.values()))
+            service = self.rollback_service(role, records)
+            if service['Spec']['Mode']['Replicated']['Replicas'] == 0:
+                require(not same(manifest, owner), 'published-service-stopped')
+                self.checkpoint('rollback-write-boundary', rollback_data_authority='rollback-may-have-written')
+                spec = copy.deepcopy(service['Spec'])
+                spec['Mode']['Replicated']['Replicas'] = 1
+                self.mutate('resume-' + role, lambda b=service, s=spec: self.engine.update(b, s))
+            self.wait(lambda role=role: self.rollback_healthy(records, roles=(role,)))
+        self.quiescent(set(self.runtime.VOLUMES.values()) | set(managed.OLD_VOLUMES.values()))
+        require(self.native().get('enabled') is False, 'controller-reenabled')
+        self.idle()
+        self.wait(lambda: self.rollback_healthy(records))
+        self.verify_rollback_freshness()
+        self.verify_rollback_targets()
+        require(same(self.files.read('managed'), sentinel) and same(self.files.read('ownership.json'), manifest),
+                'rollback-publication-concurrent-change')
+        if not same(manifest, owner):
+            if sentinel['generation'] < 3:
+                self.checkpoint('rollback-publication-planned', rollback_publication=copy.deepcopy(owner))
+                self.mutate('publish-swarm', lambda: self.runtime.publish(owner))
+            else:
+                # Complete only the missing second half of this exact publication.
+                self.mutate('complete-publish-swarm', lambda: self.files.write('ownership.json', owner))
+        require(self.runtime.load() == owner, 'rollback-owner-unproven')
+        self.checkpoint('swarm-active-route-gated')
+        return {'runtime': 'swarm', 'generation': 3, 'routing_included': False}
+
+    def reconcile_partial(self):
+        """Explicit recovery AFTER a durable complete copy; never copy or redeploy.
+
+        Caller excludes the original operator and all other daemon mutators.
+        Read observations determine whether a CAS update is still needed. An
+        already applied rebind/resume is adopted, not issued a second time.
+        """
+        with self.backup.locked(self.backup.ROOT):
+            self.end = self.clock() + self.seconds
+            self.preflight()
+            self.state = self.files.read('lifecycle.json')
+            require(type(self.state.get('schema')) is int and self.state.get('schema') == 1 and
+                    self.state.get('project') == PROJECT and
+                    self.state.get('rollback_started') is True and
+                    self.state.get('data_authority') == 'managed-may-have-written',
+                    'partial-recovery-unproven')
+            require(self.state.get('rollback_data_authority') in (None, 'rollback-may-have-written'),
+                    'partial-recovery-unproven')
+            self.copy_proven(self.state.get('cutover_copy'))
+            self.copy_proven(self.state.get('rollback_copy'))
+            self.target_receipt()
+            self.validate_stage()
+            require(self.files.exists('managed'), 'fence-missing')
+            native = self.native()
+            preparation.source_matches(native, self.state['stage']['compose'])
+            require(native.get('enabled') is False, 'controller-not-disabled')
+            self.idle()
+            self.quiescent(set(self.runtime.VOLUMES.values()) | set(managed.OLD_VOLUMES.values()))
+            actual = {r: self.engine.service(self.state['stage']['records'][r]['service']['ID']) for r in ROLES}
+            try:
+                plan = rollback_plan.build_plan(self.state['stage']['records'], actual,
+                                                self.runtime.SWARM_VOLUMES, managed.DESTINATIONS)
+            except rollback_plan.PlanError as error:
+                raise Rejected(str(error)) from None
+            records = {r: {'service_id': plan[r]['service_id'], 'spec': plan[r]['spec']} for r in ROLES}
+            writers = {r: 0 for r in ROLES}
+            for item in self.engine.inventory():
+                for role in ROLES:
+                    if not any(m.get('Name') == self.runtime.SWARM_VOLUMES[role] and
+                               m.get('RW') is True for m in item['Mounts']):
+                        continue
+                    state = item['State']
+                    if (state['Running'] is False and state['Restarting'] is False and
+                            item['HostConfig']['RestartPolicy']['Name'] == 'no'):
+                        continue
+                    require(plan[role]['rebound'] and plan[role]['replicas'] == 1 and
+                            item['Config']['Labels'].get('com.docker.swarm.service.id') == records[role]['service_id'] and
+                            item['Config']['Image'] == records[role]['spec']['TaskTemplate']['ContainerSpec']['Image'] and
+                            len(item['Mounts']) == 1 and item['Mounts'][0]['Type'] == 'volume' and
+                            item['Mounts'][0]['Destination'] == managed.DESTINATIONS[role],
+                            'partial-rollback-foreign-writer')
+                    writers[role] += 1
+                    require(writers[role] <= 1, 'rollback-container-count')
+            saved = self.state.get('rollback_services', {})
+            require(isinstance(saved, dict) and set(saved) <= set(ROLES) and
+                    all(same(saved[r], records[r]) for r in saved), 'rollback-plan-drift')
+            # Publication conflicts must be rejected BEFORE changing any service.
+            _, _, owner = self.rollback_documents(records)
+            sentinel, manifest = self.files.read('managed'), self.files.read('ownership.json')
+            recovering = {'schema': 1, 'state': 'recovering', 'generation': 3}
+            require(any(same(sentinel, {'schema': 1, 'generation': n}) for n in (1, 2, 3)) and
+                    (same(manifest, recovering) or sentinel['generation'] == 3 and same(manifest, owner)),
+                    'rollback-owner-drift')
+            if 'rollback_publication' in self.state:
+                require(same(self.state['rollback_publication'], owner), 'rollback-publication-drift')
+            if sentinel['generation'] == 3 and same(manifest, recovering):
+                require(same(self.state.get('rollback_publication'), owner), 'rollback-publication-unproven')
+            if same(manifest, owner):
+                require(all(plan[r]['rebound'] and plan[r]['replicas'] == 1 for r in ROLES),
+                        'published-service-stopped')
+                require(all(self.files.exists(n) for n in ('swarm.json', 'compose-disabled.json')) and
+                        same(self.runtime.load(), owner), 'rollback-owner-unproven')
+            for name, value in zip(('swarm.json', 'compose-disabled.json'), self.rollback_documents(records)[:2]):
+                require(not self.files.exists(name) or same(self.files.read(name), value), 'rollback-artifact-drift')
+            self.verify_rollback_freshness()
+            self.verify_rollback_targets()
+            self.checkpoint('partial-recovery-plan', rollback_services=copy.deepcopy(records))
+            for role in ROLES:
+                if not plan[role]['rebound']:
+                    self.mutate('reconcile-rebind-' + role,
+                                lambda r=role: self.engine.update(plan[r]['current'], records[r]['spec']))
+                self.rollback_service(role, records)
+            return self.finish_rollback(records, reconciled=True)
+
     def rollback_service(self, role, records):
         saved = records[role]
         actual = self.engine.service(saved['service_id'])
@@ -413,7 +625,7 @@ class Coordinator:
                           'data_authority': 'legacy',
                           'recovery_policy': {
                               'legacy': 'manual: original CURRENT data to FRESH rollback volumes; never staged copies',
-                              'managed-may-have-written': 'current managed data only; partial rollback requires manual reconciliation'}}
+                              'managed-may-have-written': 'current managed before rollback writes; preserve BOTH branches after partial rollback; explicit verified reconciliation only'}}
             self.checkpoint('initial')
             try:
                 require(self.fixture is not None, 'existing-fixture-required')
@@ -484,9 +696,13 @@ class Coordinator:
                 error.recovery_state = copy.deepcopy(self.state)
                 error.allowable_recovery = self.state.get('recovery_policy', {}).get(
                     self.state.get('data_authority'), 'manual: establish current data authority before any copy or start')
+                if self.state.get('rollback_started'):
+                    error.allowable_recovery = ('manual: preserve CURRENT managed AND rollback data; '
+                        'review reconcile_partial with source freshness; never recopy or resume old snapshots')
                 raise error
             self.validate_stage()
             require(self.files.exists('managed'), 'fence-missing')
+            self.rollback_targets_ready()
             self.checkpoint('rollback-starting', rollback_started=True)
             try:
                 # Invalidate any previous active owner without removing its durable fence.
@@ -495,6 +711,10 @@ class Coordinator:
                 self.contain()
                 self.wait(self.swarm_zero)
                 self.copy_data('rollback')  # CURRENT managed -> FRESH fixed rollback volumes.
+                self.verify_rollback_freshness()
+                targets = self.target_continuity.capture(copy.deepcopy(self.state['rollback_copy']), deadline=self.end)
+                self.checkpoint('rollback-targets-pinned', rollback_targets=targets)
+                self.verify_rollback_targets()
                 records = {}
                 for role in ROLES:
                     before = self.service(role)
@@ -508,36 +728,7 @@ class Coordinator:
                                     rollback_services=copy.deepcopy(records))
                     self.mutate('rebind-' + role, lambda b=before, s=spec: self.engine.update(b, s))
                     self.checkpoint('rollback-rebound-' + role, rollback_services=copy.deepcopy(records))
-                source = {'project': self.runtime.SWARM_PROJECT, 'services': records}
-                pin = {'path': str(self.runtime.ROOT / 'swarm.json'), 'sha256': digest(source)}
-                receipt = {'schema': 1, 'generation': 3, 'runtime': 'swarm',
-                           'project': self.runtime.SWARM_PROJECT, 'source_sha256': pin['sha256'],
-                           'compose_controller_disabled': True}
-                self.mutate('write-swarm-source', lambda: self.files.write('swarm.json', source))
-                self.mutate('write-disabled-receipt', lambda: self.files.write('compose-disabled.json', receipt))
-                owner = {'schema': 1, 'state': 'active', 'runtime': 'swarm', 'generation': 3,
-                         'project': self.runtime.SWARM_PROJECT, 'source': pin, 'mount_hashes': {},
-                         'services': {r: records[r]['spec']['TaskTemplate']['ContainerSpec']['Image'] for r in ROLES},
-                         'volumes': self.runtime.SWARM_VOLUMES,
-                         'swarm_services': {r: {'service_id': records[r]['service_id'],
-                             'container_spec_sha256': self.runtime.spec_hash(records[r]['spec']['TaskTemplate']['ContainerSpec'])} for r in ROLES},
-                         'handoff': {'path': str(self.runtime.ROOT / 'compose-disabled.json'), 'sha256': digest(receipt)}}
-                # Read the exact newly rebound specs directly; canonical consumers stay fenced.
-                for role in ('postgres', 'redis', 'evolution'):
-                    self.rollback_healthy(records, roles=())
-                    service = self.rollback_service(role, records)
-                    spec = copy.deepcopy(service['Spec'])
-                    spec['Mode']['Replicated']['Replicas'] = 1
-                    self.mutate('resume-' + role, lambda b=service, s=spec: self.engine.update(b, s))
-                    self.wait(lambda role=role: self.rollback_healthy(records, roles=(role,)))
-                self.quiescent(set(self.runtime.VOLUMES.values()))
-                require(self.native().get('enabled') is False, 'controller-reenabled')
-                self.idle()
-                self.wait(lambda: self.rollback_healthy(records))
-                self.mutate('publish-swarm', lambda: self.runtime.publish(owner))
-                require(self.runtime.load() == owner, 'rollback-owner-unproven')
-                self.checkpoint('swarm-active-route-gated')
-                return {'runtime': 'swarm', 'generation': 3, 'routing_included': False}
+                return self.finish_rollback(records)
             except BaseException:
                 # Keep fence, partial destinations and full intent. Re-running is
                 # forbidden; a reviewed reconciler must resolve partial rebinds.

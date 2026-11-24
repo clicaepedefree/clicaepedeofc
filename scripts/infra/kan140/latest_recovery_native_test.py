@@ -12,6 +12,7 @@ ownership, byte-hash, persistence and lock checks remain enabled. No SSH, pulls,
 application processes, canonical replacements, secrets, or prune operations.
 """
 import hashlib
+import copy
 import importlib.util
 import json
 import os
@@ -45,6 +46,27 @@ ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
 def require(value, code):
     if not value:
         raise AssertionError(code)
+
+
+def stable_inspect(row):
+    """Docker may return the same mount set in a different array order."""
+    result = copy.deepcopy(row)
+    if 'Mounts' in result:
+        result['Mounts'] = sorted(result['Mounts'], key=lambda mount: json.dumps(mount, sort_keys=True))
+    return result
+
+
+class InspectOrderTests(unittest.TestCase):
+    def test_only_mount_order_is_normalized_not_changed_mount_content(self):
+        mounts = [{'Type': 'volume', 'Name': 'source', 'RW': False},
+                  {'Type': 'volume', 'Name': 'target', 'RW': True}]
+        before = {'Id': 'fixture', 'Mounts': mounts, 'State': {'Running': True}}
+        reordered = copy.deepcopy(before)
+        reordered['Mounts'].reverse()
+        self.assertEqual(stable_inspect(before), stable_inspect(reordered))
+        reordered['Mounts'][0]['RW'] = False
+        self.assertNotEqual(stable_inspect(before), stable_inspect(reordered))
+        self.assertEqual(before['Mounts'], mounts)
 
 
 def load(name, path):
@@ -281,7 +303,7 @@ class LatestRecoveryNativeTests(unittest.TestCase):
         self.remove_owned('container', self.config['helper'])
         del self.helper_id  # A failed replacement create is still tracked by exact name + fixture labels.
         self.helper_id = create_helper(self.docker, self.config, revoked=True)
-        before = {(kind, name): self.docker.inspect(kind, name) for kind, name in self.resources()}
+        before = {(kind, name): stable_inspect(self.docker.inspect(kind, name)) for kind, name in self.resources()}
         lease = (self.root / 'restore_lease.json').read_bytes()
         with self.assertRaises(self.recovery.Failure) as caught:
             self.recover()
@@ -289,7 +311,7 @@ class LatestRecoveryNativeTests(unittest.TestCase):
         self.assertEqual((self.root / 'restore_lease.json').read_bytes(), lease)
         self.assertEqual((self.root / 'restore-offsite-12345678/synthetic').read_bytes(), b'not-a-backup')
         for key, row in before.items():
-            self.assertEqual(self.docker.inspect(*key), row, 'failclosed_resource_changed')
+            self.assertEqual(stable_inspect(self.docker.inspect(*key)), row, 'failclosed_resource_changed')
         # Restore only fixture labels by exact replacement, then clean via v2.
         self.remove_owned('container', self.config['helper'], revoked=True)
         del self.helper_id
